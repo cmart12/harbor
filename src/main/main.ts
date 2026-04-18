@@ -32,6 +32,8 @@ const MIME_TYPES: Record<string, string> = {
   '.svg': 'image/svg+xml',
 };
 
+let showTimestamp = 0;
+
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
     width: WINDOW_WIDTH,
@@ -53,6 +55,8 @@ function createWindow(): BrowserWindow {
   win.loadURL('intent://renderer/index.html');
 
   win.on('blur', () => {
+    // Ignore blur if window was just shown (e.g. from tray menu click)
+    if (Date.now() - showTimestamp < 300) return;
     win.hide();
   });
 
@@ -78,6 +82,7 @@ function toggleWindow(): void {
     mainWindow.hide();
   } else {
     const pos = getWindowPosition();
+    showTimestamp = Date.now();
     mainWindow.setPosition(pos.x, pos.y, false);
     mainWindow.show();
     mainWindow.focus();
