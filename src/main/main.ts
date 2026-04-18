@@ -1,5 +1,6 @@
-import { app, BrowserWindow, Tray, Menu, globalShortcut, screen, ipcMain, nativeImage } from 'electron';
+import { app, BrowserWindow, Tray, Menu, globalShortcut, screen, ipcMain, nativeImage, session, protocol, net } from 'electron';
 import * as path from 'path';
+import * as fs from 'fs';
 import { initDatabase } from './database';
 import { registerIpcHandlers } from './ipc';
 
@@ -8,6 +9,28 @@ let mainWindow: BrowserWindow | null = null;
 
 const WINDOW_WIDTH = 420;
 const WINDOW_HEIGHT = 520;
+
+// Register custom scheme as privileged (must happen before app ready)
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'intent',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      stream: true,
+    },
+  },
+]);
+
+const MIME_TYPES: Record<string, string> = {
+  '.html': 'text/html',
+  '.css': 'text/css',
+  '.js': 'application/javascript',
+  '.json': 'application/json',
+  '.png': 'image/png',
+  '.svg': 'image/svg+xml',
+};
 
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
@@ -26,7 +49,8 @@ function createWindow(): BrowserWindow {
     },
   });
 
-  win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
+  // Load via custom protocol so Web Speech API works (needs a real origin, not file://)
+  win.loadURL('intent://renderer/index.html');
 
   win.on('blur', () => {
     win.hide();
@@ -85,6 +109,32 @@ function createTray(): void {
 }
 
 app.whenReady().then(async () => {
+  // Register custom protocol to serve renderer files (Web Speech API needs a real origin, not file://)
+  protocol.handle('intent', (request) => {
+    const url = new URL(request.url);
+    const filePath = path.join(__dirname, '..', url.pathname);
+    const ext = path.extname(filePath);
+    const mimeType = MIME_TYPES[ext] || 'application/octet-stream';
+
+    if (!fs.existsSync(filePath)) {
+      return new Response('Not found', { status: 404 });
+    }
+    return net.fetch('file://' + filePath.replace(/\\/g, '/'), {
+      headers: { 'Content-Type': mimeType },
+    });
+  });
+
+  // Grant microphone permission for Web Speech API
+  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+    const allowed = ['media', 'audioCapture', 'microphone'];
+    callback(allowed.includes(permission));
+  });
+
+  session.defaultSession.setPermissionCheckHandler((_webContents, permission) => {
+    const allowed = ['media', 'audioCapture', 'microphone'];
+    return allowed.includes(permission);
+  });
+
   await initDatabase();
   registerIpcHandlers();
   createTray();
