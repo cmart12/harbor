@@ -1,7 +1,4 @@
-import { exec } from 'child_process';
-import { promisify } from 'util';
-
-const execAsync = promisify(exec);
+import { CopilotClient, CopilotSession, approveAll } from '@github/copilot-sdk';
 
 export interface ParsedIntent {
   description: string;
@@ -9,7 +6,10 @@ export interface ParsedIntent {
   due_at: string | null;
 }
 
-const PARSE_PROMPT = `You are an intent parser. Given a natural language intent, extract structured fields.
+let client: CopilotClient | null = null;
+let session: CopilotSession | null = null;
+
+const SYSTEM_MESSAGE = `You are an intent parser. Given a natural language intent, extract structured fields.
 Return ONLY a JSON object with these fields (no markdown, no explanation):
 - "description": a clean, concise action description
 - "client": the client/company name if mentioned, otherwise null
@@ -23,30 +23,60 @@ Input: "review the PR"
 Output: {"description":"Review the PR","client":null,"due_at":null}
 
 Input: "send invoice to Contoso before end of month"
-Output: {"description":"Send invoice","client":"Contoso","due_at":"End of month"}
+Output: {"description":"Send invoice","client":"Contoso","due_at":"End of month"}`;
 
-Now parse this intent:`;
+export async function initCopilot(): Promise<void> {
+  try {
+    client = new CopilotClient();
+    await client.start();
+
+    session = await client.createSession({
+      systemMessage: { content: SYSTEM_MESSAGE },
+      onPermissionRequest: async () => ({ kind: 'denied-interactively-by-user' as const }),
+    });
+
+    console.log('[copilot-sdk] Client started, session created');
+  } catch (err) {
+    console.error('[copilot-sdk] Failed to initialize:', err);
+    client = null;
+    session = null;
+  }
+}
+
+export async function shutdownCopilot(): Promise<void> {
+  try {
+    if (session) {
+      await session.disconnect();
+      session = null;
+    }
+    if (client) {
+      await client.stop();
+      client = null;
+    }
+    console.log('[copilot-sdk] Shut down');
+  } catch (err) {
+    console.error('[copilot-sdk] Error during shutdown:', err);
+  }
+}
 
 export async function parseIntentWithAI(rawText: string): Promise<ParsedIntent> {
-  const fullPrompt = `${PARSE_PROMPT}\nInput: "${rawText}"`;
+  if (!session) {
+    console.warn('[copilot-sdk] Session not ready, returning raw text');
+    return { description: rawText, client: null, due_at: null };
+  }
 
   try {
-    // Use shell exec so PATH and .cmd wrappers resolve on Windows
-    const escaped = fullPrompt.replace(/"/g, '\\"');
-    const { stdout } = await execAsync(
-      `copilot -p "${escaped}" -s --output-format text`,
-      {
-        timeout: 30000,
-        windowsHide: true,
-      }
-    );
+    const response = await session.sendAndWait({
+      prompt: `Parse this intent:\nInput: "${rawText}"`,
+    }, 30000);
 
-    const trimmed = stdout.trim();
+    const content = response?.data?.content ?? '';
+    const trimmed = content.trim();
 
-    // Try to extract JSON from the response
+    // Extract JSON from the response
     const jsonMatch = trimmed.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      console.error('AI response was not JSON:', trimmed);
+      console.error('[copilot-sdk] Response was not JSON:', trimmed);
       return { description: rawText, client: null, due_at: null };
     }
 
@@ -57,7 +87,7 @@ export async function parseIntentWithAI(rawText: string): Promise<ParsedIntent> 
       due_at: parsed.due_at || null,
     };
   } catch (err) {
-    console.error('Copilot AI parse failed:', err);
+    console.error('[copilot-sdk] Parse failed:', err);
     return { description: rawText, client: null, due_at: null };
   }
 }

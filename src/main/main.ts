@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import { initDatabase } from './database';
 import { registerIpcHandlers } from './ipc';
 import { preloadModel } from './voice';
+import { initCopilot, shutdownCopilot } from './ai';
 
 let tray: Tray | null = null;
 let mainWindow: BrowserWindow | null = null;
@@ -149,6 +150,7 @@ app.whenReady().then(async () => {
   createTray();
   mainWindow = createWindow();
   preloadModel();
+  initCopilot();
 
   const registered = globalShortcut.register('CommandOrControl+Shift+Space', toggleWindow);
   if (!registered) {
@@ -160,8 +162,9 @@ app.whenReady().then(async () => {
   });
 });
 
-app.on('will-quit', () => {
+app.on('will-quit', async () => {
   globalShortcut.unregisterAll();
+  await shutdownCopilot();
 });
 
 app.on('window-all-closed', () => {
