@@ -13,7 +13,7 @@ const WINDOW_HEIGHT = 520;
 // Register custom scheme as privileged (must happen before app ready)
 protocol.registerSchemesAsPrivileged([
   {
-    scheme: 'intent',
+    scheme: 'copilot-intent',
     privileges: {
       standard: true,
       secure: true,
@@ -52,7 +52,8 @@ function createWindow(): BrowserWindow {
   });
 
   // Load via custom protocol so Web Speech API works (needs a real origin, not file://)
-  win.loadURL('intent://renderer/index.html');
+  // Use intent://app/renderer/index.html so host="app" and pathname="/renderer/index.html"
+  win.loadURL('copilot-intent://app/renderer/index.html');
 
   win.on('blur', () => {
     // Ignore blur if window was just shown (e.g. from tray menu click)
@@ -115,13 +116,15 @@ function createTray(): void {
 
 app.whenReady().then(async () => {
   // Register custom protocol to serve renderer files (Web Speech API needs a real origin, not file://)
-  protocol.handle('intent', (request) => {
+  protocol.handle('copilot-intent', (request) => {
     const url = new URL(request.url);
+    // URL: intent://app/renderer/index.html → host="app", pathname="/renderer/index.html"
     const filePath = path.join(__dirname, '..', url.pathname);
     const ext = path.extname(filePath);
     const mimeType = MIME_TYPES[ext] || 'application/octet-stream';
 
     if (!fs.existsSync(filePath)) {
+      console.error('Protocol: file not found:', filePath);
       return new Response('Not found', { status: 404 });
     }
     return net.fetch('file://' + filePath.replace(/\\/g, '/'), {
