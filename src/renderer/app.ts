@@ -3,6 +3,7 @@ interface IntentAPI {
   list(): Promise<Intent[]>;
   update(id: string, updates: Record<string, unknown>): Promise<Intent>;
   delete(id: string): Promise<boolean>;
+  parse(rawText: string): Promise<{ description: string; client: string | null; due_at: string | null }>;
   hideWindow(): void;
   onWindowShown(callback: () => void): void;
 }
@@ -25,9 +26,126 @@ const dueInput = document.getElementById('due-input') as HTMLInputElement;
 const form = document.getElementById('capture-form') as HTMLFormElement;
 const listEl = document.getElementById('intent-list') as HTMLDivElement;
 const countEl = document.getElementById('intent-count') as HTMLSpanElement;
+const voiceBtn = document.getElementById('voice-btn') as HTMLButtonElement;
+const aiCaptureBtn = document.getElementById('ai-capture-btn') as HTMLButtonElement;
+const statusBar = document.getElementById('status-bar') as HTMLDivElement;
 
 let intents: Intent[] = [];
 
+// ── Status bar helpers ──────────────────────────────────
+function showStatus(msg: string, isError = false): void {
+  statusBar.textContent = msg;
+  statusBar.classList.remove('hidden', 'error');
+  if (isError) statusBar.classList.add('error');
+}
+
+function hideStatus(): void {
+  statusBar.classList.add('hidden');
+}
+
+// ── Voice Input (Web Speech API) ────────────────────────
+let recognition: any = null;
+let isRecording = false;
+
+function initSpeechRecognition(): void {
+  const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    voiceBtn.title = 'Speech recognition not available';
+    voiceBtn.style.opacity = '0.3';
+    return;
+  }
+
+  recognition = new SpeechRecognition();
+  recognition.continuous = false;
+  recognition.interimResults = true;
+  recognition.lang = 'en-US';
+
+  recognition.onresult = (event: any) => {
+    let transcript = '';
+    for (let i = 0; i < event.results.length; i++) {
+      transcript += event.results[i][0].transcript;
+    }
+    descInput.value = transcript;
+
+    if (event.results[event.results.length - 1].isFinal) {
+      stopRecording();
+      showStatus('Voice captured — press AI Capture or Capture');
+    }
+  };
+
+  recognition.onerror = (event: any) => {
+    console.error('Speech recognition error:', event.error);
+    stopRecording();
+    if (event.error === 'not-allowed') {
+      showStatus('Microphone access denied', true);
+    } else {
+      showStatus(`Voice error: ${event.error}`, true);
+    }
+  };
+
+  recognition.onend = () => {
+    if (isRecording) stopRecording();
+  };
+}
+
+function startRecording(): void {
+  if (!recognition) return;
+  isRecording = true;
+  voiceBtn.classList.add('recording');
+  voiceBtn.textContent = '⏹';
+  descInput.value = '';
+  descInput.placeholder = 'Listening...';
+  showStatus('🎤 Listening... speak your intent');
+  recognition.start();
+}
+
+function stopRecording(): void {
+  isRecording = false;
+  voiceBtn.classList.remove('recording');
+  voiceBtn.textContent = '🎤';
+  descInput.placeholder = 'What do you need to do?';
+  try { recognition?.stop(); } catch (_) {}
+}
+
+voiceBtn.addEventListener('click', () => {
+  if (isRecording) {
+    stopRecording();
+  } else {
+    startRecording();
+  }
+});
+
+// ── AI Capture ──────────────────────────────────────────
+aiCaptureBtn.addEventListener('click', async () => {
+  const rawText = descInput.value.trim();
+  if (!rawText) {
+    descInput.focus();
+    return;
+  }
+
+  aiCaptureBtn.classList.add('loading');
+  aiCaptureBtn.textContent = '⏳ Parsing...';
+  showStatus('🤖 Copilot is parsing your intent...');
+
+  try {
+    const parsed = await intentAPI.parse(rawText);
+
+    // Fill in the parsed fields
+    descInput.value = parsed.description;
+    if (parsed.client) clientInput.value = parsed.client;
+    if (parsed.due_at) dueInput.value = parsed.due_at;
+
+    showStatus('✅ AI parsed — review fields and hit Capture');
+  } catch (err) {
+    console.error('AI parse failed:', err);
+    showStatus('AI parse failed — capturing as-is', true);
+  } finally {
+    aiCaptureBtn.classList.remove('loading');
+    aiCaptureBtn.textContent = '⚡ AI Capture';
+  }
+});
+
+// ── Intent CRUD ─────────────────────────────────────────
 async function loadIntents(): Promise<void> {
   intents = await intentAPI.list();
   render();
@@ -95,6 +213,7 @@ form.addEventListener('submit', async (e) => {
   descInput.value = '';
   clientInput.value = '';
   dueInput.value = '';
+  hideStatus();
   descInput.focus();
   await loadIntents();
 });
@@ -114,25 +233,24 @@ async function deleteIntent(id: string): Promise<void> {
   await loadIntents();
 }
 
-// Make functions available globally for onclick handlers
 (window as any).toggleStatus = toggleStatus;
 (window as any).deleteIntent = deleteIntent;
 
-// Auto-focus on load
+// ── Init ────────────────────────────────────────────────
+initSpeechRecognition();
 descInput.focus();
 
-// Keyboard shortcuts
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
+    if (isRecording) stopRecording();
     intentAPI.hideWindow();
   }
 });
 
-// Listen for show event from main process
 intentAPI.onWindowShown(() => {
   descInput.focus();
   descInput.select();
+  hideStatus();
 });
 
-// Initial load
 loadIntents();

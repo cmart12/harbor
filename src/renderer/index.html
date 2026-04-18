@@ -14,13 +14,16 @@
     </header>
 
     <form id="capture-form">
-      <input
-        type="text"
-        id="description-input"
-        placeholder="What do you need to do?"
-        autocomplete="off"
-        autofocus
-      />
+      <div class="input-row">
+        <input
+          type="text"
+          id="description-input"
+          placeholder="What do you need to do?"
+          autocomplete="off"
+          autofocus
+        />
+        <button type="button" id="voice-btn" class="icon-btn" title="Voice input (hold to speak)">🎤</button>
+      </div>
       <div class="optional-fields" id="optional-fields">
         <input
           type="text"
@@ -35,7 +38,11 @@
           autocomplete="off"
         />
       </div>
-      <button type="submit" id="capture-btn">Capture</button>
+      <div class="action-row">
+        <button type="submit" id="capture-btn">Capture</button>
+        <button type="button" id="ai-capture-btn" title="AI-parse and capture">⚡ AI Capture</button>
+      </div>
+      <div id="status-bar" class="status-bar hidden"></div>
     </form>
 
     <div id="intent-list"></div>

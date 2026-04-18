@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron';
 import { createIntent, listIntents, updateIntent, deleteIntent } from './database';
+import { parseIntentWithAI } from './ai';
 import { CreateIntentInput, Intent } from '../shared/types';
 
 export function registerIpcHandlers(): void {
@@ -17,5 +18,9 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('intent:delete', (_event, id: string) => {
     return deleteIntent(id);
+  });
+
+  ipcMain.handle('intent:parse', (_event, rawText: string) => {
+    return parseIntentWithAI(rawText);
   });
 }

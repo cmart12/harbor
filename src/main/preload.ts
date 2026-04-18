@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('intentAPI', {
   update: (id: string, updates: Record<string, unknown>) =>
     ipcRenderer.invoke('intent:update', id, updates),
   delete: (id: string) => ipcRenderer.invoke('intent:delete', id),
+  parse: (rawText: string) => ipcRenderer.invoke('intent:parse', rawText),
   hideWindow: () => ipcRenderer.send('window:hide'),
   onWindowShown: (callback: () => void) => {
     ipcRenderer.on('window:shown', callback);
