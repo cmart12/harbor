@@ -1,29 +1,18 @@
 import * as path from 'path';
-import * as fs from 'fs';
 import { app } from 'electron';
-import initSqlJs, { Database } from 'sql.js';
+import Database from 'better-sqlite3';
 import { v4 as uuidv4 } from 'uuid';
 import { Intent, CreateIntentInput } from '../shared/types';
 
-let db: Database;
+let db: Database.Database;
 
 const DB_PATH = path.join(app.getPath('userData'), 'intents.db');
 
-export async function initDatabase(): Promise<void> {
-  const SQL = await initSqlJs();
+export function initDatabase(): void {
+  db = new Database(DB_PATH);
+  db.pragma('journal_mode = WAL');
 
-  let fileBuffer: Buffer | undefined;
-  try {
-    if (fs.existsSync(DB_PATH)) {
-      fileBuffer = fs.readFileSync(DB_PATH);
-    }
-    db = fileBuffer ? new SQL.Database(fileBuffer) : new SQL.Database();
-  } catch (err) {
-    console.error('Failed to load database, creating fresh:', err);
-    db = new SQL.Database();
-  }
-
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS intents (
       id TEXT PRIMARY KEY,
       description TEXT NOT NULL,
@@ -34,18 +23,6 @@ export async function initDatabase(): Promise<void> {
       updated_at TEXT NOT NULL
     )
   `);
-
-  saveDatabase();
-}
-
-function saveDatabase(): void {
-  try {
-    const data = db.export();
-    const buffer = Buffer.from(data);
-    fs.writeFileSync(DB_PATH, buffer);
-  } catch (err) {
-    console.error('Failed to save database:', err);
-  }
 }
 
 export function createIntent(input: CreateIntentInput): Intent {
@@ -60,33 +37,19 @@ export function createIntent(input: CreateIntentInput): Intent {
     updated_at: now,
   };
 
-  db.run(
+  db.prepare(
     `INSERT INTO intents (id, description, client, due_at, status, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [intent.id, intent.description, intent.client, intent.due_at, intent.status, intent.created_at, intent.updated_at]
-  );
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(intent.id, intent.description, intent.client, intent.due_at, intent.status, intent.created_at, intent.updated_at);
 
-  saveDatabase();
   return intent;
 }
 
 export function listIntents(): Intent[] {
-  const results = db.exec(
+  return db.prepare(
     `SELECT id, description, client, due_at, status, created_at, updated_at
      FROM intents ORDER BY created_at DESC`
-  );
-
-  if (results.length === 0) return [];
-
-  return results[0].values.map((row) => ({
-    id: row[0] as string,
-    description: row[1] as string,
-    client: row[2] as string | null,
-    due_at: row[3] as string | null,
-    status: row[4] as Intent['status'],
-    created_at: row[5] as string,
-    updated_at: row[6] as string,
-  }));
+  ).all() as Intent[];
 }
 
 export function updateIntent(id: string, updates: Partial<Pick<Intent, 'description' | 'client' | 'due_at' | 'status'>>): Intent | null {
@@ -100,30 +63,14 @@ export function updateIntent(id: string, updates: Partial<Pick<Intent, 'descript
   if (updates.status !== undefined) { fields.push('status = ?'); values.push(updates.status); }
 
   values.push(id);
-  db.run(`UPDATE intents SET ${fields.join(', ')} WHERE id = ?`, values);
-  saveDatabase();
+  db.prepare(`UPDATE intents SET ${fields.join(', ')} WHERE id = ?`).run(...values);
 
-  const result = db.exec(`SELECT id, description, client, due_at, status, created_at, updated_at FROM intents WHERE id = ?`, [id]);
-  if (result.length === 0 || result[0].values.length === 0) return null;
-
-  const row = result[0].values[0];
-  return {
-    id: row[0] as string,
-    description: row[1] as string,
-    client: row[2] as string | null,
-    due_at: row[3] as string | null,
-    status: row[4] as Intent['status'],
-    created_at: row[5] as string,
-    updated_at: row[6] as string,
-  };
+  return db.prepare(
+    `SELECT id, description, client, due_at, status, created_at, updated_at FROM intents WHERE id = ?`
+  ).get(id) as Intent | undefined ?? null;
 }
 
 export function deleteIntent(id: string): boolean {
-  const before = db.exec(`SELECT COUNT(*) FROM intents WHERE id = ?`, [id]);
-  const count = before[0]?.values[0]?.[0] as number;
-  if (count === 0) return false;
-
-  db.run(`DELETE FROM intents WHERE id = ?`, [id]);
-  saveDatabase();
-  return true;
+  const result = db.prepare(`DELETE FROM intents WHERE id = ?`).run(id);
+  return result.changes > 0;
 }

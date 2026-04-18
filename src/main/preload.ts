@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('intentAPI', {
     ipcRenderer.invoke('intent:update', id, updates),
   delete: (id: string) => ipcRenderer.invoke('intent:delete', id),
   parse: (rawText: string) => ipcRenderer.invoke('intent:parse', rawText),
+  transcribe: (audioData: number[]) => ipcRenderer.invoke('voice:transcribe', audioData),
   hideWindow: () => ipcRenderer.send('window:hide'),
   onWindowShown: (callback: () => void) => {
     ipcRenderer.on('window:shown', callback);

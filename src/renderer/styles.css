@@ -112,6 +112,12 @@ input[type="text"]::placeholder {
   animation: pulse 1s ease infinite;
 }
 
+.icon-btn.transcribing {
+  background: rgba(99, 102, 241, 0.2);
+  border-color: rgba(99, 102, 241, 0.5);
+  animation: pulse 1s ease infinite;
+}
+
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.6; }

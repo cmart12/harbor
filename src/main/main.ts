@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { initDatabase } from './database';
 import { registerIpcHandlers } from './ipc';
+import { preloadModel } from './voice';
 
 let tray: Tray | null = null;
 let mainWindow: BrowserWindow | null = null;
@@ -143,10 +144,11 @@ app.whenReady().then(async () => {
     return allowed.includes(permission);
   });
 
-  await initDatabase();
+  initDatabase();
   registerIpcHandlers();
   createTray();
   mainWindow = createWindow();
+  preloadModel();
 
   const registered = globalShortcut.register('CommandOrControl+Shift+Space', toggleWindow);
   if (!registered) {

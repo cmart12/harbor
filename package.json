@@ -13,11 +13,15 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@huggingface/transformers": "^4.1.0",
+    "better-sqlite3": "^12.9.0",
     "electron": "^41.2.1",
-    "sql.js": "^1.14.1",
+    "onnxruntime-node": "^1.24.3",
     "uuid": "^13.0.0"
   },
   "devDependencies": {
+    "@electron/rebuild": "^4.0.3",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/uuid": "^10.0.0",
     "typescript": "^6.0.3"
   }

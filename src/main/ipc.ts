@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron';
 import { createIntent, listIntents, updateIntent, deleteIntent } from './database';
 import { parseIntentWithAI } from './ai';
+import { transcribeAudio } from './voice';
 import { CreateIntentInput, Intent } from '../shared/types';
 
 export function registerIpcHandlers(): void {
@@ -22,5 +23,10 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('intent:parse', (_event, rawText: string) => {
     return parseIntentWithAI(rawText);
+  });
+
+  ipcMain.handle('voice:transcribe', async (_event, audioData: number[]) => {
+    const float32 = new Float32Array(audioData);
+    return transcribeAudio(float32);
   });
 }

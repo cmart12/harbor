@@ -4,6 +4,7 @@ interface IntentAPI {
   update(id: string, updates: Record<string, unknown>): Promise<Intent>;
   delete(id: string): Promise<boolean>;
   parse(rawText: string): Promise<{ description: string; client: string | null; due_at: string | null }>;
+  transcribe(audioData: number[]): Promise<string>;
   hideWindow(): void;
   onWindowShown(callback: () => void): void;
 }
@@ -43,68 +44,90 @@ function hideStatus(): void {
   statusBar.classList.add('hidden');
 }
 
-// ── Voice Input (Web Speech API) ────────────────────────
-let recognition: any = null;
+// ── Voice Input (MediaRecorder → local Whisper) ─────────
+let mediaRecorder: MediaRecorder | null = null;
+let audioChunks: Blob[] = [];
 let isRecording = false;
+let audioStream: MediaStream | null = null;
 
-function initSpeechRecognition(): void {
-  const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-  if (!SpeechRecognition) {
-    voiceBtn.title = 'Speech recognition not available';
-    voiceBtn.style.opacity = '0.3';
-    return;
-  }
+async function startRecording(): Promise<void> {
+  try {
+    audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    mediaRecorder = new MediaRecorder(audioStream, { mimeType: 'audio/webm' });
+    audioChunks = [];
 
-  recognition = new SpeechRecognition();
-  recognition.continuous = false;
-  recognition.interimResults = true;
-  recognition.lang = 'en-US';
+    mediaRecorder.ondataavailable = (e) => {
+      if (e.data.size > 0) audioChunks.push(e.data);
+    };
 
-  recognition.onresult = (event: any) => {
-    let transcript = '';
-    for (let i = 0; i < event.results.length; i++) {
-      transcript += event.results[i][0].transcript;
-    }
-    descInput.value = transcript;
+    mediaRecorder.onstop = async () => {
+      // Clean up the stream
+      audioStream?.getTracks().forEach(t => t.stop());
+      audioStream = null;
 
-    if (event.results[event.results.length - 1].isFinal) {
-      stopRecording();
-      showStatus('Voice captured — press AI Capture or Capture');
-    }
-  };
+      if (audioChunks.length === 0) {
+        showStatus('No audio captured', true);
+        return;
+      }
 
-  recognition.onerror = (event: any) => {
-    console.error('Speech recognition error:', event.error);
-    stopRecording();
-    if (event.error === 'not-allowed') {
+      showStatus('🤖 Transcribing with Whisper...');
+      voiceBtn.classList.remove('recording');
+      voiceBtn.classList.add('transcribing');
+      voiceBtn.textContent = '⏳';
+
+      try {
+        const blob = new Blob(audioChunks, { type: 'audio/webm' });
+        const float32 = await blobToFloat32(blob);
+        const text = await intentAPI.transcribe(Array.from(float32));
+
+        if (text) {
+          descInput.value = text;
+          showStatus('✅ Voice captured — press AI Capture or Capture');
+        } else {
+          showStatus('No speech detected. Try again.', true);
+        }
+      } catch (err) {
+        console.error('Transcription failed:', err);
+        showStatus('Transcription failed', true);
+      } finally {
+        voiceBtn.classList.remove('transcribing');
+        voiceBtn.textContent = '🎤';
+      }
+    };
+
+    isRecording = true;
+    voiceBtn.classList.add('recording');
+    voiceBtn.textContent = '⏹';
+    descInput.value = '';
+    descInput.placeholder = 'Listening...';
+    showStatus('🎤 Recording... click mic to stop');
+    mediaRecorder.start();
+  } catch (err: any) {
+    console.error('Microphone error:', err);
+    if (err.name === 'NotAllowedError') {
       showStatus('Microphone access denied', true);
     } else {
-      showStatus(`Voice error: ${event.error}`, true);
+      showStatus(`Mic error: ${err.message}`, true);
     }
-  };
-
-  recognition.onend = () => {
-    if (isRecording) stopRecording();
-  };
-}
-
-function startRecording(): void {
-  if (!recognition) return;
-  isRecording = true;
-  voiceBtn.classList.add('recording');
-  voiceBtn.textContent = '⏹';
-  descInput.value = '';
-  descInput.placeholder = 'Listening...';
-  showStatus('🎤 Listening... speak your intent');
-  recognition.start();
+  }
 }
 
 function stopRecording(): void {
   isRecording = false;
-  voiceBtn.classList.remove('recording');
-  voiceBtn.textContent = '🎤';
   descInput.placeholder = 'What do you need to do?';
-  try { recognition?.stop(); } catch (_) {}
+  if (mediaRecorder && mediaRecorder.state === 'recording') {
+    mediaRecorder.stop();
+  }
+}
+
+// Convert audio Blob to Float32Array (mono 16kHz for Whisper)
+async function blobToFloat32(blob: Blob): Promise<Float32Array> {
+  const arrayBuffer = await blob.arrayBuffer();
+  const audioCtx = new AudioContext({ sampleRate: 16000 });
+  const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+  const channelData = audioBuffer.getChannelData(0); // mono
+  audioCtx.close();
+  return channelData;
 }
 
 voiceBtn.addEventListener('click', () => {
@@ -237,7 +260,6 @@ async function deleteIntent(id: string): Promise<void> {
 (window as any).deleteIntent = deleteIntent;
 
 // ── Init ────────────────────────────────────────────────
-initSpeechRecognition();
 descInput.focus();
 
 document.addEventListener('keydown', (e) => {
