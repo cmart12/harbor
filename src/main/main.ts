@@ -140,7 +140,10 @@ app.whenReady().then(async () => {
   createTray();
   mainWindow = createWindow();
 
-  globalShortcut.register('CommandOrControl+Shift+Space', toggleWindow);
+  const registered = globalShortcut.register('CommandOrControl+Shift+Space', toggleWindow);
+  if (!registered) {
+    console.warn('Failed to register Ctrl+Shift+Space — another process may be holding it');
+  }
 
   ipcMain.on('window:hide', () => {
     mainWindow?.hide();
