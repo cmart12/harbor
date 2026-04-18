@@ -36,7 +36,6 @@ async function getTranscriber(): Promise<AutomaticSpeechRecognitionPipeline> {
 export async function transcribeAudio(audioBuffer: Float32Array): Promise<string> {
   const asr = await getTranscriber();
   const result = await asr(audioBuffer, {
-    language: 'en',
     return_timestamps: false,
   });
 
