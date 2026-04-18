@@ -1,7 +1,7 @@
-import { execFile } from 'child_process';
+import { exec } from 'child_process';
 import { promisify } from 'util';
 
-const execFileAsync = promisify(execFile);
+const execAsync = promisify(exec);
 
 export interface ParsedIntent {
   description: string;
@@ -31,14 +31,15 @@ export async function parseIntentWithAI(rawText: string): Promise<ParsedIntent> 
   const fullPrompt = `${PARSE_PROMPT}\nInput: "${rawText}"`;
 
   try {
-    const { stdout } = await execFileAsync('copilot', [
-      '-p', fullPrompt,
-      '-s',
-      '--output-format', 'text',
-    ], {
-      timeout: 30000,
-      windowsHide: true,
-    });
+    // Use shell exec so PATH and .cmd wrappers resolve on Windows
+    const escaped = fullPrompt.replace(/"/g, '\\"');
+    const { stdout } = await execAsync(
+      `copilot -p "${escaped}" -s --output-format text`,
+      {
+        timeout: 30000,
+        windowsHide: true,
+      }
+    );
 
     const trimmed = stdout.trim();
 
