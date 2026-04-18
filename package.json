@@ -1,0 +1,24 @@
+{
+  "name": "intent",
+  "version": "1.0.0",
+  "description": "Quick intent capture from system tray",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "build": "tsc && node -e \"const fs=require('fs');const p=require('path');['index.html','styles.css'].forEach(f=>fs.copyFileSync(p.join('src','renderer',f),p.join('dist','renderer',f)))\"",
+    "start": "npm run build && electron .",
+    "dev": "npm run build && electron ."
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "electron": "^41.2.1",
+    "sql.js": "^1.14.1",
+    "uuid": "^13.0.0"
+  },
+  "devDependencies": {
+    "@types/uuid": "^10.0.0",
+    "typescript": "^6.0.3"
+  }
+}

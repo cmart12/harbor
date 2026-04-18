@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Intent</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>⚡ Intent</h1>
+      <span id="intent-count" class="badge">0</span>
+    </header>
+
+    <form id="capture-form">
+      <input
+        type="text"
+        id="description-input"
+        placeholder="What do you need to do?"
+        autocomplete="off"
+        autofocus
+      />
+      <div class="optional-fields" id="optional-fields">
+        <input
+          type="text"
+          id="client-input"
+          placeholder="Client (optional)"
+          autocomplete="off"
+        />
+        <input
+          type="text"
+          id="due-input"
+          placeholder="Due (e.g. tomorrow, Friday)"
+          autocomplete="off"
+        />
+      </div>
+      <button type="submit" id="capture-btn">Capture</button>
+    </form>
+
+    <div id="intent-list"></div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
