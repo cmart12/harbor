@@ -272,15 +272,24 @@ function launchInTerminal(cli: string, sessionId: string, cwd: string): number |
 }
 
 function launchWindows(cli: string, sessionId: string, cwd: string): number | null {
-  // Use cmd.exe directly so we get a trackable PID for window reactivation
-  const proc = spawn('cmd.exe', ['/k', `"${cli}" --resume=${sessionId}`], {
-    cwd,
-    detached: true,
-    stdio: 'ignore',
-    shell: false,
-  });
-  proc.unref();
-  return proc.pid || null;
+  // Use PowerShell Start-Process to create a visible cmd.exe window
+  // (spawn with detached:true from Electron creates hidden windows)
+  const copilotCmd = `"${cli}" --resume=${sessionId}`;
+  try {
+    const output = execSync(
+      `powershell -NoProfile -Command "$p = Start-Process cmd.exe -ArgumentList '/k ${copilotCmd.replace(/'/g, "''")}' -WorkingDirectory '${cwd.replace(/'/g, "''")}' -PassThru; $p.Id"`,
+      { windowsHide: true, timeout: 10000 }
+    ).toString().trim();
+
+    const pid = parseInt(output);
+    if (pid && !isNaN(pid)) {
+      console.log(`[session] Launched cmd.exe (PID ${pid}): ${sessionId}`);
+      return pid;
+    }
+  } catch (err) {
+    console.error('[session] Windows launch failed:', err);
+  }
+  return null;
 }
 
 function launchMac(cli: string, sessionId: string, cwd: string): number | null {
