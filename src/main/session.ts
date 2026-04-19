@@ -1,4 +1,5 @@
-import { spawn } from 'child_process';
+import { spawn, execSync } from 'child_process';
+import * as path from 'path';
 import * as fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import { getIntent, setIntentSessionId } from './database';
@@ -15,43 +16,44 @@ export interface LaunchResult {
   sessionId?: string;
 }
 
+/** Find the copilot CLI by checking known locations and PATH */
+function findCopilotCli(): string | null {
+  // On Windows, check common npm global install locations
+  if (process.platform === 'win32') {
+    const candidates = [
+      path.join(process.env.APPDATA || '', 'npm', 'copilot.cmd'),
+      path.join(process.env.LOCALAPPDATA || '', 'npm', 'copilot.cmd'),
+    ];
+    for (const p of candidates) {
+      if (fs.existsSync(p)) return p;
+    }
+  }
+
+  // Try `where` (Windows) or `which` (Unix) to find it in PATH
+  try {
+    const cmd = process.platform === 'win32' ? 'where.exe copilot' : 'which copilot';
+    const result = execSync(cmd, { windowsHide: true, timeout: 5000 }).toString().trim();
+    const firstLine = result.split(/\r?\n/)[0];
+    if (firstLine && fs.existsSync(firstLine)) return firstLine;
+  } catch {
+    // Not found via where/which
+  }
+
+  return null;
+}
+
 /** Probe for copilot CLI availability (cached after first check) */
 export async function checkCopilotCli(): Promise<string | null> {
   if (copilotChecked) return copilotPath;
   copilotChecked = true;
 
-  return new Promise((resolve) => {
-    const proc = spawn('copilot', ['--version'], {
-      shell: true,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true,
-    });
-
-    let stdout = '';
-    proc.stdout.on('data', (d: Buffer) => { stdout += d.toString(); });
-
-    proc.on('close', (code) => {
-      if (code === 0 && stdout.trim()) {
-        copilotPath = 'copilot';
-        console.log(`[session] Copilot CLI found: ${stdout.trim()}`);
-        resolve(copilotPath);
-      } else {
-        console.warn('[session] Copilot CLI not found in PATH');
-        resolve(null);
-      }
-    });
-
-    proc.on('error', () => {
-      console.warn('[session] Copilot CLI not found in PATH');
-      resolve(null);
-    });
-
-    // Timeout after 5 seconds
-    setTimeout(() => {
-      proc.kill();
-      resolve(null);
-    }, 5000);
-  });
+  copilotPath = findCopilotCli();
+  if (copilotPath) {
+    console.log(`[session] Copilot CLI found at: ${copilotPath}`);
+  } else {
+    console.warn('[session] Copilot CLI not found');
+  }
+  return copilotPath;
 }
 
 /** Launch a Copilot CLI session for an intent */
@@ -69,7 +71,7 @@ export async function launchSession(intentId: string, workspaceRoot: string): Pr
   // Check CLI availability
   const cli = await checkCopilotCli();
   if (!cli) {
-    return { success: false, error: 'Copilot CLI not found. Install it with: npm install -g @anthropic-ai/copilot' };
+    return { success: false, error: 'Copilot CLI not found. Install it with: npm install -g @githubnext/github-copilot-cli' };
   }
 
   launching.add(intentId);
@@ -121,6 +123,8 @@ function launchWindows(cli: string, sessionId: string, cwd: string): boolean {
 
   // Try Windows Terminal first, fall back to cmd
   try {
+    // Check if wt.exe is available
+    execSync('where.exe wt.exe', { windowsHide: true, timeout: 3000 });
     spawn('wt.exe', ['new-tab', '-d', cwd, cli, copilotArgs], {
       detached: true,
       stdio: 'ignore',
@@ -132,8 +136,8 @@ function launchWindows(cli: string, sessionId: string, cwd: string): boolean {
     // Windows Terminal not available, fall back
   }
 
-  // Fallback: cmd.exe with start
-  spawn('cmd.exe', ['/c', 'start', '""', '/D', cwd, 'cmd.exe', '/k', `${cli} ${copilotArgs}`], {
+  // Fallback: cmd.exe — use shell:true so .cmd files resolve properly
+  spawn('cmd.exe', ['/c', 'start', '""', '/D', cwd, 'cmd.exe', '/k', `"${cli}" ${copilotArgs}`], {
     detached: true,
     stdio: 'ignore',
     shell: false,
