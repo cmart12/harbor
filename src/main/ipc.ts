@@ -2,7 +2,7 @@ import { ipcMain, BrowserWindow, dialog } from 'electron';
 import * as fs from 'fs';
 import { createIntent, listIntents, updateIntent, updateIntentCAS, deleteIntent, getIntent, logIntentEvent, getSetting, setSetting } from './database';
 import { parseIntentWithAI, evaluateRecurrence, findSimilarIntent, setAIModel, listAvailableModels } from './ai';
-import { launchSession } from './session';
+import { launchSession, getActiveSessionIntentIds } from './session';
 import { transcribeAudio } from './voice';
 import { CreateIntentInput, Intent, RecurrenceResult } from '../shared/types';
 
@@ -205,6 +205,11 @@ export function registerIpcHandlers(): void {
       return { success: false, error: 'no_workspace' };
     }
     return launchSession(intentId, workspace);
+  });
+
+  // Query which intents have active running terminal processes
+  ipcMain.handle('session:active-intents', () => {
+    return getActiveSessionIntentIds();
   });
 
   // Workspace directory picker

@@ -7,6 +7,13 @@ import { getIntent, setIntentSessionId } from './database';
 // Per-intent launch lock to prevent duplicate terminals
 const launching = new Set<string>();
 
+// Track running terminal processes: intentId → session info
+interface TrackedSession {
+  pid: number | null;
+  sessionId: string;
+}
+const runningProcesses = new Map<string, TrackedSession>();
+
 let copilotPath: string | null = null;
 let copilotChecked = false;
 
@@ -16,9 +23,9 @@ export interface LaunchResult {
   sessionId?: string;
 }
 
-/** Find the copilot CLI by checking known locations and PATH */
+// ── CLI discovery ───────────────────────────────────────
+
 function findCopilotCli(): string | null {
-  // On Windows, check common npm global install locations
   if (process.platform === 'win32') {
     const candidates = [
       path.join(process.env.APPDATA || '', 'npm', 'copilot.cmd'),
@@ -29,20 +36,32 @@ function findCopilotCli(): string | null {
     }
   }
 
-  // Try `where` (Windows) or `which` (Unix) to find it in PATH
+  // macOS/Linux: check common paths
+  if (process.platform !== 'win32') {
+    const home = process.env.HOME || '';
+    const candidates = [
+      '/usr/local/bin/copilot',
+      '/opt/homebrew/bin/copilot',
+      path.join(home, '.npm-global', 'bin', 'copilot'),
+      path.join(home, '.nvm', 'current', 'bin', 'copilot'),
+    ];
+    for (const p of candidates) {
+      if (fs.existsSync(p)) return p;
+    }
+  }
+
   try {
     const cmd = process.platform === 'win32' ? 'where.exe copilot' : 'which copilot';
-    const result = execSync(cmd, { windowsHide: true, timeout: 5000 }).toString().trim();
+    const result = execSync(cmd, { windowsHide: true, timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
     const firstLine = result.split(/\r?\n/)[0];
     if (firstLine && fs.existsSync(firstLine)) return firstLine;
   } catch {
-    // Not found via where/which
+    // Not found
   }
 
   return null;
 }
 
-/** Probe for copilot CLI availability (cached after first check) */
 export async function checkCopilotCli(): Promise<string | null> {
   if (copilotChecked) return copilotPath;
   copilotChecked = true;
@@ -56,8 +75,143 @@ export async function checkCopilotCli(): Promise<string | null> {
   return copilotPath;
 }
 
-/** Launch a Copilot CLI session for an intent */
+// ── Process tracking ────────────────────────────────────
+
+/** Check if a process is still running by PID */
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Check if a copilot session is running by searching for its resume arg */
+function isSessionProcessRunning(sessionId: string): boolean {
+  try {
+    if (process.platform === 'win32') {
+      const result = execSync(
+        `wmic process where "CommandLine like '%--resume=${sessionId}%'" get ProcessId /format:list`,
+        { windowsHide: true, timeout: 3000, stdio: ['ignore', 'pipe', 'ignore'] }
+      ).toString();
+      return result.includes('ProcessId=');
+    } else {
+      execSync(`pgrep -f "resume=${sessionId}"`, { timeout: 3000, stdio: ['ignore', 'pipe', 'ignore'] });
+      return true;
+    }
+  } catch {
+    return false;
+  }
+}
+
+/** Check if a tracked session is still running */
+function isTrackedSessionAlive(tracked: TrackedSession): boolean {
+  if (tracked.pid && isProcessAlive(tracked.pid)) return true;
+  return isSessionProcessRunning(tracked.sessionId);
+}
+
+/** Get intent IDs that have active running terminal processes */
+export function getActiveSessionIntentIds(): string[] {
+  const active: string[] = [];
+  for (const [intentId, tracked] of runningProcesses) {
+    if (isTrackedSessionAlive(tracked)) {
+      active.push(intentId);
+    } else {
+      runningProcesses.delete(intentId);
+    }
+  }
+  return active;
+}
+
+// ── Window focus (platform-specific) ────────────────────
+
+function focusWindow(tracked: TrackedSession): boolean {
+  try {
+    if (process.platform === 'win32') {
+      return focusWindowWindows(tracked);
+    } else if (process.platform === 'darwin') {
+      return focusWindowMac(tracked);
+    } else {
+      return focusWindowLinux(tracked);
+    }
+  } catch {
+    return false;
+  }
+}
+
+function focusWindowWindows(tracked: TrackedSession): boolean {
+  if (!tracked.pid) return false;
+  try {
+    const result = execSync(
+      `powershell -NoProfile -Command "(New-Object -ComObject WScript.Shell).AppActivate(${tracked.pid})"`,
+      { windowsHide: true, timeout: 3000 }
+    ).toString().trim();
+    return result === 'True';
+  } catch {
+    return false;
+  }
+}
+
+function focusWindowMac(tracked: TrackedSession): boolean {
+  // Use AppleScript to find and activate the Terminal window running this session
+  const script = `
+    tell application "Terminal"
+      set found to false
+      repeat with w in windows
+        if name of w contains "${tracked.sessionId}" or name of w contains "copilot" then
+          set index of w to 1
+          set found to true
+          exit repeat
+        end if
+      end repeat
+      if found then
+        activate
+        return "True"
+      else
+        -- Fallback: just activate Terminal if the session process is running
+        activate
+        return "Fallback"
+      end if
+    end tell`;
+  try {
+    const result = execSync(`osascript -e '${script}'`, { timeout: 5000 }).toString().trim();
+    return result === 'True' || result === 'Fallback';
+  } catch {
+    return false;
+  }
+}
+
+function focusWindowLinux(tracked: TrackedSession): boolean {
+  // Try xdotool first (most common), then wmctrl
+  try {
+    execSync(`xdotool search --pid ${tracked.pid} windowactivate`, { timeout: 3000, stdio: 'ignore' });
+    return true;
+  } catch { /* xdotool failed or not installed */ }
+
+  try {
+    execSync(`wmctrl -ia $(wmctrl -lp | grep ${tracked.pid} | head -1 | awk '{print $1}')`, { timeout: 3000, stdio: 'ignore' });
+    return true;
+  } catch { /* wmctrl failed or not installed */ }
+
+  return false;
+}
+
+// ── Launch / reactivate ─────────────────────────────────
+
 export async function launchSession(intentId: string, workspaceRoot: string): Promise<LaunchResult> {
+  // Check if there's already a running process — bring it to foreground
+  const existing = runningProcesses.get(intentId);
+  if (existing && isTrackedSessionAlive(existing)) {
+    const focused = focusWindow(existing);
+    if (focused) {
+      console.log(`[session] Reactivated existing terminal for ${intentId}`);
+      return { success: true, sessionId: existing.sessionId };
+    }
+    // Process alive but couldn't focus — clear and relaunch
+    runningProcesses.delete(intentId);
+  }
+
   // Launch lock
   if (launching.has(intentId)) {
     return { success: false, error: 'Session is already launching' };
@@ -68,10 +222,9 @@ export async function launchSession(intentId: string, workspaceRoot: string): Pr
     return { success: false, error: 'Workspace directory does not exist' };
   }
 
-  // Check CLI availability
   const cli = await checkCopilotCli();
   if (!cli) {
-    return { success: false, error: 'Copilot CLI not found. Install it with: npm install -g @githubnext/github-copilot-cli' };
+    return { success: false, error: 'Copilot CLI not found. Ensure it is installed and in your PATH.' };
   }
 
   launching.add(intentId);
@@ -82,28 +235,28 @@ export async function launchSession(intentId: string, workspaceRoot: string): Pr
       return { success: false, error: 'Intent not found' };
     }
 
-    // Get or create session ID
     let sessionId = intent.session_id;
     if (!sessionId) {
       sessionId = uuidv4();
       setIntentSessionId(intentId, sessionId);
     }
 
-    // Launch in terminal
-    const launched = launchInTerminal(cli, sessionId, workspaceRoot);
-    if (!launched) {
+    const pid = launchInTerminal(cli, sessionId, workspaceRoot);
+    if (pid === null) {
       return { success: false, error: 'Failed to open terminal' };
     }
 
+    runningProcesses.set(intentId, { pid, sessionId });
+    console.log(`[session] Launched terminal for ${intentId} (PID ${pid || 'unknown'})`);
     return { success: true, sessionId };
   } finally {
-    // Release lock after a brief delay to prevent rapid double-clicks
     setTimeout(() => launching.delete(intentId), 2000);
   }
 }
 
-/** Platform-specific terminal launch */
-function launchInTerminal(cli: string, sessionId: string, cwd: string): boolean {
+// ── Platform-specific terminal launch ───────────────────
+
+function launchInTerminal(cli: string, sessionId: string, cwd: string): number | null {
   try {
     if (process.platform === 'win32') {
       return launchWindows(cli, sessionId, cwd);
@@ -114,66 +267,97 @@ function launchInTerminal(cli: string, sessionId: string, cwd: string): boolean 
     }
   } catch (err) {
     console.error('[session] Terminal launch failed:', err);
-    return false;
+    return null;
   }
 }
 
-function launchWindows(cli: string, sessionId: string, cwd: string): boolean {
-  const copilotArgs = `--resume=${sessionId}`;
-
-  // Try Windows Terminal first, fall back to cmd
-  try {
-    // Check if wt.exe is available
-    execSync('where.exe wt.exe', { windowsHide: true, timeout: 3000 });
-    spawn('wt.exe', ['new-tab', '-d', cwd, cli, copilotArgs], {
-      detached: true,
-      stdio: 'ignore',
-      shell: false,
-    }).unref();
-    console.log(`[session] Launched in Windows Terminal: ${sessionId}`);
-    return true;
-  } catch {
-    // Windows Terminal not available, fall back
-  }
-
-  // Fallback: cmd.exe — use shell:true so .cmd files resolve properly
-  spawn('cmd.exe', ['/c', 'start', '""', '/D', cwd, 'cmd.exe', '/k', `"${cli}" ${copilotArgs}`], {
+function launchWindows(cli: string, sessionId: string, cwd: string): number | null {
+  // Use cmd.exe directly so we get a trackable PID for window reactivation
+  const proc = spawn('cmd.exe', ['/k', `"${cli}" --resume=${sessionId}`], {
+    cwd,
     detached: true,
     stdio: 'ignore',
     shell: false,
-  }).unref();
-  console.log(`[session] Launched in cmd.exe: ${sessionId}`);
-  return true;
+  });
+  proc.unref();
+  return proc.pid || null;
 }
 
-function launchMac(cli: string, sessionId: string, cwd: string): boolean {
-  const cmd = `cd ${shellEscape(cwd)} && ${cli} --resume=${sessionId}`;
-  spawn('open', ['-a', 'Terminal', '--args', '-e', cmd], {
-    detached: true,
-    stdio: 'ignore',
-  }).unref();
-  console.log(`[session] Launched in Terminal.app: ${sessionId}`);
-  return true;
-}
+function launchMac(cli: string, sessionId: string, cwd: string): number | null {
+  // Use AppleScript to open a new Terminal window with the command
+  // This gives us a proper Terminal.app window that we can find later
+  const escapedCwd = cwd.replace(/'/g, "'\\''");
+  const escapedCli = cli.replace(/'/g, "'\\''");
+  const script = `tell application "Terminal"
+    do script "cd '${escapedCwd}' && '${escapedCli}' --resume=${sessionId}"
+    activate
+  end tell`;
 
-function launchLinux(cli: string, sessionId: string, cwd: string): boolean {
-  // Try common terminal emulators
-  const terminals = ['x-terminal-emulator', 'gnome-terminal', 'konsole', 'xterm'];
-  const cmd = `cd ${shellEscape(cwd)} && ${cli} --resume=${sessionId}`;
+  try {
+    execSync(`osascript -e '${script}'`, { timeout: 10000 });
+  } catch (err) {
+    console.error('[session] macOS launch failed:', err);
+    return null;
+  }
 
-  for (const term of terminals) {
+  // Find the copilot process PID (slight delay for process to start)
+  setTimeout(() => {
     try {
-      spawn(term, ['-e', `bash -c ${shellEscape(cmd)}`], {
+      const pid = parseInt(
+        execSync(`pgrep -nf "resume=${sessionId}"`, { timeout: 3000 }).toString().trim()
+      );
+      if (pid) {
+        // Update the tracked session with the real PID
+        for (const [intentId, tracked] of runningProcesses) {
+          if (tracked.sessionId === sessionId) {
+            tracked.pid = pid;
+            break;
+          }
+        }
+      }
+    } catch { /* process may not have started yet */ }
+  }, 2000);
+
+  // Return 0 as placeholder — the real PID is updated async above
+  return 0;
+}
+
+function launchLinux(cli: string, sessionId: string, cwd: string): number | null {
+  const escapedCwd = shellEscape(cwd);
+  const escapedCli = shellEscape(cli);
+  const command = `cd ${escapedCwd} && ${escapedCli} --resume=${sessionId}`;
+
+  // Try terminal emulators in preference order
+  const launchers: Array<{ cmd: string; args: string[] }> = [
+    { cmd: 'gnome-terminal', args: ['--', 'bash', '-c', command] },
+    { cmd: 'konsole', args: ['-e', 'bash', '-c', command] },
+    { cmd: 'xfce4-terminal', args: ['-e', `bash -c ${shellEscape(command)}`] },
+    { cmd: 'x-terminal-emulator', args: ['-e', `bash -c ${shellEscape(command)}`] },
+    { cmd: 'xterm', args: ['-e', `bash -c ${shellEscape(command)}`] },
+  ];
+
+  for (const launcher of launchers) {
+    try {
+      // Check if terminal exists
+      execSync(`which ${launcher.cmd}`, { timeout: 2000, stdio: 'ignore' });
+
+      const proc = spawn(launcher.cmd, launcher.args, {
         detached: true,
         stdio: 'ignore',
-      }).unref();
-      console.log(`[session] Launched in ${term}: ${sessionId}`);
-      return true;
+      });
+      proc.unref();
+
+      if (proc.pid) {
+        console.log(`[session] Launched ${launcher.cmd} (PID ${proc.pid}): ${sessionId}`);
+        return proc.pid;
+      }
     } catch {
       continue;
     }
   }
-  return false;
+
+  console.error('[session] No terminal emulator found on Linux');
+  return null;
 }
 
 function shellEscape(s: string): string {

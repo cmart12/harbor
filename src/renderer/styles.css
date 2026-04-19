@@ -438,12 +438,28 @@ input[type="text"]#description-input.transcribing {
 /* ── Session badge ────────────────────────────────────── */
 
 .session-badge {
-  color: #6366f1;
-  font-size: 6px;
+  color: rgba(0, 0, 0, 0.3);
+  font-size: 10px;
   display: flex;
   align-items: center;
   gap: 3px;
-  font-size: 10px;
+}
+
+.session-badge.running {
+  color: #16a34a;
+  font-weight: 500;
+}
+
+/* ── Launch button running state ─────────────────────── */
+
+.intent-launch.is-running {
+  opacity: 1;
+  color: #16a34a;
+}
+
+.intent-launch.is-running:hover {
+  color: #15803d;
+  background: rgba(22, 163, 74, 0.08);
 }
 
 /* ── Workspace setting ────────────────────────────────── */

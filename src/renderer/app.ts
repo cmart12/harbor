@@ -23,6 +23,7 @@ interface IntentAPI {
   setSetting(key: string, value: string): Promise<void>;
   listModels(): Promise<{ id: string; name?: string }[]>;
   launchSession(intentId: string): Promise<{ success: boolean; error?: string; sessionId?: string }>;
+  getActiveSessions(): Promise<string[]>;
   selectWorkspace(): Promise<{ selected: boolean; path: string | null }>;
   hideWindow(): void;
   onWindowShown(callback: () => void): void;
@@ -62,6 +63,8 @@ const recordingIndicator = document.getElementById('recording-indicator') as HTM
 let intents: Intent[] = [];
 // Track intents being processed by LLM
 const processingIntents = new Set<string>();
+// Track intents with active running terminal sessions
+let activeSessionIntents = new Set<string>();
 
 // ── Status bar helpers ──────────────────────────────────
 function showStatus(msg: string, isError = false): void {
@@ -341,6 +344,7 @@ async function animateRefinement(intentId: string): Promise<void> {
 // ── Intent CRUD ─────────────────────────────────────────
 async function loadIntents(): Promise<void> {
   intents = await intentAPI.list();
+  activeSessionIntents = new Set(await intentAPI.getActiveSessions());
   render();
 }
 
@@ -363,6 +367,7 @@ function render(): void {
   listEl.innerHTML = [...active, ...done].map(intent => {
     const isProcessing = processingIntents.has(intent.id);
     const isRecurring = !!intent.recurrence;
+    const isRunning = activeSessionIntents.has(intent.id);
     const dueInfo = formatDueDate(intent.due_at_utc, intent.due_at);
     const hasDue = dueInfo.text !== '';
 
@@ -376,13 +381,13 @@ function render(): void {
           ${intent.client ? `<span>👤 ${escapeHtml(intent.client)}</span>` : ''}
           ${hasDue ? `<span class="due-badge ${dueInfo.overdue ? 'overdue' : ''}">📅 ${escapeHtml(dueInfo.text)}</span>` : ''}
           ${isRecurring ? '<span class="recurring-badge">↻</span>' : ''}
-          ${intent.session_id ? '<span class="session-badge">⬤ session</span>' : ''}
+          ${isRunning ? '<span class="session-badge running">● running</span>' : intent.session_id ? '<span class="session-badge">○ session</span>' : ''}
           ${isProcessing ? '<span class="processing-badge">refining...</span>' : ''}
           <span>${timeAgo(intent.updated_at)}</span>
         </div>
         <div class="recall-hint hidden" data-recall-for="${intent.id}"></div>
       </div>
-      <button class="intent-launch ${intent.session_id ? 'has-session' : ''}" onclick="launchSession('${intent.id}')" title="${intent.session_id ? 'Resume session' : 'Start session'}">▶</button>
+      <button class="intent-launch ${intent.session_id ? 'has-session' : ''} ${isRunning ? 'is-running' : ''}" onclick="launchSession('${intent.id}')" title="${isRunning ? 'Switch to session' : intent.session_id ? 'Resume session' : 'Start session'}">▶</button>
       <button class="intent-delete" onclick="deleteIntent('${intent.id}')">✕</button>
     </div>
   `;
@@ -603,6 +608,8 @@ intentAPI.onWindowShown(() => {
   descInput.focus();
   descInput.select();
   hideStatus();
+  // Refresh active session state when window reappears
+  loadIntents();
 });
 
 loadIntents();
