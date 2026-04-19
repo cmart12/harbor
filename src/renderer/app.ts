@@ -56,9 +56,13 @@ const listEl = document.getElementById('intent-list') as HTMLDivElement;
 const countEl = document.getElementById('intent-count') as HTMLSpanElement;
 const statusBar = document.getElementById('status-bar') as HTMLDivElement;
 const settingsBtn = document.getElementById('settings-btn') as HTMLButtonElement;
-const settingsPanel = document.getElementById('settings-panel') as HTMLDivElement;
+const settingsView = document.getElementById('settings-view') as HTMLDivElement;
+const settingsBack = document.getElementById('settings-back') as HTMLButtonElement;
+const mainView = document.getElementById('main-view') as HTMLDivElement;
 const modelSelect = document.getElementById('model-select') as HTMLSelectElement;
 const recordingIndicator = document.getElementById('recording-indicator') as HTMLDivElement;
+const themeLightBtn = document.getElementById('theme-light') as HTMLButtonElement;
+const themeDarkBtn = document.getElementById('theme-dark') as HTMLButtonElement;
 
 let intents: Intent[] = [];
 // Track intents being processed by LLM
@@ -77,14 +81,25 @@ function hideStatus(): void {
   statusBar.classList.add('hidden');
 }
 
-// ── Settings ────────────────────────────────────────────
-settingsBtn.addEventListener('click', () => {
-  settingsPanel.classList.toggle('hidden');
-  settingsBtn.classList.toggle('active');
-  if (!settingsPanel.classList.contains('hidden')) {
-    loadModels();
-  }
-});
+// ── Settings view ───────────────────────────────────────
+function showSettings(): void {
+  mainView.classList.add('hidden');
+  settingsView.classList.remove('hidden');
+  settingsBtn.classList.add('active');
+  loadModels();
+  loadWorkspaceSetting();
+  loadThemeSetting();
+}
+
+function hideSettings(): void {
+  settingsView.classList.add('hidden');
+  mainView.classList.remove('hidden');
+  settingsBtn.classList.remove('active');
+  descInput.focus();
+}
+
+settingsBtn.addEventListener('click', showSettings);
+settingsBack.addEventListener('click', hideSettings);
 
 modelSelect.addEventListener('change', async () => {
   const model = modelSelect.value;
@@ -124,7 +139,36 @@ async function loadModels(): Promise<void> {
 }
 
 async function loadSettings(): Promise<void> {
-  // Settings are loaded on-demand when panel opens
+  // Apply saved theme on startup
+  const theme = await intentAPI.getSetting('theme');
+  applyTheme(theme || 'light');
+}
+
+// ── Theme ───────────────────────────────────────────────
+function applyTheme(theme: string): void {
+  document.body.classList.toggle('dark', theme === 'dark');
+  themeLightBtn.classList.toggle('active', theme !== 'dark');
+  themeDarkBtn.classList.toggle('active', theme === 'dark');
+}
+
+async function loadThemeSetting(): Promise<void> {
+  const theme = await intentAPI.getSetting('theme');
+  applyTheme(theme || 'light');
+}
+
+themeLightBtn.addEventListener('click', async () => {
+  await intentAPI.setSetting('theme', 'light');
+  applyTheme('light');
+});
+
+themeDarkBtn.addEventListener('click', async () => {
+  await intentAPI.setSetting('theme', 'dark');
+  applyTheme('dark');
+});
+
+async function loadWorkspaceSetting(): Promise<void> {
+  const ws = await intentAPI.getSetting('workspace_root');
+  updateWorkspaceDisplay(ws);
 }
 
 // ── Voice Input (spacebar-triggered) ────────────────────
@@ -555,17 +599,6 @@ workspaceBtn.addEventListener('click', async () => {
   const result = await intentAPI.selectWorkspace();
   if (result.selected) {
     updateWorkspaceDisplay(result.path);
-    showStatus('✓ Workspace set');
-    setTimeout(hideStatus, 2000);
-  }
-});
-
-// Load workspace on settings panel open
-const origSettingsClick = settingsBtn.onclick;
-settingsBtn.addEventListener('click', async () => {
-  if (!settingsPanel.classList.contains('hidden')) {
-    const ws = await intentAPI.getSetting('workspace_root');
-    updateWorkspaceDisplay(ws);
   }
 });
 
@@ -594,10 +627,8 @@ loadSettings();
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (isRecording) stopRecording();
-    if (!settingsPanel.classList.contains('hidden')) {
-      settingsPanel.classList.add('hidden');
-      settingsBtn.classList.remove('active');
-      descInput.focus();
+    if (!settingsView.classList.contains('hidden')) {
+      hideSettings();
       return;
     }
     intentAPI.hideWindow();

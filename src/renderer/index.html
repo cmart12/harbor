@@ -8,47 +8,76 @@
 </head>
 <body>
   <div id="app">
-    <header>
-      <h1>⚡ Intent</h1>
-      <div class="header-actions">
-        <span id="intent-count" class="badge">0</span>
-        <button id="settings-btn" class="header-icon-btn" title="Settings">⚙</button>
-      </div>
-    </header>
+    <!-- Main view -->
+    <div id="main-view">
+      <header>
+        <h1>⚡ Intent</h1>
+        <div class="header-actions">
+          <span id="intent-count" class="badge">0</span>
+          <button id="settings-btn" class="header-icon-btn" title="Settings">⚙</button>
+        </div>
+      </header>
 
-    <div id="settings-panel" class="settings-panel hidden">
-      <div class="settings-row">
-        <label for="model-select">Model</label>
-        <select id="model-select">
-          <option value="">Loading models...</option>
-        </select>
-      </div>
-      <div class="settings-row">
-        <label>Workspace</label>
-        <div class="workspace-display">
-          <span id="workspace-path" class="workspace-path">Not set</span>
-          <button id="workspace-btn" class="workspace-btn">Change</button>
+      <form id="capture-form">
+        <div class="input-wrapper">
+          <input
+            type="text"
+            id="description-input"
+            placeholder="Type or press space to speak..."
+            autocomplete="off"
+            autofocus
+          />
+          <div id="recording-indicator" class="recording-indicator hidden">
+            <span class="rec-dot"></span>
+          </div>
+        </div>
+        <div id="status-bar" class="status-bar hidden"></div>
+      </form>
+
+      <div id="intent-list"></div>
+    </div>
+
+    <!-- Settings view -->
+    <div id="settings-view" class="settings-view hidden">
+      <header>
+        <button id="settings-back" class="header-icon-btn" title="Back">←</button>
+        <h1>Settings</h1>
+        <div class="header-actions"></div>
+      </header>
+
+      <div class="settings-content">
+        <div class="settings-group">
+          <div class="settings-group-title">Appearance</div>
+          <div class="settings-row">
+            <label>Theme</label>
+            <div class="theme-toggle">
+              <button id="theme-light" class="theme-btn active" title="Light">☀️</button>
+              <button id="theme-dark" class="theme-btn" title="Dark">🌙</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-group">
+          <div class="settings-group-title">AI Model</div>
+          <div class="settings-row">
+            <select id="model-select">
+              <option value="">Loading models...</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="settings-group">
+          <div class="settings-group-title">Workspace</div>
+          <div class="settings-row">
+            <div class="workspace-display">
+              <span id="workspace-path" class="workspace-path">Not set</span>
+              <button id="workspace-btn" class="workspace-btn">Change</button>
+            </div>
+          </div>
+          <div class="settings-hint">The working directory for Copilot CLI sessions.</div>
         </div>
       </div>
     </div>
-
-    <form id="capture-form">
-      <div class="input-wrapper">
-        <input
-          type="text"
-          id="description-input"
-          placeholder="Type or press space to speak..."
-          autocomplete="off"
-          autofocus
-        />
-        <div id="recording-indicator" class="recording-indicator hidden">
-          <span class="rec-dot"></span>
-        </div>
-      </div>
-      <div id="status-bar" class="status-bar hidden"></div>
-    </form>
-
-    <div id="intent-list"></div>
   </div>
 
   <script src="app.js"></script>
