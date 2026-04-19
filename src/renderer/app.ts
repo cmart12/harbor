@@ -24,6 +24,7 @@ interface IntentAPI {
   listModels(): Promise<{ id: string; name?: string }[]>;
   listEvents(limit?: number): Promise<any[]>;
   resolveDate(dateText: string): Promise<{ due_at: string; due_at_utc: string | null }>;
+  classifyInput(text: string): Promise<{ type: 'intent' | 'query'; query_answer?: string }>;
   launchSession(intentId: string): Promise<{ success: boolean; error?: string; sessionId?: string }>;
   getActiveSessions(): Promise<string[]>;
   selectWorkspace(): Promise<{ selected: boolean; path: string | null }>;
@@ -75,6 +76,10 @@ let intents: Intent[] = [];
 const processingIntents = new Set<string>();
 // Track intents with active running terminal sessions
 let activeSessionIntents = new Set<string>();
+// Current filter
+let currentFilter: 'all' | 'scheduled' | 'unscheduled' | 'past' = 'all';
+const filterBar = document.getElementById('filter-bar') as HTMLDivElement;
+const queryResult = document.getElementById('query-result') as HTMLDivElement;
 
 // ── Status bar helpers ──────────────────────────────────
 function showStatus(msg: string, isError = false): void {
@@ -86,6 +91,19 @@ function showStatus(msg: string, isError = false): void {
 function hideStatus(): void {
   statusBar.classList.add('hidden');
 }
+
+// ── Filter bar ──────────────────────────────────────────
+filterBar.addEventListener('click', (e) => {
+  const btn = (e.target as HTMLElement).closest('.filter-btn') as HTMLElement;
+  if (!btn) return;
+  const filter = btn.dataset.filter as typeof currentFilter;
+  if (filter === currentFilter) return;
+
+  currentFilter = filter;
+  filterBar.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  render();
+});
 
 // ── Settings view ───────────────────────────────────────
 function showSettings(): void {
@@ -399,22 +417,43 @@ async function loadIntents(): Promise<void> {
 }
 
 function render(): void {
-  const active = intents.filter(i => i.status !== 'done');
-  const done = intents.filter(i => i.status === 'done');
+  // Apply filter
+  let filtered: Intent[];
+  switch (currentFilter) {
+    case 'scheduled':
+      filtered = intents.filter(i => i.status !== 'done' && (i.due_at_utc || i.due_at));
+      break;
+    case 'unscheduled':
+      filtered = intents.filter(i => i.status !== 'done' && !i.due_at_utc && !i.due_at);
+      break;
+    case 'past':
+      filtered = intents.filter(i => i.status === 'done');
+      break;
+    default: // 'all'
+      filtered = intents;
+  }
 
-  countEl.textContent = String(active.length);
+  const active = filtered.filter(i => i.status !== 'done');
+  const done = filtered.filter(i => i.status === 'done');
+  const displayList = currentFilter === 'past' ? done : [...active, ...done];
 
-  if (intents.length === 0) {
+  countEl.textContent = String(intents.filter(i => i.status !== 'done').length);
+
+  if (filtered.length === 0) {
+    const emptyMsg = currentFilter === 'all' ? 'No intents yet. Type or speak one above.' :
+                     currentFilter === 'scheduled' ? 'No scheduled intents.' :
+                     currentFilter === 'unscheduled' ? 'No open intents without a date.' :
+                     'No past intents.';
     listEl.innerHTML = `
       <div class="empty-state">
         <span class="icon">🎯</span>
-        <span>No intents yet. Type or speak one above.</span>
+        <span>${emptyMsg}</span>
       </div>
     `;
     return;
   }
 
-  listEl.innerHTML = [...active, ...done].map(intent => {
+  listEl.innerHTML = displayList.map(intent => {
     const isProcessing = processingIntents.has(intent.id);
     const isRecurring = !!intent.recurrence;
     const isRunning = activeSessionIntents.has(intent.id);
@@ -492,15 +531,36 @@ function formatDueDate(due_at_utc: string | null, due_at: string | null): { text
 
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
-  const description = descInput.value.trim();
-  if (!description) return;
+  const text = descInput.value.trim();
+  if (!text) return;
 
-  const intent = await intentAPI.create({ description });
-  processingIntents.add(intent.id);
   descInput.value = '';
-  hideStatus();
   descInput.focus();
-  await loadIntents();
+
+  // Classify: is this a new intent or a question?
+  showStatus('✨ Thinking...');
+  const classification = await intentAPI.classifyInput(text);
+  hideStatus();
+
+  if (classification.type === 'query' && classification.query_answer) {
+    // Show answer in the query result area
+    queryResult.innerHTML = `
+      <div class="query-answer">
+        <div class="query-question">🔍 ${escapeHtml(text)}</div>
+        <div class="query-response">${escapeHtml(classification.query_answer)}</div>
+        <button class="query-dismiss" onclick="dismissQuery()">✕</button>
+      </div>`;
+    queryResult.classList.remove('hidden');
+    listEl.classList.add('hidden');
+  } else {
+    // Create as intent
+    queryResult.classList.add('hidden');
+    listEl.classList.remove('hidden');
+    const intent = await intentAPI.create({ description: text });
+    processingIntents.add(intent.id);
+    hideStatus();
+    await loadIntents();
+  }
 });
 
 // Listen for background LLM processing completion
@@ -684,6 +744,13 @@ async function editDate(intentId: string): Promise<void> {
 
 (window as any).editDescription = editDescription;
 (window as any).editDate = editDate;
+
+// @ts-ignore - called from onclick in query result
+function dismissQuery(): void {
+  queryResult.classList.add('hidden');
+  listEl.classList.remove('hidden');
+}
+(window as any).dismissQuery = dismissQuery;
 
 // ── Timeline view ───────────────────────────────────────
 function showTimeline(): void {

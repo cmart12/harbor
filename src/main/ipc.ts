@@ -1,7 +1,7 @@
 import { ipcMain, BrowserWindow, dialog } from 'electron';
 import * as fs from 'fs';
 import { createIntent, listIntents, updateIntent, updateIntentCAS, deleteIntent, getIntent, logIntentEvent, listIntentEvents, getSetting, setSetting } from './database';
-import { parseIntentWithAI, evaluateRecurrence, findSimilarIntent, resolveDateWithAI, setAIModel, listAvailableModels } from './ai';
+import { parseIntentWithAI, evaluateRecurrence, findSimilarIntent, resolveDateWithAI, classifyInput, setAIModel, listAvailableModels } from './ai';
 import { launchSession, getActiveSessionIntentIds } from './session';
 import { transcribeAudio } from './voice';
 import { CreateIntentInput, Intent, RecurrenceResult } from '../shared/types';
@@ -206,6 +206,18 @@ export function registerIpcHandlers(): void {
   // Resolve natural language date
   ipcMain.handle('intent:resolve-date', async (_event, dateText: string) => {
     return resolveDateWithAI(dateText);
+  });
+
+  // Classify user input as intent vs query
+  ipcMain.handle('intent:classify', async (_event, text: string) => {
+    const allIntents = listIntents();
+    const recent = allIntents.map(i => ({
+      description: i.description,
+      status: i.status,
+      due_at: i.due_at,
+      completed_at: i.completed_at,
+    }));
+    return classifyInput(text, recent);
   });
 
   // Session launch

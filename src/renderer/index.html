@@ -24,7 +24,7 @@
           <input
             type="text"
             id="description-input"
-            placeholder="Type or press space to speak..."
+            placeholder="Capture an intent or ask about your history..."
             autocomplete="off"
             autofocus
           />
@@ -35,7 +35,15 @@
         <div id="status-bar" class="status-bar hidden"></div>
       </form>
 
+      <div id="filter-bar" class="filter-bar">
+        <button class="filter-btn active" data-filter="all">All</button>
+        <button class="filter-btn" data-filter="scheduled">Scheduled</button>
+        <button class="filter-btn" data-filter="unscheduled">Open</button>
+        <button class="filter-btn" data-filter="past">Past</button>
+      </div>
+
       <div id="intent-list"></div>
+      <div id="query-result" class="query-result hidden"></div>
     </div>
 
     <!-- Settings view -->

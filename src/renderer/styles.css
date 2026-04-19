@@ -311,6 +311,95 @@ input[type="text"]#description-input.transcribing {
   display: none;
 }
 
+/* ── Filter bar ───────────────────────────────────────── */
+
+.filter-bar {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 10px;
+  padding: 2px;
+  background: #f0f0f4;
+  border-radius: 8px;
+}
+
+.filter-btn {
+  flex: 1;
+  background: none;
+  border: none;
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.filter-btn:hover {
+  color: rgba(0, 0, 0, 0.6);
+}
+
+.filter-btn.active {
+  background: #ffffff;
+  color: #1a1a1a;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+/* ── Query result ─────────────────────────────────────── */
+
+.query-result {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.query-result.hidden {
+  display: none;
+}
+
+.query-answer {
+  background: #f8f8fa;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  border-radius: 12px;
+  padding: 12px;
+  position: relative;
+  animation: slideIn 0.2s ease;
+}
+
+.query-question {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.4);
+  margin-bottom: 8px;
+}
+
+.query-response {
+  font-size: 13px;
+  color: #1a1a1a;
+  line-height: 1.5;
+}
+
+.query-dismiss {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: none;
+  border: none;
+  color: rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px;
+  transition: color 0.15s ease;
+}
+
+.query-dismiss:hover {
+  color: rgba(0, 0, 0, 0.5);
+}
+
+#intent-list.hidden {
+  display: none;
+}
+
 /* ── Intent list ───────────────────────────────────────── */
 
 #intent-list {
@@ -843,3 +932,16 @@ body.dark .timeline-event-desc { color: #e0e0e0; }
 body.dark .timeline-event-meta { color: rgba(255, 255, 255, 0.35); }
 body.dark .timeline-session-tag { color: #818cf8; background: rgba(99, 102, 241, 0.15); }
 body.dark .timeline-content { scrollbar-color: rgba(255, 255, 255, 0.1) transparent; }
+
+/* Dark filter bar */
+body.dark .filter-bar { background: rgba(255, 255, 255, 0.06); }
+body.dark .filter-btn { color: rgba(255, 255, 255, 0.35); }
+body.dark .filter-btn:hover { color: rgba(255, 255, 255, 0.6); }
+body.dark .filter-btn.active { background: rgba(255, 255, 255, 0.1); color: #e0e0e0; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3); }
+
+/* Dark query result */
+body.dark .query-answer { background: rgba(255, 255, 255, 0.04); border-color: rgba(255, 255, 255, 0.06); }
+body.dark .query-question { color: rgba(255, 255, 255, 0.4); }
+body.dark .query-response { color: #e0e0e0; }
+body.dark .query-dismiss { color: rgba(255, 255, 255, 0.3); }
+body.dark .query-dismiss:hover { color: rgba(255, 255, 255, 0.6); }

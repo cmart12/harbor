@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('intentAPI', {
   listModels: () => ipcRenderer.invoke('models:list'),
   listEvents: (limit?: number) => ipcRenderer.invoke('intent:events', limit),
   resolveDate: (dateText: string) => ipcRenderer.invoke('intent:resolve-date', dateText),
+  classifyInput: (text: string) => ipcRenderer.invoke('intent:classify', text),
   launchSession: (intentId: string) => ipcRenderer.invoke('session:launch', intentId),
   getActiveSessions: () => ipcRenderer.invoke('session:active-intents'),
   selectWorkspace: () => ipcRenderer.invoke('workspace:select'),

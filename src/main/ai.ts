@@ -240,6 +240,51 @@ Input: "${dateText}"`,
   }
 }
 
+export interface InputClassification {
+  type: 'intent' | 'query';
+  query_answer?: string;
+}
+
+/** Classify whether user input is a new intent or a question about their intents/history */
+export async function classifyInput(text: string, recentIntents: { description: string; status: string; due_at: string | null; completed_at: string | null }[]): Promise<InputClassification> {
+  const session = await getParseSession();
+  if (!session) return { type: 'intent' };
+
+  const intentList = recentIntents.slice(0, 15).map((i, idx) =>
+    `${idx}. "${i.description}" [${i.status}]${i.due_at ? ` due: ${i.due_at}` : ''}${i.completed_at ? ` completed: ${i.completed_at}` : ''}`
+  ).join('\n');
+
+  try {
+    const response = await session.sendAndWait({
+      prompt: `${getLocalTimeContext()}
+
+Classify this user input. Is it:
+A) A new intent/task to capture (action item, to-do, reminder)
+B) A question or query about their existing intents, history, or schedule
+
+User's current intents:
+${intentList || '(none)'}
+
+User input: "${text}"
+
+Return ONLY JSON:
+{"type": "intent" or "query", "query_answer": "brief answer if type=query, otherwise null"}`,
+    }, 15000);
+
+    const content = response?.data?.content ?? '';
+    const parsed = extractJson(content);
+    if (!parsed) return { type: 'intent' };
+
+    return {
+      type: parsed.type === 'query' ? 'query' : 'intent',
+      query_answer: parsed.query_answer || undefined,
+    };
+  } catch (err) {
+    console.error('[copilot-sdk] Classify failed:', err);
+    return { type: 'intent' };
+  }
+}
+
 export async function evaluateRecurrence(intent: {
   raw_text: string | null;
   description: string;
