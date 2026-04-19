@@ -215,6 +215,101 @@ descInput.addEventListener('keydown', (e) => {
   }
 });
 
+// ── Text refinement animation ───────────────────────────
+function animateTextReplace(el: HTMLElement, oldText: string, newText: string, duration = 600): Promise<void> {
+  return new Promise(resolve => {
+    const startTime = performance.now();
+    const maxLen = Math.max(oldText.length, newText.length);
+
+    function step(now: number) {
+      const elapsed = now - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      const revealedCount = Math.floor(eased * newText.length);
+
+      let html = '';
+      for (let i = 0; i < newText.length; i++) {
+        if (i < revealedCount) {
+          // Already placed — check if it just appeared (within last few chars of the wave)
+          const justRevealed = i >= revealedCount - 3;
+          if (justRevealed) {
+            html += `<span class="letter-glow">${newText[i] === ' ' ? '&nbsp;' : escapeHtmlChar(newText[i])}</span>`;
+          } else {
+            html += newText[i] === ' ' ? ' ' : escapeHtmlChar(newText[i]);
+          }
+        } else {
+          // Not yet revealed — show old char or nothing
+          if (i < oldText.length) {
+            html += `<span class="letter-fading">${oldText[i] === ' ' ? '&nbsp;' : escapeHtmlChar(oldText[i])}</span>`;
+          }
+        }
+      }
+
+      el.innerHTML = html;
+
+      if (progress < 1) {
+        requestAnimationFrame(step);
+      } else {
+        el.textContent = newText;
+        el.classList.add('refined');
+        setTimeout(() => el.classList.remove('refined'), 600);
+        resolve();
+      }
+    }
+
+    requestAnimationFrame(step);
+  });
+}
+
+function escapeHtmlChar(ch: string): string {
+  if (ch === '<') return '&lt;';
+  if (ch === '>') return '&gt;';
+  if (ch === '&') return '&amp;';
+  if (ch === '"') return '&quot;';
+  return ch;
+}
+
+async function animateRefinement(intentId: string): Promise<void> {
+  const oldIntent = intents.find(i => i.id === intentId);
+  const oldText = oldIntent?.description || '';
+
+  const updatedIntents = await intentAPI.list();
+  const newIntent = updatedIntents.find(i => i.id === intentId);
+
+  if (!newIntent || oldText === newIntent.description) {
+    intents = updatedIntents;
+    render();
+    return;
+  }
+
+  const itemEl = listEl.querySelector(`[data-id="${intentId}"]`);
+  const descEl = itemEl?.querySelector('.intent-desc') as HTMLElement | null;
+
+  if (!descEl) {
+    intents = updatedIntents;
+    render();
+    return;
+  }
+
+  itemEl?.classList.remove('processing');
+  const badge = itemEl?.querySelector('.processing-badge');
+  if (badge) badge.remove();
+
+  await animateTextReplace(descEl, oldText, newIntent.description);
+
+  // Fade in new meta
+  const metaEl = itemEl?.querySelector('.intent-meta') as HTMLElement | null;
+  if (metaEl) {
+    let metaHtml = '';
+    if (newIntent.client) metaHtml += `<span class="meta-fade-in">👤 ${escapeHtml(newIntent.client)}</span>`;
+    if (newIntent.due_at) metaHtml += `<span class="meta-fade-in">📅 ${escapeHtml(newIntent.due_at)}</span>`;
+    metaHtml += `<span>${timeAgo(newIntent.created_at)}</span>`;
+    metaEl.innerHTML = metaHtml;
+  }
+
+  intents = updatedIntents;
+}
+
 // ── Intent CRUD ─────────────────────────────────────────
 async function loadIntents(): Promise<void> {
   intents = await intentAPI.list();
@@ -291,7 +386,7 @@ form.addEventListener('submit', async (e) => {
 // Listen for background LLM processing completion
 intentAPI.onIntentProcessed(async (id: string) => {
   processingIntents.delete(id);
-  await loadIntents();
+  await animateRefinement(id);
 });
 
 // @ts-ignore - called from onclick in HTML

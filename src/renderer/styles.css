@@ -341,6 +341,34 @@ input[type="text"]#description-input.transcribing {
   animation: recordingPulse 1.5s ease infinite;
 }
 
+.letter-glow {
+  color: #c7d2fe;
+  text-shadow: 0 0 8px rgba(129, 140, 248, 0.8), 0 0 2px rgba(199, 210, 254, 0.6);
+  transition: color 0.4s ease, text-shadow 0.4s ease;
+}
+
+.letter-fading {
+  opacity: 0.3;
+}
+
+.intent-desc.refined {
+  animation: refinedSettle 0.6s ease forwards;
+}
+
+@keyframes refinedSettle {
+  0% { color: #c7d2fe; }
+  100% { color: #e0e0e0; }
+}
+
+.meta-fade-in {
+  animation: metaAppear 0.4s ease;
+}
+
+@keyframes metaAppear {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 .intent-delete {
   opacity: 0;
   background: none;
