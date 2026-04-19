@@ -19,4 +19,7 @@ export type IpcChannels =
   | 'intent:list'
   | 'intent:update'
   | 'intent:delete'
+  | 'settings:get'
+  | 'settings:set'
+  | 'models:list'
   | 'window:hide';

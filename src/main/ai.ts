@@ -1,4 +1,5 @@
-import { CopilotClient, CopilotSession, approveAll } from '@github/copilot-sdk';
+import { CopilotClient, CopilotSession } from '@github/copilot-sdk';
+import { getSetting } from './database';
 
 export interface ParsedIntent {
   description: string;
@@ -27,11 +28,14 @@ Output: {"description":"Send invoice","client":"Contoso","due_at":"End of month"
 
 export async function initCopilot(): Promise<void> {
   try {
-    client = new CopilotClient();
+    client = new CopilotClient({ useStdio: false });
     await client.start();
+
+    const model = getSetting('model') || undefined;
 
     session = await client.createSession({
       systemMessage: { content: SYSTEM_MESSAGE },
+      model,
       onPermissionRequest: async () => ({ kind: 'denied-interactively-by-user' as const }),
     });
 
@@ -40,6 +44,23 @@ export async function initCopilot(): Promise<void> {
     console.error('[copilot-sdk] Failed to initialize:', err);
     client = null;
     session = null;
+  }
+}
+
+export async function setAIModel(model: string): Promise<void> {
+  if (session) {
+    await session.setModel(model);
+    console.log(`[copilot-sdk] Model changed to: ${model}`);
+  }
+}
+
+export async function listAvailableModels(): Promise<{ id: string; name?: string }[]> {
+  if (!client) return [];
+  try {
+    const models = await client.listModels();
+    return models.map(m => ({ id: m.id, name: m.name }));
+  } catch {
+    return [];
   }
 }
 

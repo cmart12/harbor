@@ -10,37 +10,33 @@
   <div id="app">
     <header>
       <h1>⚡ Intent</h1>
-      <span id="intent-count" class="badge">0</span>
+      <div class="header-actions">
+        <span id="intent-count" class="badge">0</span>
+        <button id="settings-btn" class="header-icon-btn" title="Settings">⚙</button>
+      </div>
     </header>
 
+    <div id="settings-panel" class="settings-panel hidden">
+      <div class="settings-row">
+        <label for="model-select">Model</label>
+        <select id="model-select">
+          <option value="">Loading models...</option>
+        </select>
+      </div>
+    </div>
+
     <form id="capture-form">
-      <div class="input-row">
+      <div class="input-wrapper">
         <input
           type="text"
           id="description-input"
-          placeholder="What do you need to do?"
+          placeholder="Type or press space to speak..."
           autocomplete="off"
           autofocus
         />
-        <button type="button" id="voice-btn" class="icon-btn" title="Voice input (hold to speak)">🎤</button>
-      </div>
-      <div class="optional-fields" id="optional-fields">
-        <input
-          type="text"
-          id="client-input"
-          placeholder="Client (optional)"
-          autocomplete="off"
-        />
-        <input
-          type="text"
-          id="due-input"
-          placeholder="Due (e.g. tomorrow, Friday)"
-          autocomplete="off"
-        />
-      </div>
-      <div class="action-row">
-        <button type="submit" id="capture-btn">Capture</button>
-        <button type="button" id="ai-capture-btn" title="AI-parse and capture">⚡ AI Capture</button>
+        <div id="recording-indicator" class="recording-indicator hidden">
+          <span class="rec-dot"></span>
+        </div>
       </div>
       <div id="status-bar" class="status-bar hidden"></div>
     </form>

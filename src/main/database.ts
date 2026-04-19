@@ -16,6 +16,7 @@ export function initDatabase(): void {
     CREATE TABLE IF NOT EXISTS intents (
       id TEXT PRIMARY KEY,
       description TEXT NOT NULL,
+      raw_text TEXT,
       client TEXT,
       due_at TEXT,
       status TEXT NOT NULL DEFAULT 'captured',
@@ -23,6 +24,28 @@ export function initDatabase(): void {
       updated_at TEXT NOT NULL
     )
   `);
+
+  // Migrate: add raw_text column if missing (existing DBs)
+  const columns = db.prepare(`PRAGMA table_info(intents)`).all() as { name: string }[];
+  if (!columns.some(c => c.name === 'raw_text')) {
+    db.exec(`ALTER TABLE intents ADD COLUMN raw_text TEXT`);
+  }
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    )
+  `);
+}
+
+export function getSetting(key: string): string | null {
+  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined;
+  return row?.value ?? null;
+}
+
+export function setSetting(key: string, value: string): void {
+  db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, value);
 }
 
 export function createIntent(input: CreateIntentInput): Intent {
@@ -38,9 +61,9 @@ export function createIntent(input: CreateIntentInput): Intent {
   };
 
   db.prepare(
-    `INSERT INTO intents (id, description, client, due_at, status, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`
-  ).run(intent.id, intent.description, intent.client, intent.due_at, intent.status, intent.created_at, intent.updated_at);
+    `INSERT INTO intents (id, description, raw_text, client, due_at, status, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(intent.id, intent.description, intent.description, intent.client, intent.due_at, intent.status, intent.created_at, intent.updated_at);
 
   return intent;
 }
