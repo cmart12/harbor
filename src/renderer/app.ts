@@ -502,8 +502,7 @@ async function dismissRecurrence(intentId: string): Promise<void> {
 async function launchSession(intentId: string): Promise<void> {
   const result = await intentAPI.launchSession(intentId);
   if (result.success) {
-    showStatus('▶ Session launched');
-    setTimeout(hideStatus, 2000);
+    intentAPI.hideWindow();
     await loadIntents();
   } else if (result.error === 'no_workspace') {
     // Prompt to select workspace
@@ -514,8 +513,7 @@ async function launchSession(intentId: string): Promise<void> {
       // Retry launch
       const retry = await intentAPI.launchSession(intentId);
       if (retry.success) {
-        showStatus('▶ Session launched');
-        setTimeout(hideStatus, 2000);
+        intentAPI.hideWindow();
         await loadIntents();
       } else {
         showStatus(retry.error || 'Launch failed', true);
