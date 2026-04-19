@@ -143,9 +143,42 @@ function focusWindow(tracked: TrackedSession): boolean {
 function focusWindowWindows(tracked: TrackedSession): boolean {
   if (!tracked.pid) return false;
   try {
+    // When Windows Terminal is the default terminal, cmd.exe runs inside a WT tab.
+    // The cmd.exe PID has no window handle — WT owns the window.
+    // Strategy: try AppActivate on the PID directly, then find the hosting
+    // terminal (WindowsTerminal or conhost) and activate that.
+    const script = `
+      $found = (New-Object -ComObject WScript.Shell).AppActivate(${tracked.pid})
+      if ($found) { Write-Output 'True'; exit }
+      # Find the terminal hosting this process by walking the process tree
+      $hostPid = (Get-CimInstance Win32_Process | Where-Object {
+        $_.ProcessId -eq ${tracked.pid}
+      }).ParentProcessId
+      # Walk up to find WindowsTerminal or the top-level console host
+      for ($i = 0; $i -lt 5; $i++) {
+        $parent = Get-Process -Id $hostPid -ErrorAction SilentlyContinue
+        if ($parent -and $parent.ProcessName -eq 'WindowsTerminal') {
+          $found = (New-Object -ComObject WScript.Shell).AppActivate($hostPid)
+          if ($found) { Write-Output 'True'; exit }
+        }
+        $next = (Get-CimInstance Win32_Process | Where-Object {
+          $_.ProcessId -eq $hostPid
+        }).ParentProcessId
+        if (-not $next -or $next -eq $hostPid) { break }
+        $hostPid = $next
+      }
+      # Last resort: find any WindowsTerminal that has our process as a descendant
+      $wt = Get-Process WindowsTerminal -ErrorAction SilentlyContinue | Select-Object -First 1
+      if ($wt) {
+        $found = (New-Object -ComObject WScript.Shell).AppActivate($wt.Id)
+        if ($found) { Write-Output 'True'; exit }
+      }
+      Write-Output 'False'
+    `.trim();
+
     const result = execSync(
-      `powershell -NoProfile -Command "(New-Object -ComObject WScript.Shell).AppActivate(${tracked.pid})"`,
-      { windowsHide: true, timeout: 3000 }
+      `powershell -NoProfile -Command "${script.replace(/"/g, '\\"')}"`,
+      { windowsHide: true, timeout: 5000 }
     ).toString().trim();
     return result === 'True';
   } catch {
