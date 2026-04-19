@@ -345,6 +345,100 @@ input[type="text"]#description-input.transcribing {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
+/* ── Focus banner ─────────────────────────────────────── */
+
+.focus-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  background: rgba(99, 102, 241, 0.06);
+  border: 1px solid rgba(99, 102, 241, 0.15);
+  border-radius: 10px;
+  animation: slideIn 0.2s ease;
+}
+
+.focus-banner.hidden {
+  display: none;
+}
+
+.focus-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: #6366f1;
+  white-space: nowrap;
+}
+
+.focus-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.focus-desc {
+  font-size: 13px;
+  font-weight: 500;
+  color: #1a1a1a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.focus-meta {
+  font-size: 11px;
+  color: rgba(0, 0, 0, 0.4);
+  margin-top: 1px;
+}
+
+.focus-action {
+  background: none;
+  border: none;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: background 0.15s ease;
+  color: rgba(0, 0, 0, 0.4);
+}
+
+.focus-action:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: rgba(0, 0, 0, 0.7);
+}
+
+/* Focus button on intent items */
+
+.intent-focus {
+  opacity: 0;
+  background: none;
+  border: none;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: opacity 0.15s ease, background 0.15s ease;
+  flex-shrink: 0;
+}
+
+.intent-item:hover .intent-focus {
+  opacity: 1;
+}
+
+.intent-focus:hover {
+  background: rgba(99, 102, 241, 0.08);
+}
+
+.intent-focus.is-focused {
+  opacity: 1;
+}
+
+/* Highlight focused intent in list */
+.intent-item.focused {
+  border-color: rgba(99, 102, 241, 0.2);
+  background: rgba(99, 102, 241, 0.03);
+}
+
 /* ── Query result ─────────────────────────────────────── */
 
 .query-result {
@@ -945,3 +1039,12 @@ body.dark .query-question { color: rgba(255, 255, 255, 0.4); }
 body.dark .query-response { color: #e0e0e0; }
 body.dark .query-dismiss { color: rgba(255, 255, 255, 0.3); }
 body.dark .query-dismiss:hover { color: rgba(255, 255, 255, 0.6); }
+
+/* Dark focus */
+body.dark .focus-banner { background: rgba(99, 102, 241, 0.1); border-color: rgba(99, 102, 241, 0.2); }
+body.dark .focus-desc { color: #e0e0e0; }
+body.dark .focus-meta { color: rgba(255, 255, 255, 0.4); }
+body.dark .focus-action { color: rgba(255, 255, 255, 0.4); }
+body.dark .focus-action:hover { background: rgba(255, 255, 255, 0.06); color: rgba(255, 255, 255, 0.8); }
+body.dark .intent-focus:hover { background: rgba(99, 102, 241, 0.12); }
+body.dark .intent-item.focused { border-color: rgba(99, 102, 241, 0.25); background: rgba(99, 102, 241, 0.06); }

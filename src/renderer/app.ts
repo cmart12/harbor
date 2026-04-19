@@ -80,6 +80,12 @@ let activeSessionIntents = new Set<string>();
 let currentFilter: 'all' | 'scheduled' | 'unscheduled' | 'past' = 'all';
 const filterBar = document.getElementById('filter-bar') as HTMLDivElement;
 const queryResult = document.getElementById('query-result') as HTMLDivElement;
+const focusBanner = document.getElementById('focus-banner') as HTMLDivElement;
+const focusDesc = document.getElementById('focus-desc') as HTMLDivElement;
+const focusMeta = document.getElementById('focus-meta') as HTMLDivElement;
+const focusDone = document.getElementById('focus-done') as HTMLButtonElement;
+const focusClear = document.getElementById('focus-clear') as HTMLButtonElement;
+let focusedIntentId: string | null = null;
 
 // ── Status bar helpers ──────────────────────────────────
 function showStatus(msg: string, isError = false): void {
@@ -413,6 +419,7 @@ async function animateRefinement(intentId: string): Promise<void> {
 async function loadIntents(): Promise<void> {
   intents = await intentAPI.list();
   activeSessionIntents = new Set(await intentAPI.getActiveSessions());
+  updateFocusBanner();
   render();
 }
 
@@ -460,8 +467,10 @@ function render(): void {
     const dueInfo = formatDueDate(intent.due_at_utc, intent.due_at);
     const hasDue = dueInfo.text !== '';
 
+    const isFocused = intent.id === focusedIntentId;
+
     return `
-    <div class="intent-item ${intent.status === 'done' ? 'done' : ''} ${isProcessing ? 'processing' : ''}" data-id="${intent.id}">
+    <div class="intent-item ${intent.status === 'done' ? 'done' : ''} ${isProcessing ? 'processing' : ''} ${isFocused ? 'focused' : ''}" data-id="${intent.id}">
       <div class="intent-check ${intent.status === 'done' ? 'checked' : ''}"
            onclick="toggleStatus('${intent.id}')">${intent.status === 'done' ? '✓' : ''}</div>
       <div class="intent-content">
@@ -476,6 +485,7 @@ function render(): void {
         </div>
         <div class="recall-hint hidden" data-recall-for="${intent.id}"></div>
       </div>
+      ${intent.status !== 'done' ? `<button class="intent-focus ${isFocused ? 'is-focused' : ''}" onclick="setFocus('${intent.id}')" title="${isFocused ? 'Unfocus' : 'Focus'}">🎯</button>` : ''}
       <button class="intent-launch ${intent.session_id ? 'has-session' : ''} ${isRunning ? 'is-running' : ''}" onclick="launchSession('${intent.id}')" title="${isRunning ? 'Switch to session' : intent.session_id ? 'Resume session' : 'Start session'}">▶</button>
       <button class="intent-delete" onclick="deleteIntent('${intent.id}')">✕</button>
     </div>
@@ -752,6 +762,65 @@ function dismissQuery(): void {
 }
 (window as any).dismissQuery = dismissQuery;
 
+// ── Focus mode ──────────────────────────────────────────
+async function setFocus(intentId: string): Promise<void> {
+  if (focusedIntentId === intentId) {
+    // Toggle off
+    clearFocus();
+    return;
+  }
+  focusedIntentId = intentId;
+  await intentAPI.setSetting('focused_intent', intentId);
+  updateFocusBanner();
+  render();
+}
+
+function clearFocus(): void {
+  focusedIntentId = null;
+  intentAPI.setSetting('focused_intent', '');
+  focusBanner.classList.add('hidden');
+  render();
+}
+
+function updateFocusBanner(): void {
+  if (!focusedIntentId) {
+    focusBanner.classList.add('hidden');
+    return;
+  }
+  const intent = intents.find(i => i.id === focusedIntentId);
+  if (!intent || intent.status === 'done') {
+    clearFocus();
+    return;
+  }
+
+  const dueInfo = formatDueDate(intent.due_at_utc, intent.due_at);
+  focusDesc.textContent = intent.description;
+  let meta = '';
+  if (intent.client) meta += `👤 ${intent.client}  `;
+  if (dueInfo.text) meta += `📅 ${dueInfo.text}`;
+  focusMeta.textContent = meta;
+  focusBanner.classList.remove('hidden');
+}
+
+focusDone.addEventListener('click', async () => {
+  if (!focusedIntentId) return;
+  await intentAPI.update(focusedIntentId, { status: 'done' });
+  clearFocus();
+  await loadIntents();
+});
+
+focusClear.addEventListener('click', clearFocus);
+
+async function loadFocusState(): Promise<void> {
+  const saved = await intentAPI.getSetting('focused_intent');
+  if (saved) {
+    focusedIntentId = saved;
+    updateFocusBanner();
+  }
+}
+
+(window as any).setFocus = setFocus;
+
 // ── Timeline view ───────────────────────────────────────
 function showTimeline(): void {
   mainView.classList.add('hidden');
@@ -852,6 +921,7 @@ async function deleteIntent(id: string): Promise<void> {
 // ── Init ────────────────────────────────────────────────
 descInput.focus();
 loadSettings();
+loadFocusState();
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
