@@ -7,20 +7,20 @@
 body {
   font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
   background: transparent;
-  color: #e0e0e0;
+  color: #1a1a1a;
   overflow: hidden;
   user-select: none;
 }
 
 #app {
-  background: rgba(28, 28, 32, 0.95);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 12px;
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 16px;
   padding: 16px;
   height: 100vh;
   display: flex;
   flex-direction: column;
-  backdrop-filter: blur(20px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.06);
 }
 
 header {
@@ -29,13 +29,13 @@ header {
   justify-content: space-between;
   margin-bottom: 12px;
   padding-bottom: 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
 
 header h1 {
   font-size: 15px;
   font-weight: 600;
-  color: #ffffff;
+  color: #1a1a1a;
   letter-spacing: 0.3px;
 }
 
@@ -46,8 +46,8 @@ header h1 {
 }
 
 .badge {
-  background: rgba(99, 102, 241, 0.2);
-  color: #818cf8;
+  background: rgba(99, 102, 241, 0.1);
+  color: #6366f1;
   font-size: 11px;
   font-weight: 600;
   padding: 2px 8px;
@@ -57,7 +57,7 @@ header h1 {
 .header-icon-btn {
   background: none;
   border: none;
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(0, 0, 0, 0.4);
   cursor: pointer;
   font-size: 15px;
   padding: 4px;
@@ -69,20 +69,20 @@ header h1 {
 }
 
 .header-icon-btn:hover {
-  color: rgba(255, 255, 255, 0.8);
-  background: rgba(255, 255, 255, 0.06);
+  color: rgba(0, 0, 0, 0.7);
+  background: rgba(0, 0, 0, 0.04);
 }
 
 .header-icon-btn.active {
-  color: #818cf8;
+  color: #6366f1;
 }
 
 /* ── Settings panel ────────────────────────────────────── */
 
 .settings-panel {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 8px;
+  background: #f8f8fa;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 12px;
   padding: 10px 12px;
   margin-bottom: 10px;
   animation: slideDown 0.15s ease;
@@ -103,37 +103,41 @@ header h1 {
   gap: 10px;
 }
 
+.settings-row + .settings-row {
+  margin-top: 8px;
+}
+
 .settings-row label {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(0, 0, 0, 0.45);
   white-space: nowrap;
 }
 
 .settings-row select {
   flex: 1;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 6px;
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
   padding: 6px 10px;
-  color: #ffffff;
+  color: #1a1a1a;
   font-size: 12px;
   outline: none;
   transition: border-color 0.15s ease;
   cursor: pointer;
   appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='rgba(255,255,255,0.4)'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='rgba(0,0,0,0.3)'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 10px center;
   padding-right: 26px;
 }
 
 .settings-row select:focus {
-  border-color: rgba(99, 102, 241, 0.4);
+  border-color: rgba(99, 102, 241, 0.5);
 }
 
 .settings-row select option {
-  background: #1c1c20;
-  color: #e0e0e0;
+  background: #ffffff;
+  color: #1a1a1a;
 }
 
 /* ── Capture form ──────────────────────────────────────── */
@@ -153,42 +157,43 @@ header h1 {
 
 input[type="text"]#description-input {
   width: 100%;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
+  background: #f5f5f7;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 12px;
   padding: 12px 14px;
-  color: #ffffff;
+  color: #1a1a1a;
   font-size: 15px;
   outline: none;
   transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
 }
 
 input[type="text"]#description-input:focus {
-  border-color: rgba(99, 102, 241, 0.5);
-  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(99, 102, 241, 0.4);
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.08);
 }
 
 input[type="text"]#description-input::placeholder {
-  color: rgba(255, 255, 255, 0.3);
+  color: rgba(0, 0, 0, 0.3);
 }
 
 input[type="text"]#description-input.recording {
-  border-color: rgba(239, 68, 68, 0.6);
-  background: rgba(239, 68, 68, 0.06);
-  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.5);
+  background: rgba(239, 68, 68, 0.03);
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.08);
   animation: recordingPulse 1.5s ease infinite;
 }
 
 input[type="text"]#description-input.transcribing {
-  border-color: rgba(99, 102, 241, 0.5);
-  background: rgba(99, 102, 241, 0.06);
-  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.15);
+  border-color: rgba(99, 102, 241, 0.4);
+  background: rgba(99, 102, 241, 0.03);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.08);
   animation: recordingPulse 1s ease infinite;
 }
 
 @keyframes recordingPulse {
-  0%, 100% { box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.15); }
-  50% { box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.08); }
+  0%, 100% { box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.08); }
+  50% { box-shadow: 0 0 0 5px rgba(239, 68, 68, 0.04); }
 }
 
 .recording-indicator {
@@ -220,16 +225,16 @@ input[type="text"]#description-input.transcribing {
 .status-bar {
   font-size: 11px;
   padding: 6px 10px;
-  border-radius: 6px;
-  background: rgba(99, 102, 241, 0.1);
-  color: #818cf8;
+  border-radius: 8px;
+  background: rgba(99, 102, 241, 0.06);
+  color: #6366f1;
   text-align: center;
   transition: opacity 0.2s ease;
 }
 
 .status-bar.error {
-  background: rgba(239, 68, 68, 0.1);
-  color: #f87171;
+  background: rgba(239, 68, 68, 0.06);
+  color: #dc2626;
 }
 
 .status-bar.hidden {
@@ -245,18 +250,18 @@ input[type="text"]#description-input.transcribing {
   flex-direction: column;
   gap: 6px;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255,255,255,0.1) transparent;
+  scrollbar-color: rgba(0,0,0,0.08) transparent;
 }
 
 .intent-item {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 8px;
+  background: #f8f8fa;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  border-radius: 12px;
   padding: 10px 12px;
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  transition: background 0.15s ease;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
   animation: slideIn 0.2s ease;
 }
 
@@ -266,26 +271,28 @@ input[type="text"]#description-input.transcribing {
 }
 
 .intent-item:hover {
-  background: rgba(255, 255, 255, 0.07);
+  background: #f0f0f4;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
 }
 
 .intent-item.done {
-  opacity: 0.4;
+  opacity: 0.45;
 }
 
 .intent-item.done .intent-desc {
   text-decoration: line-through;
+  color: rgba(0, 0, 0, 0.35);
 }
 
 .intent-item.processing .intent-desc {
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(0, 0, 0, 0.4);
 }
 
 .intent-check {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.2);
+  border: 2px solid rgba(0, 0, 0, 0.15);
   cursor: pointer;
   flex-shrink: 0;
   margin-top: 1px;
@@ -294,11 +301,12 @@ input[type="text"]#description-input.transcribing {
   align-items: center;
   justify-content: center;
   font-size: 10px;
+  color: #ffffff;
 }
 
 .intent-check:hover {
   border-color: #6366f1;
-  background: rgba(99, 102, 241, 0.15);
+  background: rgba(99, 102, 241, 0.08);
 }
 
 .intent-check.checked {
@@ -314,7 +322,7 @@ input[type="text"]#description-input.transcribing {
 .intent-desc {
   font-size: 13px;
   line-height: 1.4;
-  color: #e0e0e0;
+  color: #1a1a1a;
   word-break: break-word;
 }
 
@@ -323,7 +331,7 @@ input[type="text"]#description-input.transcribing {
   gap: 8px;
   margin-top: 4px;
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.35);
+  color: rgba(0, 0, 0, 0.35);
 }
 
 .intent-meta span {
@@ -334,16 +342,21 @@ input[type="text"]#description-input.transcribing {
 
 .processing-badge {
   font-size: 10px;
-  color: #818cf8;
-  background: rgba(99, 102, 241, 0.15);
+  color: #6366f1;
+  background: rgba(99, 102, 241, 0.08);
   padding: 1px 6px;
   border-radius: 4px;
-  animation: recordingPulse 1.5s ease infinite;
+  animation: processingPulse 1.5s ease infinite;
+}
+
+@keyframes processingPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
 }
 
 .letter-glow {
-  color: #c7d2fe;
-  text-shadow: 0 0 8px rgba(129, 140, 248, 0.8), 0 0 2px rgba(199, 210, 254, 0.6);
+  color: #4f46e5;
+  text-shadow: 0 0 6px rgba(99, 102, 241, 0.4), 0 0 2px rgba(99, 102, 241, 0.3);
   transition: color 0.4s ease, text-shadow 0.4s ease;
 }
 
@@ -356,8 +369,8 @@ input[type="text"]#description-input.transcribing {
 }
 
 @keyframes refinedSettle {
-  0% { color: #c7d2fe; }
-  100% { color: #e0e0e0; }
+  0% { color: #4f46e5; }
+  100% { color: #1a1a1a; }
 }
 
 .meta-fade-in {
@@ -373,7 +386,7 @@ input[type="text"]#description-input.transcribing {
   opacity: 0;
   background: none;
   border: none;
-  color: rgba(255, 255, 255, 0.3);
+  color: rgba(0, 0, 0, 0.2);
   cursor: pointer;
   font-size: 14px;
   padding: 2px;
@@ -386,7 +399,7 @@ input[type="text"]#description-input.transcribing {
 }
 
 .intent-delete:hover {
-  color: #ef4444;
+  color: #dc2626;
 }
 
 /* ── Launch session button ────────────────────────────── */
@@ -395,7 +408,7 @@ input[type="text"]#description-input.transcribing {
   opacity: 0;
   background: none;
   border: none;
-  color: rgba(255, 255, 255, 0.3);
+  color: rgba(0, 0, 0, 0.2);
   cursor: pointer;
   font-size: 12px;
   padding: 2px 4px;
@@ -409,17 +422,17 @@ input[type="text"]#description-input.transcribing {
 }
 
 .intent-launch:hover {
-  color: #818cf8;
-  background: rgba(99, 102, 241, 0.15);
+  color: #6366f1;
+  background: rgba(99, 102, 241, 0.08);
 }
 
 .intent-launch.has-session {
-  color: rgba(99, 102, 241, 0.5);
+  color: rgba(99, 102, 241, 0.4);
 }
 
 .intent-item:hover .intent-launch.has-session {
   opacity: 1;
-  color: #818cf8;
+  color: #6366f1;
 }
 
 /* ── Workspace setting ────────────────────────────────── */
@@ -434,7 +447,7 @@ input[type="text"]#description-input.transcribing {
 
 .workspace-path {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(0, 0, 0, 0.45);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -442,10 +455,10 @@ input[type="text"]#description-input.transcribing {
 }
 
 .workspace-btn {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 4px;
-  color: rgba(255, 255, 255, 0.5);
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 6px;
+  color: rgba(0, 0, 0, 0.5);
   font-size: 11px;
   padding: 3px 8px;
   cursor: pointer;
@@ -454,8 +467,8 @@ input[type="text"]#description-input.transcribing {
 }
 
 .workspace-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.8);
+  background: #f0f0f4;
+  color: rgba(0, 0, 0, 0.7);
 }
 
 .empty-state {
@@ -464,7 +477,7 @@ input[type="text"]#description-input.transcribing {
   align-items: center;
   justify-content: center;
   flex: 1;
-  color: rgba(255, 255, 255, 0.2);
+  color: rgba(0, 0, 0, 0.2);
   font-size: 13px;
   gap: 6px;
 }
@@ -477,11 +490,11 @@ input[type="text"]#description-input.transcribing {
 /* ── Due date & recurring badges ──────────────────────── */
 
 .due-badge.overdue {
-  color: #f87171;
+  color: #dc2626;
 }
 
 .recurring-badge {
-  color: #818cf8;
+  color: #6366f1;
   font-weight: 600;
 }
 
@@ -489,11 +502,11 @@ input[type="text"]#description-input.transcribing {
 
 .recall-hint {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.45);
+  color: rgba(0, 0, 0, 0.45);
   margin-top: 4px;
   padding: 4px 8px;
-  background: rgba(99, 102, 241, 0.08);
-  border-radius: 4px;
+  background: rgba(99, 102, 241, 0.05);
+  border-radius: 6px;
   animation: metaAppear 0.3s ease;
 }
 
@@ -504,8 +517,8 @@ input[type="text"]#description-input.transcribing {
 /* ── Recurrence status bar ────────────────────────────── */
 
 .status-bar.recurrence {
-  background: rgba(99, 102, 241, 0.15);
-  color: #a5b4fc;
+  background: rgba(99, 102, 241, 0.06);
+  color: #6366f1;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -515,7 +528,7 @@ input[type="text"]#description-input.transcribing {
 .dismiss-recurrence {
   background: none;
   border: none;
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(0, 0, 0, 0.3);
   cursor: pointer;
   font-size: 12px;
   padding: 0 2px;
@@ -523,12 +536,12 @@ input[type="text"]#description-input.transcribing {
 }
 
 .dismiss-recurrence:hover {
-  color: #f87171;
+  color: #dc2626;
 }
 
 /* ── Overdue intent item tint ─────────────────────────── */
 
 .intent-item:has(.due-badge.overdue):not(.done) {
-  border-color: rgba(248, 113, 113, 0.15);
-  background: rgba(248, 113, 113, 0.04);
+  border-color: rgba(220, 38, 38, 0.1);
+  background: rgba(220, 38, 38, 0.02);
 }
