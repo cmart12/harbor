@@ -389,6 +389,75 @@ input[type="text"]#description-input.transcribing {
   color: #ef4444;
 }
 
+/* ── Launch session button ────────────────────────────── */
+
+.intent-launch {
+  opacity: 0;
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.3);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
+  flex-shrink: 0;
+}
+
+.intent-item:hover .intent-launch {
+  opacity: 1;
+}
+
+.intent-launch:hover {
+  color: #818cf8;
+  background: rgba(99, 102, 241, 0.15);
+}
+
+.intent-launch.has-session {
+  color: rgba(99, 102, 241, 0.5);
+}
+
+.intent-item:hover .intent-launch.has-session {
+  opacity: 1;
+  color: #818cf8;
+}
+
+/* ── Workspace setting ────────────────────────────────── */
+
+.workspace-display {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.workspace-path {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.6);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.workspace-btn {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 11px;
+  padding: 3px 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.workspace-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.8);
+}
+
 .empty-state {
   display: flex;
   flex-direction: column;

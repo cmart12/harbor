@@ -94,14 +94,17 @@ function toggleWindow(): void {
 }
 
 function createTray(): void {
-  // Create a simple icon programmatically
-  const icon = nativeImage.createFromDataURL(
-    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAA' +
-    'mklEQVQ4T2NkoBAwUqifYdAY8B8E/v8HkYz/GRn/MzIy/mdgZPzPwMAAEmFkZGD4Dwbg' +
-    'MJDh+/fvDP///2dkZGJi+P//P8P///8Z/v37x/Dv3z8GBgYGhv///jH8/fOH4e/fvwx/' +
-    '//5l+PPnD8Pv378Zfv36xfDz508wG6aZkZER7AKQBpBmkEaQC0CaQS4AaQYBkGaYZnwA' +
-    'ACLYRREFnOaAAAAAAElFTkSuQmCC'
-  );
+  const iconPath = path.join(__dirname, '..', '..', 'src', 'assets', 'tray-icon.png');
+  const fallbackPath = path.join(__dirname, '..', 'assets', 'tray-icon.png');
+  const resolvedPath = fs.existsSync(iconPath) ? iconPath : fallbackPath;
+
+  let icon: Electron.NativeImage;
+  if (fs.existsSync(resolvedPath)) {
+    icon = nativeImage.createFromPath(resolvedPath);
+  } else {
+    // Fallback: inline 16x16 lightning bolt
+    icon = nativeImage.createFromPath(path.join(__dirname, '..', '..', 'src', 'assets', 'tray-icon-16.png'));
+  }
 
   tray = new Tray(icon.resize({ width: 16, height: 16 }));
   tray.setToolTip('Intent — Quick Capture');

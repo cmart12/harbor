@@ -22,6 +22,8 @@ interface IntentAPI {
   getSetting(key: string): Promise<string | null>;
   setSetting(key: string, value: string): Promise<void>;
   listModels(): Promise<{ id: string; name?: string }[]>;
+  launchSession(intentId: string): Promise<{ success: boolean; error?: string; sessionId?: string }>;
+  selectWorkspace(): Promise<{ selected: boolean; path: string | null }>;
   hideWindow(): void;
   onWindowShown(callback: () => void): void;
   onIntentProcessed(callback: (id: string) => void): void;
@@ -39,6 +41,7 @@ interface Intent {
   due_at_utc: string | null;
   recurrence: string | null;
   completed_at: string | null;
+  session_id: string | null;
   status: 'captured' | 'in_progress' | 'done';
   created_at: string;
   updated_at: string;
@@ -378,6 +381,7 @@ function render(): void {
         </div>
         <div class="recall-hint hidden" data-recall-for="${intent.id}"></div>
       </div>
+      <button class="intent-launch ${intent.session_id ? 'has-session' : ''}" onclick="launchSession('${intent.id}')" title="${intent.session_id ? 'Resume session' : 'Start session'}">▶</button>
       <button class="intent-delete" onclick="deleteIntent('${intent.id}')">✕</button>
     </div>
   `;
@@ -491,6 +495,75 @@ async function dismissRecurrence(intentId: string): Promise<void> {
 }
 
 (window as any).dismissRecurrence = dismissRecurrence;
+
+// ── Session launch ──────────────────────────────────────
+// @ts-ignore - called from onclick in HTML
+async function launchSession(intentId: string): Promise<void> {
+  const result = await intentAPI.launchSession(intentId);
+  if (result.success) {
+    showStatus('▶ Session launched');
+    setTimeout(hideStatus, 2000);
+    await loadIntents();
+  } else if (result.error === 'no_workspace') {
+    // Prompt to select workspace
+    showStatus('Select a workspace directory first');
+    const ws = await intentAPI.selectWorkspace();
+    if (ws.selected) {
+      updateWorkspaceDisplay(ws.path!);
+      // Retry launch
+      const retry = await intentAPI.launchSession(intentId);
+      if (retry.success) {
+        showStatus('▶ Session launched');
+        setTimeout(hideStatus, 2000);
+        await loadIntents();
+      } else {
+        showStatus(retry.error || 'Launch failed', true);
+      }
+    } else {
+      hideStatus();
+    }
+  } else {
+    showStatus(result.error || 'Launch failed', true);
+    setTimeout(hideStatus, 3000);
+  }
+}
+
+(window as any).launchSession = launchSession;
+
+// ── Workspace setting ───────────────────────────────────
+const workspacePathEl = document.getElementById('workspace-path') as HTMLSpanElement;
+const workspaceBtn = document.getElementById('workspace-btn') as HTMLButtonElement;
+
+function updateWorkspaceDisplay(path: string | null): void {
+  if (path) {
+    // Show last 2 path segments for brevity
+    const parts = path.replace(/\\/g, '/').split('/');
+    const short = parts.length > 2 ? '…/' + parts.slice(-2).join('/') : path;
+    workspacePathEl.textContent = short;
+    workspacePathEl.title = path;
+  } else {
+    workspacePathEl.textContent = 'Not set';
+    workspacePathEl.title = '';
+  }
+}
+
+workspaceBtn.addEventListener('click', async () => {
+  const result = await intentAPI.selectWorkspace();
+  if (result.selected) {
+    updateWorkspaceDisplay(result.path);
+    showStatus('✓ Workspace set');
+    setTimeout(hideStatus, 2000);
+  }
+});
+
+// Load workspace on settings panel open
+const origSettingsClick = settingsBtn.onclick;
+settingsBtn.addEventListener('click', async () => {
+  if (!settingsPanel.classList.contains('hidden')) {
+    const ws = await intentAPI.getSetting('workspace_root');
+    updateWorkspaceDisplay(ws);
+  }
+});
 
 // @ts-ignore - called from onclick in HTML
 async function toggleStatus(id: string): Promise<void> {

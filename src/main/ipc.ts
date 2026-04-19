@@ -1,6 +1,8 @@
-import { ipcMain, BrowserWindow } from 'electron';
+import { ipcMain, BrowserWindow, dialog } from 'electron';
+import * as fs from 'fs';
 import { createIntent, listIntents, updateIntent, updateIntentCAS, deleteIntent, getIntent, logIntentEvent, getSetting, setSetting } from './database';
 import { parseIntentWithAI, evaluateRecurrence, findSimilarIntent, setAIModel, listAvailableModels } from './ai';
+import { launchSession } from './session';
 import { transcribeAudio } from './voice';
 import { CreateIntentInput, Intent, RecurrenceResult } from '../shared/types';
 
@@ -194,5 +196,48 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('models:list', async () => {
     return listAvailableModels();
+  });
+
+  // Session launch
+  ipcMain.handle('session:launch', async (_event, intentId: string) => {
+    const workspace = getSetting('workspace_root');
+    if (!workspace || !fs.existsSync(workspace)) {
+      return { success: false, error: 'no_workspace' };
+    }
+    return launchSession(intentId, workspace);
+  });
+
+  // Workspace directory picker
+  ipcMain.handle('workspace:select', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+
+    // Suppress blur-hide while dialog is open
+    if (win) {
+      win.removeAllListeners('blur');
+    }
+
+    try {
+      const result = await dialog.showOpenDialog({
+        title: 'Select Workspace Directory',
+        properties: ['openDirectory'],
+        defaultPath: getSetting('workspace_root') || undefined,
+      });
+
+      if (!result.canceled && result.filePaths.length > 0) {
+        const dir = result.filePaths[0];
+        setSetting('workspace_root', dir);
+        return { selected: true, path: dir };
+      }
+      return { selected: false, path: null };
+    } finally {
+      // Restore blur-hide behavior
+      if (win) {
+        let showTimestamp = Date.now();
+        win.on('blur', () => {
+          if (Date.now() - showTimestamp < 300) return;
+          win.hide();
+        });
+      }
+    }
   });
 }

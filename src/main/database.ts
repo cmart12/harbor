@@ -33,6 +33,7 @@ export function initDatabase(): void {
   if (!has('due_at_utc'))   db.exec(`ALTER TABLE intents ADD COLUMN due_at_utc TEXT`);
   if (!has('recurrence'))   db.exec(`ALTER TABLE intents ADD COLUMN recurrence TEXT`);
   if (!has('completed_at')) db.exec(`ALTER TABLE intents ADD COLUMN completed_at TEXT`);
+  if (!has('session_id'))   db.exec(`ALTER TABLE intents ADD COLUMN session_id TEXT`);
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS settings (
@@ -76,6 +77,7 @@ export function createIntent(input: CreateIntentInput): Intent {
     due_at_utc: null,
     recurrence: null,
     completed_at: null,
+    session_id: null,
     status: 'captured',
     created_at: now,
     updated_at: now,
@@ -91,14 +93,14 @@ export function createIntent(input: CreateIntentInput): Intent {
 
 export function getIntent(id: string): Intent | null {
   return db.prepare(
-    `SELECT id, description, raw_text, client, due_at, due_at_utc, recurrence, completed_at, status, created_at, updated_at
+    `SELECT id, description, raw_text, client, due_at, due_at_utc, recurrence, completed_at, session_id, status, created_at, updated_at
      FROM intents WHERE id = ?`
   ).get(id) as Intent | undefined ?? null;
 }
 
 export function listIntents(): Intent[] {
   return db.prepare(
-    `SELECT id, description, raw_text, client, due_at, due_at_utc, recurrence, completed_at, status, created_at, updated_at
+    `SELECT id, description, raw_text, client, due_at, due_at_utc, recurrence, completed_at, session_id, status, created_at, updated_at
      FROM intents
      ORDER BY
        CASE WHEN status = 'done' THEN 1 ELSE 0 END ASC,
@@ -155,6 +157,12 @@ export function logIntentEvent(intentId: string, eventType: string, data: { due_
     `INSERT INTO intent_events (id, intent_id, event_type, due_at, due_at_utc, completed_at, recurrence_json, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(uuidv4(), intentId, eventType, data.due_at ?? null, data.due_at_utc ?? null, data.completed_at ?? null, data.recurrence_json ?? null, now);
+}
+
+/** Set session_id on an intent (main-process only, not exposed via generic update) */
+export function setIntentSessionId(intentId: string, sessionId: string): void {
+  db.prepare(`UPDATE intents SET session_id = ?, updated_at = ? WHERE id = ?`)
+    .run(sessionId, new Date().toISOString(), intentId);
 }
 
 export function deleteIntent(id: string): boolean {

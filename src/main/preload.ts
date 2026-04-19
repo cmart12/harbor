@@ -12,6 +12,8 @@ contextBridge.exposeInMainWorld('intentAPI', {
   getSetting: (key: string) => ipcRenderer.invoke('settings:get', key),
   setSetting: (key: string, value: string) => ipcRenderer.invoke('settings:set', key, value),
   listModels: () => ipcRenderer.invoke('models:list'),
+  launchSession: (intentId: string) => ipcRenderer.invoke('session:launch', intentId),
+  selectWorkspace: () => ipcRenderer.invoke('workspace:select'),
   hideWindow: () => ipcRenderer.send('window:hide'),
   onWindowShown: (callback: () => void) => {
     ipcRenderer.on('window:shown', callback);
