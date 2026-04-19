@@ -22,6 +22,8 @@ interface IntentAPI {
   getSetting(key: string): Promise<string | null>;
   setSetting(key: string, value: string): Promise<void>;
   listModels(): Promise<{ id: string; name?: string }[]>;
+  listEvents(limit?: number): Promise<any[]>;
+  resolveDate(dateText: string): Promise<{ due_at: string; due_at_utc: string | null }>;
   launchSession(intentId: string): Promise<{ success: boolean; error?: string; sessionId?: string }>;
   getActiveSessions(): Promise<string[]>;
   selectWorkspace(): Promise<{ selected: boolean; path: string | null }>;
@@ -63,6 +65,10 @@ const modelSelect = document.getElementById('model-select') as HTMLSelectElement
 const recordingIndicator = document.getElementById('recording-indicator') as HTMLDivElement;
 const themeLightBtn = document.getElementById('theme-light') as HTMLButtonElement;
 const themeDarkBtn = document.getElementById('theme-dark') as HTMLButtonElement;
+const timelineBtn = document.getElementById('timeline-btn') as HTMLButtonElement;
+const timelineView = document.getElementById('timeline-view') as HTMLDivElement;
+const timelineBack = document.getElementById('timeline-back') as HTMLButtonElement;
+const timelineContent = document.getElementById('timeline-content') as HTMLDivElement;
 
 let intents: Intent[] = [];
 // Track intents being processed by LLM
@@ -420,10 +426,10 @@ function render(): void {
       <div class="intent-check ${intent.status === 'done' ? 'checked' : ''}"
            onclick="toggleStatus('${intent.id}')">${intent.status === 'done' ? '✓' : ''}</div>
       <div class="intent-content">
-        <div class="intent-desc">${escapeHtml(intent.description)}</div>
+        <div class="intent-desc" onclick="editDescription('${intent.id}')">${escapeHtml(intent.description)}</div>
         <div class="intent-meta">
           ${intent.client ? `<span>👤 ${escapeHtml(intent.client)}</span>` : ''}
-          ${hasDue ? `<span class="due-badge ${dueInfo.overdue ? 'overdue' : ''}">📅 ${escapeHtml(dueInfo.text)}</span>` : ''}
+          <span class="due-badge ${hasDue && dueInfo.overdue ? 'overdue' : ''}" onclick="editDate('${intent.id}')">📅 ${hasDue ? escapeHtml(dueInfo.text) : 'add date'}</span>
           ${isRecurring ? '<span class="recurring-badge">↻</span>' : ''}
           ${isRunning ? '<span class="session-badge running">● running</span>' : intent.session_id ? '<span class="session-badge">○ session</span>' : ''}
           ${isProcessing ? '<span class="processing-badge">refining...</span>' : ''}
@@ -602,6 +608,162 @@ workspaceBtn.addEventListener('click', async () => {
   }
 });
 
+// ── Inline editing ──────────────────────────────────────
+// @ts-ignore - called from onclick in HTML
+async function editDescription(intentId: string): Promise<void> {
+  const intent = intents.find(i => i.id === intentId);
+  if (!intent) return;
+
+  const descEl = listEl.querySelector(`[data-id="${intentId}"] .intent-desc`) as HTMLElement;
+  if (!descEl || descEl.querySelector('input')) return; // Already editing
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'inline-edit-input';
+  input.value = intent.description;
+
+  descEl.textContent = '';
+  descEl.appendChild(input);
+  input.focus();
+  input.select();
+
+  const save = async () => {
+    const newDesc = input.value.trim();
+    if (newDesc && newDesc !== intent.description) {
+      await intentAPI.update(intentId, { description: newDesc });
+    }
+    await loadIntents();
+  };
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); save(); }
+    if (e.key === 'Escape') { loadIntents(); }
+  });
+  input.addEventListener('blur', save);
+}
+
+// @ts-ignore - called from onclick in HTML
+async function editDate(intentId: string): Promise<void> {
+  const intent = intents.find(i => i.id === intentId);
+  if (!intent) return;
+
+  const itemEl = listEl.querySelector(`[data-id="${intentId}"]`);
+  const badge = itemEl?.querySelector('.due-badge') as HTMLElement;
+  if (!badge || badge.querySelector('input')) return;
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'inline-edit-input inline-edit-date';
+  input.placeholder = 'e.g. next Friday, May 1...';
+  input.value = intent.due_at || '';
+
+  badge.textContent = '';
+  badge.appendChild(input);
+  input.focus();
+  input.select();
+
+  const save = async () => {
+    const dateText = input.value.trim();
+    if (dateText) {
+      badge.textContent = '📅 resolving...';
+      const resolved = await intentAPI.resolveDate(dateText);
+      await intentAPI.update(intentId, { due_at: resolved.due_at, due_at_utc: resolved.due_at_utc });
+    } else {
+      // Clear the date
+      await intentAPI.update(intentId, { due_at: null, due_at_utc: null });
+    }
+    await loadIntents();
+  };
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); save(); }
+    if (e.key === 'Escape') { loadIntents(); }
+  });
+  input.addEventListener('blur', save);
+}
+
+(window as any).editDescription = editDescription;
+(window as any).editDate = editDate;
+
+// ── Timeline view ───────────────────────────────────────
+function showTimeline(): void {
+  mainView.classList.add('hidden');
+  settingsView.classList.add('hidden');
+  timelineView.classList.remove('hidden');
+  loadTimeline();
+}
+
+function hideTimeline(): void {
+  timelineView.classList.add('hidden');
+  mainView.classList.remove('hidden');
+  descInput.focus();
+}
+
+timelineBtn.addEventListener('click', showTimeline);
+timelineBack.addEventListener('click', hideTimeline);
+
+async function loadTimeline(): Promise<void> {
+  const events = await intentAPI.listEvents(200);
+
+  if (events.length === 0) {
+    timelineContent.innerHTML = `
+      <div class="empty-state">
+        <span class="icon">📋</span>
+        <span>No activity yet.</span>
+      </div>`;
+    return;
+  }
+
+  // Group events by date
+  const groups = new Map<string, typeof events>();
+  for (const event of events) {
+    const date = new Date(event.created_at).toLocaleDateString('en-US', {
+      weekday: 'long', month: 'short', day: 'numeric'
+    });
+    if (!groups.has(date)) groups.set(date, []);
+    groups.get(date)!.push(event);
+  }
+
+  let html = '';
+  for (const [date, dateEvents] of groups) {
+    html += `<div class="timeline-date-group">
+      <div class="timeline-date">${date}</div>`;
+
+    for (const event of dateEvents) {
+      const time = new Date(event.created_at).toLocaleTimeString('en-US', {
+        hour: 'numeric', minute: '2-digit'
+      });
+      const icon = event.event_type === 'completed' ? '✅' :
+                   event.event_type === 'recycled' ? '↻' :
+                   event.event_type === 'recurrence_dismissed' ? '✕' : '•';
+      const label = event.event_type === 'completed' ? 'Completed' :
+                    event.event_type === 'recycled' ? 'Rescheduled' :
+                    event.event_type === 'recurrence_dismissed' ? 'Recurrence dismissed' :
+                    event.event_type;
+      const desc = event.intent_description ? escapeHtml(event.intent_description) : 'Unknown intent';
+      const sessionTag = event.session_id ? '<span class="timeline-session-tag">has session</span>' : '';
+
+      html += `
+        <div class="timeline-event">
+          <span class="timeline-icon">${icon}</span>
+          <div class="timeline-event-content">
+            <div class="timeline-event-desc">${desc}</div>
+            <div class="timeline-event-meta">
+              <span>${label}</span>
+              ${event.due_at ? `<span>📅 ${escapeHtml(event.due_at)}</span>` : ''}
+              ${sessionTag}
+              <span>${time}</span>
+            </div>
+          </div>
+        </div>`;
+    }
+    html += `</div>`;
+  }
+
+  timelineContent.innerHTML = html;
+}
+
+
 // @ts-ignore - called from onclick in HTML
 async function toggleStatus(id: string): Promise<void> {
   const intent = intents.find(i => i.id === id);
@@ -629,6 +791,10 @@ document.addEventListener('keydown', (e) => {
     if (isRecording) stopRecording();
     if (!settingsView.classList.contains('hidden')) {
       hideSettings();
+      return;
+    }
+    if (!timelineView.classList.contains('hidden')) {
+      hideTimeline();
       return;
     }
     intentAPI.hideWindow();

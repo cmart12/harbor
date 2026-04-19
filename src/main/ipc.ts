@@ -1,7 +1,7 @@
 import { ipcMain, BrowserWindow, dialog } from 'electron';
 import * as fs from 'fs';
-import { createIntent, listIntents, updateIntent, updateIntentCAS, deleteIntent, getIntent, logIntentEvent, getSetting, setSetting } from './database';
-import { parseIntentWithAI, evaluateRecurrence, findSimilarIntent, setAIModel, listAvailableModels } from './ai';
+import { createIntent, listIntents, updateIntent, updateIntentCAS, deleteIntent, getIntent, logIntentEvent, listIntentEvents, getSetting, setSetting } from './database';
+import { parseIntentWithAI, evaluateRecurrence, findSimilarIntent, resolveDateWithAI, setAIModel, listAvailableModels } from './ai';
 import { launchSession, getActiveSessionIntentIds } from './session';
 import { transcribeAudio } from './voice';
 import { CreateIntentInput, Intent, RecurrenceResult } from '../shared/types';
@@ -196,6 +196,16 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('models:list', async () => {
     return listAvailableModels();
+  });
+
+  // Intent events / timeline
+  ipcMain.handle('intent:events', (_event, limit?: number) => {
+    return listIntentEvents(limit || 100);
+  });
+
+  // Resolve natural language date
+  ipcMain.handle('intent:resolve-date', async (_event, dateText: string) => {
+    return resolveDateWithAI(dateText);
   });
 
   // Session launch

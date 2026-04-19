@@ -209,6 +209,37 @@ export async function parseIntentWithAI(rawText: string): Promise<ParsedIntent> 
   }
 }
 
+/** Resolve a natural language date to due_at + due_at_utc */
+export async function resolveDateWithAI(dateText: string): Promise<{ due_at: string; due_at_utc: string | null }> {
+  const session = await getParseSession();
+  if (!session) {
+    return { due_at: dateText, due_at_utc: null };
+  }
+
+  try {
+    const response = await session.sendAndWait({
+      prompt: `${getLocalTimeContext()}
+
+Resolve this date/time to a specific date. Return ONLY JSON:
+{"due_at": "human readable date", "due_at_utc": "ISO 8601 UTC"}
+
+Input: "${dateText}"`,
+    }, 15000);
+
+    const content = response?.data?.content ?? '';
+    const parsed = extractJson(content);
+    if (!parsed) return { due_at: dateText, due_at_utc: null };
+
+    return {
+      due_at: parsed.due_at || dateText,
+      due_at_utc: isValidIso8601(parsed.due_at_utc) ? parsed.due_at_utc : null,
+    };
+  } catch (err) {
+    console.error('[copilot-sdk] Date resolve failed:', err);
+    return { due_at: dateText, due_at_utc: null };
+  }
+}
+
 export async function evaluateRecurrence(intent: {
   raw_text: string | null;
   description: string;

@@ -159,6 +159,32 @@ export function logIntentEvent(intentId: string, eventType: string, data: { due_
   ).run(uuidv4(), intentId, eventType, data.due_at ?? null, data.due_at_utc ?? null, data.completed_at ?? null, data.recurrence_json ?? null, now);
 }
 
+export interface IntentEvent {
+  id: string;
+  intent_id: string;
+  event_type: string;
+  due_at: string | null;
+  due_at_utc: string | null;
+  completed_at: string | null;
+  recurrence_json: string | null;
+  created_at: string;
+  intent_description: string | null;
+  intent_client: string | null;
+  session_id: string | null;
+}
+
+/** List intent events with joined intent info, most recent first */
+export function listIntentEvents(limit = 100): IntentEvent[] {
+  return db.prepare(
+    `SELECT e.id, e.intent_id, e.event_type, e.due_at, e.due_at_utc, e.completed_at, e.recurrence_json, e.created_at,
+            i.description AS intent_description, i.client AS intent_client, i.session_id
+     FROM intent_events e
+     LEFT JOIN intents i ON e.intent_id = i.id
+     ORDER BY e.created_at DESC
+     LIMIT ?`
+  ).all(limit) as IntentEvent[];
+}
+
 /** Set session_id on an intent (main-process only, not exposed via generic update) */
 export function setIntentSessionId(intentId: string, sessionId: string): void {
   db.prepare(`UPDATE intents SET session_id = ?, updated_at = ? WHERE id = ?`)
