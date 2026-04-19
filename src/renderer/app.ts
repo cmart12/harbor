@@ -1,8 +1,23 @@
+interface RecurrenceResult {
+  should_recur: boolean;
+  reasoning: string;
+  next_due: string | null;
+  next_due_utc: string | null;
+}
+
+interface RecallMatch {
+  intent_id: string;
+  description: string;
+  completed_at: string | null;
+  confidence: number;
+}
+
 interface IntentAPI {
   create(input: { description: string }): Promise<Intent>;
   list(): Promise<Intent[]>;
   update(id: string, updates: Record<string, unknown>): Promise<Intent>;
   delete(id: string): Promise<boolean>;
+  dismissRecurrence(id: string): Promise<boolean>;
   transcribe(audioData: number[]): Promise<string>;
   getSetting(key: string): Promise<string | null>;
   setSetting(key: string, value: string): Promise<void>;
@@ -10,6 +25,9 @@ interface IntentAPI {
   hideWindow(): void;
   onWindowShown(callback: () => void): void;
   onIntentProcessed(callback: (id: string) => void): void;
+  onRecurrenceResult(callback: (intentId: string, result: RecurrenceResult) => void): void;
+  onRecurrenceApplied(callback: (intentId: string) => void): void;
+  onRecallHint(callback: (intentId: string, match: RecallMatch) => void): void;
 }
 
 interface Intent {
@@ -18,6 +36,9 @@ interface Intent {
   raw_text: string | null;
   client: string | null;
   due_at: string | null;
+  due_at_utc: string | null;
+  recurrence: string | null;
+  completed_at: string | null;
   status: 'captured' | 'in_progress' | 'done';
   created_at: string;
   updated_at: string;
@@ -300,10 +321,14 @@ async function animateRefinement(intentId: string): Promise<void> {
   // Fade in new meta
   const metaEl = itemEl?.querySelector('.intent-meta') as HTMLElement | null;
   if (metaEl) {
+    const dueInfo = formatDueDate(newIntent.due_at_utc, newIntent.due_at);
+    const hasDue = dueInfo.text !== '';
+    const isRecurring = !!newIntent.recurrence;
     let metaHtml = '';
     if (newIntent.client) metaHtml += `<span class="meta-fade-in">👤 ${escapeHtml(newIntent.client)}</span>`;
-    if (newIntent.due_at) metaHtml += `<span class="meta-fade-in">📅 ${escapeHtml(newIntent.due_at)}</span>`;
-    metaHtml += `<span>${timeAgo(newIntent.created_at)}</span>`;
+    if (hasDue) metaHtml += `<span class="meta-fade-in due-badge ${dueInfo.overdue ? 'overdue' : ''}">📅 ${escapeHtml(dueInfo.text)}</span>`;
+    if (isRecurring) metaHtml += `<span class="meta-fade-in recurring-badge">↻</span>`;
+    metaHtml += `<span>${timeAgo(newIntent.updated_at)}</span>`;
     metaEl.innerHTML = metaHtml;
   }
 
@@ -334,6 +359,10 @@ function render(): void {
 
   listEl.innerHTML = [...active, ...done].map(intent => {
     const isProcessing = processingIntents.has(intent.id);
+    const isRecurring = !!intent.recurrence;
+    const dueInfo = formatDueDate(intent.due_at_utc, intent.due_at);
+    const hasDue = dueInfo.text !== '';
+
     return `
     <div class="intent-item ${intent.status === 'done' ? 'done' : ''} ${isProcessing ? 'processing' : ''}" data-id="${intent.id}">
       <div class="intent-check ${intent.status === 'done' ? 'checked' : ''}"
@@ -342,10 +371,12 @@ function render(): void {
         <div class="intent-desc">${escapeHtml(intent.description)}</div>
         <div class="intent-meta">
           ${intent.client ? `<span>👤 ${escapeHtml(intent.client)}</span>` : ''}
-          ${intent.due_at ? `<span>📅 ${escapeHtml(intent.due_at)}</span>` : ''}
+          ${hasDue ? `<span class="due-badge ${dueInfo.overdue ? 'overdue' : ''}">📅 ${escapeHtml(dueInfo.text)}</span>` : ''}
+          ${isRecurring ? '<span class="recurring-badge">↻</span>' : ''}
           ${isProcessing ? '<span class="processing-badge">refining...</span>' : ''}
-          <span>${timeAgo(intent.created_at)}</span>
+          <span>${timeAgo(intent.updated_at)}</span>
         </div>
+        <div class="recall-hint hidden" data-recall-for="${intent.id}"></div>
       </div>
       <button class="intent-delete" onclick="deleteIntent('${intent.id}')">✕</button>
     </div>
@@ -370,6 +401,35 @@ function timeAgo(iso: string): string {
   return `${days}d ago`;
 }
 
+function formatDueDate(due_at_utc: string | null, due_at: string | null): { text: string; overdue: boolean } {
+  if (!due_at_utc) {
+    return due_at ? { text: due_at, overdue: false } : { text: '', overdue: false };
+  }
+
+  const due = new Date(due_at_utc);
+  const now = new Date();
+  const diffMs = due.getTime() - now.getTime();
+  const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+  const overdue = diffMs < 0;
+
+  if (overdue) {
+    const absDays = Math.abs(diffDays);
+    if (absDays === 0) return { text: 'due today', overdue: true };
+    if (absDays === 1) return { text: '1d overdue', overdue: true };
+    return { text: `${absDays}d overdue`, overdue: true };
+  }
+
+  if (diffDays === 0) return { text: 'due today', overdue: false };
+  if (diffDays === 1) return { text: 'tomorrow', overdue: false };
+  if (diffDays <= 7) return { text: `in ${diffDays}d`, overdue: false };
+
+  // Absolute date for further out
+  return {
+    text: due.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
+    overdue: false,
+  };
+}
+
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
   const description = descInput.value.trim();
@@ -388,6 +448,49 @@ intentAPI.onIntentProcessed(async (id: string) => {
   processingIntents.delete(id);
   await animateRefinement(id);
 });
+
+// Listen for recurrence evaluation results
+intentAPI.onRecurrenceResult((intentId: string, result: RecurrenceResult) => {
+  if (!result.should_recur) return;
+
+  const dueText = result.next_due || result.next_due_utc || 'soon';
+  statusBar.innerHTML = `↻ Recurring — next due ${escapeHtml(dueText)} <button class="dismiss-recurrence" onclick="dismissRecurrence('${intentId}')">✕</button>`;
+  statusBar.classList.remove('hidden', 'error');
+  statusBar.classList.add('recurrence');
+});
+
+// Listen for recurrence being applied (after undo window)
+intentAPI.onRecurrenceApplied(async (_intentId: string) => {
+  hideStatus();
+  await loadIntents();
+});
+
+// Listen for recall hints
+intentAPI.onRecallHint((intentId: string, match: RecallMatch) => {
+  const hintEl = listEl.querySelector(`[data-recall-for="${intentId}"]`) as HTMLElement | null;
+  if (!hintEl) return;
+
+  const ago = match.completed_at ? timeAgo(match.completed_at) : '';
+  hintEl.innerHTML = `💡 Similar: "${escapeHtml(match.description)}"${ago ? ` (done ${ago})` : ''}`;
+  hintEl.classList.remove('hidden');
+
+  // Auto-dismiss after 5 seconds unless hovered
+  let dismissed = false;
+  hintEl.addEventListener('mouseenter', () => { dismissed = true; });
+  setTimeout(() => {
+    if (!dismissed) {
+      hintEl.classList.add('hidden');
+    }
+  }, 5000);
+});
+
+// @ts-ignore - called from onclick in status bar HTML
+async function dismissRecurrence(intentId: string): Promise<void> {
+  await intentAPI.dismissRecurrence(intentId);
+  hideStatus();
+}
+
+(window as any).dismissRecurrence = dismissRecurrence;
 
 // @ts-ignore - called from onclick in HTML
 async function toggleStatus(id: string): Promise<void> {
