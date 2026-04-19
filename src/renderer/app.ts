@@ -376,6 +376,7 @@ function render(): void {
           ${intent.client ? `<span>👤 ${escapeHtml(intent.client)}</span>` : ''}
           ${hasDue ? `<span class="due-badge ${dueInfo.overdue ? 'overdue' : ''}">📅 ${escapeHtml(dueInfo.text)}</span>` : ''}
           ${isRecurring ? '<span class="recurring-badge">↻</span>' : ''}
+          ${intent.session_id ? '<span class="session-badge">⬤ session</span>' : ''}
           ${isProcessing ? '<span class="processing-badge">refining...</span>' : ''}
           <span>${timeAgo(intent.updated_at)}</span>
         </div>

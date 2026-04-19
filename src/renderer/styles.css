@@ -427,12 +427,23 @@ input[type="text"]#description-input.transcribing {
 }
 
 .intent-launch.has-session {
-  color: rgba(99, 102, 241, 0.4);
+  opacity: 1;
+  color: #6366f1;
 }
 
 .intent-item:hover .intent-launch.has-session {
-  opacity: 1;
+  color: #4f46e5;
+}
+
+/* ── Session badge ────────────────────────────────────── */
+
+.session-badge {
   color: #6366f1;
+  font-size: 6px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
 }
 
 /* ── Workspace setting ────────────────────────────────── */
