@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Tray, Menu, globalShortcut, screen, ipcMain, nativeImage, session, protocol, net } from 'electron';
+import { app, BrowserWindow, Tray, Menu, globalShortcut, screen, ipcMain, nativeImage, session, protocol, net, systemPreferences } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { loadConfig, getConfigValue, setConfigValue } from './config';
@@ -150,6 +150,13 @@ app.whenReady().then(async () => {
     const allowed = ['media', 'audioCapture', 'microphone'];
     return allowed.includes(permission);
   });
+
+  // Request macOS system-level mic access (triggers the OS permission dialog)
+  if (process.platform === 'darwin') {
+    systemPreferences.askForMediaAccess('microphone').then(granted => {
+      if (!granted) console.warn('[main] Microphone access denied by macOS');
+    });
+  }
 
   // Load local config and initialize workspace if configured
   const config = loadConfig();
