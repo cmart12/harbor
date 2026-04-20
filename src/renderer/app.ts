@@ -45,6 +45,7 @@ interface Intent {
   due_at_utc: string | null;
   recurrence: string | null;
   completed_at: string | null;
+  folder: string | null;
   session_id: string | null;
   status: 'captured' | 'in_progress' | 'done';
   created_at: string;
@@ -566,8 +567,25 @@ form.addEventListener('submit', async (e) => {
     // Create as intent
     queryResult.classList.add('hidden');
     listEl.classList.remove('hidden');
-    const intent = await intentAPI.create({ description: text });
-    processingIntents.add(intent.id);
+    const intent = await intentAPI.create({ description: text }) as any;
+    if (intent.error === 'no_workspace') {
+      showStatus('Select a workspace directory first');
+      const ws = await intentAPI.selectWorkspace();
+      if (ws.selected) {
+        updateWorkspaceDisplay(ws.path!);
+        const retryIntent = await intentAPI.create({ description: text }) as any;
+        if (retryIntent.error) {
+          showStatus('Failed to create intent', true);
+          return;
+        }
+        processingIntents.add(retryIntent.id);
+      } else {
+        hideStatus();
+        return;
+      }
+    } else {
+      processingIntents.add(intent.id);
+    }
     hideStatus();
     await loadIntents();
   }

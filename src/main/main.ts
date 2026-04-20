@@ -1,7 +1,10 @@
 import { app, BrowserWindow, Tray, Menu, globalShortcut, screen, ipcMain, nativeImage, session, protocol, net } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
-import { initDatabase } from './database';
+import { loadConfig, getConfigValue, setConfigValue } from './config';
+import { initDatabase, mergeSessionIds } from './database';
+import { initWorkspace, getDbPath, getLogPath } from './workspace';
+import { migrateOldDatabase } from './migration';
 import { registerIpcHandlers } from './ipc';
 import { preloadModel } from './voice';
 import { initCopilot, shutdownCopilot } from './ai';
@@ -148,7 +151,22 @@ app.whenReady().then(async () => {
     return allowed.includes(permission);
   });
 
-  initDatabase();
+  // Load local config and initialize workspace if configured
+  const config = loadConfig();
+  const workspace = config.workspace;
+
+  if (workspace && fs.existsSync(workspace)) {
+    initWorkspace(workspace);
+    migrateOldDatabase(workspace);
+    initDatabase(getDbPath(workspace), getLogPath(workspace));
+    mergeSessionIds(config.sessions);
+  } else if (workspace) {
+    // Workspace path configured but directory missing — clear it
+    console.warn(`[main] Workspace directory not found: ${workspace}`);
+    setConfigValue('workspace', null);
+  }
+  // If no workspace, DB is not initialized — IPC handlers return empty/error states
+
   registerIpcHandlers();
   createTray();
   mainWindow = createWindow();

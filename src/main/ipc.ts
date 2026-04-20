@@ -1,10 +1,14 @@
 import { ipcMain, BrowserWindow, dialog } from 'electron';
 import * as fs from 'fs';
-import { createIntent, listIntents, updateIntent, updateIntentCAS, deleteIntent, getIntent, logIntentEvent, listIntentEvents, getSetting, setSetting } from './database';
+import { isInitialized, createIntent, listIntents, updateIntent, updateIntentCAS, deleteIntent, getIntent, logIntentEvent, listIntentEvents } from './database';
 import { parseIntentWithAI, evaluateRecurrence, findSimilarIntent, resolveDateWithAI, classifyInput, setAIModel, listAvailableModels } from './ai';
 import { launchSession, getActiveSessionIntentIds } from './session';
 import { transcribeAudio } from './voice';
 import { CreateIntentInput, Intent, RecurrenceResult } from '../shared/types';
+import { getConfigValue, setConfigValue } from './config';
+import { initWorkspace, getDbPath, getLogPath } from './workspace';
+import { initDatabase, mergeSessionIds } from './database';
+import { getConfig } from './config';
 
 // Track in-flight recurrence evaluations so we can cancel them
 const pendingRecurrences = new Map<string, { result: RecurrenceResult; version: string; timer: ReturnType<typeof setTimeout> }>();
@@ -118,12 +122,14 @@ function applyRecurrence(intentId: string, expectedVersion: string, result: Recu
 
 export function registerIpcHandlers(): void {
   ipcMain.handle('intent:create', (_event, input: CreateIntentInput) => {
+    if (!isInitialized()) return { error: 'no_workspace' };
     const intent = createIntent(input);
     processIntentInBackground(intent.id, intent.description);
     return intent;
   });
 
   ipcMain.handle('intent:list', () => {
+    if (!isInitialized()) return [];
     return listIntents();
   });
 
@@ -182,14 +188,23 @@ export function registerIpcHandlers(): void {
     return transcribeAudio(float32);
   });
 
-  // Settings
+  // Settings — backed by local config.json
   ipcMain.handle('settings:get', (_event, key: string) => {
-    return getSetting(key);
+    const configKeyMap: Record<string, keyof ReturnType<typeof getConfig>> = {
+      workspace_root: 'workspace',
+      theme: 'theme',
+      model: 'model',
+    };
+    const configKey = configKeyMap[key];
+    if (configKey) return getConfigValue(configKey);
+    return null;
   });
 
   ipcMain.handle('settings:set', async (_event, key: string, value: string) => {
-    setSetting(key, value);
-    if (key === 'model') {
+    if (key === 'theme') {
+      setConfigValue('theme', value as 'light' | 'dark');
+    } else if (key === 'model') {
+      setConfigValue('model', value);
       await setAIModel(value);
     }
   });
@@ -222,8 +237,11 @@ export function registerIpcHandlers(): void {
 
   // Session launch
   ipcMain.handle('session:launch', async (_event, intentId: string) => {
-    const workspace = getSetting('workspace_root');
+    const workspace = getConfigValue('workspace');
     if (!workspace || !fs.existsSync(workspace)) {
+      return { success: false, error: 'no_workspace' };
+    }
+    if (!isInitialized()) {
       return { success: false, error: 'no_workspace' };
     }
     return launchSession(intentId, workspace);
@@ -234,7 +252,7 @@ export function registerIpcHandlers(): void {
     return getActiveSessionIntentIds();
   });
 
-  // Workspace directory picker
+  // Workspace directory picker — initializes workspace + DB on selection
   ipcMain.handle('workspace:select', async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
 
@@ -247,12 +265,18 @@ export function registerIpcHandlers(): void {
       const result = await dialog.showOpenDialog({
         title: 'Select Workspace Directory',
         properties: ['openDirectory'],
-        defaultPath: getSetting('workspace_root') || undefined,
+        defaultPath: getConfigValue('workspace') || undefined,
       });
 
       if (!result.canceled && result.filePaths.length > 0) {
         const dir = result.filePaths[0];
-        setSetting('workspace_root', dir);
+        setConfigValue('workspace', dir);
+
+        // Initialize workspace structure and DB
+        initWorkspace(dir);
+        initDatabase(getDbPath(dir), getLogPath(dir));
+        mergeSessionIds(getConfig().sessions);
+
         return { selected: true, path: dir };
       }
       return { selected: false, path: null };

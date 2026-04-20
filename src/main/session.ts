@@ -1,8 +1,10 @@
 import { spawn, execSync } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
-import { v4 as uuidv4 } from 'uuid';
-import { getIntent, setIntentSessionId } from './database';
+import { getIntent, assignIntentFolder } from './database';
+import { getSessionId, setSessionId as configSetSessionId } from './config';
+import { setIntentSessionId } from './database';
+import { createIntentFolder } from './workspace';
 
 // Per-intent launch lock to prevent duplicate terminals
 const launching = new Set<string>();
@@ -268,20 +270,36 @@ export async function launchSession(intentId: string, workspaceRoot: string): Pr
       return { success: false, error: 'Intent not found' };
     }
 
-    let sessionId = intent.session_id;
+    // Ensure the intent has a workspace subfolder
+    let folder = intent.folder;
+    if (!folder) {
+      folder = createIntentFolder(workspaceRoot, intentId, intent.description);
+      assignIntentFolder(intentId, folder);
+    }
+    const cwd = path.join(workspaceRoot, folder);
+
+    // Ensure folder exists (may have been deleted manually)
+    if (!fs.existsSync(cwd)) {
+      fs.mkdirSync(cwd, { recursive: true });
+    }
+
+    // Resolve session ID from local config (per-machine)
+    let sessionId = getSessionId(intentId);
     if (!sessionId) {
-      sessionId = uuidv4();
+      const { v4: uuidv4 } = require('uuid');
+      sessionId = uuidv4() as string;
+      configSetSessionId(intentId, sessionId);
       setIntentSessionId(intentId, sessionId);
     }
 
-    const pid = launchInTerminal(cli, sessionId, workspaceRoot);
+    const pid = launchInTerminal(cli, sessionId!, cwd);
     if (pid === null) {
       return { success: false, error: 'Failed to open terminal' };
     }
 
-    runningProcesses.set(intentId, { pid, sessionId });
-    console.log(`[session] Launched terminal for ${intentId} (PID ${pid || 'unknown'})`);
-    return { success: true, sessionId };
+    runningProcesses.set(intentId, { pid, sessionId: sessionId! });
+    console.log(`[session] Launched terminal for ${intentId} in ${folder} (PID ${pid || 'unknown'})`);
+    return { success: true, sessionId: sessionId! };
   } finally {
     setTimeout(() => launching.delete(intentId), 2000);
   }

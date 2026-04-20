@@ -7,6 +7,7 @@ export interface Intent {
   due_at_utc: string | null;
   recurrence: string | null;
   completed_at: string | null;
+  folder: string | null;
   session_id: string | null;
   status: 'captured' | 'in_progress' | 'done';
   created_at: string;

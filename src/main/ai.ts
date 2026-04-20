@@ -1,5 +1,5 @@
 import { CopilotClient, CopilotSession } from '@github/copilot-sdk';
-import { getSetting } from './database';
+import { getConfigValue } from './config';
 import { RecurrenceResult, RecallMatch, Intent } from '../shared/types';
 
 export interface ParsedIntent {
@@ -70,7 +70,7 @@ A confidence below 0.5 means no meaningful match.`;
 async function createSession(systemMessage: string): Promise<CopilotSession | null> {
   if (!client) return null;
   try {
-    const model = getSetting('model') || undefined;
+    const model = getConfigValue('model') || undefined;
     return await client.createSession({
       systemMessage: { content: systemMessage },
       model,
