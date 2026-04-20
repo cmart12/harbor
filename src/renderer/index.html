@@ -31,16 +31,17 @@
 
       <form id="capture-form">
         <div class="input-wrapper">
-          <input
-            type="text"
+          <textarea
             id="description-input"
-            placeholder="Capture an intent or ask about your history..."
+            placeholder="Capture an intent — type or press space to speak..."
             autocomplete="off"
             autofocus
-          />
+            rows="1"
+          ></textarea>
           <div id="recording-indicator" class="recording-indicator hidden">
             <span class="rec-dot"></span>
           </div>
+          <button type="submit" id="submit-btn" class="submit-btn" title="Submit (⌘+Enter)">↩</button>
         </div>
         <div id="status-bar" class="status-bar hidden"></div>
       </form>

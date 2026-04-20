@@ -1,7 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('intentAPI', {
-  create: (input: { description: string }) =>
+  create: (input: { body: string }) =>
     ipcRenderer.invoke('intent:create', input),
   list: () => ipcRenderer.invoke('intent:list'),
   update: (id: string, updates: Record<string, unknown>) =>

@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import Database from 'better-sqlite3';
 import { v4 as uuidv4 } from 'uuid';
-import { Intent, CreateIntentInput } from '../shared/types';
+import { Intent, Attachment, CreateIntentInput } from '../shared/types';
 import { appendEvent, replayLog } from './eventlog';
 
 let db: Database.Database;
@@ -33,6 +33,7 @@ export function initDatabase(dbPath: string, eventLogPath: string): void {
     CREATE TABLE intents (
       id TEXT PRIMARY KEY,
       description TEXT NOT NULL,
+      body TEXT,
       raw_text TEXT,
       client TEXT,
       due_at TEXT,
@@ -41,6 +42,7 @@ export function initDatabase(dbPath: string, eventLogPath: string): void {
       completed_at TEXT,
       folder TEXT,
       session_id TEXT,
+      attachments TEXT DEFAULT '[]',
       status TEXT NOT NULL DEFAULT 'captured',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
@@ -73,19 +75,30 @@ export function mergeSessionIds(sessions: Record<string, string>): void {
   }
 }
 
+function parseAttachments(raw: string | null | undefined): Attachment[] {
+  if (!raw) return [];
+  try { return JSON.parse(raw); } catch { return []; }
+}
+
 export function createIntent(input: CreateIntentInput): Intent {
   const now = new Date().toISOString();
+  // Placeholder title: first line or first ~80 chars of body
+  const firstLine = input.body.split('\n')[0].trim();
+  const placeholder = firstLine.length > 80 ? firstLine.slice(0, 77) + '…' : firstLine;
+
   const intent: Intent = {
     id: uuidv4(),
-    description: input.description,
-    raw_text: input.description,
-    client: input.client || null,
-    due_at: input.due_at || null,
+    description: placeholder,
+    body: input.body,
+    raw_text: input.body,
+    client: null,
+    due_at: null,
     due_at_utc: null,
     recurrence: null,
     completed_at: null,
     folder: null,
     session_id: null,
+    attachments: [],
     status: 'captured',
     created_at: now,
     updated_at: now,
@@ -95,6 +108,7 @@ export function createIntent(input: CreateIntentInput): Intent {
   appendEvent(logPath, 'intent.create', {
     id: intent.id,
     description: intent.description,
+    body: intent.body,
     raw_text: intent.raw_text,
     client: intent.client,
     due_at: intent.due_at,
@@ -102,29 +116,32 @@ export function createIntent(input: CreateIntentInput): Intent {
     recurrence: intent.recurrence,
     completed_at: intent.completed_at,
     folder: intent.folder,
+    attachments: JSON.stringify(intent.attachments),
     status: intent.status,
     created_at: intent.created_at,
     updated_at: intent.updated_at,
   });
 
   db.prepare(
-    `INSERT INTO intents (id, description, raw_text, client, due_at, due_at_utc, recurrence, completed_at, folder, session_id, status, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(intent.id, intent.description, intent.raw_text, intent.client, intent.due_at, intent.due_at_utc, intent.recurrence, intent.completed_at, intent.folder, intent.session_id, intent.status, intent.created_at, intent.updated_at);
+    `INSERT INTO intents (id, description, body, raw_text, client, due_at, due_at_utc, recurrence, completed_at, folder, session_id, attachments, status, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(intent.id, intent.description, intent.body, intent.raw_text, intent.client, intent.due_at, intent.due_at_utc, intent.recurrence, intent.completed_at, intent.folder, intent.session_id, JSON.stringify(intent.attachments), intent.status, intent.created_at, intent.updated_at);
 
   return intent;
 }
 
 export function getIntent(id: string): Intent | null {
-  return db.prepare(
-    `SELECT id, description, raw_text, client, due_at, due_at_utc, recurrence, completed_at, folder, session_id, status, created_at, updated_at
+  const row = db.prepare(
+    `SELECT id, description, body, raw_text, client, due_at, due_at_utc, recurrence, completed_at, folder, session_id, attachments, status, created_at, updated_at
      FROM intents WHERE id = ?`
-  ).get(id) as Intent | undefined ?? null;
+  ).get(id) as any | undefined;
+  if (!row) return null;
+  return { ...row, attachments: parseAttachments(row.attachments) };
 }
 
 export function listIntents(): Intent[] {
-  return db.prepare(
-    `SELECT id, description, raw_text, client, due_at, due_at_utc, recurrence, completed_at, folder, session_id, status, created_at, updated_at
+  const rows = db.prepare(
+    `SELECT id, description, body, raw_text, client, due_at, due_at_utc, recurrence, completed_at, folder, session_id, attachments, status, created_at, updated_at
      FROM intents
      ORDER BY
        CASE WHEN status = 'done' THEN 1 ELSE 0 END ASC,
@@ -132,20 +149,23 @@ export function listIntents(): Intent[] {
        CASE WHEN due_at_utc IS NOT NULL THEN 0 ELSE 1 END ASC,
        due_at_utc ASC,
        updated_at DESC`
-  ).all() as Intent[];
+  ).all() as any[];
+  return rows.map(r => ({ ...r, attachments: parseAttachments(r.attachments) }));
 }
 
-export function updateIntent(id: string, updates: Partial<Pick<Intent, 'description' | 'client' | 'due_at' | 'due_at_utc' | 'recurrence' | 'completed_at' | 'status'>>): Intent | null {
+export function updateIntent(id: string, updates: Partial<Pick<Intent, 'description' | 'body' | 'client' | 'due_at' | 'due_at_utc' | 'recurrence' | 'completed_at' | 'status' | 'attachments'>>): Intent | null {
   const now = new Date().toISOString();
   const fields: Record<string, string | null> = { updated_at: now };
 
   if (updates.description !== undefined) fields.description = updates.description;
+  if (updates.body !== undefined) fields.body = updates.body;
   if (updates.client !== undefined) fields.client = updates.client;
   if (updates.due_at !== undefined) fields.due_at = updates.due_at;
   if (updates.due_at_utc !== undefined) fields.due_at_utc = updates.due_at_utc;
   if (updates.recurrence !== undefined) fields.recurrence = updates.recurrence;
   if (updates.completed_at !== undefined) fields.completed_at = updates.completed_at;
   if (updates.status !== undefined) fields.status = updates.status;
+  if (updates.attachments !== undefined) fields.attachments = JSON.stringify(updates.attachments);
 
   // Log first
   appendEvent(logPath, 'intent.update', { id, fields });
@@ -158,7 +178,7 @@ export function updateIntent(id: string, updates: Partial<Pick<Intent, 'descript
 }
 
 /** Compare-and-swap update: only applies if updated_at matches expectedVersion. */
-export function updateIntentCAS(id: string, expectedVersion: string, updates: Partial<Pick<Intent, 'description' | 'client' | 'due_at' | 'due_at_utc' | 'recurrence' | 'completed_at' | 'status'>>): Intent | null {
+export function updateIntentCAS(id: string, expectedVersion: string, updates: Partial<Pick<Intent, 'description' | 'body' | 'client' | 'due_at' | 'due_at_utc' | 'recurrence' | 'completed_at' | 'status' | 'attachments'>>): Intent | null {
   const current = getIntent(id);
   if (!current || current.updated_at !== expectedVersion) return null;
   return updateIntent(id, updates);

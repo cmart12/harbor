@@ -13,7 +13,7 @@ interface RecallMatch {
 }
 
 interface IntentAPI {
-  create(input: { description: string }): Promise<Intent>;
+  create(input: { body: string }): Promise<Intent>;
   list(): Promise<Intent[]>;
   update(id: string, updates: Record<string, unknown>): Promise<Intent>;
   delete(id: string): Promise<boolean>;
@@ -36,9 +36,16 @@ interface IntentAPI {
   onRecallHint(callback: (intentId: string, match: RecallMatch) => void): void;
 }
 
+interface Attachment {
+  type: 'url';
+  name: string;
+  url: string;
+}
+
 interface Intent {
   id: string;
   description: string;
+  body: string | null;
   raw_text: string | null;
   client: string | null;
   due_at: string | null;
@@ -47,6 +54,7 @@ interface Intent {
   completed_at: string | null;
   folder: string | null;
   session_id: string | null;
+  attachments: Attachment[];
   status: 'captured' | 'in_progress' | 'done';
   created_at: string;
   updated_at: string;
@@ -54,7 +62,7 @@ interface Intent {
 
 declare const intentAPI: IntentAPI;
 
-const descInput = document.getElementById('description-input') as HTMLInputElement;
+const descInput = document.getElementById('description-input') as HTMLTextAreaElement;
 const form = document.getElementById('capture-form') as HTMLFormElement;
 const listEl = document.getElementById('intent-list') as HTMLDivElement;
 const countEl = document.getElementById('intent-count') as HTMLSpanElement;
@@ -288,7 +296,7 @@ function setInputState(state: 'idle' | 'recording' | 'transcribing'): void {
       descInput.placeholder = 'Transcribing...';
       break;
     default:
-      descInput.placeholder = 'Type or press space to speak...';
+      descInput.placeholder = 'Capture an intent — type or press space to speak...';
   }
 }
 
@@ -301,8 +309,25 @@ async function blobToFloat32(blob: Blob): Promise<Float32Array> {
   return channelData;
 }
 
-// Spacebar handling on the input
+// Auto-resize textarea
+function autoResize(): void {
+  descInput.style.height = 'auto';
+  const maxHeight = 120; // ~5 lines
+  descInput.style.height = Math.min(descInput.scrollHeight, maxHeight) + 'px';
+  descInput.style.overflowY = descInput.scrollHeight > maxHeight ? 'auto' : 'hidden';
+}
+
+descInput.addEventListener('input', autoResize);
+
+// Spacebar handling on the textarea
 descInput.addEventListener('keydown', (e) => {
+  // Cmd/Ctrl+Enter to submit
+  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+    e.preventDefault();
+    form.requestSubmit();
+    return;
+  }
+
   if (e.key === ' ') {
     if (isRecording) {
       e.preventDefault();
@@ -470,12 +495,27 @@ function render(): void {
 
     const isFocused = intent.id === focusedIntentId;
 
+    // Body preview: show first ~2 lines (collapsed), only if body differs from description
+    const hasBody = intent.body && intent.body.trim() !== intent.description.trim();
+    const bodyPreview = hasBody ? intent.body!.split('\n').slice(0, 2).join(' ').slice(0, 120) : '';
+    const bodyFull = hasBody ? intent.body! : '';
+    const hasAttachments = intent.attachments && intent.attachments.length > 0;
+
     return `
     <div class="intent-item ${intent.status === 'done' ? 'done' : ''} ${isProcessing ? 'processing' : ''} ${isFocused ? 'focused' : ''}" data-id="${intent.id}">
       <div class="intent-check ${intent.status === 'done' ? 'checked' : ''}"
            onclick="toggleStatus('${intent.id}')">${intent.status === 'done' ? '✓' : ''}</div>
       <div class="intent-content">
         <div class="intent-desc" onclick="editDescription('${intent.id}')">${escapeHtml(intent.description)}</div>
+        ${hasBody ? `
+        <div class="intent-body collapsed" onclick="toggleBody(this)" data-intent-id="${intent.id}">
+          <span class="body-preview">${escapeHtml(bodyPreview)}${bodyFull.length > 120 ? '…' : ''}</span>
+          <span class="body-full hidden">${escapeHtml(bodyFull)}</span>
+        </div>` : ''}
+        ${hasAttachments ? `
+        <div class="intent-attachments">
+          ${intent.attachments.map((a, i) => `<a class="attachment-link" href="${escapeHtml(a.url)}" title="${escapeHtml(a.url)}" onclick="event.stopPropagation()">🔗 ${escapeHtml(a.name || a.url)}</a><button class="attachment-remove" onclick="removeAttachment('${intent.id}', ${i})" title="Remove">✕</button>`).join('')}
+        </div>` : ''}
         <div class="intent-meta">
           ${intent.client ? `<span>👤 ${escapeHtml(intent.client)}</span>` : ''}
           <span class="due-badge ${hasDue && dueInfo.overdue ? 'overdue' : ''}" onclick="editDate('${intent.id}')">📅 ${hasDue ? escapeHtml(dueInfo.text) : 'add date'}</span>
@@ -483,6 +523,10 @@ function render(): void {
           ${isRunning ? '<span class="session-badge running">● running</span>' : intent.session_id ? '<span class="session-badge">○ session</span>' : ''}
           ${isProcessing ? '<span class="processing-badge">refining...</span>' : ''}
           <span>${timeAgo(intent.updated_at)}</span>
+        </div>
+        <div class="intent-actions-row">
+          <button class="intent-add-link" onclick="addAttachment('${intent.id}')" title="Add link">🔗</button>
+          ${hasBody ? `<button class="intent-edit-body" onclick="editBody('${intent.id}')" title="Edit body">✏️</button>` : ''}
         </div>
         <div class="recall-hint hidden" data-recall-for="${intent.id}"></div>
       </div>
@@ -546,49 +590,56 @@ form.addEventListener('submit', async (e) => {
   if (!text) return;
 
   descInput.value = '';
+  descInput.style.height = 'auto';
   descInput.focus();
 
-  // Classify: is this a new intent or a question?
-  showStatus('✨ Thinking...');
-  const classification = await intentAPI.classifyInput(text);
-  hideStatus();
+  // Skip classification for long inputs — they're definitely intents
+  const isLongInput = text.length > 200;
 
-  if (classification.type === 'query' && classification.query_answer) {
-    // Show answer in the query result area
-    queryResult.innerHTML = `
-      <div class="query-answer">
-        <div class="query-question">🔍 ${escapeHtml(text)}</div>
-        <div class="query-response">${escapeHtml(classification.query_answer)}</div>
-        <button class="query-dismiss" onclick="dismissQuery()">✕</button>
-      </div>`;
-    queryResult.classList.remove('hidden');
-    listEl.classList.add('hidden');
-  } else {
-    // Create as intent
-    queryResult.classList.add('hidden');
-    listEl.classList.remove('hidden');
-    const intent = await intentAPI.create({ description: text }) as any;
-    if (intent.error === 'no_workspace') {
-      showStatus('Select a workspace directory first');
-      const ws = await intentAPI.selectWorkspace();
-      if (ws.selected) {
-        updateWorkspaceDisplay(ws.path!);
-        const retryIntent = await intentAPI.create({ description: text }) as any;
-        if (retryIntent.error) {
-          showStatus('Failed to create intent', true);
-          return;
-        }
-        processingIntents.add(retryIntent.id);
-      } else {
-        hideStatus();
+  if (!isLongInput) {
+    // Classify: is this a new intent or a question?
+    showStatus('✨ Thinking...');
+    const classification = await intentAPI.classifyInput(text);
+    hideStatus();
+
+    if (classification.type === 'query' && classification.query_answer) {
+      // Show answer in the query result area
+      queryResult.innerHTML = `
+        <div class="query-answer">
+          <div class="query-question">🔍 ${escapeHtml(text)}</div>
+          <div class="query-response">${escapeHtml(classification.query_answer)}</div>
+          <button class="query-dismiss" onclick="dismissQuery()">✕</button>
+        </div>`;
+      queryResult.classList.remove('hidden');
+      listEl.classList.add('hidden');
+      return;
+    }
+  }
+
+  // Create as intent with body
+  queryResult.classList.add('hidden');
+  listEl.classList.remove('hidden');
+  const intent = await intentAPI.create({ body: text }) as any;
+  if (intent.error === 'no_workspace') {
+    showStatus('Select a workspace directory first');
+    const ws = await intentAPI.selectWorkspace();
+    if (ws.selected) {
+      updateWorkspaceDisplay(ws.path!);
+      const retryIntent = await intentAPI.create({ body: text }) as any;
+      if (retryIntent.error) {
+        showStatus('Failed to create intent', true);
         return;
       }
+      processingIntents.add(retryIntent.id);
     } else {
-      processingIntents.add(intent.id);
+      hideStatus();
+      return;
     }
-    hideStatus();
-    await loadIntents();
+  } else {
+    processingIntents.add(intent.id);
   }
+  hideStatus();
+  await loadIntents();
 });
 
 // Listen for background LLM processing completion
@@ -772,6 +823,142 @@ async function editDate(intentId: string): Promise<void> {
 
 (window as any).editDescription = editDescription;
 (window as any).editDate = editDate;
+
+// ── Body toggle & edit ──────────────────────────────────
+function toggleBody(el: HTMLElement): void {
+  const isCollapsed = el.classList.contains('collapsed');
+  const preview = el.querySelector('.body-preview') as HTMLElement;
+  const full = el.querySelector('.body-full') as HTMLElement;
+  if (!preview || !full) return;
+
+  if (isCollapsed) {
+    el.classList.remove('collapsed');
+    el.classList.add('expanded');
+    preview.classList.add('hidden');
+    full.classList.remove('hidden');
+  } else {
+    el.classList.add('collapsed');
+    el.classList.remove('expanded');
+    preview.classList.remove('hidden');
+    full.classList.add('hidden');
+  }
+}
+
+(window as any).toggleBody = toggleBody;
+
+async function editBody(intentId: string): Promise<void> {
+  const intent = intents.find(i => i.id === intentId);
+  if (!intent || !intent.body) return;
+
+  const itemEl = listEl.querySelector(`[data-id="${intentId}"]`);
+  let bodyEl = itemEl?.querySelector('.intent-body') as HTMLElement | null;
+
+  // If no body element exists, create one
+  const contentEl = itemEl?.querySelector('.intent-content') as HTMLElement;
+  if (!contentEl) return;
+
+  if (!bodyEl) {
+    bodyEl = document.createElement('div');
+    bodyEl.className = 'intent-body expanded';
+    const descEl = contentEl.querySelector('.intent-desc');
+    if (descEl) descEl.after(bodyEl);
+    else contentEl.prepend(bodyEl);
+  }
+
+  if (bodyEl.querySelector('textarea')) return; // Already editing
+
+  const textarea = document.createElement('textarea');
+  textarea.className = 'inline-edit-body';
+  textarea.value = intent.body;
+  textarea.rows = Math.min(intent.body.split('\n').length + 1, 8);
+
+  bodyEl.innerHTML = '';
+  bodyEl.classList.remove('collapsed');
+  bodyEl.classList.add('expanded');
+  bodyEl.appendChild(textarea);
+  textarea.focus();
+
+  const save = async () => {
+    const newBody = textarea.value.trim();
+    if (newBody && newBody !== intent.body) {
+      await intentAPI.update(intentId, { body: newBody });
+    }
+    await loadIntents();
+  };
+
+  textarea.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); save(); }
+    if (e.key === 'Escape') { loadIntents(); }
+  });
+  textarea.addEventListener('blur', save);
+}
+
+(window as any).editBody = editBody;
+
+// ── Attachments ─────────────────────────────────────────
+async function addAttachment(intentId: string): Promise<void> {
+  const intent = intents.find(i => i.id === intentId);
+  if (!intent) return;
+
+  const itemEl = listEl.querySelector(`[data-id="${intentId}"]`);
+  const contentEl = itemEl?.querySelector('.intent-content') as HTMLElement;
+  if (!contentEl) return;
+
+  // Check if already has an input open
+  if (contentEl.querySelector('.attachment-input-row')) return;
+
+  const row = document.createElement('div');
+  row.className = 'attachment-input-row';
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'inline-edit-input attachment-url-input';
+  input.placeholder = 'Paste a URL...';
+  row.appendChild(input);
+
+  const metaEl = contentEl.querySelector('.intent-meta');
+  if (metaEl) metaEl.before(row);
+  else contentEl.appendChild(row);
+  input.focus();
+
+  const save = async () => {
+    const url = input.value.trim();
+    if (url && /^https?:\/\//i.test(url)) {
+      // Auto-name from URL hostname + path
+      let name = '';
+      try {
+        const u = new URL(url);
+        const pathParts = u.pathname.split('/').filter(Boolean);
+        name = pathParts.length > 0 ? pathParts[pathParts.length - 1] : u.hostname;
+      } catch {
+        name = url.slice(0, 40);
+      }
+      const attachments = [...(intent.attachments || []), { type: 'url' as const, name, url }];
+      await intentAPI.update(intentId, { attachments });
+    } else if (url) {
+      // Not a valid URL — just remove the input
+    }
+    row.remove();
+    await loadIntents();
+  };
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); save(); }
+    if (e.key === 'Escape') { row.remove(); }
+  });
+  input.addEventListener('blur', save);
+}
+
+async function removeAttachment(intentId: string, index: number): Promise<void> {
+  const intent = intents.find(i => i.id === intentId);
+  if (!intent) return;
+  const attachments = [...(intent.attachments || [])];
+  attachments.splice(index, 1);
+  await intentAPI.update(intentId, { attachments });
+  await loadIntents();
+}
+
+(window as any).addAttachment = addAttachment;
+(window as any).removeAttachment = removeAttachment;
 
 // @ts-ignore - called from onclick in query result
 function dismissQuery(): void {

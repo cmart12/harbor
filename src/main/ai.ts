@@ -14,11 +14,11 @@ let parseSession: CopilotSession | null = null;
 let recurrenceSession: CopilotSession | null = null;
 let recallSession: CopilotSession | null = null;
 
-const PARSE_SYSTEM_MESSAGE = `You are an intent parser. Given a natural language intent, extract structured fields.
+const PARSE_SYSTEM_MESSAGE = `You are an intent parser. Given user input that may range from a short phrase to a long voice transcript (covering initiatives, goals, overviews, etc.), extract structured fields.
 The user's current local time will be provided for resolving relative dates.
 
 Return ONLY a JSON object with these fields (no markdown, no explanation):
-- "description": a clean, concise action description
+- "title": a concise, action-oriented title (max ~10 words) that captures the core intent
 - "client": the client/company name if mentioned, otherwise null
 - "due_at": a human-readable due date/time if mentioned, otherwise null
 - "due_at_utc": the due date as ISO 8601 UTC (e.g. "2026-04-21T17:00:00Z") if a date was mentioned, otherwise null
@@ -26,14 +26,13 @@ Return ONLY a JSON object with these fields (no markdown, no explanation):
 Examples:
 Input: "make a powerpoint deck for Acme by Friday"
 (Current local time: 2026-04-16T10:00:00-07:00, Wednesday)
-Output: {"description":"Create PowerPoint deck","client":"Acme","due_at":"Friday","due_at_utc":"2026-04-18T23:59:00Z"}
+Output: {"title":"Create PowerPoint deck for Acme","client":"Acme","due_at":"Friday","due_at_utc":"2026-04-18T23:59:00Z"}
+
+Input: "I've been thinking about the roadmap for next quarter. We need to align with the Contoso team on their API changes, finalize the migration plan, and get the security audit done before end of month. The main priority is making sure we don't break existing integrations."
+Output: {"title":"Plan Q3 roadmap and Contoso API alignment","client":"Contoso","due_at":"End of month","due_at_utc":"2026-04-30T23:59:00Z"}
 
 Input: "review the PR"
-Output: {"description":"Review the PR","client":null,"due_at":null,"due_at_utc":null}
-
-Input: "send invoice to Contoso before end of month"
-(Current local time: 2026-04-16T10:00:00-07:00)
-Output: {"description":"Send invoice","client":"Contoso","due_at":"End of month","due_at_utc":"2026-04-30T23:59:00Z"}`;
+Output: {"title":"Review the PR","client":null,"due_at":null,"due_at_utc":null}`;
 
 const RECURRENCE_SYSTEM_MESSAGE = `You evaluate whether a completed intent should recur.
 Based on the intent's language, decide if this is a recurring task or a one-off.
@@ -198,7 +197,7 @@ export async function parseIntentWithAI(rawText: string): Promise<ParsedIntent> 
     const due_at_utc = isValidIso8601(parsed.due_at_utc) ? parsed.due_at_utc : null;
 
     return {
-      description: parsed.description || rawText,
+      description: parsed.title || parsed.description || rawText,
       client: parsed.client || null,
       due_at: parsed.due_at || null,
       due_at_utc,

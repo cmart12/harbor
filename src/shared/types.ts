@@ -1,6 +1,13 @@
+export interface Attachment {
+  type: 'url';
+  name: string;
+  url: string;
+}
+
 export interface Intent {
   id: string;
   description: string;
+  body: string | null;
   raw_text: string | null;
   client: string | null;
   due_at: string | null;
@@ -9,15 +16,14 @@ export interface Intent {
   completed_at: string | null;
   folder: string | null;
   session_id: string | null;
+  attachments: Attachment[];
   status: 'captured' | 'in_progress' | 'done';
   created_at: string;
   updated_at: string;
 }
 
 export interface CreateIntentInput {
-  description: string;
-  client?: string;
-  due_at?: string;
+  body: string;
 }
 
 export interface RecurrenceResult {

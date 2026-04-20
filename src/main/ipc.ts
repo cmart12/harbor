@@ -19,10 +19,11 @@ function notifyAllWindows(channel: string, ...args: any[]): void {
   }
 }
 
-async function processIntentInBackground(id: string, rawText: string): Promise<void> {
+async function processIntentInBackground(id: string, body: string, createdVersion: string): Promise<void> {
   try {
-    const parsed = await parseIntentWithAI(rawText);
-    updateIntent(id, {
+    const parsed = await parseIntentWithAI(body);
+    // CAS: only apply AI results if intent hasn't been edited since creation
+    updateIntentCAS(id, createdVersion, {
       description: parsed.description,
       client: parsed.client,
       due_at: parsed.due_at,
@@ -124,7 +125,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('intent:create', (_event, input: CreateIntentInput) => {
     if (!isInitialized()) return { error: 'no_workspace' };
     const intent = createIntent(input);
-    processIntentInBackground(intent.id, intent.description);
+    processIntentInBackground(intent.id, intent.body || intent.description, intent.updated_at);
     return intent;
   });
 
@@ -133,7 +134,7 @@ export function registerIpcHandlers(): void {
     return listIntents();
   });
 
-  ipcMain.handle('intent:update', (_event, id: string, updates: Partial<Pick<Intent, 'description' | 'client' | 'due_at' | 'due_at_utc' | 'status'>>) => {
+  ipcMain.handle('intent:update', (_event, id: string, updates: Partial<Pick<Intent, 'description' | 'body' | 'client' | 'due_at' | 'due_at_utc' | 'status' | 'attachments'>>) => {
     // Detect transition to 'done' for recurrence evaluation
     if (updates.status === 'done') {
       const current = getIntent(id);
