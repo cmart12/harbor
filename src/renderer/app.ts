@@ -131,6 +131,7 @@ let selectedIndex = -1;
 let displayedIntents: Intent[] = [];
 let searchResults: Intent[] | null = null;
 let searchTimeout: ReturnType<typeof setTimeout> | null = null;
+let searchMode = false;
 
 // ── Status bar helpers ──────────────────────────────────
 function showStatus(msg: string, isError = false): void {
@@ -332,7 +333,7 @@ function setInputState(state: 'idle' | 'recording' | 'transcribing'): void {
       descInput.placeholder = 'Transcribing...';
       break;
     default:
-      descInput.placeholder = 'Capture an intent — type or press space to speak...';
+      descInput.placeholder = searchMode ? '🔍 Search intents...' : 'Capture an intent...';
   }
 }
 
@@ -355,12 +356,11 @@ function autoResize(): void {
 
 descInput.addEventListener('input', autoResize);
 
-// Live search: filter intents when input starts with /
+// Live search: filter intents when in search mode
 descInput.addEventListener('input', () => {
   if (searchTimeout) clearTimeout(searchTimeout);
-  const raw = descInput.value;
 
-  if (!raw.startsWith('/')) {
+  if (!searchMode) {
     if (searchResults !== null) {
       searchResults = null;
       selectedIndex = -1;
@@ -369,7 +369,7 @@ descInput.addEventListener('input', () => {
     return;
   }
 
-  const query = raw.slice(1).trim();
+  const query = descInput.value.trim();
   if (!query) {
     searchResults = null;
     selectedIndex = -1;
@@ -384,8 +384,40 @@ descInput.addEventListener('input', () => {
   }, 250);
 });
 
+function enterSearchMode(): void {
+  searchMode = true;
+  descInput.classList.add('search-mode');
+  descInput.placeholder = '🔍 Search intents...';
+  descInput.value = '';
+  descInput.style.height = 'auto';
+  searchResults = null;
+  selectedIndex = -1;
+  render();
+  descInput.focus();
+}
+
+function exitSearchMode(): void {
+  searchMode = false;
+  descInput.classList.remove('search-mode');
+  descInput.placeholder = 'Capture an intent...';
+  descInput.value = '';
+  descInput.style.height = 'auto';
+  searchResults = null;
+  selectedIndex = -1;
+  render();
+  descInput.focus();
+}
+
 // Spacebar handling on the textarea
 descInput.addEventListener('keydown', (e) => {
+  // Shift+Tab toggles between search and intent mode
+  if (e.key === 'Tab' && e.shiftKey) {
+    e.preventDefault();
+    if (searchMode) exitSearchMode();
+    else enterSearchMode();
+    return;
+  }
+
   // Down arrow jumps to the intent list
   if (e.key === 'ArrowDown') {
     e.preventDefault();
@@ -398,9 +430,12 @@ descInput.addEventListener('keydown', (e) => {
     return;
   }
 
-  // In search mode, Enter does nothing (use arrows to select)
-  if (e.key === 'Enter' && !e.shiftKey && descInput.value.startsWith('/')) {
+  // In search mode, Enter selects the first result instead of creating
+  if (e.key === 'Enter' && !e.shiftKey && searchMode) {
     e.preventDefault();
+    if (displayedIntents.length > 0) {
+      openCanvas(displayedIntents[0].id);
+    }
     return;
   }
 
@@ -674,6 +709,7 @@ function formatDueDate(due_at_utc: string | null, due_at: string | null): { text
 
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
+  if (searchMode) return;
   const text = descInput.value.trim();
   if (!text) return;
 
@@ -681,29 +717,6 @@ form.addEventListener('submit', async (e) => {
   descInput.style.height = 'auto';
   descInput.focus();
   searchResults = null;
-
-  // Skip classification for long inputs — they're definitely intents
-  const isLongInput = text.length > 200;
-
-  if (!isLongInput) {
-    // Classify: is this a new intent or a question?
-    showStatus('✨ Thinking...');
-    const classification = await intentAPI.classifyInput(text);
-    hideStatus();
-
-    if (classification.type === 'query' && classification.query_answer) {
-      // Show answer in the query result area
-      queryResult.innerHTML = `
-        <div class="query-answer">
-          <div class="query-question">🔍 ${escapeHtml(text)}</div>
-          <div class="query-response">${escapeHtml(classification.query_answer)}</div>
-          <button class="query-dismiss" onclick="dismissQuery()">✕</button>
-        </div>`;
-      queryResult.classList.remove('hidden');
-      listEl.classList.add('hidden');
-      return;
-    }
-  }
 
   // Create as intent with body
   queryResult.classList.add('hidden');
@@ -1785,6 +1798,7 @@ document.addEventListener('keydown', (e) => {
 intentAPI.onWindowShown(() => {
   selectedIndex = -1;
   searchResults = null;
+  if (searchMode) exitSearchMode();
   descInput.focus();
   descInput.select();
   hideStatus();
