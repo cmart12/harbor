@@ -108,6 +108,19 @@
       </header>
       <div id="timeline-content" class="timeline-content"></div>
     </div>
+
+    <!-- Canvas view -->
+    <div id="canvas-view" class="canvas-view hidden">
+      <header>
+        <button id="canvas-back" class="header-icon-btn" title="Back">←</button>
+        <h1 id="canvas-title" class="canvas-title-header"></h1>
+        <div class="header-actions">
+          <span id="canvas-save-status" class="canvas-save-status"></span>
+          <button id="canvas-launch" class="header-icon-btn" title="Start session">▶</button>
+        </div>
+      </header>
+      <textarea id="canvas-editor" class="canvas-editor" placeholder="Start writing..."></textarea>
+    </div>
   </div>
 
   <script src="app.js"></script>

@@ -28,6 +28,8 @@ interface IntentAPI {
   launchSession(intentId: string): Promise<{ success: boolean; error?: string; sessionId?: string }>;
   getActiveSessions(): Promise<string[]>;
   selectWorkspace(): Promise<{ selected: boolean; path: string | null }>;
+  readCanvas(intentId: string): Promise<{ content: string; error?: string }>;
+  writeCanvas(intentId: string, content: string): Promise<{ success?: boolean; error?: string }>;
   hideWindow(): void;
   onWindowShown(callback: () => void): void;
   onIntentProcessed(callback: (id: string) => void): void;
@@ -495,34 +497,25 @@ function render(): void {
 
     const isFocused = intent.id === focusedIntentId;
 
-    const hasAttachments = intent.attachments && intent.attachments.length > 0;
-
     return `
-    <div class="intent-item ${intent.status === 'done' ? 'done' : ''} ${isProcessing ? 'processing' : ''} ${isFocused ? 'focused' : ''}" data-id="${intent.id}">
+    <div class="intent-item ${intent.status === 'done' ? 'done' : ''} ${isProcessing ? 'processing' : ''} ${isFocused ? 'focused' : ''}" data-id="${intent.id}" onclick="openCanvas('${intent.id}')">
       <div class="intent-check ${intent.status === 'done' ? 'checked' : ''}"
-           onclick="toggleStatus('${intent.id}')">${intent.status === 'done' ? '✓' : ''}</div>
+           onclick="event.stopPropagation(); toggleStatus('${intent.id}')">${intent.status === 'done' ? '✓' : ''}</div>
       <div class="intent-content">
-        <div class="intent-desc" onclick="editDescription('${intent.id}')">${escapeHtml(intent.description)}</div>
-        ${hasAttachments ? `
-        <div class="intent-attachments">
-          ${intent.attachments.map((a, i) => `<a class="attachment-link" href="${escapeHtml(a.url)}" title="${escapeHtml(a.url)}" onclick="event.stopPropagation()">🔗 ${escapeHtml(a.name || a.url)}</a><button class="attachment-remove" onclick="removeAttachment('${intent.id}', ${i})" title="Remove">✕</button>`).join('')}
-        </div>` : ''}
+        <div class="intent-desc">${escapeHtml(intent.description)}</div>
         <div class="intent-meta">
           ${intent.client ? `<span>👤 ${escapeHtml(intent.client)}</span>` : ''}
-          <span class="due-badge ${hasDue && dueInfo.overdue ? 'overdue' : ''}" onclick="editDate('${intent.id}')">📅 ${hasDue ? escapeHtml(dueInfo.text) : 'add date'}</span>
+          ${hasDue ? `<span class="due-badge ${dueInfo.overdue ? 'overdue' : ''}">📅 ${escapeHtml(dueInfo.text)}</span>` : ''}
           ${isRecurring ? '<span class="recurring-badge">↻</span>' : ''}
           ${isRunning ? '<span class="session-badge running">● running</span>' : intent.session_id ? '<span class="session-badge">○ session</span>' : ''}
           ${isProcessing ? '<span class="processing-badge">refining...</span>' : ''}
           <span>${timeAgo(intent.updated_at)}</span>
         </div>
-        <div class="intent-actions-row">
-          <button class="intent-add-link" onclick="addAttachment('${intent.id}')" title="Add link">🔗</button>
-        </div>
         <div class="recall-hint hidden" data-recall-for="${intent.id}"></div>
       </div>
-      ${intent.status !== 'done' ? `<button class="intent-focus ${isFocused ? 'is-focused' : ''}" onclick="setFocus('${intent.id}')" title="${isFocused ? 'Unfocus' : 'Focus'}">🎯</button>` : ''}
-      <button class="intent-launch ${intent.session_id ? 'has-session' : ''} ${isRunning ? 'is-running' : ''}" onclick="launchSession('${intent.id}')" title="${isRunning ? 'Switch to session' : intent.session_id ? 'Resume session' : 'Start session'}">▶</button>
-      <button class="intent-delete" onclick="deleteIntent('${intent.id}')">✕</button>
+      ${intent.status !== 'done' ? `<button class="intent-focus ${isFocused ? 'is-focused' : ''}" onclick="event.stopPropagation(); setFocus('${intent.id}')" title="${isFocused ? 'Unfocus' : 'Focus'}">🎯</button>` : ''}
+      <button class="intent-launch ${intent.session_id ? 'has-session' : ''} ${isRunning ? 'is-running' : ''}" onclick="event.stopPropagation(); launchSession('${intent.id}')" title="${isRunning ? 'Switch to session' : intent.session_id ? 'Resume session' : 'Start session'}">▶</button>
+      <button class="intent-delete" onclick="event.stopPropagation(); deleteIntent('${intent.id}')">✕</button>
     </div>
   `;
   }).join('');
@@ -1113,6 +1106,82 @@ async function deleteIntent(id: string): Promise<void> {
 (window as any).toggleStatus = toggleStatus;
 (window as any).deleteIntent = deleteIntent;
 
+// ── Canvas view ─────────────────────────────────────────
+const canvasView = document.getElementById('canvas-view') as HTMLDivElement;
+const canvasBack = document.getElementById('canvas-back') as HTMLButtonElement;
+const canvasTitle = document.getElementById('canvas-title') as HTMLHeadingElement;
+const canvasEditor = document.getElementById('canvas-editor') as HTMLTextAreaElement;
+const canvasSaveStatus = document.getElementById('canvas-save-status') as HTMLSpanElement;
+const canvasLaunchBtn = document.getElementById('canvas-launch') as HTMLButtonElement;
+let canvasIntentId: string | null = null;
+let canvasSaveTimer: ReturnType<typeof setTimeout> | null = null;
+
+async function openCanvas(intentId: string): Promise<void> {
+  const intent = intents.find(i => i.id === intentId);
+  if (!intent) return;
+
+  canvasIntentId = intentId;
+  canvasTitle.textContent = intent.description;
+  canvasSaveStatus.textContent = '';
+
+  // Load canvas content
+  const result = await intentAPI.readCanvas(intentId);
+  if (result.error === 'no_workspace') {
+    showStatus('Select a workspace first');
+    return;
+  }
+  canvasEditor.value = result.content || '';
+
+  // Show canvas view
+  mainView.classList.add('hidden');
+  settingsView.classList.add('hidden');
+  timelineView.classList.add('hidden');
+  canvasView.classList.remove('hidden');
+  canvasEditor.focus();
+}
+
+function closeCanvas(): void {
+  // Flush any pending save
+  if (canvasSaveTimer) {
+    clearTimeout(canvasSaveTimer);
+    canvasSaveTimer = null;
+    if (canvasIntentId) {
+      intentAPI.writeCanvas(canvasIntentId, canvasEditor.value);
+    }
+  }
+  canvasIntentId = null;
+  canvasView.classList.add('hidden');
+  mainView.classList.remove('hidden');
+  descInput.focus();
+  loadIntents();
+}
+
+// Auto-save with debounce
+canvasEditor.addEventListener('input', () => {
+  if (!canvasIntentId) return;
+  canvasSaveStatus.textContent = '●';
+  canvasSaveStatus.title = 'Unsaved changes';
+
+  if (canvasSaveTimer) clearTimeout(canvasSaveTimer);
+  canvasSaveTimer = setTimeout(async () => {
+    if (canvasIntentId) {
+      await intentAPI.writeCanvas(canvasIntentId, canvasEditor.value);
+      canvasSaveStatus.textContent = '✓';
+      canvasSaveStatus.title = 'Saved';
+      setTimeout(() => { canvasSaveStatus.textContent = ''; }, 1500);
+    }
+    canvasSaveTimer = null;
+  }, 500);
+});
+
+canvasBack.addEventListener('click', closeCanvas);
+
+canvasLaunchBtn.addEventListener('click', () => {
+  if (canvasIntentId) launchSession(canvasIntentId);
+});
+
+(window as any).openCanvas = openCanvas;
+
 // ── Init ────────────────────────────────────────────────
 descInput.focus();
 loadSettings();
@@ -1121,6 +1190,10 @@ loadFocusState();
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (isRecording) stopRecording();
+    if (!canvasView.classList.contains('hidden')) {
+      closeCanvas();
+      return;
+    }
     if (!settingsView.classList.contains('hidden')) {
       hideSettings();
       return;

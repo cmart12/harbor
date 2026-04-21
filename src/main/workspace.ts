@@ -84,3 +84,41 @@ export function createIntentFolder(workspaceRoot: string, intentId: string, desc
 
   return folder;
 }
+
+const CANVAS_FILE = 'canvas.md';
+
+/** Get the absolute path to an intent's canvas file. */
+export function getCanvasPath(workspaceRoot: string, folder: string): string {
+  return path.join(workspaceRoot, folder, CANVAS_FILE);
+}
+
+/** Read the canvas content for an intent. Returns empty string if file doesn't exist. */
+export function readCanvas(workspaceRoot: string, folder: string): string {
+  const canvasPath = getCanvasPath(workspaceRoot, folder);
+  if (!fs.existsSync(canvasPath)) return '';
+  return fs.readFileSync(canvasPath, 'utf-8');
+}
+
+/** Write content to an intent's canvas file. Creates the folder if needed. */
+export function writeCanvas(workspaceRoot: string, folder: string, content: string): void {
+  const folderPath = path.join(workspaceRoot, folder);
+  if (!fs.existsSync(folderPath)) {
+    fs.mkdirSync(folderPath, { recursive: true });
+  }
+  const canvasPath = getCanvasPath(workspaceRoot, folder);
+  fs.writeFileSync(canvasPath, content, 'utf-8');
+}
+
+/** Create an intent's folder and seed its canvas with initial content. */
+export function initIntentCanvas(workspaceRoot: string, intentId: string, description: string, body: string | null): string {
+  const folder = createIntentFolder(workspaceRoot, intentId, description);
+  const canvasPath = getCanvasPath(workspaceRoot, folder);
+
+  // Only seed if canvas doesn't already exist
+  if (!fs.existsSync(canvasPath)) {
+    const content = body && body.trim() ? body.trim() + '\n' : '';
+    fs.writeFileSync(canvasPath, content, 'utf-8');
+  }
+
+  return folder;
+}

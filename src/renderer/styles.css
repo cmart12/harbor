@@ -1123,6 +1123,67 @@ header h1 {
   font-size: 10px;
 }
 
+/* ── Canvas view ─────────────────────────────────────── */
+
+.canvas-view {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  animation: slideRight 0.15s ease;
+}
+
+.canvas-view.hidden {
+  display: none;
+}
+
+.canvas-view header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.canvas-view header h1 {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-save-status {
+  font-size: 11px;
+  color: rgba(0, 0, 0, 0.35);
+  min-width: 12px;
+  text-align: center;
+}
+
+.canvas-editor {
+  flex: 1;
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: #1a1a1a;
+  font-size: 14px;
+  font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
+  line-height: 1.6;
+  padding: 8px 4px;
+  outline: none;
+  resize: none;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0,0,0,0.08) transparent;
+}
+
+.canvas-editor::placeholder {
+  color: rgba(0, 0, 0, 0.25);
+}
+
+/* Make intent items clickable */
+.intent-item {
+  cursor: pointer;
+}
+
 /* ── Dark theme ──────────────────────────────────────── */
 
 body.dark #app {
@@ -1233,3 +1294,8 @@ body.dark .attachment-link { color: #818cf8; background: rgba(99, 102, 241, 0.12
 body.dark .attachment-link:hover { background: rgba(99, 102, 241, 0.2); }
 body.dark .attachment-remove { color: rgba(255, 255, 255, 0.3); }
 body.dark .intent-add-link:hover, body.dark .intent-edit-body:hover { background: rgba(255, 255, 255, 0.06); }
+
+/* Dark canvas */
+body.dark .canvas-editor { color: #e0e0e0; scrollbar-color: rgba(255, 255, 255, 0.1) transparent; }
+body.dark .canvas-editor::placeholder { color: rgba(255, 255, 255, 0.25); }
+body.dark .canvas-save-status { color: rgba(255, 255, 255, 0.35); }

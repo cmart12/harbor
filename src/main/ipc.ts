@@ -6,8 +6,8 @@ import { launchSession, getActiveSessionIntentIds } from './session';
 import { transcribeAudio } from './voice';
 import { CreateIntentInput, Intent, RecurrenceResult } from '../shared/types';
 import { getConfigValue, setConfigValue } from './config';
-import { initWorkspace, getDbPath, getLogPath } from './workspace';
-import { initDatabase, mergeSessionIds } from './database';
+import { initWorkspace, getDbPath, getLogPath, initIntentCanvas, readCanvas, writeCanvas } from './workspace';
+import { initDatabase, mergeSessionIds, assignIntentFolder } from './database';
 import { getConfig } from './config';
 
 // Track in-flight recurrence evaluations so we can cancel them
@@ -125,6 +125,15 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('intent:create', (_event, input: CreateIntentInput) => {
     if (!isInitialized()) return { error: 'no_workspace' };
     const intent = createIntent(input);
+
+    // Eagerly create folder + canvas seeded with body
+    const workspace = getConfigValue('workspace');
+    if (workspace) {
+      const folder = initIntentCanvas(workspace, intent.id, intent.description, intent.body);
+      assignIntentFolder(intent.id, folder);
+      intent.folder = folder;
+    }
+
     processIntentInBackground(intent.id, intent.body || intent.description, intent.updated_at);
     return intent;
   });
@@ -292,5 +301,40 @@ export function registerIpcHandlers(): void {
         });
       }
     }
+  });
+
+  // ── Canvas I/O ──────────────────────────────────────────
+  ipcMain.handle('canvas:read', (_event, intentId: string) => {
+    const workspace = getConfigValue('workspace');
+    if (!workspace || !isInitialized()) return { content: '', error: 'no_workspace' };
+
+    const intent = getIntent(intentId);
+    if (!intent) return { content: '', error: 'not_found' };
+
+    // Ensure folder exists (for intents created before canvas feature)
+    let folder = intent.folder;
+    if (!folder) {
+      folder = initIntentCanvas(workspace, intentId, intent.description, intent.body);
+      assignIntentFolder(intentId, folder);
+    }
+
+    return { content: readCanvas(workspace, folder) };
+  });
+
+  ipcMain.handle('canvas:write', (_event, intentId: string, content: string) => {
+    const workspace = getConfigValue('workspace');
+    if (!workspace || !isInitialized()) return { error: 'no_workspace' };
+
+    const intent = getIntent(intentId);
+    if (!intent) return { error: 'not_found' };
+
+    let folder = intent.folder;
+    if (!folder) {
+      folder = initIntentCanvas(workspace, intentId, intent.description, intent.body);
+      assignIntentFolder(intentId, folder);
+    }
+
+    writeCanvas(workspace, folder, content);
+    return { success: true };
   });
 }
