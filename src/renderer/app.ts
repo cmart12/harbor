@@ -495,10 +495,6 @@ function render(): void {
 
     const isFocused = intent.id === focusedIntentId;
 
-    // Body preview: show first ~2 lines (collapsed), only if body differs from description
-    const hasBody = intent.body && intent.body.trim() !== intent.description.trim();
-    const bodyPreview = hasBody ? intent.body!.split('\n').slice(0, 2).join(' ').slice(0, 120) : '';
-    const bodyFull = hasBody ? intent.body! : '';
     const hasAttachments = intent.attachments && intent.attachments.length > 0;
 
     return `
@@ -507,11 +503,6 @@ function render(): void {
            onclick="toggleStatus('${intent.id}')">${intent.status === 'done' ? '✓' : ''}</div>
       <div class="intent-content">
         <div class="intent-desc" onclick="editDescription('${intent.id}')">${escapeHtml(intent.description)}</div>
-        ${hasBody ? `
-        <div class="intent-body collapsed" onclick="toggleBody(this)" data-intent-id="${intent.id}">
-          <span class="body-preview">${escapeHtml(bodyPreview)}${bodyFull.length > 120 ? '…' : ''}</span>
-          <span class="body-full hidden">${escapeHtml(bodyFull)}</span>
-        </div>` : ''}
         ${hasAttachments ? `
         <div class="intent-attachments">
           ${intent.attachments.map((a, i) => `<a class="attachment-link" href="${escapeHtml(a.url)}" title="${escapeHtml(a.url)}" onclick="event.stopPropagation()">🔗 ${escapeHtml(a.name || a.url)}</a><button class="attachment-remove" onclick="removeAttachment('${intent.id}', ${i})" title="Remove">✕</button>`).join('')}
@@ -526,7 +517,6 @@ function render(): void {
         </div>
         <div class="intent-actions-row">
           <button class="intent-add-link" onclick="addAttachment('${intent.id}')" title="Add link">🔗</button>
-          ${hasBody ? `<button class="intent-edit-body" onclick="editBody('${intent.id}')" title="Edit body">✏️</button>` : ''}
         </div>
         <div class="recall-hint hidden" data-recall-for="${intent.id}"></div>
       </div>
