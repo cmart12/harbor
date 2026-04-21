@@ -14,8 +14,9 @@ export interface AgentLaunchResult {
 }
 
 /**
- * Launch a Copilot CLI agent session for a specific text selection on the canvas.
- * The agent is given a prompt to read the canvas and address the selected text.
+ * Launch a Copilot CLI agent session in interactive mode (-i) for a specific
+ * text selection on the canvas. A prompt file is written so the user can
+ * reference it, and the initial message is passed via stdin.
  */
 export async function launchCanvasAgent(
   intentId: string,
@@ -47,70 +48,42 @@ export async function launchCanvasAgent(
   // Read canvas content for the agent prompt
   const canvasContent = readCanvas(workspaceRoot, folder);
 
-  // Create a prompt file for the agent
   const agentId = uuidv4();
-  const sessionId = uuidv4();
-  const promptDir = path.join(cwd, '.intent-agents');
-  if (!fs.existsSync(promptDir)) {
-    fs.mkdirSync(promptDir, { recursive: true });
-  }
-
-  const promptFile = path.join(promptDir, `${agentId}.md`);
-  const promptContent = `# Agent Task
-
-You are working on an intent canvas. The user has selected specific text and asked you to address it.
-
-## Full Canvas Content
-\`\`\`
-${canvasContent}
-\`\`\`
-
-## Selected Text to Address
-\`\`\`
-${selectedText}
-\`\`\`
-
-## Instructions
-- Read the full canvas for context
-- Focus specifically on the selected text above
-- Address what the selected text is asking for, or work on the task it describes
-- Create any files or code needed in this directory
-- Be thorough and complete
-`;
-
-  fs.writeFileSync(promptFile, promptContent, 'utf-8');
-
   const now = new Date().toISOString();
+
+  // Build the initial prompt the user sees in the interactive session
+  const prompt = `Read the canvas at canvas.md for full context. Address the following selected text:\n\n${selectedText}`;
+
   const agent: CanvasAgent = {
     id: agentId,
     intent_id: intentId,
     selected_text: selectedText,
-    session_id: sessionId,
+    session_id: agentId, // use agent ID as session identifier
     pid: null,
     status: 'running',
     created_at: now,
     updated_at: now,
   };
 
-  // Launch in terminal
-  const pid = launchAgentInTerminal(cli, sessionId, cwd, promptFile);
+  // Launch copilot -i in terminal
+  const pid = launchInteractive(cli, cwd, prompt);
   agent.pid = pid;
 
   // Record in database
   createCanvasAgent(agent);
 
-  console.log(`[canvas-agent] Launched agent ${agentId} for intent ${intentId} (PID ${pid || 'unknown'})`);
+  console.log(`[canvas-agent] Launched interactive agent ${agentId} for intent ${intentId} (PID ${pid || 'unknown'})`);
   return { success: true, agent };
 }
 
-function launchAgentInTerminal(cli: string, sessionId: string, cwd: string, promptFile: string): number | null {
+function launchInteractive(cli: string, cwd: string, prompt: string): number | null {
   try {
     if (process.platform === 'darwin') {
-      return launchMac(cli, sessionId, cwd, promptFile);
+      return launchMac(cli, cwd, prompt);
     } else if (process.platform === 'win32') {
-      return launchWindows(cli, sessionId, cwd, promptFile);
+      return launchWindows(cli, cwd, prompt);
     } else {
-      return launchLinux(cli, sessionId, cwd, promptFile);
+      return launchLinux(cli, cwd, prompt);
     }
   } catch (err) {
     console.error('[canvas-agent] Terminal launch failed:', err);
@@ -118,12 +91,17 @@ function launchAgentInTerminal(cli: string, sessionId: string, cwd: string, prom
   }
 }
 
-function launchMac(cli: string, sessionId: string, cwd: string, promptFile: string): number | null {
-  const escapedCwd = cwd.replace(/'/g, "'\\''");
-  const escapedCli = cli.replace(/'/g, "'\\''");
-  const escapedPrompt = promptFile.replace(/'/g, "'\\''");
+function shellEscape(s: string): string {
+  return s.replace(/'/g, "'\\''");
+}
+
+function launchMac(cli: string, cwd: string, prompt: string): number | null {
+  const escapedCwd = shellEscape(cwd);
+  const escapedCli = shellEscape(cli);
+  // Escape prompt for shell: use $'...' syntax for safe embedding
+  const escapedPrompt = prompt.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n');
   const script = `tell application "Terminal"
-    do script "cd '${escapedCwd}' && '${escapedCli}' --resume=${sessionId} < '${escapedPrompt}'"
+    do script "cd '${escapedCwd}' && echo $'${escapedPrompt}' | '${escapedCli}' -i"
     activate
   end tell`;
 
@@ -138,14 +116,11 @@ function launchMac(cli: string, sessionId: string, cwd: string, promptFile: stri
   setTimeout(() => {
     try {
       const pid = parseInt(
-        execSync(`pgrep -nf "resume=${sessionId}"`, { timeout: 3000 }).toString().trim()
+        execSync(`pgrep -nf "copilot.*-i"`, { timeout: 3000 }).toString().trim()
       );
       if (pid) {
-        // Update via import to avoid circular deps
-        const { updateCanvasAgentStatus } = require('./database');
-        // Just update PID, keep running status
         const db = require('./database').getDatabase();
-        db.prepare('UPDATE canvas_agents SET pid = ? WHERE session_id = ?').run(pid, sessionId);
+        db.prepare('UPDATE canvas_agents SET pid = ? WHERE pid = 0 OR pid IS NULL ORDER BY created_at DESC LIMIT 1').run(pid);
       }
     } catch { /* process may not have started yet */ }
   }, 2000);
@@ -153,8 +128,9 @@ function launchMac(cli: string, sessionId: string, cwd: string, promptFile: stri
   return 0;
 }
 
-function launchWindows(cli: string, sessionId: string, cwd: string, promptFile: string): number | null {
-  const copilotCmd = `"${cli}" --resume=${sessionId} < "${promptFile}"`;
+function launchWindows(cli: string, cwd: string, prompt: string): number | null {
+  const safePrompt = prompt.replace(/"/g, '\\"').replace(/\n/g, ' ');
+  const copilotCmd = `echo "${safePrompt}" | "${cli}" -i`;
   try {
     const output = execSync(
       `powershell -NoProfile -Command "$p = Start-Process cmd.exe -ArgumentList '/k ${copilotCmd.replace(/'/g, "''")}' -WorkingDirectory '${cwd.replace(/'/g, "''")}' -PassThru; $p.Id"`,
@@ -167,8 +143,9 @@ function launchWindows(cli: string, sessionId: string, cwd: string, promptFile: 
   }
 }
 
-function launchLinux(cli: string, sessionId: string, cwd: string, promptFile: string): number | null {
-  const command = `cd '${cwd.replace(/'/g, "'\\''")}' && '${cli.replace(/'/g, "'\\''")}' --resume=${sessionId} < '${promptFile.replace(/'/g, "'\\''")}'`;
+function launchLinux(cli: string, cwd: string, prompt: string): number | null {
+  const escapedPrompt = prompt.replace(/'/g, "'\\''").replace(/\n/g, '\\n');
+  const command = `cd '${shellEscape(cwd)}' && echo $'${escapedPrompt}' | '${shellEscape(cli)}' -i`;
   const launchers = [
     { cmd: 'gnome-terminal', args: ['--', 'bash', '-c', command] },
     { cmd: 'xterm', args: ['-e', `bash -c "${command}"`] },

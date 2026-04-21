@@ -558,7 +558,9 @@ function pollAgentStatus(): { id: string; status: string }[] {
 
   for (const agent of running) {
     let alive = false;
-    if (agent.pid) {
+
+    // Check by PID first
+    if (agent.pid && agent.pid > 0) {
       try {
         process.kill(agent.pid, 0);
         alive = true;
@@ -567,18 +569,12 @@ function pollAgentStatus(): { id: string; status: string }[] {
       }
     }
 
-    if (!alive && agent.session_id) {
-      // Check by session ID (copilot process search)
+    // Fallback: search for any copilot -i process
+    if (!alive) {
       try {
         const { execSync } = require('child_process');
-        if (process.platform === 'win32') {
-          const result = execSync(
-            `wmic process where "CommandLine like '%--resume=${agent.session_id}%'" get ProcessId /format:list`,
-            { windowsHide: true, timeout: 3000, stdio: ['ignore', 'pipe', 'ignore'] }
-          ).toString();
-          alive = result.includes('ProcessId=');
-        } else {
-          execSync(`pgrep -f "resume=${agent.session_id}"`, { timeout: 3000, stdio: ['ignore', 'pipe', 'ignore'] });
+        if (process.platform !== 'win32') {
+          execSync(`pgrep -f "copilot.*-i"`, { timeout: 3000, stdio: ['ignore', 'pipe', 'ignore'] });
           alive = true;
         }
       } catch {
