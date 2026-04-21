@@ -31,6 +31,7 @@ interface IntentAPI {
   readCanvas(intentId: string): Promise<{ content: string; error?: string }>;
   writeCanvas(intentId: string, content: string): Promise<{ success?: boolean; error?: string }>;
   closeCanvas(intentId: string, content: string): Promise<void>;
+  searchIntents(query: string): Promise<Intent[]>;
   hideWindow(): void;
   onWindowShown(callback: () => void): void;
   onIntentProcessed(callback: (id: string) => void): void;
@@ -100,6 +101,8 @@ const focusClear = document.getElementById('focus-clear') as HTMLButtonElement;
 let focusedIntentId: string | null = null;
 let selectedIndex = -1;
 let displayedIntents: Intent[] = [];
+let searchResults: Intent[] | null = null;
+let searchTimeout: ReturnType<typeof setTimeout> | null = null;
 
 // ── Status bar helpers ──────────────────────────────────
 function showStatus(msg: string, isError = false): void {
@@ -324,6 +327,25 @@ function autoResize(): void {
 
 descInput.addEventListener('input', autoResize);
 
+// Live search: filter intents as user types
+descInput.addEventListener('input', () => {
+  if (searchTimeout) clearTimeout(searchTimeout);
+  const query = descInput.value.trim();
+
+  if (!query) {
+    searchResults = null;
+    selectedIndex = -1;
+    render();
+    return;
+  }
+
+  searchTimeout = setTimeout(async () => {
+    searchResults = await intentAPI.searchIntents(query);
+    selectedIndex = -1;
+    render();
+  }, 250);
+});
+
 // Spacebar handling on the textarea
 descInput.addEventListener('keydown', (e) => {
   // Down arrow jumps to the intent list
@@ -467,31 +489,39 @@ async function loadIntents(): Promise<void> {
 }
 
 function render(): void {
-  // Apply filter
-  let filtered: Intent[];
-  switch (currentFilter) {
-    case 'scheduled':
-      filtered = intents.filter(i => i.status !== 'done' && (i.due_at_utc || i.due_at));
-      break;
-    case 'unscheduled':
-      filtered = intents.filter(i => i.status !== 'done' && !i.due_at_utc && !i.due_at);
-      break;
-    case 'past':
-      filtered = intents.filter(i => i.status === 'done');
-      break;
-    default: // 'all'
-      filtered = intents;
-  }
+  let displayList: Intent[];
 
-  const active = filtered.filter(i => i.status !== 'done');
-  const done = filtered.filter(i => i.status === 'done');
-  const displayList = currentFilter === 'past' ? done : [...active, ...done];
+  if (searchResults !== null) {
+    // Search mode — show search results directly
+    displayList = searchResults;
+  } else {
+    // Normal mode — apply filter
+    let filtered: Intent[];
+    switch (currentFilter) {
+      case 'scheduled':
+        filtered = intents.filter(i => i.status !== 'done' && (i.due_at_utc || i.due_at));
+        break;
+      case 'unscheduled':
+        filtered = intents.filter(i => i.status !== 'done' && !i.due_at_utc && !i.due_at);
+        break;
+      case 'past':
+        filtered = intents.filter(i => i.status === 'done');
+        break;
+      default: // 'all'
+        filtered = intents;
+    }
+
+    const active = filtered.filter(i => i.status !== 'done');
+    const done = filtered.filter(i => i.status === 'done');
+    displayList = currentFilter === 'past' ? done : [...active, ...done];
+  }
   displayedIntents = displayList;
 
   countEl.textContent = String(intents.filter(i => i.status !== 'done').length);
 
-  if (filtered.length === 0) {
-    const emptyMsg = currentFilter === 'all' ? 'No intents yet. Type or speak one above.' :
+  if (displayList.length === 0) {
+    const emptyMsg = searchResults !== null ? 'No matching intents.' :
+                     currentFilter === 'all' ? 'No intents yet. Type or speak one above.' :
                      currentFilter === 'scheduled' ? 'No scheduled intents.' :
                      currentFilter === 'unscheduled' ? 'No open intents without a date.' :
                      'No past intents.';
@@ -606,6 +636,7 @@ form.addEventListener('submit', async (e) => {
   descInput.value = '';
   descInput.style.height = 'auto';
   descInput.focus();
+  searchResults = null;
 
   // Skip classification for long inputs — they're definitely intents
   const isLongInput = text.length > 200;
@@ -1287,6 +1318,7 @@ document.addEventListener('keydown', (e) => {
 
 intentAPI.onWindowShown(() => {
   selectedIndex = -1;
+  searchResults = null;
   descInput.focus();
   descInput.select();
   hideStatus();

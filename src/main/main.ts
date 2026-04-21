@@ -2,7 +2,7 @@ import { app, BrowserWindow, Tray, Menu, globalShortcut, screen, ipcMain, native
 import * as path from 'path';
 import * as fs from 'fs';
 import { loadConfig, getConfigValue, setConfigValue } from './config';
-import { initDatabase, mergeSessionIds } from './database';
+import { initDatabase, mergeSessionIds, syncCanvasContent } from './database';
 import { initWorkspace, getDbPath, getLogPath } from './workspace';
 import { migrateOldDatabase } from './migration';
 import { registerIpcHandlers } from './ipc';
@@ -167,6 +167,7 @@ app.whenReady().then(async () => {
     migrateOldDatabase(workspace);
     initDatabase(getDbPath(workspace), getLogPath(workspace));
     mergeSessionIds(config.sessions);
+    syncCanvasContent(workspace);
   } else if (workspace) {
     // Workspace path configured but directory missing — clear it
     console.warn(`[main] Workspace directory not found: ${workspace}`);

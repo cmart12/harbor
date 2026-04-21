@@ -3,6 +3,7 @@ import Database from 'better-sqlite3';
 import { v4 as uuidv4 } from 'uuid';
 import { Intent, Attachment, CreateIntentInput } from '../shared/types';
 import { appendEvent, replayLog } from './eventlog';
+import { readCanvas } from './workspace';
 
 let db: Database.Database;
 let logPath: string;
@@ -43,6 +44,7 @@ export function initDatabase(dbPath: string, eventLogPath: string): void {
       folder TEXT,
       session_id TEXT,
       attachments TEXT DEFAULT '[]',
+      canvas_content TEXT DEFAULT '',
       status TEXT NOT NULL DEFAULT 'captured',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
@@ -248,4 +250,33 @@ export function deleteIntent(id: string): boolean {
   appendEvent(logPath, 'intent.delete', { id });
   const result = db.prepare('DELETE FROM intents WHERE id = ?').run(id);
   return result.changes > 0;
+}
+
+/** Read all canvas files from disk and populate the canvas_content column. */
+export function syncCanvasContent(workspaceRoot: string): void {
+  const rows = db.prepare('SELECT id, folder FROM intents WHERE folder IS NOT NULL').all() as { id: string; folder: string }[];
+  const stmt = db.prepare('UPDATE intents SET canvas_content = ? WHERE id = ?');
+  for (const row of rows) {
+    try {
+      const content = readCanvas(workspaceRoot, row.folder);
+      stmt.run(content, row.id);
+    } catch { /* folder may not exist yet */ }
+  }
+}
+
+/** Update the cached canvas content for a single intent. */
+export function updateCanvasContent(intentId: string, content: string): void {
+  db.prepare('UPDATE intents SET canvas_content = ? WHERE id = ?').run(content, intentId);
+}
+
+/** Search intents by description, body, or canvas content. */
+export function searchIntents(query: string): Intent[] {
+  const like = `%${query}%`;
+  const rows = db.prepare(
+    `SELECT id, description, body, raw_text, client, due_at, due_at_utc, recurrence, completed_at, folder, session_id, attachments, status, created_at, updated_at
+     FROM intents
+     WHERE description LIKE ? OR body LIKE ? OR canvas_content LIKE ?
+     ORDER BY updated_at DESC`
+  ).all(like, like, like) as any[];
+  return rows.map(r => ({ ...r, attachments: parseAttachments(r.attachments) }));
 }

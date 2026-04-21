@@ -7,7 +7,7 @@ import { transcribeAudio } from './voice';
 import { CreateIntentInput, Intent, RecurrenceResult } from '../shared/types';
 import { getConfigValue, setConfigValue } from './config';
 import { initWorkspace, getDbPath, getLogPath, initIntentCanvas, readCanvas, writeCanvas, scheduleAutoCommit } from './workspace';
-import { initDatabase, mergeSessionIds, assignIntentFolder } from './database';
+import { initDatabase, mergeSessionIds, assignIntentFolder, updateCanvasContent, searchIntents, syncCanvasContent } from './database';
 import { getConfig } from './config';
 
 // Track in-flight recurrence evaluations so we can cancel them
@@ -294,6 +294,7 @@ export function registerIpcHandlers(): void {
         initWorkspace(dir);
         initDatabase(getDbPath(dir), getLogPath(dir));
         mergeSessionIds(getConfig().sessions);
+        syncCanvasContent(dir);
 
         return { selected: true, path: dir };
       }
@@ -342,6 +343,7 @@ export function registerIpcHandlers(): void {
     }
 
     writeCanvas(workspace, folder, content);
+    updateCanvasContent(intentId, content);
     return { success: true };
   });
 
@@ -360,6 +362,12 @@ export function registerIpcHandlers(): void {
     }
 
     writeCanvas(workspace, folder, content);
+    updateCanvasContent(intentId, content);
     scheduleAutoCommit(workspace);
+  });
+
+  ipcMain.handle('intent:search', (_event, query: string) => {
+    if (!isInitialized()) return [];
+    return searchIntents(query);
   });
 }
