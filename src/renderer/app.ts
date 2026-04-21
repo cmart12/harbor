@@ -98,6 +98,8 @@ const focusMeta = document.getElementById('focus-meta') as HTMLDivElement;
 const focusDone = document.getElementById('focus-done') as HTMLButtonElement;
 const focusClear = document.getElementById('focus-clear') as HTMLButtonElement;
 let focusedIntentId: string | null = null;
+let selectedIndex = -1;
+let displayedIntents: Intent[] = [];
 
 // ── Status bar helpers ──────────────────────────────────
 function showStatus(msg: string, isError = false): void {
@@ -324,6 +326,17 @@ descInput.addEventListener('input', autoResize);
 
 // Spacebar handling on the textarea
 descInput.addEventListener('keydown', (e) => {
+  // Down arrow jumps to the intent list
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    if (displayedIntents.length > 0) {
+      selectedIndex = 0;
+      updateSelection();
+      descInput.blur();
+    }
+    return;
+  }
+
   // Enter submits by default; Shift+Enter inserts newline
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
@@ -472,6 +485,7 @@ function render(): void {
   const active = filtered.filter(i => i.status !== 'done');
   const done = filtered.filter(i => i.status === 'done');
   const displayList = currentFilter === 'past' ? done : [...active, ...done];
+  displayedIntents = displayList;
 
   countEl.textContent = String(intents.filter(i => i.status !== 'done').length);
 
@@ -520,6 +534,21 @@ function render(): void {
     </div>
   `;
   }).join('');
+
+  if (selectedIndex >= displayedIntents.length) {
+    selectedIndex = -1;
+  }
+  updateSelection();
+}
+
+function updateSelection(): void {
+  const items = listEl.querySelectorAll('.intent-item');
+  items.forEach((item, i) => {
+    item.classList.toggle('kb-selected', i === selectedIndex);
+  });
+  if (selectedIndex >= 0 && items[selectedIndex]) {
+    (items[selectedIndex] as HTMLElement).scrollIntoView({ block: 'nearest' });
+  }
 }
 
 function escapeHtml(str: string): string {
@@ -1207,6 +1236,36 @@ loadSettings();
 loadFocusState();
 
 document.addEventListener('keydown', (e) => {
+  // Arrow/Enter navigation in the intent list
+  if (!mainView.classList.contains('hidden')) {
+    if (e.key === 'ArrowDown' && selectedIndex >= 0) {
+      e.preventDefault();
+      if (selectedIndex < displayedIntents.length - 1) {
+        selectedIndex++;
+        updateSelection();
+      }
+      return;
+    }
+    if (e.key === 'ArrowUp' && selectedIndex >= 0) {
+      e.preventDefault();
+      if (selectedIndex === 0) {
+        selectedIndex = -1;
+        updateSelection();
+        descInput.focus();
+      } else {
+        selectedIndex--;
+        updateSelection();
+      }
+      return;
+    }
+    if (e.key === 'Enter' && selectedIndex >= 0 && document.activeElement !== descInput) {
+      e.preventDefault();
+      const intent = displayedIntents[selectedIndex];
+      if (intent) openCanvas(intent.id);
+      return;
+    }
+  }
+
   if (e.key === 'Escape') {
     if (isRecording) stopRecording();
     if (!canvasView.classList.contains('hidden')) {
@@ -1226,6 +1285,7 @@ document.addEventListener('keydown', (e) => {
 });
 
 intentAPI.onWindowShown(() => {
+  selectedIndex = -1;
   descInput.focus();
   descInput.select();
   hideStatus();

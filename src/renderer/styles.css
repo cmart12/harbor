@@ -558,6 +558,11 @@ header h1 {
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
 }
 
+.intent-item.kb-selected {
+  background: #eeeef6;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.3);
+}
+
 .intent-item.done {
   opacity: 0.45;
 }
@@ -1223,6 +1228,7 @@ body.dark .status-bar.error { background: rgba(239, 68, 68, 0.1); color: #f87171
 
 body.dark .intent-item { background: rgba(255, 255, 255, 0.04); border-color: rgba(255, 255, 255, 0.06); }
 body.dark .intent-item:hover { background: rgba(255, 255, 255, 0.07); }
+body.dark .intent-item.kb-selected { background: rgba(99, 102, 241, 0.1); box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.3); }
 body.dark .intent-item.done .intent-desc { color: rgba(255, 255, 255, 0.35); }
 body.dark .intent-desc { color: #e0e0e0; }
 body.dark .intent-meta { color: rgba(255, 255, 255, 0.35); }
