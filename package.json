@@ -8,7 +8,7 @@
     "build": "tsc && node -e \"const fs=require('fs');const p=require('path');['index.html','styles.css'].forEach(f=>fs.copyFileSync(p.join('src','renderer',f),p.join('dist','renderer',f)))\"",
     "postinstall": "bash scripts/codesign-dev.sh",
     "start": "npm run build && electron .",
-    "dev": "npm run build && electron .",
+    "dev": "npm run build && (tsc -w --preserveWatchOutput & node scripts/watch-assets.js & electronmon .)",
     "dev:packaged": "npm run build:mac && open build/mac-arm64/Copilot\\ Intent.app",
     "build:mac": "npm run build && electron-builder --mac --dir",
     "build:installer:mac": "npm run build && electron-builder --mac"
@@ -54,8 +54,9 @@
     "@electron/rebuild": "^4.0.3",
     "@types/better-sqlite3": "^7.6.13",
     "@types/uuid": "^10.0.0",
+    "electron": "^41.2.1",
     "electron-builder": "^26.8.1",
-    "typescript": "^6.0.3",
-    "electron": "^41.2.1"
+    "electronmon": "^2.0.4",
+    "typescript": "^6.0.3"
   }
 }
