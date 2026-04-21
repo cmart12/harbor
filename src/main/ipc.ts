@@ -6,7 +6,7 @@ import { launchSession, getActiveSessionIntentIds } from './session';
 import { transcribeAudio } from './voice';
 import { CreateIntentInput, Intent, RecurrenceResult } from '../shared/types';
 import { getConfigValue, setConfigValue } from './config';
-import { initWorkspace, getDbPath, getLogPath, initIntentCanvas, readCanvas, writeCanvas } from './workspace';
+import { initWorkspace, getDbPath, getLogPath, initIntentCanvas, readCanvas, writeCanvas, scheduleAutoCommit } from './workspace';
 import { initDatabase, mergeSessionIds, assignIntentFolder } from './database';
 import { getConfig } from './config';
 
@@ -30,6 +30,9 @@ async function processIntentInBackground(id: string, body: string, createdVersio
       due_at_utc: parsed.due_at_utc,
     });
     notifyAllWindows('intent:processed', id);
+
+    const workspace = getConfigValue('workspace');
+    if (workspace) scheduleAutoCommit(workspace);
 
     // After refinement, search for similar past intents (recall)
     searchForRecall(id, parsed.description);
@@ -132,6 +135,7 @@ export function registerIpcHandlers(): void {
       const folder = initIntentCanvas(workspace, intent.id, intent.description, intent.body);
       assignIntentFolder(intent.id, folder);
       intent.folder = folder;
+      scheduleAutoCommit(workspace);
     }
 
     processIntentInBackground(intent.id, intent.body || intent.description, intent.updated_at);
@@ -177,7 +181,10 @@ export function registerIpcHandlers(): void {
       clearTimeout(pending.timer);
       pendingRecurrences.delete(id);
     }
-    return deleteIntent(id);
+    const result = deleteIntent(id);
+    const workspace = getConfigValue('workspace');
+    if (workspace) scheduleAutoCommit(workspace);
+    return result;
   });
 
   ipcMain.handle('intent:dismiss-recurrence', (_event, id: string) => {
@@ -335,6 +342,7 @@ export function registerIpcHandlers(): void {
     }
 
     writeCanvas(workspace, folder, content);
+    scheduleAutoCommit(workspace);
     return { success: true };
   });
 }

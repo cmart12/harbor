@@ -1,5 +1,6 @@
 import * as path from 'path';
 import * as fs from 'fs';
+import { execFile } from 'child_process';
 
 const INTENT_DIR = '.intent';
 const LOG_FILE = 'events.jsonl';
@@ -121,4 +122,66 @@ export function initIntentCanvas(workspaceRoot: string, intentId: string, descri
   }
 
   return folder;
+}
+
+// ── Auto-commit ─────────────────────────────────────────
+
+let commitTimer: ReturnType<typeof setTimeout> | null = null;
+let commitInFlight = false;
+const COMMIT_DEBOUNCE_MS = 2000;
+
+function runGit(workspaceRoot: string, args: string[]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    execFile('git', args, { cwd: workspaceRoot, timeout: 10000 }, (err) => {
+      if (err) reject(err);
+      else resolve();
+    });
+  });
+}
+
+async function doCommit(workspaceRoot: string): Promise<void> {
+  if (commitInFlight) return;
+  commitInFlight = true;
+  try {
+    // Check if this is a git repo
+    await runGit(workspaceRoot, ['rev-parse', '--git-dir']);
+
+    // Stage the .intent/ dir (event log) and all tracked/new files (intent folders)
+    await runGit(workspaceRoot, ['add', '-A']);
+
+    // Check if there's anything to commit
+    try {
+      await runGit(workspaceRoot, ['diff', '--cached', '--quiet']);
+      // No changes staged — nothing to commit
+      return;
+    } catch {
+      // diff --quiet exits non-zero when there ARE changes — that's what we want
+    }
+
+    const timestamp = new Date().toLocaleString('en-US', {
+      month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+    });
+    await runGit(workspaceRoot, ['commit', '-m', `intent: auto-save ${timestamp}`, '--no-verify']);
+    console.log(`[workspace] Auto-committed at ${timestamp}`);
+  } catch (err: any) {
+    // Silently skip if not a git repo or git not available
+    if (err?.message?.includes('not a git repository') || err?.code === 'ENOENT') {
+      return;
+    }
+    console.warn('[workspace] Auto-commit failed:', err?.message || err);
+  } finally {
+    commitInFlight = false;
+  }
+}
+
+/**
+ * Schedule an auto-commit for the workspace. Debounced so rapid changes
+ * (typing, canvas saves, multiple intent updates) coalesce into one commit.
+ */
+export function scheduleAutoCommit(workspaceRoot: string): void {
+  if (commitTimer) clearTimeout(commitTimer);
+  commitTimer = setTimeout(() => {
+    commitTimer = null;
+    doCommit(workspaceRoot);
+  }, COMMIT_DEBOUNCE_MS);
 }
