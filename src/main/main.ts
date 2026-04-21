@@ -72,13 +72,34 @@ function createWindow(): BrowserWindow {
   // Use intent://app/renderer/index.html so host="app" and pathname="/renderer/index.html"
   win.loadURL('copilot-intent://app/renderer/index.html');
 
-  win.on('blur', () => {
-    // Ignore blur if window was just shown (e.g. from tray menu click)
-    if (Date.now() - showTimestamp < 300) return;
-    win.hide();
-  });
+  attachBlurHide(win);
 
   return win;
+}
+
+/** Attach blur handler that hides the window only when the user isn't actively working. */
+function attachBlurHide(win: BrowserWindow): void {
+  win.on('blur', async () => {
+    // Ignore blur if window was just shown (e.g. from tray menu click)
+    if (Date.now() - showTimestamp < 300) return;
+
+    // Don't auto-hide if the user has content in the input or is on a sub-view
+    try {
+      const shouldStay = await win.webContents.executeJavaScript(
+        `(function() {
+          var input = document.getElementById('description-input');
+          var hasInput = input && input.value.trim().length > 0;
+          var canvasOpen = !document.getElementById('canvas-view').classList.contains('hidden');
+          return hasInput || canvasOpen;
+        })()`
+      );
+      if (shouldStay) return;
+    } catch {
+      // If check fails, hide anyway
+    }
+
+    win.hide();
+  });
 }
 
 function getWindowPosition(): { x: number; y: number } {

@@ -306,9 +306,20 @@ export function registerIpcHandlers(): void {
     } finally {
       // Restore blur-hide behavior
       if (win) {
-        let showTimestamp = Date.now();
-        win.on('blur', () => {
-          if (Date.now() - showTimestamp < 300) return;
+        const restoreTs = Date.now();
+        win.on('blur', async () => {
+          if (Date.now() - restoreTs < 300) return;
+          try {
+            const shouldStay = await win.webContents.executeJavaScript(
+              `(function() {
+                var input = document.getElementById('description-input');
+                var hasInput = input && input.value.trim().length > 0;
+                var canvasOpen = !document.getElementById('canvas-view').classList.contains('hidden');
+                return hasInput || canvasOpen;
+              })()`
+            );
+            if (shouldStay) return;
+          } catch { /* hide on failure */ }
           win.hide();
         });
       }
