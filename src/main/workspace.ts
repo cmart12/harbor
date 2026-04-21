@@ -37,6 +37,7 @@ export function initWorkspace(rootPath: string): void {
     '.intent/*.db-journal',
     '.intent/*.db-wal',
     '.intent/*.db-shm',
+    '*/attachments/',
   ];
 
   let existing = '';
@@ -87,6 +88,9 @@ export function createIntentFolder(workspaceRoot: string, intentId: string, desc
 }
 
 const CANVAS_FILE = 'canvas.md';
+const ATTACHMENTS_DIR = 'attachments';
+
+const MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024; // 25MB
 
 /** Get the absolute path to an intent's canvas file. */
 export function getCanvasPath(workspaceRoot: string, folder: string): string {
@@ -184,4 +188,122 @@ export function scheduleAutoCommit(workspaceRoot: string): void {
     commitTimer = null;
     doCommit(workspaceRoot);
   }, COMMIT_DEBOUNCE_MS);
+}
+
+// ── Attachment handling ─────────────────────────────────
+
+/** Sanitize a filename for safe filesystem use. */
+function sanitizeFilename(name: string): string {
+  // Remove path separators and null bytes
+  let safe = name.replace(/[/\\:\0]/g, '_');
+  // Remove leading dots (hidden files)
+  safe = safe.replace(/^\.+/, '');
+  // Guard against Windows reserved names
+  const baseName = safe.split('.')[0].toLowerCase();
+  if (RESERVED_NAMES.has(baseName)) {
+    safe = '_' + safe;
+  }
+  // Truncate to reasonable length
+  if (safe.length > 200) {
+    const ext = path.extname(safe);
+    safe = safe.substring(0, 200 - ext.length) + ext;
+  }
+  return safe || 'attachment';
+}
+
+/** Deduplicate a filename by adding a numeric suffix. */
+function deduplicateFilename(dir: string, name: string): string {
+  if (!fs.existsSync(path.join(dir, name))) return name;
+  const ext = path.extname(name);
+  const base = path.basename(name, ext);
+  let n = 1;
+  while (fs.existsSync(path.join(dir, `${base} (${n})${ext}`))) n++;
+  return `${base} (${n})${ext}`;
+}
+
+export interface SaveAttachmentResult {
+  success: boolean;
+  relativePath?: string;
+  filename?: string;
+  error?: string;
+}
+
+/** Save a pasted file into the intent's attachments folder. */
+export function saveAttachment(
+  workspaceRoot: string,
+  folder: string,
+  filename: string,
+  data: Buffer
+): SaveAttachmentResult {
+  if (data.length > MAX_ATTACHMENT_SIZE) {
+    return { success: false, error: `File too large (max ${MAX_ATTACHMENT_SIZE / 1024 / 1024}MB)` };
+  }
+
+  const sanitized = sanitizeFilename(filename);
+  const attachDir = path.join(workspaceRoot, folder, ATTACHMENTS_DIR);
+
+  if (!fs.existsSync(attachDir)) {
+    fs.mkdirSync(attachDir, { recursive: true });
+  }
+
+  const finalName = deduplicateFilename(attachDir, sanitized);
+  const filePath = path.join(attachDir, finalName);
+
+  // Verify resolved path is within the intent folder
+  const resolved = path.resolve(filePath);
+  const folderRoot = path.resolve(path.join(workspaceRoot, folder));
+  if (!resolved.startsWith(folderRoot)) {
+    return { success: false, error: 'Invalid file path' };
+  }
+
+  fs.writeFileSync(filePath, data);
+  return {
+    success: true,
+    relativePath: `${ATTACHMENTS_DIR}/${finalName}`,
+    filename: finalName,
+  };
+}
+
+/** Resolve an attachment path to an absolute path (with security check). */
+export function resolveAttachmentPath(
+  workspaceRoot: string,
+  folder: string,
+  relativePath: string
+): string | null {
+  const resolved = path.resolve(path.join(workspaceRoot, folder, relativePath));
+  const folderRoot = path.resolve(path.join(workspaceRoot, folder));
+  if (!resolved.startsWith(folderRoot)) return null;
+  if (!fs.existsSync(resolved)) return null;
+  return resolved;
+}
+
+/** Get MIME type from file extension. */
+export function getMimeType(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase();
+  const mimeMap: Record<string, string> = {
+    // Images
+    '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml',
+    '.bmp': 'image/bmp', '.ico': 'image/x-icon',
+    // Audio
+    '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.ogg': 'audio/ogg',
+    '.m4a': 'audio/mp4', '.aac': 'audio/aac', '.flac': 'audio/flac',
+    '.webm': 'audio/webm',
+    // Video
+    '.mp4': 'video/mp4', '.mov': 'video/quicktime', '.avi': 'video/x-msvideo',
+    '.mkv': 'video/x-matroska', '.webm_v': 'video/webm',
+    // Documents
+    '.pdf': 'application/pdf', '.txt': 'text/plain', '.md': 'text/markdown',
+    '.json': 'application/json', '.csv': 'text/csv',
+    '.doc': 'application/msword', '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    '.xls': 'application/vnd.ms-excel', '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    // Code
+    '.js': 'application/javascript', '.ts': 'text/typescript',
+    '.html': 'text/html', '.css': 'text/css',
+    '.zip': 'application/zip', '.tar': 'application/x-tar', '.gz': 'application/gzip',
+  };
+  // Special handling for .webm (could be audio or video)
+  if (ext === '.webm') return 'video/webm';
+  return mimeMap[ext] || 'application/octet-stream';
 }

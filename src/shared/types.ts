@@ -1,7 +1,30 @@
 export interface Attachment {
-  type: 'url';
+  type: 'url' | 'file';
   name: string;
   url: string;
+  /** Relative path within the intent folder (for type: 'file') */
+  relativePath?: string;
+  /** MIME type of the file */
+  mimeType?: string;
+}
+
+export interface CanvasAgent {
+  id: string;
+  intent_id: string;
+  selected_text: string;
+  session_id: string;
+  pid: number | null;
+  status: 'running' | 'completed' | 'failed';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LinkPreviewMeta {
+  url: string;
+  title: string | null;
+  description: string | null;
+  image: string | null;
+  favicon: string | null;
 }
 
 export interface Intent {

@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import Database from 'better-sqlite3';
 import { v4 as uuidv4 } from 'uuid';
-import { Intent, Attachment, CreateIntentInput } from '../shared/types';
+import { Intent, Attachment, CanvasAgent, CreateIntentInput } from '../shared/types';
 import { appendEvent, replayLog } from './eventlog';
 import { readCanvas } from './workspace';
 
@@ -48,6 +48,20 @@ export function initDatabase(dbPath: string, eventLogPath: string): void {
       status TEXT NOT NULL DEFAULT 'captured',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
+    )
+  `);
+
+  db.exec(`
+    CREATE TABLE canvas_agents (
+      id TEXT PRIMARY KEY,
+      intent_id TEXT NOT NULL,
+      selected_text TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      pid INTEGER,
+      status TEXT NOT NULL DEFAULT 'running',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (intent_id) REFERENCES intents(id) ON DELETE CASCADE
     )
   `);
 
@@ -279,4 +293,52 @@ export function searchIntents(query: string): Intent[] {
      ORDER BY updated_at DESC`
   ).all(like, like, like) as any[];
   return rows.map(r => ({ ...r, attachments: parseAttachments(r.attachments) }));
+}
+
+// ── Canvas Agents ─────────────────────────────────────────
+
+export function createCanvasAgent(agent: CanvasAgent): void {
+  appendEvent(logPath, 'canvas_agent.created', {
+    id: agent.id,
+    intent_id: agent.intent_id,
+    selected_text: agent.selected_text,
+    session_id: agent.session_id,
+    pid: agent.pid,
+    status: agent.status,
+    created_at: agent.created_at,
+    updated_at: agent.updated_at,
+  });
+
+  db.prepare(
+    `INSERT INTO canvas_agents (id, intent_id, selected_text, session_id, pid, status, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(agent.id, agent.intent_id, agent.selected_text, agent.session_id, agent.pid, agent.status, agent.created_at, agent.updated_at);
+}
+
+export function updateCanvasAgentStatus(id: string, status: 'running' | 'completed' | 'failed', pid?: number | null): void {
+  const now = new Date().toISOString();
+  appendEvent(logPath, 'canvas_agent.updated', { id, status, pid: pid ?? null, updated_at: now });
+  const updates: any[] = [status, now];
+  let sql = 'UPDATE canvas_agents SET status = ?, updated_at = ?';
+  if (pid !== undefined) {
+    sql += ', pid = ?';
+    updates.push(pid);
+  }
+  sql += ' WHERE id = ?';
+  updates.push(id);
+  db.prepare(sql).run(...updates);
+}
+
+export function listCanvasAgents(intentId: string): CanvasAgent[] {
+  return db.prepare(
+    `SELECT id, intent_id, selected_text, session_id, pid, status, created_at, updated_at
+     FROM canvas_agents WHERE intent_id = ? ORDER BY created_at DESC`
+  ).all(intentId) as CanvasAgent[];
+}
+
+export function listAllRunningAgents(): CanvasAgent[] {
+  return db.prepare(
+    `SELECT id, intent_id, selected_text, session_id, pid, status, created_at, updated_at
+     FROM canvas_agents WHERE status = 'running'`
+  ).all() as CanvasAgent[];
 }

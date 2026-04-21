@@ -35,6 +35,18 @@ const MIME_TYPES: Record<string, string> = {
   '.json': 'application/json',
   '.png': 'image/png',
   '.svg': 'image/svg+xml',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.ogg': 'audio/ogg',
+  '.m4a': 'audio/mp4',
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
+  '.mov': 'video/quicktime',
+  '.pdf': 'application/pdf',
 };
 
 let showTimestamp = 0;
@@ -124,10 +136,41 @@ function createTray(): void {
 
 app.whenReady().then(async () => {
   // Register custom protocol to serve renderer files (Web Speech API needs a real origin, not file://)
+  // Also serves workspace attachment files via copilot-intent://app/workspace/<intentFolder>/<path>
   protocol.handle('copilot-intent', (request) => {
     const url = new URL(request.url);
+    const pathname = url.pathname;
+
+    // Serve workspace attachments: /workspace/<folder>/<relativePath>
+    if (pathname.startsWith('/workspace/')) {
+      const workspace = getConfigValue('workspace');
+      if (!workspace) {
+        return new Response('No workspace', { status: 404 });
+      }
+
+      const relativePath = pathname.slice('/workspace/'.length);
+      const fullPath = path.resolve(path.join(workspace, relativePath));
+      const workspaceRoot = path.resolve(workspace);
+
+      // Security: ensure path stays within workspace
+      if (!fullPath.startsWith(workspaceRoot)) {
+        return new Response('Forbidden', { status: 403 });
+      }
+
+      if (!fs.existsSync(fullPath)) {
+        return new Response('Not found', { status: 404 });
+      }
+
+      const ext = path.extname(fullPath);
+      const mimeType = MIME_TYPES[ext] || 'application/octet-stream';
+      return net.fetch('file://' + fullPath.replace(/\\/g, '/'), {
+        headers: { 'Content-Type': mimeType },
+      });
+    }
+
+    // Default: serve app renderer files
     // URL: intent://app/renderer/index.html → host="app", pathname="/renderer/index.html"
-    const filePath = path.join(__dirname, '..', url.pathname);
+    const filePath = path.join(__dirname, '..', pathname);
     const ext = path.extname(filePath);
     const mimeType = MIME_TYPES[ext] || 'application/octet-stream';
 

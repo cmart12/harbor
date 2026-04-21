@@ -125,6 +125,27 @@ function applyEvent(db: Database.Database, event: LogEvent): void {
       break;
     }
 
+    case 'canvas_agent.created': {
+      const d = event.data;
+      db.prepare(
+        `INSERT OR REPLACE INTO canvas_agents (id, intent_id, selected_text, session_id, pid, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(d.id, d.intent_id, d.selected_text, d.session_id, d.pid ?? null, d.status, d.created_at, d.updated_at);
+      break;
+    }
+
+    case 'canvas_agent.updated': {
+      const d = event.data;
+      if (d.pid !== undefined && d.pid !== null) {
+        db.prepare('UPDATE canvas_agents SET status = ?, pid = ?, updated_at = ? WHERE id = ?')
+          .run(d.status, d.pid, d.updated_at, d.id);
+      } else {
+        db.prepare('UPDATE canvas_agents SET status = ?, updated_at = ? WHERE id = ?')
+          .run(d.status, d.updated_at, d.id);
+      }
+      break;
+    }
+
     case 'snapshot': {
       const d = event.data;
       if (d.intents) {

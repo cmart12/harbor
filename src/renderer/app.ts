@@ -12,6 +12,25 @@ interface RecallMatch {
   confidence: number;
 }
 
+interface CanvasAgent {
+  id: string;
+  intent_id: string;
+  selected_text: string;
+  session_id: string;
+  pid: number | null;
+  status: 'running' | 'completed' | 'failed';
+  created_at: string;
+  updated_at: string;
+}
+
+interface LinkPreviewMeta {
+  url: string;
+  title: string | null;
+  description: string | null;
+  image: string | null;
+  favicon: string | null;
+}
+
 interface IntentAPI {
   create(input: { body: string }): Promise<Intent>;
   list(): Promise<Intent[]>;
@@ -32,6 +51,13 @@ interface IntentAPI {
   writeCanvas(intentId: string, content: string): Promise<{ success?: boolean; error?: string }>;
   closeCanvas(intentId: string, content: string): Promise<void>;
   searchIntents(query: string): Promise<Intent[]>;
+  // Canvas enhancements
+  pasteFile(intentId: string, filename: string, dataArray: number[]): Promise<{ success?: boolean; relativePath?: string; filename?: string; error?: string }>;
+  resolveAttachment(intentId: string, relativePath: string): Promise<{ path?: string; mimeType?: string; error?: string }>;
+  fetchLinkMeta(url: string): Promise<LinkPreviewMeta>;
+  launchCanvasAgent(intentId: string, selectedText: string): Promise<{ success?: boolean; agent?: CanvasAgent; error?: string }>;
+  listCanvasAgents(intentId: string): Promise<CanvasAgent[]>;
+  pollCanvasAgents(): Promise<{ id: string; status: string }[]>;
   hideWindow(): void;
   onWindowShown(callback: () => void): void;
   onIntentProcessed(callback: (id: string) => void): void;
@@ -41,9 +67,11 @@ interface IntentAPI {
 }
 
 interface Attachment {
-  type: 'url';
+  type: 'url' | 'file';
   name: string;
   url: string;
+  relativePath?: string;
+  mimeType?: string;
 }
 
 interface Intent {
@@ -1192,9 +1220,17 @@ const canvasEditor = document.getElementById('canvas-editor') as HTMLTextAreaEle
 const canvasSaveStatus = document.getElementById('canvas-save-status') as HTMLSpanElement;
 const canvasLaunchBtn = document.getElementById('canvas-launch') as HTMLButtonElement;
 const canvasSaveBtn = document.getElementById('canvas-save') as HTMLButtonElement;
+const canvasSelectionBar = document.getElementById('canvas-selection-bar') as HTMLDivElement;
+const canvasEmbedsPanel = document.getElementById('canvas-embeds') as HTMLDivElement;
+const canvasAgentsPanel = document.getElementById('canvas-agents-panel') as HTMLDivElement;
+const canvasAgentBadge = document.getElementById('canvas-agent-count') as HTMLSpanElement;
 let canvasIntentId: string | null = null;
 let canvasDirty = false;
 let canvasLastSaved = '';
+let canvasAgents: CanvasAgent[] = [];
+let agentPollTimer: ReturnType<typeof setInterval> | null = null;
+let embedsParseTimer: ReturnType<typeof setTimeout> | null = null;
+const linkPreviewCache = new Map<string, LinkPreviewMeta>();
 
 async function openCanvas(intentId: string): Promise<void> {
   const intent = intents.find(i => i.id === intentId);
@@ -1205,6 +1241,7 @@ async function openCanvas(intentId: string): Promise<void> {
   canvasSaveStatus.textContent = '';
   canvasDirty = false;
   canvasSaveBtn.classList.add('hidden');
+  canvasSelectionBar.classList.add('hidden');
 
   // Load canvas content
   const result = await intentAPI.readCanvas(intentId);
@@ -1215,12 +1252,22 @@ async function openCanvas(intentId: string): Promise<void> {
   canvasEditor.value = result.content || '';
   canvasLastSaved = canvasEditor.value;
 
+  // Load agents
+  canvasAgents = await intentAPI.listCanvasAgents(intentId);
+  renderCanvasAgents();
+
   // Show canvas view
   mainView.classList.add('hidden');
   settingsView.classList.add('hidden');
   timelineView.classList.add('hidden');
   canvasView.classList.remove('hidden');
   canvasEditor.focus();
+
+  // Parse embeds from content
+  parseCanvasEmbeds();
+
+  // Start agent polling
+  startAgentPolling();
 }
 
 async function saveCanvas(): Promise<void> {
@@ -1245,7 +1292,12 @@ function closeCanvas(): void {
   }
   canvasIntentId = null;
   canvasDirty = false;
+  canvasAgents = [];
   canvasView.classList.add('hidden');
+  canvasEmbedsPanel.classList.add('hidden');
+  canvasAgentsPanel.classList.add('hidden');
+  canvasSelectionBar.classList.add('hidden');
+  stopAgentPolling();
   mainView.classList.remove('hidden');
   descInput.focus();
   loadIntents();
@@ -1259,13 +1311,23 @@ canvasEditor.addEventListener('input', () => {
   if (canvasDirty) {
     canvasSaveStatus.textContent = '';
   }
+  // Debounced embeds parsing
+  if (embedsParseTimer) clearTimeout(embedsParseTimer);
+  embedsParseTimer = setTimeout(parseCanvasEmbeds, 500);
 });
 
-// Cmd/Ctrl+S to save
+// Cmd/Ctrl+S to save, Cmd/Ctrl+Enter to launch agent
 canvasEditor.addEventListener('keydown', (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key === 's') {
     e.preventDefault();
     saveCanvas();
+  }
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+    e.preventDefault();
+    const selected = canvasEditor.value.substring(canvasEditor.selectionStart, canvasEditor.selectionEnd).trim();
+    if (selected) {
+      launchCanvasAgentFromSelection(selected);
+    }
   }
 });
 
@@ -1275,6 +1337,394 @@ canvasBack.addEventListener('click', closeCanvas);
 canvasLaunchBtn.addEventListener('click', () => {
   if (canvasIntentId) launchSession(canvasIntentId);
 });
+
+// Selection bar: show on text selection
+canvasEditor.addEventListener('mouseup', updateSelectionBar);
+canvasEditor.addEventListener('keyup', updateSelectionBar);
+
+function updateSelectionBar(): void {
+  const selected = canvasEditor.value.substring(canvasEditor.selectionStart, canvasEditor.selectionEnd).trim();
+  if (selected && selected.length > 0) {
+    const barText = canvasSelectionBar.querySelector('.selection-bar-text') as HTMLElement;
+    const preview = selected.length > 60 ? selected.substring(0, 57) + '...' : selected;
+    barText.textContent = `⚡ "${preview}"`;
+    canvasSelectionBar.classList.remove('hidden');
+  } else {
+    canvasSelectionBar.classList.add('hidden');
+  }
+}
+
+canvasSelectionBar.addEventListener('click', () => {
+  const selected = canvasEditor.value.substring(canvasEditor.selectionStart, canvasEditor.selectionEnd).trim();
+  if (selected) {
+    launchCanvasAgentFromSelection(selected);
+  }
+});
+
+// ── File paste handling ─────────────────────────────────
+canvasEditor.addEventListener('paste', async (e: ClipboardEvent) => {
+  if (!canvasIntentId || !e.clipboardData) return;
+
+  const files = e.clipboardData.files;
+  if (files.length === 0) {
+    // Check for URL paste
+    const text = e.clipboardData.getData('text/plain');
+    if (text && isUrl(text.trim())) {
+      // Let the text paste happen normally, embeds parser will pick it up
+      return;
+    }
+    return;
+  }
+
+  e.preventDefault();
+
+  for (const file of Array.from(files)) {
+    try {
+      const buffer = await file.arrayBuffer();
+      const dataArray = Array.from(new Uint8Array(buffer));
+
+      canvasSaveStatus.textContent = '📎...';
+      const result = await intentAPI.pasteFile(canvasIntentId!, file.name, dataArray);
+
+      if (result.error) {
+        canvasSaveStatus.textContent = '✗ ' + result.error;
+        setTimeout(() => { canvasSaveStatus.textContent = ''; }, 3000);
+        continue;
+      }
+
+      // Insert markdown reference at cursor
+      const ref = formatAttachmentRef(result.filename!, result.relativePath!, file.type);
+      insertAtCursor(canvasEditor, ref);
+
+      canvasDirty = true;
+      canvasSaveBtn.classList.remove('hidden');
+      canvasSaveStatus.textContent = `📎 ${result.filename}`;
+      setTimeout(() => { canvasSaveStatus.textContent = ''; }, 2000);
+
+      // Re-parse embeds
+      parseCanvasEmbeds();
+    } catch (err) {
+      console.error('File paste failed:', err);
+      canvasSaveStatus.textContent = '✗ paste failed';
+      setTimeout(() => { canvasSaveStatus.textContent = ''; }, 3000);
+    }
+  }
+});
+
+// Drag & drop support
+canvasEditor.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  canvasEditor.classList.add('drag-over');
+});
+
+canvasEditor.addEventListener('dragleave', () => {
+  canvasEditor.classList.remove('drag-over');
+});
+
+canvasEditor.addEventListener('drop', async (e: DragEvent) => {
+  e.preventDefault();
+  canvasEditor.classList.remove('drag-over');
+
+  if (!canvasIntentId || !e.dataTransfer?.files.length) return;
+
+  for (const file of Array.from(e.dataTransfer.files)) {
+    try {
+      const buffer = await file.arrayBuffer();
+      const dataArray = Array.from(new Uint8Array(buffer));
+      const result = await intentAPI.pasteFile(canvasIntentId!, file.name, dataArray);
+
+      if (result.error) {
+        canvasSaveStatus.textContent = '✗ ' + result.error;
+        setTimeout(() => { canvasSaveStatus.textContent = ''; }, 3000);
+        continue;
+      }
+
+      const ref = formatAttachmentRef(result.filename!, result.relativePath!, file.type);
+      insertAtCursor(canvasEditor, ref);
+      canvasDirty = true;
+      canvasSaveBtn.classList.remove('hidden');
+      parseCanvasEmbeds();
+    } catch (err) {
+      console.error('File drop failed:', err);
+    }
+  }
+});
+
+function formatAttachmentRef(filename: string, relativePath: string, mimeType: string): string {
+  if (mimeType.startsWith('image/')) {
+    return `\n![${filename}](${relativePath})\n`;
+  }
+  const icon = mimeType.startsWith('audio/') ? '🎵' :
+               mimeType.startsWith('video/') ? '🎬' :
+               '📎';
+  return `\n[${icon} ${filename}](${relativePath})\n`;
+}
+
+function insertAtCursor(textarea: HTMLTextAreaElement, text: string): void {
+  const start = textarea.selectionStart;
+  const end = textarea.selectionEnd;
+  const before = textarea.value.substring(0, start);
+  const after = textarea.value.substring(end);
+  textarea.value = before + text + after;
+  textarea.selectionStart = textarea.selectionEnd = start + text.length;
+  textarea.dispatchEvent(new Event('input'));
+}
+
+// ── Embeds parsing ──────────────────────────────────────
+
+function isUrl(text: string): boolean {
+  return /^https?:\/\/\S+$/i.test(text);
+}
+
+async function parseCanvasEmbeds(): Promise<void> {
+  if (!canvasIntentId) return;
+  const content = canvasEditor.value;
+
+  // Find all markdown links/images: [text](path) and ![text](path)
+  const linkRegex = /!?\[([^\]]*)\]\(([^)]+)\)/g;
+  // Find bare URLs
+  const urlRegex = /(?:^|\s)(https?:\/\/[^\s<>"]+)/gm;
+
+  const embeds: Array<{ type: 'file' | 'image' | 'audio' | 'video' | 'link'; name: string; path: string }> = [];
+  const seenPaths = new Set<string>();
+
+  let match;
+  while ((match = linkRegex.exec(content)) !== null) {
+    const name = match[1];
+    const filePath = match[2];
+    if (seenPaths.has(filePath)) continue;
+    seenPaths.add(filePath);
+
+    if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
+      embeds.push({ type: 'link', name: name || filePath, path: filePath });
+    } else if (filePath.startsWith('attachments/')) {
+      const ext = filePath.split('.').pop()?.toLowerCase() || '';
+      const isImage = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'].includes(ext);
+      const isAudio = ['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac', 'webm'].includes(ext);
+      const isVideo = ['mp4', 'mov', 'avi', 'mkv', 'webm'].includes(ext);
+
+      if (match[0].startsWith('!') && isImage) {
+        embeds.push({ type: 'image', name, path: filePath });
+      } else if (isAudio) {
+        embeds.push({ type: 'audio', name, path: filePath });
+      } else if (isVideo) {
+        embeds.push({ type: 'video', name, path: filePath });
+      } else {
+        embeds.push({ type: 'file', name, path: filePath });
+      }
+    }
+  }
+
+  // Find bare URLs not already in markdown links
+  while ((match = urlRegex.exec(content)) !== null) {
+    const url = match[1];
+    if (seenPaths.has(url)) continue;
+    seenPaths.add(url);
+    embeds.push({ type: 'link', name: url, path: url });
+  }
+
+  if (embeds.length === 0) {
+    canvasEmbedsPanel.classList.add('hidden');
+    canvasEmbedsPanel.innerHTML = '';
+    return;
+  }
+
+  canvasEmbedsPanel.classList.remove('hidden');
+  let html = '';
+
+  for (const embed of embeds) {
+    const intent = intents.find(i => i.id === canvasIntentId);
+    const folder = intent?.folder || '';
+
+    switch (embed.type) {
+      case 'image':
+        html += `<div class="embed-media">
+          <img src="copilot-intent://app/workspace/${encodeURI(folder + '/' + embed.path)}" alt="${escapeHtml(embed.name)}" loading="lazy" />
+        </div>`;
+        break;
+
+      case 'audio':
+        html += `<div class="embed-media">
+          <audio controls preload="metadata" src="copilot-intent://app/workspace/${encodeURI(folder + '/' + embed.path)}"></audio>
+        </div>`;
+        break;
+
+      case 'video':
+        html += `<div class="embed-media">
+          <video controls preload="metadata" src="copilot-intent://app/workspace/${encodeURI(folder + '/' + embed.path)}"></video>
+        </div>`;
+        break;
+
+      case 'file': {
+        const icon = getFileIcon(embed.path);
+        html += `<div class="embed-file">
+          <span class="embed-file-icon">${icon}</span>
+          <span class="embed-file-name">${escapeHtml(embed.name || embed.path.split('/').pop() || 'file')}</span>
+        </div>`;
+        break;
+      }
+
+      case 'link': {
+        const cached = linkPreviewCache.get(embed.path);
+        if (cached) {
+          html += renderLinkPreview(cached);
+        } else {
+          // Show loading state, fetch async
+          html += `<div class="embed-link" data-url="${escapeHtml(embed.path)}">
+            <div class="embed-link-body">
+              <div class="embed-link-title">Loading preview...</div>
+              <div class="embed-link-url">${escapeHtml(embed.path)}</div>
+            </div>
+          </div>`;
+          // Fetch in background
+          fetchAndCacheLinkPreview(embed.path);
+        }
+        break;
+      }
+    }
+  }
+
+  canvasEmbedsPanel.innerHTML = html;
+}
+
+function getFileIcon(filePath: string): string {
+  const ext = filePath.split('.').pop()?.toLowerCase() || '';
+  const iconMap: Record<string, string> = {
+    pdf: '📄', doc: '📝', docx: '📝', txt: '📄', md: '📝',
+    xls: '📊', xlsx: '📊', csv: '📊',
+    ppt: '📊', pptx: '📊',
+    zip: '📦', tar: '📦', gz: '📦',
+    js: '💻', ts: '💻', py: '🐍', html: '🌐', css: '🎨',
+    json: '📋', yaml: '📋', yml: '📋',
+  };
+  return iconMap[ext] || '📎';
+}
+
+async function fetchAndCacheLinkPreview(url: string): Promise<void> {
+  try {
+    const meta = await intentAPI.fetchLinkMeta(url);
+    linkPreviewCache.set(url, meta);
+    // Re-render embeds with the new data
+    const existingEl = canvasEmbedsPanel.querySelector(`[data-url="${CSS.escape(url)}"]`);
+    if (existingEl) {
+      existingEl.outerHTML = renderLinkPreview(meta);
+    }
+  } catch (err) {
+    console.error('Link preview fetch failed:', err);
+  }
+}
+
+function renderLinkPreview(meta: LinkPreviewMeta): string {
+  const title = meta.title || new URL(meta.url).hostname;
+  const desc = meta.description || '';
+  let hostname = '';
+  try { hostname = new URL(meta.url).hostname; } catch { hostname = meta.url; }
+
+  return `<div class="embed-link" data-url="${escapeHtml(meta.url)}" onclick="window.open && false">
+    <div class="embed-link-body">
+      <div class="embed-link-title">${escapeHtml(title)}</div>
+      ${desc ? `<div class="embed-link-desc">${escapeHtml(desc)}</div>` : ''}
+      <div class="embed-link-url">${escapeHtml(hostname)}</div>
+    </div>
+    ${meta.image ? `<img class="embed-link-img" src="${escapeHtml(meta.image)}" loading="lazy" onerror="this.remove()" />` : ''}
+  </div>`;
+}
+
+// ── Canvas Agent Launch ─────────────────────────────────
+
+async function launchCanvasAgentFromSelection(selectedText: string): Promise<void> {
+  if (!canvasIntentId) return;
+
+  // Auto-save first
+  if (canvasDirty) await saveCanvas();
+
+  canvasSaveStatus.textContent = '⚡ Launching agent...';
+  const result = await intentAPI.launchCanvasAgent(canvasIntentId, selectedText);
+
+  if (result.error) {
+    canvasSaveStatus.textContent = '✗ ' + result.error;
+    setTimeout(() => { canvasSaveStatus.textContent = ''; }, 3000);
+    return;
+  }
+
+  if (result.agent) {
+    canvasAgents.unshift(result.agent);
+    renderCanvasAgents();
+  }
+
+  canvasSaveStatus.textContent = '⚡ Agent launched';
+  setTimeout(() => { canvasSaveStatus.textContent = ''; }, 2000);
+
+  // Clear selection
+  canvasEditor.selectionStart = canvasEditor.selectionEnd;
+  canvasSelectionBar.classList.add('hidden');
+}
+
+// ── Agent rendering & polling ───────────────────────────
+
+function renderCanvasAgents(): void {
+  if (canvasAgents.length === 0) {
+    canvasAgentsPanel.classList.add('hidden');
+    canvasAgentBadge.classList.add('hidden');
+    return;
+  }
+
+  canvasAgentsPanel.classList.remove('hidden');
+
+  const runningCount = canvasAgents.filter(a => a.status === 'running').length;
+  if (runningCount > 0) {
+    canvasAgentBadge.textContent = String(runningCount);
+    canvasAgentBadge.classList.remove('hidden');
+  } else {
+    canvasAgentBadge.classList.add('hidden');
+  }
+
+  canvasAgentsPanel.innerHTML = canvasAgents.map(agent => {
+    const preview = agent.selected_text.length > 50
+      ? agent.selected_text.substring(0, 47) + '...'
+      : agent.selected_text;
+    const statusIcon = agent.status === 'running' ? '⚡' :
+                       agent.status === 'completed' ? '✓' : '✗';
+
+    return `<div class="canvas-agent-item ${agent.status}">
+      <span class="agent-status-dot ${agent.status}"></span>
+      <span class="agent-selected-text">"${escapeHtml(preview)}"</span>
+      <span class="agent-time">${statusIcon} ${timeAgo(agent.created_at)}</span>
+    </div>`;
+  }).join('');
+}
+
+function startAgentPolling(): void {
+  stopAgentPolling();
+  // Poll every 30 seconds
+  agentPollTimer = setInterval(async () => {
+    if (!canvasIntentId) return;
+
+    const updates = await intentAPI.pollCanvasAgents();
+    if (updates.length === 0) return;
+
+    let changed = false;
+    for (const update of updates) {
+      const agent = canvasAgents.find(a => a.id === update.id);
+      if (agent && agent.status !== update.status) {
+        agent.status = update.status as CanvasAgent['status'];
+        agent.updated_at = new Date().toISOString();
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      renderCanvasAgents();
+    }
+  }, 30000);
+}
+
+function stopAgentPolling(): void {
+  if (agentPollTimer) {
+    clearInterval(agentPollTimer);
+    agentPollTimer = null;
+  }
+}
 
 (window as any).openCanvas = openCanvas;
 
