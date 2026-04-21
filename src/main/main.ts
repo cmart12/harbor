@@ -180,6 +180,18 @@ app.whenReady().then(async () => {
   preloadModel();
   initCopilot();
 
+  // Dev mode: watch renderer files and auto-reload windows
+  if (!app.isPackaged) {
+    const rendererDir = path.join(__dirname, '..', 'renderer');
+    fs.watch(rendererDir, { recursive: true }, (_event, filename) => {
+      if (!filename) return;
+      console.log(`[dev] Renderer file changed: ${filename}, reloading...`);
+      for (const win of BrowserWindow.getAllWindows()) {
+        win.webContents.reload();
+      }
+    });
+  }
+
   const registered = globalShortcut.register('CommandOrControl+Shift+Space', toggleWindow);
   if (!registered) {
     console.warn('Failed to register Ctrl+Shift+Space — another process may be holding it');
