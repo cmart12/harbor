@@ -226,6 +226,7 @@ export function registerIpcHandlers(): void {
 
   // Classify user input as intent vs query
   ipcMain.handle('intent:classify', async (_event, text: string) => {
+    if (!isInitialized()) return { type: 'intent' };
     const allIntents = listIntents();
     const recent = allIntents.map(i => ({
       description: i.description,

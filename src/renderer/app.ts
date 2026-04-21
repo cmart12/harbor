@@ -321,8 +321,8 @@ descInput.addEventListener('input', autoResize);
 
 // Spacebar handling on the textarea
 descInput.addEventListener('keydown', (e) => {
-  // Cmd/Ctrl+Enter to submit
-  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+  // Enter submits by default; Shift+Enter inserts newline
+  if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
     form.requestSubmit();
     return;
@@ -887,7 +887,7 @@ async function editBody(intentId: string): Promise<void> {
   };
 
   textarea.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); save(); }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); save(); }
     if (e.key === 'Escape') { loadIntents(); }
   });
   textarea.addEventListener('blur', save);
