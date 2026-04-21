@@ -59,8 +59,11 @@ export async function launchCanvasAgent(
     updated_at: now,
   };
 
+  // Build the prompt for copilot -i
+  const prompt = `Read canvas.md for full context, then address this: ${selectedText}`;
+
   // Launch copilot -i in terminal
-  const pid = launchInteractive(cli, cwd, agentId);
+  const pid = launchInteractive(cli, cwd, agentId, prompt);
   agent.pid = pid;
 
   // Record in database
@@ -70,14 +73,14 @@ export async function launchCanvasAgent(
   return { success: true, agent };
 }
 
-function launchInteractive(cli: string, cwd: string, agentId: string): number | null {
+function launchInteractive(cli: string, cwd: string, agentId: string, prompt: string): number | null {
   try {
     if (process.platform === 'darwin') {
-      return launchMac(cli, cwd, agentId);
+      return launchMac(cli, cwd, agentId, prompt);
     } else if (process.platform === 'win32') {
-      return launchWindows(cli, cwd);
+      return launchWindows(cli, cwd, prompt);
     } else {
-      return launchLinux(cli, cwd);
+      return launchLinux(cli, cwd, prompt);
     }
   } catch (err) {
     console.error('[canvas-agent] Terminal launch failed:', err);
@@ -85,12 +88,13 @@ function launchInteractive(cli: string, cwd: string, agentId: string): number | 
   }
 }
 
-function launchMac(cli: string, cwd: string, agentId: string): number | null {
-  // Same pattern as session.ts — inline escape, no wrapper function
+function launchMac(cli: string, cwd: string, agentId: string, prompt: string): number | null {
   const escapedCwd = cwd.replace(/'/g, "'\\''");
   const escapedCli = cli.replace(/'/g, "'\\''");
+  // Escape prompt for shell double-quote context
+  const escapedPrompt = prompt.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/`/g, '\\`').replace(/\$/g, '\\$');
   const script = `tell application "Terminal"
-    do script "cd '${escapedCwd}' && '${escapedCli}' -i"
+    do script "cd '${escapedCwd}' && '${escapedCli}' -i \\"${escapedPrompt}\\""
     activate
   end tell`;
 
@@ -116,8 +120,9 @@ function launchMac(cli: string, cwd: string, agentId: string): number | null {
   return 0;
 }
 
-function launchWindows(cli: string, cwd: string): number | null {
-  const copilotCmd = `"${cli}" -i`;
+function launchWindows(cli: string, cwd: string, prompt: string): number | null {
+  const safePrompt = prompt.replace(/"/g, '\\"');
+  const copilotCmd = `"${cli}" -i "${safePrompt}"`;
   try {
     const output = execSync(
       `powershell -NoProfile -Command "$p = Start-Process cmd.exe -ArgumentList '/k ${copilotCmd.replace(/'/g, "''")}' -WorkingDirectory '${cwd.replace(/'/g, "''")}' -PassThru; $p.Id"`,
@@ -130,10 +135,11 @@ function launchWindows(cli: string, cwd: string): number | null {
   }
 }
 
-function launchLinux(cli: string, cwd: string): number | null {
+function launchLinux(cli: string, cwd: string, prompt: string): number | null {
   const escapedCwd = cwd.replace(/'/g, "'\\''");
   const escapedCli = cli.replace(/'/g, "'\\''");
-  const command = `cd '${escapedCwd}' && '${escapedCli}' -i`;
+  const escapedPrompt = prompt.replace(/'/g, "'\\''");
+  const command = `cd '${escapedCwd}' && '${escapedCli}' -i '${escapedPrompt}'`;
   const launchers = [
     { cmd: 'gnome-terminal', args: ['--', 'bash', '-c', command] },
     { cmd: 'xterm', args: ['-e', `bash -c "${command}"`] },
