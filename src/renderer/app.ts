@@ -327,11 +327,21 @@ function autoResize(): void {
 
 descInput.addEventListener('input', autoResize);
 
-// Live search: filter intents as user types
+// Live search: filter intents when input starts with /
 descInput.addEventListener('input', () => {
   if (searchTimeout) clearTimeout(searchTimeout);
-  const query = descInput.value.trim();
+  const raw = descInput.value;
 
+  if (!raw.startsWith('/')) {
+    if (searchResults !== null) {
+      searchResults = null;
+      selectedIndex = -1;
+      render();
+    }
+    return;
+  }
+
+  const query = raw.slice(1).trim();
   if (!query) {
     searchResults = null;
     selectedIndex = -1;
@@ -357,6 +367,12 @@ descInput.addEventListener('keydown', (e) => {
       updateSelection();
       descInput.blur();
     }
+    return;
+  }
+
+  // In search mode, Enter does nothing (use arrows to select)
+  if (e.key === 'Enter' && !e.shiftKey && descInput.value.startsWith('/')) {
+    e.preventDefault();
     return;
   }
 
