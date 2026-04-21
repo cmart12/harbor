@@ -329,6 +329,7 @@ descInput.addEventListener('keydown', (e) => {
   // Down arrow jumps to the intent list
   if (e.key === 'ArrowDown') {
     e.preventDefault();
+    e.stopPropagation();
     if (displayedIntents.length > 0) {
       selectedIndex = 0;
       updateSelection();
