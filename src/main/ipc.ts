@@ -342,7 +342,24 @@ export function registerIpcHandlers(): void {
     }
 
     writeCanvas(workspace, folder, content);
-    scheduleAutoCommit(workspace);
     return { success: true };
+  });
+
+  // Save canvas + trigger a commit (called when leaving the canvas)
+  ipcMain.handle('canvas:close', (_event, intentId: string, content: string) => {
+    const workspace = getConfigValue('workspace');
+    if (!workspace || !isInitialized()) return;
+
+    const intent = getIntent(intentId);
+    if (!intent) return;
+
+    let folder = intent.folder;
+    if (!folder) {
+      folder = initIntentCanvas(workspace, intentId, intent.description, intent.body);
+      assignIntentFolder(intentId, folder);
+    }
+
+    writeCanvas(workspace, folder, content);
+    scheduleAutoCommit(workspace);
   });
 }

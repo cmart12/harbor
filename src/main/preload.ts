@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('intentAPI', {
   selectWorkspace: () => ipcRenderer.invoke('workspace:select'),
   readCanvas: (intentId: string) => ipcRenderer.invoke('canvas:read', intentId),
   writeCanvas: (intentId: string, content: string) => ipcRenderer.invoke('canvas:write', intentId, content),
+  closeCanvas: (intentId: string, content: string) => ipcRenderer.invoke('canvas:close', intentId, content),
   hideWindow: () => ipcRenderer.send('window:hide'),
   onWindowShown: (callback: () => void) => {
     ipcRenderer.on('window:shown', callback);

@@ -1158,6 +1158,26 @@ header h1 {
   text-align: center;
 }
 
+.canvas-save-btn {
+  background: rgba(99, 102, 241, 0.1);
+  border: none;
+  border-radius: 6px;
+  color: #6366f1;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 3px 10px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.canvas-save-btn:hover {
+  background: rgba(99, 102, 241, 0.2);
+}
+
+.canvas-save-btn.hidden {
+  display: none;
+}
+
 .canvas-editor {
   flex: 1;
   width: 100%;
@@ -1299,3 +1319,5 @@ body.dark .intent-add-link:hover, body.dark .intent-edit-body:hover { background
 body.dark .canvas-editor { color: #e0e0e0; scrollbar-color: rgba(255, 255, 255, 0.1) transparent; }
 body.dark .canvas-editor::placeholder { color: rgba(255, 255, 255, 0.25); }
 body.dark .canvas-save-status { color: rgba(255, 255, 255, 0.35); }
+body.dark .canvas-save-btn { background: rgba(99, 102, 241, 0.2); color: #818cf8; }
+body.dark .canvas-save-btn:hover { background: rgba(99, 102, 241, 0.3); }

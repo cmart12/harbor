@@ -30,6 +30,7 @@ interface IntentAPI {
   selectWorkspace(): Promise<{ selected: boolean; path: string | null }>;
   readCanvas(intentId: string): Promise<{ content: string; error?: string }>;
   writeCanvas(intentId: string, content: string): Promise<{ success?: boolean; error?: string }>;
+  closeCanvas(intentId: string, content: string): Promise<void>;
   hideWindow(): void;
   onWindowShown(callback: () => void): void;
   onIntentProcessed(callback: (id: string) => void): void;
@@ -1113,8 +1114,10 @@ const canvasTitle = document.getElementById('canvas-title') as HTMLHeadingElemen
 const canvasEditor = document.getElementById('canvas-editor') as HTMLTextAreaElement;
 const canvasSaveStatus = document.getElementById('canvas-save-status') as HTMLSpanElement;
 const canvasLaunchBtn = document.getElementById('canvas-launch') as HTMLButtonElement;
+const canvasSaveBtn = document.getElementById('canvas-save') as HTMLButtonElement;
 let canvasIntentId: string | null = null;
-let canvasSaveTimer: ReturnType<typeof setTimeout> | null = null;
+let canvasDirty = false;
+let canvasLastSaved = '';
 
 async function openCanvas(intentId: string): Promise<void> {
   const intent = intents.find(i => i.id === intentId);
@@ -1123,6 +1126,8 @@ async function openCanvas(intentId: string): Promise<void> {
   canvasIntentId = intentId;
   canvasTitle.textContent = intent.description;
   canvasSaveStatus.textContent = '';
+  canvasDirty = false;
+  canvasSaveBtn.classList.add('hidden');
 
   // Load canvas content
   const result = await intentAPI.readCanvas(intentId);
@@ -1131,6 +1136,7 @@ async function openCanvas(intentId: string): Promise<void> {
     return;
   }
   canvasEditor.value = result.content || '';
+  canvasLastSaved = canvasEditor.value;
 
   // Show canvas view
   mainView.classList.add('hidden');
@@ -1140,40 +1146,53 @@ async function openCanvas(intentId: string): Promise<void> {
   canvasEditor.focus();
 }
 
+async function saveCanvas(): Promise<void> {
+  if (!canvasIntentId || !canvasDirty) return;
+  await intentAPI.writeCanvas(canvasIntentId, canvasEditor.value);
+  canvasLastSaved = canvasEditor.value;
+  canvasDirty = false;
+  canvasSaveBtn.classList.add('hidden');
+  canvasSaveStatus.textContent = '✓';
+  setTimeout(() => { canvasSaveStatus.textContent = ''; }, 1500);
+}
+
 function closeCanvas(): void {
-  // Flush any pending save
-  if (canvasSaveTimer) {
-    clearTimeout(canvasSaveTimer);
-    canvasSaveTimer = null;
-    if (canvasIntentId) {
-      intentAPI.writeCanvas(canvasIntentId, canvasEditor.value);
+  // Save + commit on close if dirty
+  if (canvasIntentId) {
+    if (canvasDirty) {
+      intentAPI.closeCanvas(canvasIntentId, canvasEditor.value);
+    } else {
+      // Still trigger a commit for any prior saves
+      intentAPI.closeCanvas(canvasIntentId, canvasEditor.value);
     }
   }
   canvasIntentId = null;
+  canvasDirty = false;
   canvasView.classList.add('hidden');
   mainView.classList.remove('hidden');
   descInput.focus();
   loadIntents();
 }
 
-// Auto-save with debounce
+// Track dirty state
 canvasEditor.addEventListener('input', () => {
   if (!canvasIntentId) return;
-  canvasSaveStatus.textContent = '●';
-  canvasSaveStatus.title = 'Unsaved changes';
-
-  if (canvasSaveTimer) clearTimeout(canvasSaveTimer);
-  canvasSaveTimer = setTimeout(async () => {
-    if (canvasIntentId) {
-      await intentAPI.writeCanvas(canvasIntentId, canvasEditor.value);
-      canvasSaveStatus.textContent = '✓';
-      canvasSaveStatus.title = 'Saved';
-      setTimeout(() => { canvasSaveStatus.textContent = ''; }, 1500);
-    }
-    canvasSaveTimer = null;
-  }, 500);
+  canvasDirty = canvasEditor.value !== canvasLastSaved;
+  canvasSaveBtn.classList.toggle('hidden', !canvasDirty);
+  if (canvasDirty) {
+    canvasSaveStatus.textContent = '';
+  }
 });
 
+// Cmd/Ctrl+S to save
+canvasEditor.addEventListener('keydown', (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+    e.preventDefault();
+    saveCanvas();
+  }
+});
+
+canvasSaveBtn.addEventListener('click', saveCanvas);
 canvasBack.addEventListener('click', closeCanvas);
 
 canvasLaunchBtn.addEventListener('click', () => {
