@@ -11,7 +11,9 @@ import {
   lightTheme,
   darkTheme,
   type DocumintState,
+  type SelectionActionContext,
 } from 'documint';
+import { Zap } from 'lucide-react';
 
 declare const intentAPI: {
   writeCanvas(intentId: string, content: string): Promise<void>;
@@ -75,16 +77,6 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
     const [approvalRequest, setApprovalRequest] = useState<{ agentId: string; requestId: string; permissionKind: string } | null>(null);
     const [flashTick, setFlashTick] = useState(0);
 
-    // Track comment threads to detect new ones (for "Run Agent" flow)
-    const prevCommentCountRef = useRef(0);
-    const [pendingAgentComment, setPendingAgentComment] = useState<{
-      quote: string;
-      prefix: string;
-      suffix: string;
-      instructions: string;
-      threadIndex: number;
-    } | null>(null);
-
     contentRef.current = content;
 
     const isDirty = content !== lastSavedRef.current;
@@ -135,38 +127,6 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
     const handleContentChange = useCallback((newContent: string) => {
       // Strip agent comment directive (we inject it ourselves for decoration)
       const stripped = newContent.replace(/\n*:::documint-comments\n[\s\S]*?\n:::\s*$/, '');
-
-      // Detect new user-created comment threads in the raw content
-      const commentMatch = newContent.match(/:::documint-comments\n([\s\S]*?)\n:::/);
-      if (commentMatch) {
-        try {
-          const threads = JSON.parse(commentMatch[1]);
-          const agentThreadCount = runningAgents.length;
-          const userThreadCount = threads.length - agentThreadCount;
-          if (userThreadCount > prevCommentCountRef.current) {
-            // A new comment thread was created by the user
-            const newThread = threads[threads.length - 1];
-            if (newThread && newThread.quote && newThread.comments?.[0]?.body) {
-              const canonical = stateRef.current?.canonicalContent || stripped;
-              const quoteIdx = canonical.indexOf(newThread.quote);
-              const prefix = quoteIdx > 0 ? canonical.slice(Math.max(0, quoteIdx - 24), quoteIdx) : '';
-              const suffix = quoteIdx >= 0 ? canonical.slice(quoteIdx + newThread.quote.length, quoteIdx + newThread.quote.length + 24) : '';
-
-              setPendingAgentComment({
-                quote: newThread.quote,
-                prefix,
-                suffix,
-                instructions: newThread.comments[0].body,
-                threadIndex: threads.length - 1,
-              });
-            }
-          }
-          prevCommentCountRef.current = userThreadCount;
-        } catch {
-          // ignore parse errors
-        }
-      }
-
       if (stripped === contentRef.current) return;
       setContent(stripped);
       const dirty = stripped !== lastSavedRef.current;
@@ -175,7 +135,7 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
         onSaveStatus('');
         scheduleSave();
       }
-    }, [onDirtyChange, onSaveStatus, scheduleSave, runningAgents.length]);
+    }, [onDirtyChange, onSaveStatus, scheduleSave]);
 
     const handleStateChange = useCallback((state: DocumintState) => {
       stateRef.current = state;
@@ -320,20 +280,21 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
       return () => cancelAnimationFrame(raf);
     }, []);
 
-    // ── Agent: Launch from comment ────────────────────────
-    async function launchAgentFromComment() {
-      if (!pendingAgentComment) return;
+    // ── Agent: Launch from selection toolbar ──────────────
+    async function launchAgentFromSelection(ctx: SelectionActionContext) {
+      if (!ctx.selectedText.trim()) return;
 
-      const { quote, prefix, suffix, instructions } = pendingAgentComment;
-      const anchor = { quote, prefix, suffix };
+      const { selectedText, selectionFrom, selectionTo, canonicalContent } = ctx;
+      const prefix = canonicalContent.slice(Math.max(0, selectionFrom - 24), selectionFrom);
+      const suffix = canonicalContent.slice(selectionTo, selectionTo + 24);
+      const anchor = { quote: selectedText, prefix, suffix };
 
       onSaveStatus('⚡ Launching agent...');
-      setPendingAgentComment(null);
 
       // Auto-save first
       await doSave();
 
-      const result = await intentAPI.launchAgent(intentId, instructions, anchor);
+      const result = await intentAPI.launchAgent(intentId, selectedText.trim(), anchor);
 
       if (result.error) {
         onSaveStatus('✗ ' + result.error);
@@ -344,13 +305,13 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
       const newAgent: AgentInfo = {
         agentId: result.agentId!,
         sessionId: result.sessionId!,
-        selectedText: quote.trim(),
-        quote,
+        selectedText: selectedText.trim(),
+        quote: selectedText,
         prefix,
         suffix,
         status: 'running',
         summary: 'Starting...',
-        instructions,
+        instructions: selectedText.trim(),
       };
       setRunningAgents(prev => [...prev, newAgent]);
       onSaveStatus('⚡ Agent launched');
@@ -454,29 +415,15 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
           onContentChange={handleContentChange}
           onStateChange={handleStateChange}
           theme={documintTheme}
+          selectionActions={[
+            {
+              id: 'run-agent',
+              icon: Zap,
+              label: 'Run Agent',
+              handler: (ctx) => launchAgentFromSelection(ctx),
+            },
+          ]}
         />
-        {/* Run Agent overlay — appears when user creates a comment */}
-        {pendingAgentComment && (
-          <div className="agent-launch-bar">
-            <span className="agent-launch-text">
-              ⚡ Run agent on: &ldquo;{pendingAgentComment.quote.length > 40
-                ? pendingAgentComment.quote.slice(0, 37) + '...'
-                : pendingAgentComment.quote}&rdquo;
-            </span>
-            <button
-              className="agent-launch-btn run"
-              onClick={() => launchAgentFromComment()}
-            >
-              Run Agent
-            </button>
-            <button
-              className="agent-launch-btn dismiss"
-              onClick={() => setPendingAgentComment(null)}
-            >
-              ✕
-            </button>
-          </div>
-        )}
         {/* Approval overlay */}
         {approvalRequest && (
           <div className="agent-approval-bar">
