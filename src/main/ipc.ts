@@ -437,7 +437,7 @@ export function registerIpcHandlers(): void {
   });
 
   // ── Canvas agents (SDK-based) ────────────────────────────
-  ipcMain.handle('agent:launch', async (_event, intentId: string, selectedText: string, anchor: any) => {
+  ipcMain.handle('agent:launch', async (_event, intentId: string, selectedText: string, anchor: any, options?: { repo?: string; model?: string }) => {
     const workspace = getConfigValue('workspace');
     if (!workspace || !isInitialized()) return { error: 'no_workspace' };
 
@@ -445,7 +445,7 @@ export function registerIpcHandlers(): void {
     if (!intent || !intent.folder) return { error: 'intent_not_found' };
 
     const { launchAgent } = await import('./agent-service');
-    return launchAgent(intentId, selectedText, anchor, workspace, intent.folder);
+    return launchAgent(intentId, selectedText, anchor, workspace, intent.folder, options);
   });
 
   ipcMain.handle('agent:list', async (_event, intentId: string) => {

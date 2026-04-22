@@ -28,8 +28,8 @@ contextBridge.exposeInMainWorld('intentAPI', {
     ipcRenderer.invoke('canvas:paste-file', intentId, filename, dataArray),
 
   // Agent operations
-  launchAgent: (intentId: string, selectedText: string, anchor: any) =>
-    ipcRenderer.invoke('agent:launch', intentId, selectedText, anchor),
+  launchAgent: (intentId: string, selectedText: string, anchor: any, options?: { repo?: string; model?: string }) =>
+    ipcRenderer.invoke('agent:launch', intentId, selectedText, anchor, options),
   listAgents: (intentId: string) =>
     ipcRenderer.invoke('agent:list', intentId),
   approveAgent: (agentId: string, requestId: string, approved: boolean) =>
@@ -42,6 +42,11 @@ contextBridge.exposeInMainWorld('intentAPI', {
   hideWindow: () => ipcRenderer.send('window:hide'),
   expandWindow: () => ipcRenderer.send('window:expand'),
   collapseWindow: () => ipcRenderer.send('window:collapse'),
+  getPinned: () => ipcRenderer.invoke('window:get-pinned'),
+  setPinned: (pinned: boolean) => ipcRenderer.send('window:set-pinned', pinned),
+  onPinnedChanged: (callback: (pinned: boolean) => void) => {
+    ipcRenderer.on('window:pinned-changed', (_event: any, pinned: boolean) => callback(pinned));
+  },
   onWindowShown: (callback: () => void) => {
     ipcRenderer.on('window:shown', callback);
   },

@@ -30,6 +30,8 @@ header {
   margin-bottom: 12px;
   padding-bottom: 10px;
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  -webkit-app-region: drag;
+  cursor: grab;
 }
 
 header h1 {
@@ -43,6 +45,7 @@ header h1 {
   display: flex;
   align-items: center;
   gap: 8px;
+  -webkit-app-region: no-drag;
 }
 
 .badge {
@@ -75,6 +78,15 @@ header h1 {
 
 .header-icon-btn.active {
   color: #6366f1;
+}
+
+#pin-btn.active {
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.1);
+}
+
+#pin-btn.active:hover {
+  background: rgba(245, 158, 11, 0.15);
 }
 
 /* ── Settings view ─────────────────────────────────────── */
@@ -385,6 +397,12 @@ header h1 {
   background: #ffffff;
   color: #1a1a1a;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.filter-btn:focus {
+  outline: 2px solid rgba(99, 102, 241, 0.5);
+  outline-offset: -2px;
+  border-radius: 6px;
 }
 
 /* ── Focus banner ─────────────────────────────────────── */
@@ -1276,6 +1294,115 @@ header h1 {
   to { transform: translateY(0); opacity: 1; }
 }
 
+/* ── Inline agent thread actions ─────────────────────── */
+.agent-create-launch,
+.agent-thread-launch,
+.agent-thread-status {
+  font-style: normal;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.agent-create-launch {
+  font-size: 14px;
+  transition: color 0.15s ease, opacity 0.15s ease;
+}
+
+.agent-create-launch:not(:disabled):hover {
+  color: #22c55e !important;
+}
+
+.agent-thread-launch:hover {
+  color: #22c55e !important;
+}
+
+.agent-thread-status {
+  cursor: pointer;
+}
+
+/* ── Agent config panel (comment thread footer) ──────── */
+.agent-config-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  animation: fadeIn 0.15s ease;
+}
+
+.agent-config-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.agent-config-field label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.agent-config-field input,
+.agent-config-field select {
+  font-size: 12px;
+  padding: 4px 6px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.02);
+  color: inherit;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.agent-config-field input:focus,
+.agent-config-field select:focus {
+  border-color: rgba(99, 102, 241, 0.5);
+}
+
+.agent-config-launch-btn {
+  margin-top: 2px;
+  padding: 5px 10px;
+  border: none;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  background: linear-gradient(135deg, #22c55e, #16a34a);
+  color: white;
+  transition: opacity 0.15s ease;
+}
+
+.agent-config-launch-btn:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.agent-config-launch-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Dark theme overrides for agent config */
+.dark .agent-config-panel {
+  border-top-color: rgba(255, 255, 255, 0.08);
+}
+
+.dark .agent-config-field label {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.dark .agent-config-field input,
+.dark .agent-config-field select {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+}
+
 /* Make intent items clickable */
 .intent-item {
   cursor: pointer;
@@ -1422,6 +1549,7 @@ body.dark .filter-bar { background: rgba(255, 255, 255, 0.06); }
 body.dark .filter-btn { color: rgba(255, 255, 255, 0.35); }
 body.dark .filter-btn:hover { color: rgba(255, 255, 255, 0.6); }
 body.dark .filter-btn.active { background: rgba(255, 255, 255, 0.1); color: #e0e0e0; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3); }
+body.dark .filter-btn:focus { outline-color: rgba(129, 140, 248, 0.5); }
 
 /* Dark query result */
 body.dark .query-answer { background: rgba(255, 255, 255, 0.04); border-color: rgba(255, 255, 255, 0.06); }

@@ -36,7 +36,8 @@ export async function launchAgent(
   selectedText: string,
   anchor: AgentAnchor,
   workspaceRoot: string,
-  intentFolder: string
+  intentFolder: string,
+  options?: { repo?: string; model?: string }
 ): Promise<{ agentId: string; sessionId: string } | { error: string }> {
   const client = getCopilotClient();
   if (!client) {

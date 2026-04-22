@@ -1,7 +1,7 @@
 import { app, BrowserWindow, Tray, Menu, globalShortcut, screen, ipcMain, nativeImage, session, protocol, net, systemPreferences } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
-import { loadConfig, getConfigValue, setConfigValue } from './config';
+import { loadConfig, getConfig, getConfigValue, setConfigValue, type SnapPosition } from './config';
 import { initDatabase, mergeSessionIds, syncCanvasContent } from './database';
 import { initWorkspace, getDbPath, getLogPath } from './workspace';
 import { migrateOldDatabase } from './migration';
@@ -16,8 +16,10 @@ const WINDOW_WIDTH = 420;
 const WINDOW_HEIGHT = 520;
 const EXPANDED_WIDTH = 720;
 const EXPANDED_HEIGHT = 700;
+const SNAP_MARGIN = 12;
 
 let isExpanded = false;
+let isSnapping = false;
 
 // Register custom scheme as privileged (must happen before app ready)
 protocol.registerSchemesAsPrivileged([
@@ -87,6 +89,9 @@ function attachBlurHide(win: BrowserWindow): void {
     // Ignore blur if window was just shown (e.g. from tray menu click)
     if (Date.now() - showTimestamp < 300) return;
 
+    // Never hide when pinned
+    if (getConfigValue('pinned')) return;
+
     // Don't auto-hide if the user has content in the input or is on a sub-view
     try {
       const shouldStay = await win.webContents.executeJavaScript(
@@ -106,16 +111,99 @@ function attachBlurHide(win: BrowserWindow): void {
   });
 }
 
-function getWindowPosition(): { x: number; y: number } {
+/** Derive pixel coordinates from a snap position on the nearest display. */
+function getSnapCoords(snap: SnapPosition, winWidth = WINDOW_WIDTH, winHeight = WINDOW_HEIGHT): { x: number; y: number } {
   const cursorPoint = screen.getCursorScreenPoint();
   const display = screen.getDisplayNearestPoint(cursorPoint);
   const { x, y, width, height } = display.workArea;
 
-  // Position near bottom-right (above taskbar)
-  return {
-    x: x + width - WINDOW_WIDTH - 12,
-    y: y + height - WINDOW_HEIGHT - 12,
-  };
+  let sx: number;
+  let sy: number;
+
+  switch (snap) {
+    case 'top-left':
+      sx = x + SNAP_MARGIN;
+      sy = y + SNAP_MARGIN;
+      break;
+    case 'top-right':
+      sx = x + width - winWidth - SNAP_MARGIN;
+      sy = y + SNAP_MARGIN;
+      break;
+    case 'bottom-left':
+      sx = x + SNAP_MARGIN;
+      sy = y + height - winHeight - SNAP_MARGIN;
+      break;
+    case 'left-center':
+      sx = x + SNAP_MARGIN;
+      sy = Math.round(y + (height - winHeight) / 2);
+      break;
+    case 'right-center':
+      sx = x + width - winWidth - SNAP_MARGIN;
+      sy = Math.round(y + (height - winHeight) / 2);
+      break;
+    case 'bottom-right':
+    default:
+      sx = x + width - winWidth - SNAP_MARGIN;
+      sy = y + height - winHeight - SNAP_MARGIN;
+      break;
+  }
+
+  return { x: sx, y: sy };
+}
+
+function getWindowPosition(): { x: number; y: number } {
+  const snap = getConfigValue('snapPosition') || 'bottom-right';
+  return getSnapCoords(snap);
+}
+
+/** Determine the nearest snap slot from arbitrary pixel coordinates. Returns null if not near any edge. */
+function detectSnapSlot(winX: number, winY: number, winWidth: number, winHeight: number): SnapPosition | null {
+  const centerX = winX + winWidth / 2;
+  const centerY = winY + winHeight / 2;
+  const display = screen.getDisplayNearestPoint({ x: centerX, y: centerY });
+  const area = display.workArea;
+
+  const edgeThreshold = 80;
+  const nearLeft = winX - area.x < edgeThreshold;
+  const nearRight = (area.x + area.width) - (winX + winWidth) < edgeThreshold;
+  const nearTop = winY - area.y < edgeThreshold;
+  const nearBottom = (area.y + area.height) - (winY + winHeight) < edgeThreshold;
+
+  // Must be near at least one edge
+  if (!nearLeft && !nearRight && !nearTop && !nearBottom) return null;
+
+  const midY = area.y + area.height / 2;
+  const isCenterVertical = Math.abs(centerY - midY) < area.height * 0.2;
+
+  if (nearLeft && isCenterVertical) return 'left-center';
+  if (nearRight && isCenterVertical) return 'right-center';
+  if (nearLeft && nearTop) return 'top-left';
+  if (nearRight && nearTop) return 'top-right';
+  if (nearLeft && nearBottom) return 'bottom-left';
+  if (nearRight && nearBottom) return 'bottom-right';
+  if (nearTop) return centerX < area.x + area.width / 2 ? 'top-left' : 'top-right';
+  if (nearBottom) return centerX < area.x + area.width / 2 ? 'bottom-left' : 'bottom-right';
+  if (nearLeft) return 'left-center';
+  if (nearRight) return 'right-center';
+
+  return null;
+}
+
+/** Snap the window to the nearest edge after a user drag. Only operates in collapsed mode. */
+function handleWindowMoved(): void {
+  if (!mainWindow || isExpanded || isSnapping) return;
+
+  const bounds = mainWindow.getBounds();
+  const slot = detectSnapSlot(bounds.x, bounds.y, bounds.width, bounds.height);
+  if (!slot) return;
+
+  isSnapping = true;
+  const coords = getSnapCoords(slot, bounds.width, bounds.height);
+  mainWindow.setPosition(coords.x, coords.y, true);
+  setConfigValue('snapPosition', slot);
+
+  // Clear guard after animation
+  setTimeout(() => { isSnapping = false; }, 300);
 }
 
 function toggleWindow(): void {
@@ -249,6 +337,17 @@ app.whenReady().then(async () => {
   preloadModel();
   initCopilot();
 
+  // Snap-on-drop: listen for window movement end
+  if (process.platform === 'darwin') {
+    mainWindow.on('moved', handleWindowMoved);
+  } else {
+    let moveDebounce: ReturnType<typeof setTimeout> | null = null;
+    mainWindow.on('move', () => {
+      if (moveDebounce) clearTimeout(moveDebounce);
+      moveDebounce = setTimeout(handleWindowMoved, 150);
+    });
+  }
+
   // Dev mode: watch renderer files and auto-reload windows
   if (!app.isPackaged) {
     const rendererDir = path.join(__dirname, '..', 'renderer');
@@ -290,9 +389,24 @@ app.whenReady().then(async () => {
     if (!mainWindow || !isExpanded) return;
     isExpanded = false;
 
+    isSnapping = true;
     const pos = getWindowPosition();
     mainWindow.setBounds({ x: pos.x, y: pos.y, width: WINDOW_WIDTH, height: WINDOW_HEIGHT }, true);
     mainWindow.setResizable(false);
+    setTimeout(() => { isSnapping = false; }, 300);
+  });
+
+  // ── Pin toggle ──────────────────────────────────────────
+  ipcMain.handle('window:get-pinned', () => {
+    return getConfigValue('pinned');
+  });
+
+  ipcMain.on('window:set-pinned', (_event, pinned: boolean) => {
+    setConfigValue('pinned', pinned);
+    // Notify all windows so UI can update
+    for (const win of BrowserWindow.getAllWindows()) {
+      win.webContents.send('window:pinned-changed', pinned);
+    }
   });
 });
 

@@ -2,11 +2,15 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { app } from 'electron';
 
+export type SnapPosition = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'left-center' | 'right-center';
+
 export interface AppConfig {
   workspace: string | null;
   theme: 'light' | 'dark';
   model: string | null;
   sessions: Record<string, string>; // intentId → copilot CLI sessionId
+  pinned: boolean;
+  snapPosition: SnapPosition;
 }
 
 const CONFIG_PATH = path.join(app.getPath('userData'), 'config.json');
@@ -16,6 +20,8 @@ const DEFAULT_CONFIG: AppConfig = {
   theme: 'light',
   model: null,
   sessions: {},
+  pinned: false,
+  snapPosition: 'bottom-right',
 };
 
 let config: AppConfig = { ...DEFAULT_CONFIG };

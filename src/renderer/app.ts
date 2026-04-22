@@ -37,6 +37,9 @@ interface IntentAPI {
   hideWindow(): void;
   expandWindow(): void;
   collapseWindow(): void;
+  getPinned(): Promise<boolean>;
+  setPinned(pinned: boolean): void;
+  onPinnedChanged(callback: (pinned: boolean) => void): void;
   onWindowShown(callback: () => void): void;
   onIntentProcessed(callback: (id: string) => void): void;
   onRecurrenceResult(callback: (intentId: string, result: RecurrenceResult) => void): void;
@@ -89,6 +92,7 @@ const timelineBtn = document.getElementById('timeline-btn') as HTMLButtonElement
 const timelineView = document.getElementById('timeline-view') as HTMLDivElement;
 const timelineBack = document.getElementById('timeline-back') as HTMLButtonElement;
 const timelineContent = document.getElementById('timeline-content') as HTMLDivElement;
+const pinBtn = document.getElementById('pin-btn') as HTMLButtonElement;
 
 let intents: Intent[] = [];
 // Track intents being processed by LLM
@@ -96,7 +100,9 @@ const processingIntents = new Set<string>();
 // Track intents with active running terminal sessions
 let activeSessionIntents = new Set<string>();
 // Current filter
-let currentFilter: 'all' | 'scheduled' | 'unscheduled' | 'past' | 'agents' = 'all';
+let currentFilter: 'open' | 'agents' | 'closed' = 'open';
+const filterOrder: Array<'open' | 'agents' | 'closed'> = ['open', 'agents', 'closed'];
+let renderGeneration = 0;
 const filterBar = document.getElementById('filter-bar') as HTMLDivElement;
 const queryResult = document.getElementById('query-result') as HTMLDivElement;
 const focusBanner = document.getElementById('focus-banner') as HTMLDivElement;
@@ -123,16 +129,52 @@ function hideStatus(): void {
 }
 
 // ── Filter bar ──────────────────────────────────────────
+function setFilter(filter: typeof currentFilter): void {
+  if (filter === currentFilter) return;
+  currentFilter = filter;
+  filterBar.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  const btn = filterBar.querySelector(`[data-filter="${filter}"]`) as HTMLElement;
+  if (btn) btn.classList.add('active');
+  render();
+}
+
+function focusActiveFilter(): void {
+  const btn = filterBar.querySelector('.filter-btn.active') as HTMLElement;
+  if (btn) btn.focus();
+}
+
 filterBar.addEventListener('click', (e) => {
   const btn = (e.target as HTMLElement).closest('.filter-btn') as HTMLElement;
   if (!btn) return;
   const filter = btn.dataset.filter as typeof currentFilter;
-  if (filter === currentFilter) return;
+  setFilter(filter);
+});
 
-  currentFilter = filter;
-  filterBar.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  render();
+filterBar.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+    e.preventDefault();
+    const idx = filterOrder.indexOf(currentFilter);
+    const next = e.key === 'ArrowRight'
+      ? filterOrder[(idx + 1) % filterOrder.length]
+      : filterOrder[(idx - 1 + filterOrder.length) % filterOrder.length];
+    setFilter(next);
+    focusActiveFilter();
+    return;
+  }
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    if (currentFilter !== 'agents' && displayedIntents.length > 0) {
+      selectedIndex = 0;
+      updateSelection();
+      (document.activeElement as HTMLElement)?.blur();
+    }
+    return;
+  }
+  if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    descInput.focus();
+    return;
+  }
 });
 
 // ── Settings view ───────────────────────────────────────
@@ -154,6 +196,26 @@ function hideSettings(): void {
 
 settingsBtn.addEventListener('click', showSettings);
 settingsBack.addEventListener('click', hideSettings);
+
+// ── Pin toggle ──────────────────────────────────────────
+pinBtn.addEventListener('click', async () => {
+  const current = pinBtn.classList.contains('active');
+  const next = !current;
+  intentAPI.setPinned(next);
+  pinBtn.classList.toggle('active', next);
+  pinBtn.title = next ? 'Unpin window' : 'Pin window (keep visible)';
+});
+
+intentAPI.onPinnedChanged((pinned: boolean) => {
+  pinBtn.classList.toggle('active', pinned);
+  pinBtn.title = pinned ? 'Unpin window' : 'Pin window (keep visible)';
+});
+
+async function loadPinState(): Promise<void> {
+  const pinned = await intentAPI.getPinned();
+  pinBtn.classList.toggle('active', pinned);
+  pinBtn.title = pinned ? 'Unpin window' : 'Pin window (keep visible)';
+}
 
 modelSelect.addEventListener('change', async () => {
   const model = modelSelect.value;
@@ -396,14 +458,18 @@ descInput.addEventListener('keydown', (e) => {
     return;
   }
 
-  // Down arrow jumps to the intent list
+  // Down arrow: in search mode go to list, otherwise go to filter bar
   if (e.key === 'ArrowDown') {
     e.preventDefault();
     e.stopPropagation();
-    if (displayedIntents.length > 0) {
-      selectedIndex = 0;
-      updateSelection();
-      descInput.blur();
+    if (searchMode) {
+      if (displayedIntents.length > 0) {
+        selectedIndex = 0;
+        updateSelection();
+        descInput.blur();
+      }
+    } else {
+      focusActiveFilter();
     }
     return;
   }
@@ -565,22 +631,14 @@ function render(): void {
     // Normal mode — apply filter
     let filtered: Intent[];
     switch (currentFilter) {
-      case 'scheduled':
-        filtered = intents.filter(i => i.status !== 'done' && (i.due_at_utc || i.due_at));
-        break;
-      case 'unscheduled':
-        filtered = intents.filter(i => i.status !== 'done' && !i.due_at_utc && !i.due_at);
-        break;
-      case 'past':
+      case 'closed':
         filtered = intents.filter(i => i.status === 'done');
         break;
-      default: // 'all'
-        filtered = intents;
+      default: // 'open'
+        filtered = intents.filter(i => i.status !== 'done');
     }
 
-    const active = filtered.filter(i => i.status !== 'done');
-    const done = filtered.filter(i => i.status === 'done');
-    displayList = currentFilter === 'past' ? done : [...active, ...done];
+    displayList = filtered;
   }
   displayedIntents = displayList;
 
@@ -588,10 +646,8 @@ function render(): void {
 
   if (displayList.length === 0) {
     const emptyMsg = searchResults !== null ? 'No matching intents.' :
-                     currentFilter === 'all' ? 'No intents yet. Type or speak one above.' :
-                     currentFilter === 'scheduled' ? 'No scheduled intents.' :
-                     currentFilter === 'unscheduled' ? 'No open intents without a date.' :
-                     currentFilter === 'past' ? 'No past intents.' :
+                     currentFilter === 'open' ? 'No intents yet. Type or speak one above.' :
+                     currentFilter === 'closed' ? 'No closed intents.' :
                      'No agents running.';
     listEl.innerHTML = `
       <div class="empty-state">
@@ -641,6 +697,7 @@ function render(): void {
 }
 
 async function renderAgentsList(): Promise<void> {
+  const gen = ++renderGeneration;
   displayedIntents = [];
   countEl.textContent = String(intents.filter(i => i.status !== 'done').length);
 
@@ -661,6 +718,9 @@ async function renderAgentsList(): Promise<void> {
       // skip
     }
   }
+
+  // Bail if user switched away from agents while loading
+  if (gen !== renderGeneration) return;
 
   if (allAgents.length === 0) {
     listEl.innerHTML = `
@@ -1414,6 +1474,7 @@ canvasLaunchBtn.addEventListener('click', () => {
 descInput.focus();
 loadSettings();
 loadFocusState();
+loadPinState();
 
 // Flush canvas saves when the window is about to close (app quit, reload)
 window.addEventListener('beforeunload', () => {
@@ -1439,7 +1500,7 @@ document.addEventListener('keydown', (e) => {
       if (selectedIndex === 0) {
         selectedIndex = -1;
         updateSelection();
-        descInput.focus();
+        focusActiveFilter();
       } else {
         selectedIndex--;
         updateSelection();
