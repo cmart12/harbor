@@ -26,16 +26,6 @@ contextBridge.exposeInMainWorld('intentAPI', {
   // Canvas enhancements
   pasteFile: (intentId: string, filename: string, dataArray: number[]) =>
     ipcRenderer.invoke('canvas:paste-file', intentId, filename, dataArray),
-  resolveAttachment: (intentId: string, relativePath: string) =>
-    ipcRenderer.invoke('canvas:resolve-attachment', intentId, relativePath),
-  fetchLinkMeta: (url: string) =>
-    ipcRenderer.invoke('canvas:fetch-link-meta', url),
-  launchCanvasAgent: (intentId: string, selectedText: string) =>
-    ipcRenderer.invoke('canvas:launch-agent', intentId, selectedText),
-  listCanvasAgents: (intentId: string) =>
-    ipcRenderer.invoke('canvas:list-agents', intentId),
-  pollCanvasAgents: () =>
-    ipcRenderer.invoke('canvas:poll-agents'),
 
   hideWindow: () => ipcRenderer.send('window:hide'),
   onWindowShown: (callback: () => void) => {

@@ -115,20 +115,13 @@
         <button id="canvas-back" class="header-icon-btn" title="Back">←</button>
         <h1 id="canvas-title" class="canvas-title-header"></h1>
         <div class="header-actions">
-          <span id="canvas-agent-count" class="canvas-agent-badge hidden" title="Active agents">0</span>
           <span id="canvas-save-status" class="canvas-save-status"></span>
           <button id="canvas-save" class="canvas-save-btn hidden" title="Save (⌘S)">Save</button>
           <button id="canvas-launch" class="header-icon-btn" title="Start session">▶</button>
         </div>
       </header>
       <div class="canvas-body">
-        <textarea id="canvas-editor" class="canvas-editor" placeholder="Start writing... Paste files, links, or select text and press ⌘⏎ to launch an agent"></textarea>
-        <div id="canvas-selection-bar" class="canvas-selection-bar hidden">
-          <span class="selection-bar-text">Launch agent on selection</span>
-          <kbd>⌘⏎</kbd>
-        </div>
-        <div id="canvas-embeds" class="canvas-embeds hidden"></div>
-        <div id="canvas-agents-panel" class="canvas-agents-panel hidden"></div>
+        <div id="canvas-root" class="canvas-root"></div>
       </div>
     </div>
   </div>
