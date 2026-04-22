@@ -174,6 +174,18 @@ export function registerIpcHandlers(): void {
       }
     }
 
+    // If body is being set (e.g., from canvas write-then-close), trigger AI refinement
+    if (updates.body && updates.body.trim()) {
+      const current = getIntent(id);
+      if (current && (!current.description || current.description === '' || current.description === current.body)) {
+        const updated = updateIntent(id, updates);
+        if (updated) {
+          processIntentInBackground(id, updates.body, updated.updated_at);
+        }
+        return updated;
+      }
+    }
+
     return updateIntent(id, updates);
   });
 

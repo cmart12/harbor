@@ -418,9 +418,15 @@ descInput.addEventListener('keydown', (e) => {
   }
 
   // Enter submits by default; Shift+Enter inserts newline
-  if (e.key === 'Enter' && !e.shiftKey) {
+  // If input is empty, create a blank intent and open it in the full editor
+  if (e.key === 'Enter' && !e.shiftKey && !(e.metaKey || e.ctrlKey)) {
     e.preventDefault();
-    form.requestSubmit();
+    const text = descInput.value.trim();
+    if (!text) {
+      createAndOpenCanvas();
+    } else {
+      form.requestSubmit();
+    }
     return;
   }
 
@@ -1285,6 +1291,27 @@ const canvasRoot = document.getElementById('canvas-root') as HTMLDivElement;
 let canvasIntentId: string | null = null;
 let canvasDirty = false;
 let canvasExpanded = false;
+let canvasIsNewIntent = false;
+
+// Create a new blank intent and immediately open it in the full canvas editor
+async function createAndOpenCanvas(): Promise<void> {
+  const intent = await intentAPI.create({ body: '' }) as any;
+  if (intent.error === 'no_workspace') {
+    showStatus('Select a workspace directory first');
+    const ws = await intentAPI.selectWorkspace();
+    if (!ws.selected) { hideStatus(); return; }
+    updateWorkspaceDisplay(ws.path!);
+    const retry = await intentAPI.create({ body: '' }) as any;
+    if (retry.error) { showStatus('Failed to create intent', true); return; }
+    await loadIntents();
+    openCanvas(retry.id, true);
+    canvasIsNewIntent = true;
+    return;
+  }
+  await loadIntents();
+  openCanvas(intent.id, true);
+  canvasIsNewIntent = true;
+}
 
 async function openCanvas(intentId: string, expanded = false): Promise<void> {
   const intent = intents.find(i => i.id === intentId);
@@ -1339,7 +1366,9 @@ async function saveCanvas(): Promise<void> {
 
 async function closeCanvas(): Promise<void> {
   const intentId = canvasIntentId;
+  const wasNewIntent = canvasIsNewIntent;
   canvasIntentId = null;
+  canvasIsNewIntent = false;
 
   // Get content BEFORE unmounting (unmount destroys the React ref)
   const finalContent = getCanvasContent();
@@ -1347,6 +1376,16 @@ async function closeCanvas(): Promise<void> {
 
   if (intentId) {
     await intentAPI.closeCanvas(intentId, finalContent);
+
+    // If this was a new intent created from Enter on empty input,
+    // trigger AI refinement using the canvas content as the body
+    if (wasNewIntent && finalContent.trim()) {
+      await intentAPI.update(intentId, { body: finalContent.trim() });
+      processingIntents.add(intentId);
+    } else if (wasNewIntent && !finalContent.trim()) {
+      // Empty canvas — delete the blank intent
+      await intentAPI.delete(intentId);
+    }
   }
 
   // Collapse window if it was expanded
@@ -1410,16 +1449,16 @@ document.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && selectedIndex >= 0 && document.activeElement !== descInput) {
       e.preventDefault();
       const intent = displayedIntents[selectedIndex];
-      if (intent) openCanvas(intent.id);
+      if (intent) openCanvas(intent.id, true);
       return;
     }
-    // Cmd+Enter: expand window and open canvas for selected intent (or first if none selected)
+    // Cmd+Enter: open small canvas (summary view) for selected intent
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
       e.preventDefault();
       const target = selectedIndex >= 0
         ? displayedIntents[selectedIndex]
         : displayedIntents[0];
-      if (target) openCanvas(target.id, true);
+      if (target) openCanvas(target.id);
       return;
     }
   }
