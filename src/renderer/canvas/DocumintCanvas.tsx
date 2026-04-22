@@ -16,6 +16,12 @@ import {
 declare const intentAPI: {
   writeCanvas(intentId: string, content: string): Promise<void>;
   pasteFile(intentId: string, filename: string, dataArray: number[]): Promise<{ error?: string; filename?: string; relativePath?: string }>;
+  launchAgent(intentId: string, selectedText: string, anchor: any): Promise<{ agentId?: string; sessionId?: string; error?: string }>;
+  approveAgent(agentId: string, requestId: string, approved: boolean): Promise<void>;
+  openAgentCli(agentId: string): Promise<{ error?: string }>;
+  onAgentStatusChanged(callback: (data: { agentId: string; status: string; summary?: string }) => void): void;
+  onAgentApprovalNeeded(callback: (data: { agentId: string; requestId: string; permissionKind: string }) => void): void;
+  onAgentCompleted(callback: (data: { agentId: string; summary?: string }) => void): void;
 };
 
 export interface DocumintCanvasProps {
@@ -52,6 +58,21 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
     const stateRef = useRef<DocumintState | null>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const [isDragging, setIsDragging] = useState(false);
+
+    // Agent tracking
+    interface AgentInfo {
+      agentId: string;
+      sessionId: string;
+      selectedText: string;
+      quote: string;
+      prefix: string;
+      suffix: string;
+      status: string;
+      summary: string;
+    }
+    const [runningAgents, setRunningAgents] = useState<AgentInfo[]>([]);
+    const [approvalRequest, setApprovalRequest] = useState<{ agentId: string; requestId: string; permissionKind: string } | null>(null);
+    const [flashTick, setFlashTick] = useState(0);
 
     contentRef.current = content;
 
@@ -99,9 +120,11 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
     }), [saveNow]);
 
     const handleContentChange = useCallback((newContent: string) => {
-      if (newContent === contentRef.current) return;
-      setContent(newContent);
-      const dirty = newContent !== lastSavedRef.current;
+      // Strip agent comment directive (we inject it ourselves)
+      const stripped = newContent.replace(/\n*:::documint-comments\n[\s\S]*?\n:::\s*$/, '');
+      if (stripped === contentRef.current) return;
+      setContent(stripped);
+      const dirty = stripped !== lastSavedRef.current;
       onDirtyChange(dirty);
       if (dirty) {
         onSaveStatus('');
@@ -243,7 +266,6 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
       const el = containerRef.current;
       if (!el) return;
 
-      // Wait for Documint to mount its hidden input and canvas
       const raf = requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           const input = el.querySelector('.documint-input') as HTMLTextAreaElement;
@@ -253,6 +275,156 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
       return () => cancelAnimationFrame(raf);
     }, []);
 
+    // ── Agent: Cmd+Enter to launch ──────────────────────
+    useEffect(() => {
+      const el = containerRef.current;
+      if (!el) return;
+
+      const handler = (e: KeyboardEvent) => {
+        if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+          e.preventDefault();
+          launchAgentFromSelection();
+        }
+      };
+      el.addEventListener('keydown', handler, true);
+      return () => el.removeEventListener('keydown', handler, true);
+    }, [intentId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    async function launchAgentFromSelection() {
+      const state = stateRef.current;
+      const currentContent = contentRef.current;
+      if (!state || state.selectionFrom === state.selectionTo) {
+        onSaveStatus('Select text first');
+        setTimeout(() => onSaveStatus(''), 2000);
+        return;
+      }
+
+      // Extract selected text using absolute offsets from DocumintState
+      const canonical = state.canonicalContent;
+      const from = Math.min(state.selectionFrom, state.selectionTo);
+      const to = Math.max(state.selectionFrom, state.selectionTo);
+      const selectedText = canonical.slice(from, to);
+      if (!selectedText.trim()) return;
+
+      // Build anchor (24-char prefix/suffix context)
+      const prefix = canonical.slice(Math.max(0, from - 24), from);
+      const suffix = canonical.slice(to, to + 24);
+      const anchor = { quote: selectedText, prefix, suffix };
+
+      onSaveStatus('⚡ Launching agent...');
+
+      // Auto-save first
+      await doSave();
+
+      const result = await intentAPI.launchAgent(intentId, selectedText.trim(), anchor);
+
+      if (result.error) {
+        onSaveStatus('✗ ' + result.error);
+        setTimeout(() => onSaveStatus(''), 3000);
+        return;
+      }
+
+      // Track the new agent
+      const newAgent: AgentInfo = {
+        agentId: result.agentId!,
+        sessionId: result.sessionId!,
+        selectedText: selectedText.trim(),
+        quote: selectedText,
+        prefix,
+        suffix,
+        status: 'running',
+        summary: 'Starting...',
+      };
+      setRunningAgents(prev => [...prev, newAgent]);
+      onSaveStatus('⚡ Agent launched');
+      setTimeout(() => onSaveStatus(''), 2000);
+    }
+
+    // ── Agent: IPC event listeners ──────────────────────
+    useEffect(() => {
+      intentAPI.onAgentStatusChanged((data) => {
+        setRunningAgents(prev => prev.map(a =>
+          a.agentId === data.agentId
+            ? { ...a, status: data.status, summary: data.summary || a.summary }
+            : a
+        ));
+      });
+
+      intentAPI.onAgentApprovalNeeded((data) => {
+        setApprovalRequest(data);
+      });
+
+      intentAPI.onAgentCompleted((data) => {
+        setRunningAgents(prev => prev.map(a =>
+          a.agentId === data.agentId
+            ? { ...a, status: 'completed', summary: data.summary || 'Completed' }
+            : a
+        ));
+      });
+    }, []);
+
+    // ── Agent: Flash animation timer ────────────────────
+    useEffect(() => {
+      const hasRunning = runningAgents.some(a => a.status === 'running' || a.status === 'waiting-approval');
+      if (!hasRunning) return;
+
+      const interval = setInterval(() => {
+        setFlashTick(t => t + 1);
+      }, 800);
+      return () => clearInterval(interval);
+    }, [runningAgents]);
+
+    // ── Agent: Double-click to open CLI ─────────────────
+    useEffect(() => {
+      const el = containerRef.current;
+      if (!el) return;
+
+      const handler = (e: MouseEvent) => {
+        const state = stateRef.current;
+        if (!state || state.activeCommentThreadIndex === null) return;
+
+        // Find if this comment thread corresponds to a running agent
+        const agentIndex = state.activeCommentThreadIndex;
+        const agent = runningAgents[agentIndex];
+        if (agent && (agent.status === 'running' || agent.status === 'waiting-approval')) {
+          intentAPI.openAgentCli(agent.agentId);
+        }
+      };
+
+      el.addEventListener('dblclick', handler);
+      return () => el.removeEventListener('dblclick', handler);
+    }, [runningAgents]);
+
+    // ── Agent: Build content with comment threads ───────
+    // Inject agent comment threads into the content as a documint-comments directive
+    const contentWithAgents = React.useMemo(() => {
+      if (runningAgents.length === 0) return content;
+
+      const threads = runningAgents.map(agent => ({
+        quote: agent.quote,
+        anchor: {
+          kind: 'text' as const,
+          prefix: agent.prefix,
+          suffix: agent.suffix,
+        },
+        comments: [{
+          body: agent.status === 'completed' ? `✓ ${agent.summary}` :
+                agent.status === 'failed' ? `✗ ${agent.summary}` :
+                agent.status === 'waiting-approval' ? '⏳ Waiting for approval...' :
+                `⚡ ${agent.summary}`,
+          updatedAt: new Date().toISOString(),
+        }],
+        // Flash: toggle resolved state for running agents
+        ...(agent.status === 'running' && flashTick % 2 === 0 ? {} : {}),
+        ...(agent.status === 'completed' || agent.status === 'failed' ? { resolvedAt: new Date().toISOString() } : {}),
+      }));
+
+      // Strip any existing comment directive and append our agent threads
+      const stripped = content.replace(/\n*:::documint-comments\n[\s\S]*?\n:::\s*$/, '');
+      const directive = `\n\n:::documint-comments\n${JSON.stringify(threads, null, 2)}\n:::`;
+      return stripped + directive;
+    }, [content, runningAgents, flashTick]);
+
     const documintTheme = theme === 'dark' ? darkTheme : lightTheme;
 
     return (
@@ -261,11 +433,36 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
         className={`documint-canvas-container${isDragging ? ' drag-over' : ''}`}
       >
         <Documint
-          content={content}
+          content={contentWithAgents}
           onContentChange={handleContentChange}
           onStateChange={handleStateChange}
           theme={documintTheme}
         />
+        {approvalRequest && (
+          <div className="agent-approval-bar">
+            <span className="agent-approval-text">
+              ⚡ Agent needs permission: <strong>{approvalRequest.permissionKind}</strong>
+            </span>
+            <button
+              className="agent-approval-btn approve"
+              onClick={() => {
+                intentAPI.approveAgent(approvalRequest.agentId, approvalRequest.requestId, true);
+                setApprovalRequest(null);
+              }}
+            >
+              Approve
+            </button>
+            <button
+              className="agent-approval-btn deny"
+              onClick={() => {
+                intentAPI.approveAgent(approvalRequest.agentId, approvalRequest.requestId, false);
+                setApprovalRequest(null);
+              }}
+            >
+              Deny
+            </button>
+          </div>
+        )}
       </div>
     );
   }

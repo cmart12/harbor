@@ -14,9 +14,15 @@ export interface CanvasAgent {
   selected_text: string;
   session_id: string;
   pid: number | null;
-  status: 'running' | 'completed' | 'failed';
+  status: 'running' | 'waiting-approval' | 'completed' | 'failed';
   created_at: string;
   updated_at: string;
+}
+
+export interface AgentAnchor {
+  quote: string;
+  prefix: string;
+  suffix: string;
 }
 
 export interface LinkPreviewMeta {

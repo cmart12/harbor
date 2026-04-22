@@ -14,6 +14,10 @@ let mainWindow: BrowserWindow | null = null;
 
 const WINDOW_WIDTH = 420;
 const WINDOW_HEIGHT = 520;
+const EXPANDED_WIDTH = 720;
+const EXPANDED_HEIGHT = 700;
+
+let isExpanded = false;
 
 // Register custom scheme as privileged (must happen before app ready)
 protocol.registerSchemesAsPrivileged([
@@ -264,6 +268,31 @@ app.whenReady().then(async () => {
 
   ipcMain.on('window:hide', () => {
     mainWindow?.hide();
+  });
+
+  ipcMain.on('window:expand', () => {
+    if (!mainWindow || isExpanded) return;
+    isExpanded = true;
+
+    const cursorPoint = screen.getCursorScreenPoint();
+    const display = screen.getDisplayNearestPoint(cursorPoint);
+    const { x, y, width, height } = display.workArea;
+
+    // Center the expanded window on the display
+    const newX = Math.round(x + (width - EXPANDED_WIDTH) / 2);
+    const newY = Math.round(y + (height - EXPANDED_HEIGHT) / 2);
+
+    mainWindow.setResizable(true);
+    mainWindow.setBounds({ x: newX, y: newY, width: EXPANDED_WIDTH, height: EXPANDED_HEIGHT }, true);
+  });
+
+  ipcMain.on('window:collapse', () => {
+    if (!mainWindow || !isExpanded) return;
+    isExpanded = false;
+
+    const pos = getWindowPosition();
+    mainWindow.setBounds({ x: pos.x, y: pos.y, width: WINDOW_WIDTH, height: WINDOW_HEIGHT }, true);
+    mainWindow.setResizable(false);
   });
 });
 

@@ -234,6 +234,13 @@ function focusWindowLinux(tracked: TrackedSession): boolean {
 
 // ── Launch / reactivate ─────────────────────────────────
 
+export async function launchSessionInTerminal(sessionId: string, cwd: string): Promise<{ pid: number | null }> {
+  const cli = await checkCopilotCli();
+  if (!cli) throw new Error('Copilot CLI not found');
+  const pid = launchInTerminal(cli, sessionId, cwd);
+  return { pid };
+}
+
 export async function launchSession(intentId: string, workspaceRoot: string): Promise<LaunchResult> {
   // Check if there's already a running process — bring it to foreground
   const existing = runningProcesses.get(intentId);

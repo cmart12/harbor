@@ -315,7 +315,7 @@ export function createCanvasAgent(agent: CanvasAgent): void {
   ).run(agent.id, agent.intent_id, agent.selected_text, agent.session_id, agent.pid, agent.status, agent.created_at, agent.updated_at);
 }
 
-export function updateCanvasAgentStatus(id: string, status: 'running' | 'completed' | 'failed', pid?: number | null): void {
+export function updateCanvasAgentStatus(id: string, status: 'running' | 'waiting-approval' | 'completed' | 'failed', pid?: number | null): void {
   const now = new Date().toISOString();
   appendEvent(logPath, 'canvas_agent.updated', { id, status, pid: pid ?? null, updated_at: now });
   const updates: any[] = [status, now];

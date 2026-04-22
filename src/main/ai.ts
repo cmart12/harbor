@@ -109,6 +109,10 @@ export async function initCopilot(): Promise<void> {
   }
 }
 
+export function getCopilotClient(): CopilotClient | null {
+  return client;
+}
+
 export async function setAIModel(model: string): Promise<void> {
   // Update all active sessions
   const sessions = [parseSession, recurrenceSession, recallSession];

@@ -6,12 +6,11 @@ import { URL } from 'url';
 import { isInitialized, createIntent, listIntents, updateIntent, updateIntentCAS, deleteIntent, getIntent, logIntentEvent, listIntentEvents } from './database';
 import { parseIntentWithAI, evaluateRecurrence, findSimilarIntent, resolveDateWithAI, classifyInput, setAIModel, listAvailableModels } from './ai';
 import { launchSession, getActiveSessionIntentIds } from './session';
-import { launchCanvasAgent } from './canvas-agent';
 import { transcribeAudio } from './voice';
 import { CreateIntentInput, Intent, RecurrenceResult, LinkPreviewMeta } from '../shared/types';
 import { getConfigValue, setConfigValue } from './config';
 import { initWorkspace, getDbPath, getLogPath, initIntentCanvas, readCanvas, writeCanvas, scheduleAutoCommit, saveAttachment, resolveAttachmentPath, getMimeType } from './workspace';
-import { initDatabase, mergeSessionIds, assignIntentFolder, updateCanvasContent, searchIntents, syncCanvasContent, listCanvasAgents, listAllRunningAgents, updateCanvasAgentStatus } from './database';
+import { initDatabase, mergeSessionIds, assignIntentFolder, updateCanvasContent, searchIntents, syncCanvasContent, updateCanvasAgentStatus } from './database';
 import { getConfig } from './config';
 
 // Track in-flight recurrence evaluations so we can cancel them
@@ -425,21 +424,36 @@ export function registerIpcHandlers(): void {
     return fetchLinkPreview(url);
   });
 
-  // ── Canvas agents ─────────────────────────────────────
-  ipcMain.handle('canvas:launch-agent', async (_event, intentId: string, selectedText: string) => {
+  // ── Canvas agents (SDK-based) ────────────────────────────
+  ipcMain.handle('agent:launch', async (_event, intentId: string, selectedText: string, anchor: any) => {
     const workspace = getConfigValue('workspace');
     if (!workspace || !isInitialized()) return { error: 'no_workspace' };
-    return launchCanvasAgent(intentId, selectedText, workspace);
+
+    const intent = getIntent(intentId);
+    if (!intent || !intent.folder) return { error: 'intent_not_found' };
+
+    const { launchAgent } = await import('./agent-service');
+    return launchAgent(intentId, selectedText, anchor, workspace, intent.folder);
   });
 
-  ipcMain.handle('canvas:list-agents', (_event, intentId: string) => {
-    if (!isInitialized()) return [];
-    return listCanvasAgents(intentId);
+  ipcMain.handle('agent:list', async (_event, intentId: string) => {
+    const { listAgents } = await import('./agent-service');
+    return listAgents(intentId);
   });
 
-  ipcMain.handle('canvas:poll-agents', () => {
-    if (!isInitialized()) return [];
-    return pollAgentStatus();
+  ipcMain.handle('agent:approve', async (_event, agentId: string, requestId: string, approved: boolean) => {
+    const { approveAgent } = await import('./agent-service');
+    approveAgent(agentId, requestId, approved);
+  });
+
+  ipcMain.handle('agent:abort', async (_event, agentId: string) => {
+    const { abortAgent } = await import('./agent-service');
+    await abortAgent(agentId);
+  });
+
+  ipcMain.handle('agent:open-cli', async (_event, agentId: string) => {
+    const { openAgentCli } = await import('./agent-service');
+    return openAgentCli(agentId);
   });
 }
 
@@ -548,47 +562,4 @@ function extractMeta(html: string, property: string): string | null {
 function extractTitle(html: string): string | null {
   const match = /<title[^>]*>([^<]+)<\/title>/i.exec(html);
   return match ? match[1].trim() : null;
-}
-
-// ── Agent polling ─────────────────────────────────────────
-
-function pollAgentStatus(): { id: string; status: string }[] {
-  const running = listAllRunningAgents();
-  const updates: { id: string; status: string }[] = [];
-
-  for (const agent of running) {
-    let alive = false;
-
-    // Check by PID first
-    if (agent.pid && agent.pid > 0) {
-      try {
-        process.kill(agent.pid, 0);
-        alive = true;
-      } catch {
-        alive = false;
-      }
-    }
-
-    // Fallback: search for any copilot -i process
-    if (!alive) {
-      try {
-        const { execSync } = require('child_process');
-        if (process.platform !== 'win32') {
-          execSync(`pgrep -f "copilot.*-i"`, { timeout: 3000, stdio: ['ignore', 'pipe', 'ignore'] });
-          alive = true;
-        }
-      } catch {
-        alive = false;
-      }
-    }
-
-    if (!alive) {
-      updateCanvasAgentStatus(agent.id, 'completed');
-      updates.push({ id: agent.id, status: 'completed' });
-    } else {
-      updates.push({ id: agent.id, status: 'running' });
-    }
-  }
-
-  return updates;
 }

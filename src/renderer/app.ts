@@ -34,6 +34,8 @@ interface IntentAPI {
   searchIntents(query: string): Promise<Intent[]>;
   pasteFile(intentId: string, filename: string, dataArray: number[]): Promise<{ success?: boolean; relativePath?: string; filename?: string; error?: string }>;
   hideWindow(): void;
+  expandWindow(): void;
+  collapseWindow(): void;
   onWindowShown(callback: () => void): void;
   onIntentProcessed(callback: (id: string) => void): void;
   onRecurrenceResult(callback: (intentId: string, result: RecurrenceResult) => void): void;
@@ -1212,8 +1214,9 @@ const canvasSaveBtn = document.getElementById('canvas-save') as HTMLButtonElemen
 const canvasRoot = document.getElementById('canvas-root') as HTMLDivElement;
 let canvasIntentId: string | null = null;
 let canvasDirty = false;
+let canvasExpanded = false;
 
-async function openCanvas(intentId: string): Promise<void> {
+async function openCanvas(intentId: string, expanded = false): Promise<void> {
   const intent = intents.find(i => i.id === intentId);
   if (!intent) return;
 
@@ -1232,6 +1235,12 @@ async function openCanvas(intentId: string): Promise<void> {
 
   // Determine current theme
   const currentTheme = (await intentAPI.getSetting('theme') || 'light') as 'light' | 'dark';
+
+  // Expand window if requested
+  canvasExpanded = expanded;
+  if (expanded) {
+    intentAPI.expandWindow();
+  }
 
   // Show canvas view
   mainView.classList.add('hidden');
@@ -1268,6 +1277,12 @@ async function closeCanvas(): Promise<void> {
 
   if (intentId) {
     await intentAPI.closeCanvas(intentId, finalContent);
+  }
+
+  // Collapse window if it was expanded
+  if (canvasExpanded) {
+    canvasExpanded = false;
+    intentAPI.collapseWindow();
   }
 
   canvasDirty = false;
@@ -1328,13 +1343,13 @@ document.addEventListener('keydown', (e) => {
       if (intent) openCanvas(intent.id);
       return;
     }
-    // Cmd+Enter: open canvas for selected intent (or first if none selected)
+    // Cmd+Enter: expand window and open canvas for selected intent (or first if none selected)
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
       e.preventDefault();
       const target = selectedIndex >= 0
         ? displayedIntents[selectedIndex]
         : displayedIntents[0];
-      if (target) openCanvas(target.id);
+      if (target) openCanvas(target.id, true);
       return;
     }
   }
