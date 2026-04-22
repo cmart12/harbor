@@ -69,10 +69,21 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
       suffix: string;
       status: string;
       summary: string;
+      instructions: string;
     }
     const [runningAgents, setRunningAgents] = useState<AgentInfo[]>([]);
     const [approvalRequest, setApprovalRequest] = useState<{ agentId: string; requestId: string; permissionKind: string } | null>(null);
     const [flashTick, setFlashTick] = useState(0);
+
+    // Track comment threads to detect new ones (for "Run Agent" flow)
+    const prevCommentCountRef = useRef(0);
+    const [pendingAgentComment, setPendingAgentComment] = useState<{
+      quote: string;
+      prefix: string;
+      suffix: string;
+      instructions: string;
+      threadIndex: number;
+    } | null>(null);
 
     contentRef.current = content;
 
@@ -119,9 +130,43 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
       getContent: () => contentRef.current,
     }), [saveNow]);
 
+    // ── Agent: Detect new comment threads ─────────────────
+    // When onContentChange fires with a new comment thread, we show the "Run Agent" option
     const handleContentChange = useCallback((newContent: string) => {
-      // Strip agent comment directive (we inject it ourselves)
+      // Strip agent comment directive (we inject it ourselves for decoration)
       const stripped = newContent.replace(/\n*:::documint-comments\n[\s\S]*?\n:::\s*$/, '');
+
+      // Detect new user-created comment threads in the raw content
+      const commentMatch = newContent.match(/:::documint-comments\n([\s\S]*?)\n:::/);
+      if (commentMatch) {
+        try {
+          const threads = JSON.parse(commentMatch[1]);
+          const agentThreadCount = runningAgents.length;
+          const userThreadCount = threads.length - agentThreadCount;
+          if (userThreadCount > prevCommentCountRef.current) {
+            // A new comment thread was created by the user
+            const newThread = threads[threads.length - 1];
+            if (newThread && newThread.quote && newThread.comments?.[0]?.body) {
+              const canonical = stateRef.current?.canonicalContent || stripped;
+              const quoteIdx = canonical.indexOf(newThread.quote);
+              const prefix = quoteIdx > 0 ? canonical.slice(Math.max(0, quoteIdx - 24), quoteIdx) : '';
+              const suffix = quoteIdx >= 0 ? canonical.slice(quoteIdx + newThread.quote.length, quoteIdx + newThread.quote.length + 24) : '';
+
+              setPendingAgentComment({
+                quote: newThread.quote,
+                prefix,
+                suffix,
+                instructions: newThread.comments[0].body,
+                threadIndex: threads.length - 1,
+              });
+            }
+          }
+          prevCommentCountRef.current = userThreadCount;
+        } catch {
+          // ignore parse errors
+        }
+      }
+
       if (stripped === contentRef.current) return;
       setContent(stripped);
       const dirty = stripped !== lastSavedRef.current;
@@ -130,7 +175,7 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
         onSaveStatus('');
         scheduleSave();
       }
-    }, [onDirtyChange, onSaveStatus, scheduleSave]);
+    }, [onDirtyChange, onSaveStatus, scheduleSave, runningAgents.length]);
 
     const handleStateChange = useCallback((state: DocumintState) => {
       stateRef.current = state;
@@ -275,48 +320,20 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
       return () => cancelAnimationFrame(raf);
     }, []);
 
-    // ── Agent: Cmd+Enter to launch ──────────────────────
-    useEffect(() => {
-      const el = containerRef.current;
-      if (!el) return;
+    // ── Agent: Launch from comment ────────────────────────
+    async function launchAgentFromComment() {
+      if (!pendingAgentComment) return;
 
-      const handler = (e: KeyboardEvent) => {
-        if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-          e.preventDefault();
-          launchAgentFromSelection();
-        }
-      };
-      el.addEventListener('keydown', handler, true);
-      return () => el.removeEventListener('keydown', handler, true);
-    }, [intentId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-    async function launchAgentFromSelection() {
-      const state = stateRef.current;
-      const currentContent = contentRef.current;
-      if (!state || state.selectionFrom === state.selectionTo) {
-        onSaveStatus('Select text first');
-        setTimeout(() => onSaveStatus(''), 2000);
-        return;
-      }
-
-      // Extract selected text using absolute offsets from DocumintState
-      const canonical = state.canonicalContent;
-      const from = Math.min(state.selectionFrom, state.selectionTo);
-      const to = Math.max(state.selectionFrom, state.selectionTo);
-      const selectedText = canonical.slice(from, to);
-      if (!selectedText.trim()) return;
-
-      // Build anchor (24-char prefix/suffix context)
-      const prefix = canonical.slice(Math.max(0, from - 24), from);
-      const suffix = canonical.slice(to, to + 24);
-      const anchor = { quote: selectedText, prefix, suffix };
+      const { quote, prefix, suffix, instructions } = pendingAgentComment;
+      const anchor = { quote, prefix, suffix };
 
       onSaveStatus('⚡ Launching agent...');
+      setPendingAgentComment(null);
 
       // Auto-save first
       await doSave();
 
-      const result = await intentAPI.launchAgent(intentId, selectedText.trim(), anchor);
+      const result = await intentAPI.launchAgent(intentId, instructions, anchor);
 
       if (result.error) {
         onSaveStatus('✗ ' + result.error);
@@ -324,16 +341,16 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
         return;
       }
 
-      // Track the new agent
       const newAgent: AgentInfo = {
         agentId: result.agentId!,
         sessionId: result.sessionId!,
-        selectedText: selectedText.trim(),
-        quote: selectedText,
+        selectedText: quote.trim(),
+        quote,
         prefix,
         suffix,
         status: 'running',
         summary: 'Starting...',
+        instructions,
       };
       setRunningAgents(prev => [...prev, newAgent]);
       onSaveStatus('⚡ Agent launched');
@@ -438,6 +455,29 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
           onStateChange={handleStateChange}
           theme={documintTheme}
         />
+        {/* Run Agent overlay — appears when user creates a comment */}
+        {pendingAgentComment && (
+          <div className="agent-launch-bar">
+            <span className="agent-launch-text">
+              ⚡ Run agent on: &ldquo;{pendingAgentComment.quote.length > 40
+                ? pendingAgentComment.quote.slice(0, 37) + '...'
+                : pendingAgentComment.quote}&rdquo;
+            </span>
+            <button
+              className="agent-launch-btn run"
+              onClick={() => launchAgentFromComment()}
+            >
+              Run Agent
+            </button>
+            <button
+              className="agent-launch-btn dismiss"
+              onClick={() => setPendingAgentComment(null)}
+            >
+              ✕
+            </button>
+          </div>
+        )}
+        {/* Approval overlay */}
         {approvalRequest && (
           <div className="agent-approval-bar">
             <span className="agent-approval-text">

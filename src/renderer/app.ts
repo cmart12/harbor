@@ -33,6 +33,7 @@ interface IntentAPI {
   closeCanvas(intentId: string, content: string): Promise<void>;
   searchIntents(query: string): Promise<Intent[]>;
   pasteFile(intentId: string, filename: string, dataArray: number[]): Promise<{ success?: boolean; relativePath?: string; filename?: string; error?: string }>;
+  listAgents(intentId: string): Promise<any[]>;
   hideWindow(): void;
   expandWindow(): void;
   collapseWindow(): void;
@@ -95,7 +96,7 @@ const processingIntents = new Set<string>();
 // Track intents with active running terminal sessions
 let activeSessionIntents = new Set<string>();
 // Current filter
-let currentFilter: 'all' | 'scheduled' | 'unscheduled' | 'past' = 'all';
+let currentFilter: 'all' | 'scheduled' | 'unscheduled' | 'past' | 'agents' = 'all';
 const filterBar = document.getElementById('filter-bar') as HTMLDivElement;
 const queryResult = document.getElementById('query-result') as HTMLDivElement;
 const focusBanner = document.getElementById('focus-banner') as HTMLDivElement;
@@ -550,6 +551,10 @@ function render(): void {
   if (searchResults !== null) {
     // Search mode — show search results directly
     displayList = searchResults;
+  } else if (currentFilter === 'agents') {
+    // Agents mode — render agent list instead of intents
+    renderAgentsList();
+    return;
   } else {
     // Normal mode — apply filter
     let filtered: Intent[];
@@ -580,7 +585,8 @@ function render(): void {
                      currentFilter === 'all' ? 'No intents yet. Type or speak one above.' :
                      currentFilter === 'scheduled' ? 'No scheduled intents.' :
                      currentFilter === 'unscheduled' ? 'No open intents without a date.' :
-                     'No past intents.';
+                     currentFilter === 'past' ? 'No past intents.' :
+                     'No agents running.';
     listEl.innerHTML = `
       <div class="empty-state">
         <span class="icon">🎯</span>
@@ -626,6 +632,70 @@ function render(): void {
     selectedIndex = -1;
   }
   updateSelection();
+}
+
+async function renderAgentsList(): Promise<void> {
+  displayedIntents = [];
+  countEl.textContent = String(intents.filter(i => i.status !== 'done').length);
+
+  // Gather agents across all intents
+  const allAgents: Array<{ agentId: string; sessionId: string; status: string; summary: string; selectedText: string; intentId: string; intentDesc: string }> = [];
+
+  for (const intent of intents) {
+    try {
+      const agents = await intentAPI.listAgents(intent.id);
+      for (const agent of agents) {
+        allAgents.push({
+          ...agent,
+          intentId: intent.id,
+          intentDesc: intent.description,
+        });
+      }
+    } catch {
+      // skip
+    }
+  }
+
+  if (allAgents.length === 0) {
+    listEl.innerHTML = `
+      <div class="empty-state">
+        <span class="icon">⚡</span>
+        <span>No agents running. Select text in a canvas and create a comment to deploy an agent.</span>
+      </div>
+    `;
+    return;
+  }
+
+  // Sort: running first, then waiting, then completed/failed
+  const statusOrder: Record<string, number> = { 'running': 0, 'waiting-approval': 1, 'completed': 2, 'failed': 3 };
+  allAgents.sort((a, b) => (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9));
+
+  listEl.innerHTML = allAgents.map(agent => {
+    const statusIcon = agent.status === 'running' ? '⚡' :
+                       agent.status === 'waiting-approval' ? '⏳' :
+                       agent.status === 'completed' ? '✓' :
+                       '✗';
+    const statusClass = agent.status === 'running' ? 'agent-running' :
+                        agent.status === 'waiting-approval' ? 'agent-waiting' :
+                        agent.status === 'completed' ? 'agent-completed' :
+                        'agent-failed';
+    const preview = agent.selectedText.length > 50
+      ? agent.selectedText.slice(0, 47) + '...'
+      : agent.selectedText;
+
+    return `
+      <div class="agent-list-item ${statusClass}" onclick="openCanvas('${agent.intentId}')">
+        <div class="agent-list-status">${statusIcon}</div>
+        <div class="agent-list-body">
+          <div class="agent-list-text">"${escapeHtml(preview)}"</div>
+          <div class="agent-list-meta">
+            <span class="agent-list-intent">${escapeHtml(agent.intentDesc)}</span>
+            <span class="agent-list-summary">${escapeHtml(agent.summary)}</span>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
 }
 
 function updateSelection(): void {
