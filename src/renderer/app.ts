@@ -1836,7 +1836,9 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (isRecording) stopRecording();
     if (!canvasView.classList.contains('hidden')) {
+      const wasExpanded = canvasExpanded;
       closeCanvas();
+      if (wasExpanded) intentAPI.hideWindow();
       return;
     }
     if (!settingsView.classList.contains('hidden')) {
