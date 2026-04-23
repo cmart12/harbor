@@ -1637,8 +1637,8 @@ canvasTitle.addEventListener('blur', (e) => {
 
 canvasTitle.addEventListener('keydown', (e) => {
   if (canvasTitle.contentEditable !== 'true') return;
-  if (e.key === 'Enter') { e.preventDefault(); commitTitleEdit(); }
-  if (e.key === 'Escape') { e.preventDefault(); cancelTitleEdit(); }
+  if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); commitTitleEdit(); }
+  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancelTitleEdit(); }
 });
 
 canvasTitleAI.addEventListener('click', async () => {
