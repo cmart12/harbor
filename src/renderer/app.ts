@@ -12,6 +12,13 @@ interface RecallMatch {
   confidence: number;
 }
 
+interface AgentPersona {
+  id: string;
+  handle: string;
+  instructions: string;
+  model: string;
+}
+
 interface IntentAPI {
   create(input: { body: string }): Promise<Intent>;
   list(): Promise<Intent[]>;
@@ -22,6 +29,8 @@ interface IntentAPI {
   getSetting(key: string): Promise<string | null>;
   setSetting(key: string, value: string): Promise<void>;
   listModels(): Promise<{ id: string; name?: string }[]>;
+  listPersonas(): Promise<AgentPersona[]>;
+  savePersonas(personas: AgentPersona[]): Promise<{ ok?: boolean; error?: string }>;
   listEvents(limit?: number): Promise<any[]>;
   resolveDate(dateText: string): Promise<{ due_at: string; due_at_utc: string | null }>;
   classifyInput(text: string): Promise<{ type: 'intent' | 'query'; query_answer?: string }>;
@@ -32,6 +41,7 @@ interface IntentAPI {
   writeCanvas(intentId: string, content: string): Promise<{ success?: boolean; error?: string }>;
   closeCanvas(intentId: string, content: string): Promise<void>;
   searchIntents(query: string): Promise<Intent[]>;
+  summarizeTitle(canvasContent: string): Promise<{ title: string | null }>;
   pasteFile(intentId: string, filename: string, dataArray: number[]): Promise<{ success?: boolean; relativePath?: string; filename?: string; error?: string }>;
   listAgents(intentId: string): Promise<any[]>;
   hideWindow(): void;
@@ -163,6 +173,7 @@ filterBar.addEventListener('keydown', (e) => {
   }
   if (e.key === 'ArrowDown') {
     e.preventDefault();
+    e.stopPropagation();
     if (currentFilter !== 'agents' && displayedIntents.length > 0) {
       selectedIndex = 0;
       updateSelection();
@@ -185,6 +196,7 @@ function showSettings(): void {
   loadModels();
   loadWorkspaceSetting();
   loadThemeSetting();
+  loadPersonas();
 }
 
 function hideSettings(): void {
@@ -286,6 +298,230 @@ async function loadWorkspaceSetting(): Promise<void> {
   const ws = await intentAPI.getSetting('workspace_root');
   updateWorkspaceDisplay(ws);
 }
+
+// ── Agent Personas ──────────────────────────────────────
+const personasList = document.getElementById('personas-list') as HTMLDivElement;
+const personaAddBtn = document.getElementById('persona-add-btn') as HTMLButtonElement;
+let personas: AgentPersona[] = [];
+let personaModels: { id: string; name?: string }[] = [];
+
+const HANDLE_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;
+
+async function loadPersonas(): Promise<void> {
+  personas = await intentAPI.listPersonas() || [];
+  try { personaModels = await intentAPI.listModels(); } catch { personaModels = []; }
+  renderPersonas();
+}
+
+function renderPersonas(): void {
+  personasList.innerHTML = '';
+  for (const persona of personas) {
+    personasList.appendChild(createPersonaCard(persona));
+  }
+}
+
+function createPersonaCard(persona: AgentPersona): HTMLElement {
+  const card = document.createElement('div');
+  card.className = 'persona-card';
+
+  const info = document.createElement('div');
+  info.className = 'persona-card-info';
+
+  const handle = document.createElement('div');
+  handle.className = 'persona-card-handle';
+  handle.textContent = '@' + persona.handle;
+
+  const instr = document.createElement('div');
+  instr.className = 'persona-card-instructions';
+  instr.textContent = persona.instructions.length > 80
+    ? persona.instructions.slice(0, 77) + '...'
+    : persona.instructions;
+
+  const modelName = personaModels.find(m => m.id === persona.model);
+  const meta = document.createElement('div');
+  meta.className = 'persona-card-meta';
+  meta.textContent = modelName ? (modelName.name || modelName.id) : (persona.model || 'Default model');
+  if (persona.model && !modelName) {
+    meta.classList.add('unavailable');
+    meta.textContent = persona.model + ' (unavailable)';
+  }
+
+  info.appendChild(handle);
+  info.appendChild(instr);
+  info.appendChild(meta);
+
+  const actions = document.createElement('div');
+  actions.className = 'persona-card-actions';
+
+  const editBtn = document.createElement('button');
+  editBtn.className = 'persona-action-btn';
+  editBtn.textContent = '✎';
+  editBtn.title = 'Edit';
+  editBtn.addEventListener('click', () => showPersonaForm(persona));
+
+  const delBtn = document.createElement('button');
+  delBtn.className = 'persona-action-btn danger';
+  delBtn.textContent = '✕';
+  delBtn.title = 'Delete';
+  delBtn.addEventListener('click', async () => {
+    personas = personas.filter(p => p.id !== persona.id);
+    await intentAPI.savePersonas(personas);
+    renderPersonas();
+  });
+
+  actions.appendChild(editBtn);
+  actions.appendChild(delBtn);
+
+  card.appendChild(info);
+  card.appendChild(actions);
+  return card;
+}
+
+function showPersonaForm(existing?: AgentPersona): void {
+  // Remove any open form
+  const prev = personasList.querySelector('.persona-form');
+  if (prev) prev.remove();
+
+  const form = document.createElement('div');
+  form.className = 'persona-form';
+
+  // Handle input
+  const handleRow = document.createElement('div');
+  handleRow.className = 'persona-form-row';
+  const handleLabel = document.createElement('label');
+  handleLabel.textContent = '@';
+  handleLabel.className = 'persona-handle-prefix';
+  const handleInput = document.createElement('input');
+  handleInput.type = 'text';
+  handleInput.className = 'persona-form-input';
+  handleInput.placeholder = 'handle';
+  handleInput.value = existing?.handle || '';
+  handleInput.maxLength = 32;
+  handleRow.appendChild(handleLabel);
+  handleRow.appendChild(handleInput);
+
+  // Instructions textarea
+  const instrRow = document.createElement('div');
+  instrRow.className = 'persona-form-row';
+  const instrInput = document.createElement('textarea');
+  instrInput.className = 'persona-form-textarea';
+  instrInput.placeholder = 'Instructions for this persona...';
+  instrInput.value = existing?.instructions || '';
+  instrInput.rows = 3;
+  instrInput.maxLength = 2000;
+  instrRow.appendChild(instrInput);
+
+  // Model dropdown
+  const modelRow = document.createElement('div');
+  modelRow.className = 'persona-form-row';
+  const modelLabel = document.createElement('label');
+  modelLabel.textContent = 'Model';
+  modelLabel.className = 'persona-form-label';
+  const modelSelect = document.createElement('select');
+  modelSelect.className = 'persona-form-select';
+
+  const defaultOpt = document.createElement('option');
+  defaultOpt.value = '';
+  defaultOpt.textContent = 'Default';
+  modelSelect.appendChild(defaultOpt);
+
+  for (const m of personaModels) {
+    const opt = document.createElement('option');
+    opt.value = m.id;
+    opt.textContent = m.name || m.id;
+    if (m.id === existing?.model) opt.selected = true;
+    modelSelect.appendChild(opt);
+  }
+
+  modelRow.appendChild(modelLabel);
+  modelRow.appendChild(modelSelect);
+
+  // Error display
+  const errorEl = document.createElement('div');
+  errorEl.className = 'persona-form-error hidden';
+
+  // Action buttons
+  const btnRow = document.createElement('div');
+  btnRow.className = 'persona-form-actions';
+
+  const saveBtn = document.createElement('button');
+  saveBtn.className = 'persona-form-save';
+  saveBtn.textContent = existing ? 'Save' : 'Add';
+  saveBtn.addEventListener('click', async () => {
+    const rawHandle = handleInput.value.trim().replace(/^@/, '').toLowerCase();
+    const instructions = instrInput.value.trim();
+    const model = modelSelect.value;
+
+    // Validate
+    if (!HANDLE_RE.test(rawHandle)) {
+      errorEl.textContent = 'Handle must be 1-32 lowercase letters, numbers, or dashes.';
+      errorEl.classList.remove('hidden');
+      return;
+    }
+    if (!instructions) {
+      errorEl.textContent = 'Instructions are required.';
+      errorEl.classList.remove('hidden');
+      return;
+    }
+    // Check uniqueness (excluding self when editing)
+    const duplicate = personas.find(p => p.handle === rawHandle && p.id !== (existing?.id || ''));
+    if (duplicate) {
+      errorEl.textContent = `Handle @${rawHandle} is already taken.`;
+      errorEl.classList.remove('hidden');
+      return;
+    }
+
+    if (existing) {
+      // Update existing
+      personas = personas.map(p => p.id === existing.id
+        ? { ...p, handle: rawHandle, instructions, model }
+        : p
+      );
+    } else {
+      // Add new
+      personas.push({
+        id: crypto.randomUUID(),
+        handle: rawHandle,
+        instructions,
+        model,
+      });
+    }
+
+    await intentAPI.savePersonas(personas);
+    renderPersonas();
+  });
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'persona-form-cancel';
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.addEventListener('click', () => form.remove());
+
+  btnRow.appendChild(saveBtn);
+  btnRow.appendChild(cancelBtn);
+
+  form.appendChild(handleRow);
+  form.appendChild(instrRow);
+  form.appendChild(modelRow);
+  form.appendChild(errorEl);
+  form.appendChild(btnRow);
+
+  if (existing) {
+    // Insert form after the card being edited
+    const cards = personasList.querySelectorAll('.persona-card');
+    const idx = personas.findIndex(p => p.id === existing.id);
+    if (cards[idx]) {
+      cards[idx].after(form);
+    } else {
+      personasList.appendChild(form);
+    }
+  } else {
+    personasList.appendChild(form);
+  }
+
+  handleInput.focus();
+}
+
+personaAddBtn.addEventListener('click', () => showPersonaForm());
 
 // ── Voice Input (spacebar-triggered) ────────────────────
 let mediaRecorder: MediaRecorder | null = null;
@@ -668,7 +904,7 @@ function render(): void {
     const isFocused = intent.id === focusedIntentId;
 
     return `
-    <div class="intent-item ${intent.status === 'done' ? 'done' : ''} ${isProcessing ? 'processing' : ''} ${isFocused ? 'focused' : ''}" data-id="${intent.id}" onclick="openCanvas('${intent.id}')">
+    <div class="intent-item ${intent.status === 'done' ? 'done' : ''} ${isProcessing ? 'processing' : ''} ${isFocused ? 'focused' : ''}" data-id="${intent.id}" onclick="openCanvas('${intent.id}', true)">
       <div class="intent-check ${intent.status === 'done' ? 'checked' : ''}"
            onclick="event.stopPropagation(); toggleStatus('${intent.id}')">${intent.status === 'done' ? '✓' : ''}</div>
       <div class="intent-content">
@@ -750,7 +986,7 @@ async function renderAgentsList(): Promise<void> {
       : agent.selectedText;
 
     return `
-      <div class="agent-list-item ${statusClass}" onclick="openCanvas('${agent.intentId}')">
+      <div class="agent-list-item ${statusClass}" onclick="openCanvas('${agent.intentId}', true)">
         <div class="agent-list-status">${statusIcon}</div>
         <div class="agent-list-body">
           <div class="agent-list-text">"${escapeHtml(preview)}"</div>
@@ -1344,6 +1580,7 @@ import { mountCanvas, unmountCanvas, getCanvasContent, saveCanvas as saveCanvasE
 const canvasView = document.getElementById('canvas-view') as HTMLDivElement;
 const canvasBack = document.getElementById('canvas-back') as HTMLButtonElement;
 const canvasTitle = document.getElementById('canvas-title') as HTMLHeadingElement;
+const canvasTitleAI = document.getElementById('canvas-title-ai') as HTMLButtonElement;
 const canvasSaveStatus = document.getElementById('canvas-save-status') as HTMLSpanElement;
 const canvasLaunchBtn = document.getElementById('canvas-launch') as HTMLButtonElement;
 const canvasSaveBtn = document.getElementById('canvas-save') as HTMLButtonElement;
@@ -1352,6 +1589,74 @@ let canvasIntentId: string | null = null;
 let canvasDirty = false;
 let canvasExpanded = false;
 let canvasIsNewIntent = false;
+let titleBeforeEdit = '';
+
+function startEditingTitle(): void {
+  titleBeforeEdit = canvasTitle.textContent || '';
+  canvasTitle.contentEditable = 'true';
+  canvasTitle.classList.add('editing');
+  canvasTitleAI.classList.remove('hidden');
+  // Select all text
+  const range = document.createRange();
+  range.selectNodeContents(canvasTitle);
+  const sel = window.getSelection();
+  sel?.removeAllRanges();
+  sel?.addRange(range);
+}
+
+async function commitTitleEdit(): Promise<void> {
+  canvasTitle.contentEditable = 'false';
+  canvasTitle.classList.remove('editing');
+  canvasTitleAI.classList.add('hidden');
+  const newTitle = (canvasTitle.textContent || '').trim();
+  if (!newTitle) {
+    canvasTitle.textContent = titleBeforeEdit;
+  } else if (newTitle !== titleBeforeEdit && canvasIntentId) {
+    canvasTitle.textContent = newTitle;
+    await intentAPI.update(canvasIntentId, { description: newTitle });
+    await loadIntents();
+  }
+}
+
+function cancelTitleEdit(): void {
+  canvasTitle.contentEditable = 'false';
+  canvasTitle.classList.remove('editing');
+  canvasTitleAI.classList.add('hidden');
+  canvasTitle.textContent = titleBeforeEdit;
+}
+
+canvasTitle.addEventListener('click', () => {
+  if (canvasTitle.contentEditable !== 'true') startEditingTitle();
+});
+
+canvasTitle.addEventListener('blur', (e) => {
+  if ((e as FocusEvent).relatedTarget === canvasTitleAI) return;
+  commitTitleEdit();
+});
+
+canvasTitle.addEventListener('keydown', (e) => {
+  if (canvasTitle.contentEditable !== 'true') return;
+  if (e.key === 'Enter') { e.preventDefault(); commitTitleEdit(); }
+  if (e.key === 'Escape') { e.preventDefault(); cancelTitleEdit(); }
+});
+
+canvasTitleAI.addEventListener('click', async () => {
+  if (!canvasIntentId) return;
+  const content = getCanvasContent();
+  if (!content.trim()) return;
+  canvasTitleAI.disabled = true;
+  canvasTitleAI.textContent = '⏳';
+  try {
+    const result = await intentAPI.summarizeTitle(content);
+    if (result.title) {
+      canvasTitle.textContent = result.title;
+      canvasTitle.focus();
+    }
+  } finally {
+    canvasTitleAI.disabled = false;
+    canvasTitleAI.textContent = '✨';
+  }
+});
 
 // Create a new blank intent and immediately open it in the full canvas editor
 async function createAndOpenCanvas(): Promise<void> {
@@ -1379,6 +1684,9 @@ async function openCanvas(intentId: string, expanded = false): Promise<void> {
 
   canvasIntentId = intentId;
   canvasTitle.textContent = intent.description;
+  canvasTitle.contentEditable = 'false';
+  canvasTitle.classList.remove('editing');
+  canvasTitleAI.classList.add('hidden');
   canvasSaveStatus.textContent = '';
   canvasDirty = false;
   canvasSaveBtn.classList.add('hidden');
@@ -1507,12 +1815,6 @@ document.addEventListener('keydown', (e) => {
       }
       return;
     }
-    if (e.key === 'Enter' && selectedIndex >= 0 && document.activeElement !== descInput) {
-      e.preventDefault();
-      const intent = displayedIntents[selectedIndex];
-      if (intent) openCanvas(intent.id, true);
-      return;
-    }
     // Cmd+Enter: open small canvas (summary view) for selected intent
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
       e.preventDefault();
@@ -1520,6 +1822,13 @@ document.addEventListener('keydown', (e) => {
         ? displayedIntents[selectedIndex]
         : displayedIntents[0];
       if (target) openCanvas(target.id);
+      return;
+    }
+    // Enter: open full editor for selected intent
+    if (e.key === 'Enter' && selectedIndex >= 0 && document.activeElement !== descInput) {
+      e.preventDefault();
+      const intent = displayedIntents[selectedIndex];
+      if (intent) openCanvas(intent.id, true);
       return;
     }
   }

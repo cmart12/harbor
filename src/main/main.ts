@@ -377,10 +377,11 @@ app.whenReady().then(async () => {
     const display = screen.getDisplayNearestPoint(cursorPoint);
     const { x, y, width, height } = display.workArea;
 
-    // Center the expanded window on the display
     const newX = Math.round(x + (width - EXPANDED_WIDTH) / 2);
     const newY = Math.round(y + (height - EXPANDED_HEIGHT) / 2);
 
+    mainWindow.setAlwaysOnTop(false);
+    mainWindow.setSkipTaskbar(false);
     mainWindow.setResizable(true);
     mainWindow.setBounds({ x: newX, y: newY, width: EXPANDED_WIDTH, height: EXPANDED_HEIGHT }, true);
   });
@@ -388,6 +389,9 @@ app.whenReady().then(async () => {
   ipcMain.on('window:collapse', () => {
     if (!mainWindow || !isExpanded) return;
     isExpanded = false;
+
+    mainWindow.setAlwaysOnTop(true);
+    mainWindow.setSkipTaskbar(true);
 
     isSnapping = true;
     const pos = getWindowPosition();

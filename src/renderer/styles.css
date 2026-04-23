@@ -959,6 +959,240 @@ header h1 {
   color: rgba(0, 0, 0, 0.7);
 }
 
+/* ── Agent Personas ──────────────────────────────────────── */
+
+.personas-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.persona-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  background: #f5f5f7;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 8px;
+  transition: background 0.15s ease;
+}
+
+.persona-card:hover {
+  background: #ededf0;
+}
+
+.persona-card-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.persona-card-handle {
+  font-size: 13px;
+  font-weight: 600;
+  color: #6366f1;
+}
+
+.persona-card-instructions {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.persona-card-meta {
+  font-size: 11px;
+  color: rgba(0, 0, 0, 0.35);
+}
+
+.persona-card-meta.unavailable {
+  color: #e45858;
+}
+
+.persona-card-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.persona-action-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  color: rgba(0, 0, 0, 0.3);
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+}
+
+.persona-action-btn:hover {
+  color: rgba(0, 0, 0, 0.7);
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.persona-action-btn.danger:hover {
+  color: #e45858;
+  background: rgba(228, 88, 88, 0.08);
+}
+
+.persona-add-btn {
+  background: none;
+  border: 1px dashed rgba(0, 0, 0, 0.15);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  margin-top: 4px;
+}
+
+.persona-add-btn:hover {
+  border-color: rgba(99, 102, 241, 0.4);
+  color: #6366f1;
+  background: rgba(99, 102, 241, 0.04);
+}
+
+/* Persona form */
+
+.persona-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background: #f5f5f7;
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  border-radius: 8px;
+}
+
+.persona-form-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.persona-handle-prefix {
+  font-size: 13px;
+  font-weight: 600;
+  color: #6366f1;
+  padding-left: 2px;
+}
+
+.persona-form-input {
+  flex: 1;
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 13px;
+  color: #1a1a1a;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.persona-form-input:focus {
+  border-color: rgba(99, 102, 241, 0.5);
+}
+
+.persona-form-textarea {
+  width: 100%;
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+  color: #1a1a1a;
+  outline: none;
+  resize: vertical;
+  font-family: inherit;
+  transition: border-color 0.15s ease;
+  box-sizing: border-box;
+}
+
+.persona-form-textarea:focus {
+  border-color: rgba(99, 102, 241, 0.5);
+}
+
+.persona-form-label {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.5);
+  white-space: nowrap;
+  min-width: 40px;
+}
+
+.persona-form-select {
+  flex: 1;
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+  color: #1a1a1a;
+  outline: none;
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='rgba(0,0,0,0.3)'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  padding-right: 22px;
+}
+
+.persona-form-select:focus {
+  border-color: rgba(99, 102, 241, 0.5);
+}
+
+.persona-form-error {
+  font-size: 11px;
+  color: #e45858;
+  padding: 0 2px;
+}
+
+.persona-form-error.hidden {
+  display: none;
+}
+
+.persona-form-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.persona-form-save {
+  background: #6366f1;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.persona-form-save:hover {
+  background: #5558e6;
+}
+
+.persona-form-cancel {
+  background: none;
+  color: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.persona-form-cancel:hover {
+  background: rgba(0, 0, 0, 0.04);
+  color: rgba(0, 0, 0, 0.6);
+}
+
 .empty-state {
   display: flex;
   flex-direction: column;
@@ -1184,6 +1418,59 @@ header h1 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  border: 1px solid transparent;
+}
+
+.canvas-view header h1:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.canvas-view header h1.editing {
+  cursor: text;
+  background: transparent;
+  border-color: rgba(99, 102, 241, 0.4);
+  outline: none;
+  text-overflow: clip;
+}
+
+.canvas-view header h1.hidden {
+  display: none;
+}
+
+.canvas-title-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.canvas-title-ai {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  font-size: 13px;
+  cursor: pointer;
+  opacity: 0.5;
+  transition: opacity 0.15s ease;
+}
+
+.canvas-title-ai:hover {
+  opacity: 1;
+}
+
+.canvas-title-ai:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.canvas-title-ai.hidden {
+  display: none;
 }
 
 .canvas-save-status {
@@ -1532,6 +1819,27 @@ body.dark .theme-toggle { background: rgba(255, 255, 255, 0.06); }
 body.dark .theme-btn.active { background: rgba(255, 255, 255, 0.1); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3); }
 body.dark .theme-btn:hover:not(.active) { background: rgba(255, 255, 255, 0.04); }
 
+/* Dark personas */
+body.dark .persona-card { background: rgba(255, 255, 255, 0.06); border-color: rgba(255, 255, 255, 0.06); }
+body.dark .persona-card:hover { background: rgba(255, 255, 255, 0.1); }
+body.dark .persona-card-handle { color: #818cf8; }
+body.dark .persona-card-instructions { color: rgba(255, 255, 255, 0.5); }
+body.dark .persona-card-meta { color: rgba(255, 255, 255, 0.3); }
+body.dark .persona-action-btn { color: rgba(255, 255, 255, 0.3); }
+body.dark .persona-action-btn:hover { color: rgba(255, 255, 255, 0.8); background: rgba(255, 255, 255, 0.08); }
+body.dark .persona-action-btn.danger:hover { color: #f87171; background: rgba(248, 113, 113, 0.1); }
+body.dark .persona-add-btn { border-color: rgba(255, 255, 255, 0.1); color: rgba(255, 255, 255, 0.35); }
+body.dark .persona-add-btn:hover { border-color: rgba(129, 140, 248, 0.4); color: #818cf8; background: rgba(129, 140, 248, 0.06); }
+body.dark .persona-form { background: rgba(255, 255, 255, 0.06); border-color: rgba(129, 140, 248, 0.3); }
+body.dark .persona-form-input { background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.08); color: #e0e0e0; }
+body.dark .persona-form-textarea { background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.08); color: #e0e0e0; }
+body.dark .persona-form-select { background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.08); color: #e0e0e0; }
+body.dark .persona-form-select option { background: #1c1c20; color: #e0e0e0; }
+body.dark .persona-form-label { color: rgba(255, 255, 255, 0.5); }
+body.dark .persona-handle-prefix { color: #818cf8; }
+body.dark .persona-form-cancel { border-color: rgba(255, 255, 255, 0.08); color: rgba(255, 255, 255, 0.4); }
+body.dark .persona-form-cancel:hover { background: rgba(255, 255, 255, 0.06); color: rgba(255, 255, 255, 0.7); }
+
 /* Dark inline editing */
 body.dark .inline-edit-input { background: rgba(255, 255, 255, 0.08); border-color: rgba(99, 102, 241, 0.5); color: #e0e0e0; box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.15); }
 body.dark .due-badge:hover { background: rgba(255, 255, 255, 0.06); }
@@ -1594,6 +1902,8 @@ body.dark .attachment-remove { color: rgba(255, 255, 255, 0.3); }
 body.dark .intent-add-link:hover, body.dark .intent-edit-body:hover { background: rgba(255, 255, 255, 0.06); }
 
 /* Dark canvas */
+body.dark .canvas-view header h1:hover { background: rgba(255, 255, 255, 0.05); }
+body.dark .canvas-view header h1.editing { border-color: rgba(129, 140, 248, 0.4); }
 body.dark .canvas-save-status { color: rgba(255, 255, 255, 0.35); }
 body.dark .canvas-save-btn { background: rgba(99, 102, 241, 0.2); color: #818cf8; }
 body.dark .canvas-save-btn:hover { background: rgba(99, 102, 241, 0.3); }

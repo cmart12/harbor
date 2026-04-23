@@ -96,6 +96,13 @@
           </div>
           <div class="settings-hint">The working directory for Copilot CLI sessions.</div>
         </div>
+
+        <div class="settings-group">
+          <div class="settings-group-title">Agent Personas</div>
+          <div class="settings-hint">Define personas you can @mention in documents and comments.</div>
+          <div id="personas-list" class="personas-list"></div>
+          <button id="persona-add-btn" class="persona-add-btn" type="button">+ Add Persona</button>
+        </div>
       </div>
     </div>
 
@@ -113,7 +120,10 @@
     <div id="canvas-view" class="canvas-view hidden">
       <header>
         <button id="canvas-back" class="header-icon-btn" title="Back">←</button>
-        <h1 id="canvas-title" class="canvas-title-header"></h1>
+        <div class="canvas-title-wrap">
+          <h1 id="canvas-title" class="canvas-title-header"></h1>
+          <button id="canvas-title-ai" class="canvas-title-ai hidden" title="Generate title from content">✨</button>
+        </div>
         <div class="header-actions">
           <span id="canvas-save-status" class="canvas-save-status"></span>
           <button id="canvas-save" class="canvas-save-btn hidden" title="Save (⌘S)">Save</button>

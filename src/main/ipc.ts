@@ -8,7 +8,7 @@ import { parseIntentWithAI, evaluateRecurrence, findSimilarIntent, resolveDateWi
 import { launchSession, getActiveSessionIntentIds } from './session';
 import { transcribeAudio } from './voice';
 import { CreateIntentInput, Intent, RecurrenceResult, LinkPreviewMeta } from '../shared/types';
-import { getConfigValue, setConfigValue } from './config';
+import { getConfigValue, setConfigValue, type AgentPersona } from './config';
 import { initWorkspace, getDbPath, getLogPath, initIntentCanvas, readCanvas, writeCanvas, scheduleAutoCommit, saveAttachment, resolveAttachmentPath, getMimeType } from './workspace';
 import { initDatabase, mergeSessionIds, assignIntentFolder, updateCanvasContent, searchIntents, syncCanvasContent, updateCanvasAgentStatus } from './database';
 import { getConfig } from './config';
@@ -245,6 +245,43 @@ export function registerIpcHandlers(): void {
     return listAvailableModels();
   });
 
+  // Agent Personas
+  const HANDLE_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;
+
+  ipcMain.handle('personas:list', () => {
+    return getConfigValue('personas');
+  });
+
+  ipcMain.handle('personas:save', (_event, personas: unknown) => {
+    if (!Array.isArray(personas)) return { error: 'invalid payload' };
+
+    const seen = new Set<string>();
+    const validated: AgentPersona[] = [];
+
+    for (const p of personas) {
+      if (!p || typeof p !== 'object') continue;
+      const raw = p as Record<string, unknown>;
+
+      const id = typeof raw.id === 'string' ? raw.id.trim() : '';
+      const handle = typeof raw.handle === 'string'
+        ? raw.handle.trim().replace(/^@/, '').toLowerCase()
+        : '';
+      const instructions = typeof raw.instructions === 'string'
+        ? raw.instructions.trim().slice(0, 2000)
+        : '';
+      const model = typeof raw.model === 'string' ? raw.model.trim() : '';
+
+      if (!id || !HANDLE_RE.test(handle) || !instructions) continue;
+      if (seen.has(handle)) continue;
+      seen.add(handle);
+
+      validated.push({ id, handle, instructions, model });
+    }
+
+    setConfigValue('personas', validated);
+    return { ok: true };
+  });
+
   // Intent events / timeline
   ipcMain.handle('intent:events', (_event, limit?: number) => {
     return listIntentEvents(limit || 100);
@@ -266,6 +303,17 @@ export function registerIpcHandlers(): void {
       completed_at: i.completed_at,
     }));
     return classifyInput(text, recent);
+  });
+
+  // Summarize canvas content into a title
+  ipcMain.handle('intent:summarize-title', async (_event, canvasContent: string) => {
+    try {
+      const parsed = await parseIntentWithAI(canvasContent);
+      return { title: parsed.description };
+    } catch (err) {
+      console.error('[ipc] Summarize title failed:', err);
+      return { title: null };
+    }
   });
 
   // Session launch

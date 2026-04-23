@@ -12,6 +12,8 @@ contextBridge.exposeInMainWorld('intentAPI', {
   getSetting: (key: string) => ipcRenderer.invoke('settings:get', key),
   setSetting: (key: string, value: string) => ipcRenderer.invoke('settings:set', key, value),
   listModels: () => ipcRenderer.invoke('models:list'),
+  listPersonas: () => ipcRenderer.invoke('personas:list'),
+  savePersonas: (personas: any[]) => ipcRenderer.invoke('personas:save', personas),
   listEvents: (limit?: number) => ipcRenderer.invoke('intent:events', limit),
   resolveDate: (dateText: string) => ipcRenderer.invoke('intent:resolve-date', dateText),
   classifyInput: (text: string) => ipcRenderer.invoke('intent:classify', text),
@@ -22,6 +24,7 @@ contextBridge.exposeInMainWorld('intentAPI', {
   writeCanvas: (intentId: string, content: string) => ipcRenderer.invoke('canvas:write', intentId, content),
   closeCanvas: (intentId: string, content: string) => ipcRenderer.invoke('canvas:close', intentId, content),
   searchIntents: (query: string) => ipcRenderer.invoke('intent:search', query),
+  summarizeTitle: (canvasContent: string) => ipcRenderer.invoke('intent:summarize-title', canvasContent),
 
   // Canvas enhancements
   pasteFile: (intentId: string, filename: string, dataArray: number[]) =>
