@@ -53,6 +53,9 @@ contextBridge.exposeInMainWorld('intentAPI', {
   onWindowShown: (callback: () => void) => {
     ipcRenderer.on('window:shown', callback);
   },
+  onWindowToggle: (callback: () => void) => {
+    ipcRenderer.on('window:toggle', callback);
+  },
   onAgentStatusChanged: (callback: (data: any) => void) => {
     ipcRenderer.on('agent:status-changed', (_event: any, data: any) => callback(data));
   },

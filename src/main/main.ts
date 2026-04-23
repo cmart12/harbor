@@ -210,7 +210,8 @@ function toggleWindow(): void {
   if (!mainWindow || mainWindow.isDestroyed()) return;
 
   if (mainWindow.isVisible()) {
-    mainWindow.hide();
+    // Let the renderer decide: navigate back to list or hide
+    mainWindow.webContents.send('window:toggle');
   } else {
     const pos = getWindowPosition();
     showTimestamp = Date.now();

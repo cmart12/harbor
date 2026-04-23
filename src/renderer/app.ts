@@ -51,6 +51,7 @@ interface IntentAPI {
   setPinned(pinned: boolean): void;
   onPinnedChanged(callback: (pinned: boolean) => void): void;
   onWindowShown(callback: () => void): void;
+  onWindowToggle(callback: () => void): void;
   onIntentProcessed(callback: (id: string) => void): void;
   onRecurrenceResult(callback: (intentId: string, result: RecurrenceResult) => void): void;
   onRecurrenceApplied(callback: (intentId: string) => void): void;
@@ -1862,6 +1863,24 @@ intentAPI.onWindowShown(() => {
   hideStatus();
   // Refresh active session state when window reappears
   loadIntents();
+});
+
+intentAPI.onWindowToggle(() => {
+  // If on a sub-view, navigate back to the intent list
+  if (!canvasView.classList.contains('hidden')) {
+    closeCanvas();
+    return;
+  }
+  if (!settingsView.classList.contains('hidden')) {
+    hideSettings();
+    return;
+  }
+  if (!timelineView.classList.contains('hidden')) {
+    hideTimeline();
+    return;
+  }
+  // Already on the main view — hide the window
+  intentAPI.hideWindow();
 });
 
 loadIntents();
