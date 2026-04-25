@@ -427,6 +427,24 @@ app.whenReady().then(async () => {
     setConfigValue('pinned', pinned);
     if (mainWindow && !isExpanded) {
       mainWindow.setResizable(pinned);
+
+      // When unpinning, snap back to full-height edge position
+      if (!pinned) {
+        const bounds = mainWindow.getBounds();
+        const centerX = bounds.x + bounds.width / 2;
+        const centerY = bounds.y + bounds.height / 2;
+        const display = screen.getDisplayNearestPoint({ x: centerX, y: centerY });
+        const area = display.workArea;
+
+        const isLeft = centerX < area.x + area.width / 2;
+        const snap: SnapPosition = isLeft ? 'top-left' : 'top-right';
+        const winX = isLeft ? area.x + SNAP_MARGIN : area.x + area.width - WINDOW_WIDTH - SNAP_MARGIN;
+        const winY = area.y + SNAP_MARGIN;
+        const winHeight = area.height - SNAP_MARGIN * 2;
+
+        setConfigValue('snapPosition', snap);
+        mainWindow.setBounds({ x: winX, y: winY, width: WINDOW_WIDTH, height: winHeight }, false);
+      }
     }
     // Notify all windows so UI can update
     for (const win of BrowserWindow.getAllWindows()) {
