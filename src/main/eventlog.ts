@@ -146,6 +146,30 @@ function applyEvent(db: Database.Database, event: LogEvent): void {
       break;
     }
 
+    case 'agent_session.created': {
+      const d = event.data;
+      db.prepare(
+        `INSERT OR REPLACE INTO agent_sessions (id, session_id, intent_id, prompt, status, summary, working_dir, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(
+        d.id, d.session_id, d.intent_id ?? null, d.prompt, d.status,
+        d.summary ?? '', d.working_dir ?? null, d.created_at, d.updated_at,
+      );
+      break;
+    }
+
+    case 'agent_session.updated': {
+      const d = event.data;
+      if (d.summary !== undefined && d.summary !== null) {
+        db.prepare('UPDATE agent_sessions SET status = ?, summary = ?, updated_at = ? WHERE id = ?')
+          .run(d.status, d.summary, d.updated_at, d.id);
+      } else {
+        db.prepare('UPDATE agent_sessions SET status = ?, updated_at = ? WHERE id = ?')
+          .run(d.status, d.updated_at, d.id);
+      }
+      break;
+    }
+
     case 'snapshot': {
       const d = event.data;
       if (d.intents) {

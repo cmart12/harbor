@@ -19,6 +19,28 @@ interface AgentPersona {
   model: string;
 }
 
+interface CliToolDefinition {
+  name: string;
+  description: string;
+}
+
+interface CustomMcpServer {
+  name: string;
+  type: 'stdio' | 'http' | 'sse';
+  command?: string;
+  args?: string[];
+  url?: string;
+  tools: string[];
+}
+
+interface DiscoveredMcpServer {
+  name: string;
+  source: 'config' | 'plugin';
+  type: string;
+  command?: string;
+  url?: string;
+}
+
 interface IntentAPI {
   create(input: { body: string }): Promise<Intent>;
   list(): Promise<Intent[]>;
@@ -32,6 +54,11 @@ interface IntentAPI {
   listModels(): Promise<{ id: string; name?: string }[]>;
   listPersonas(): Promise<AgentPersona[]>;
   savePersonas(personas: AgentPersona[]): Promise<{ ok?: boolean; error?: string }>;
+  listDiscoveredMcp(): Promise<DiscoveredMcpServer[]>;
+  listCustomMcp(): Promise<CustomMcpServer[]>;
+  saveCustomMcp(servers: CustomMcpServer[]): Promise<{ ok?: boolean; error?: string }>;
+  listCliTools(): Promise<CliToolDefinition[]>;
+  saveCliTools(tools: CliToolDefinition[]): Promise<{ ok?: boolean; error?: string }>;
   listEvents(limit?: number): Promise<any[]>;
   resolveDate(dateText: string): Promise<{ due_at: string; due_at_utc: string | null }>;
   classifyInput(text: string): Promise<{ type: 'intent' | 'query'; query_answer?: string }>;
@@ -99,8 +126,9 @@ const listEl = document.getElementById('intent-list') as HTMLDivElement;
 const countEl = document.getElementById('intent-count') as HTMLSpanElement;
 const statusBar = document.getElementById('status-bar') as HTMLDivElement;
 const settingsBtn = document.getElementById('settings-btn') as HTMLButtonElement;
-const settingsView = document.getElementById('settings-view') as HTMLDivElement;
-const settingsBack = document.getElementById('settings-back') as HTMLButtonElement;
+const settingsOverlay = document.getElementById('settings-overlay') as HTMLDivElement;
+const settingsBackdrop = settingsOverlay.querySelector('.settings-backdrop') as HTMLDivElement;
+const settingsClose = document.getElementById('settings-close') as HTMLButtonElement;
 const mainView = document.getElementById('main-view') as HTMLDivElement;
 const modelSelect = document.getElementById('model-select') as HTMLSelectElement;
 const recordingIndicator = document.getElementById('recording-indicator') as HTMLDivElement;
@@ -196,27 +224,32 @@ filterBar.addEventListener('keydown', (e) => {
   }
 });
 
-// ── Settings view ───────────────────────────────────────
+// ── Settings modal ──────────────────────────────────────
+let settingsModalOpen = false;
+
 function showSettings(): void {
-  mainView.classList.add('hidden');
-  settingsView.classList.remove('hidden');
+  settingsOverlay.classList.remove('hidden');
+  settingsModalOpen = true;
   settingsBtn.classList.add('active');
   loadModels();
   loadWorkspaceSetting();
   loadThemeSetting();
   loadPersonas();
   loadCliPathSetting();
+  loadMcpServers();
+  loadCliTools();
 }
 
 function hideSettings(): void {
-  settingsView.classList.add('hidden');
-  mainView.classList.remove('hidden');
+  settingsOverlay.classList.add('hidden');
+  settingsModalOpen = false;
   settingsBtn.classList.remove('active');
   descInput.focus();
 }
 
 settingsBtn.addEventListener('click', showSettings);
-settingsBack.addEventListener('click', hideSettings);
+settingsClose.addEventListener('click', hideSettings);
+settingsBackdrop.addEventListener('click', hideSettings);
 
 // ── Pin toggle ──────────────────────────────────────────
 pinBtn.addEventListener('click', async () => {
@@ -531,6 +564,367 @@ function showPersonaForm(existing?: AgentPersona): void {
 }
 
 personaAddBtn.addEventListener('click', () => showPersonaForm());
+
+// ── MCP Servers ─────────────────────────────────────────
+const mcpDiscoveredList = document.getElementById('mcp-discovered-list') as HTMLDivElement;
+const mcpCustomList = document.getElementById('mcp-custom-list') as HTMLDivElement;
+const mcpAddBtn = document.getElementById('mcp-add-btn') as HTMLButtonElement;
+let customMcpServers: CustomMcpServer[] = [];
+
+async function loadMcpServers(): Promise<void> {
+  // Load discovered MCPs
+  try {
+    const discovered: DiscoveredMcpServer[] = await intentAPI.listDiscoveredMcp();
+    mcpDiscoveredList.innerHTML = '';
+    for (const s of discovered) {
+      mcpDiscoveredList.appendChild(createMcpCard(s, true));
+    }
+  } catch { mcpDiscoveredList.innerHTML = ''; }
+
+  // Load custom MCPs
+  try {
+    customMcpServers = await intentAPI.listCustomMcp() || [];
+    renderCustomMcpServers();
+  } catch { customMcpServers = []; }
+}
+
+function renderCustomMcpServers(): void {
+  mcpCustomList.innerHTML = '';
+  for (const s of customMcpServers) {
+    mcpCustomList.appendChild(createMcpCard(s, false));
+  }
+}
+
+function createMcpCard(server: DiscoveredMcpServer | CustomMcpServer, isDiscovered: boolean): HTMLElement {
+  const card = document.createElement('div');
+  card.className = 'mcp-card';
+
+  const info = document.createElement('div');
+  info.className = 'mcp-card-info';
+
+  const name = document.createElement('div');
+  name.className = 'mcp-card-name';
+  name.textContent = (server as any).name;
+
+  const meta = document.createElement('div');
+  meta.className = 'mcp-card-meta';
+  const type = (server as any).type || 'stdio';
+  const detail = type === 'http' || type === 'sse'
+    ? ((server as any).url || '')
+    : ((server as any).command || '');
+  meta.textContent = `${type}${detail ? ' · ' + detail : ''}`;
+
+  if (isDiscovered) {
+    const source = document.createElement('span');
+    source.className = 'mcp-card-source';
+    source.textContent = (server as DiscoveredMcpServer).source === 'plugin' ? ' (plugin)' : ' (config)';
+    meta.appendChild(source);
+  }
+
+  info.appendChild(name);
+  info.appendChild(meta);
+  card.appendChild(info);
+
+  if (!isDiscovered) {
+    const delBtn = document.createElement('button');
+    delBtn.className = 'persona-action-btn danger';
+    delBtn.textContent = '✕';
+    delBtn.title = 'Remove';
+    delBtn.addEventListener('click', async () => {
+      customMcpServers = customMcpServers.filter(s => s.name !== (server as CustomMcpServer).name);
+      await intentAPI.saveCustomMcp(customMcpServers);
+      renderCustomMcpServers();
+    });
+    card.appendChild(delBtn);
+  }
+
+  return card;
+}
+
+function showMcpForm(): void {
+  const prev = mcpCustomList.querySelector('.mcp-form');
+  if (prev) prev.remove();
+
+  const form = document.createElement('div');
+  form.className = 'persona-form';
+
+  // Name
+  const nameRow = document.createElement('div');
+  nameRow.className = 'persona-form-row';
+  const nameInput = document.createElement('input');
+  nameInput.type = 'text';
+  nameInput.className = 'persona-form-input';
+  nameInput.placeholder = 'Server name';
+  nameRow.appendChild(nameInput);
+
+  // Type select
+  const typeRow = document.createElement('div');
+  typeRow.className = 'persona-form-row';
+  const typeLabel = document.createElement('label');
+  typeLabel.className = 'persona-form-label';
+  typeLabel.textContent = 'Type';
+  const typeSelect = document.createElement('select');
+  typeSelect.className = 'persona-form-select';
+  for (const t of ['stdio', 'http', 'sse']) {
+    const opt = document.createElement('option');
+    opt.value = t;
+    opt.textContent = t;
+    typeSelect.appendChild(opt);
+  }
+  typeRow.appendChild(typeLabel);
+  typeRow.appendChild(typeSelect);
+
+  // Command (for stdio)
+  const cmdRow = document.createElement('div');
+  cmdRow.className = 'persona-form-row';
+  const cmdInput = document.createElement('input');
+  cmdInput.type = 'text';
+  cmdInput.className = 'persona-form-input';
+  cmdInput.placeholder = 'Command (e.g., npx -y @modelcontextprotocol/server-github)';
+  cmdRow.appendChild(cmdInput);
+
+  // URL (for http/sse)
+  const urlRow = document.createElement('div');
+  urlRow.className = 'persona-form-row hidden';
+  const urlInput = document.createElement('input');
+  urlInput.type = 'text';
+  urlInput.className = 'persona-form-input';
+  urlInput.placeholder = 'URL (e.g., http://localhost:3000/mcp)';
+  urlRow.appendChild(urlInput);
+
+  typeSelect.addEventListener('change', () => {
+    const isRemote = typeSelect.value === 'http' || typeSelect.value === 'sse';
+    cmdRow.classList.toggle('hidden', isRemote);
+    urlRow.classList.toggle('hidden', !isRemote);
+  });
+
+  // Error
+  const errorEl = document.createElement('div');
+  errorEl.className = 'persona-form-error hidden';
+
+  // Buttons
+  const btnRow = document.createElement('div');
+  btnRow.className = 'persona-form-actions';
+  const saveBtn = document.createElement('button');
+  saveBtn.className = 'persona-form-save';
+  saveBtn.textContent = 'Add';
+  saveBtn.addEventListener('click', async () => {
+    const name = nameInput.value.trim();
+    const type = typeSelect.value as 'stdio' | 'http' | 'sse';
+    const command = cmdInput.value.trim();
+    const url = urlInput.value.trim();
+
+    if (!name) {
+      errorEl.textContent = 'Name is required.';
+      errorEl.classList.remove('hidden');
+      return;
+    }
+    if (customMcpServers.some(s => s.name === name)) {
+      errorEl.textContent = 'A server with this name already exists.';
+      errorEl.classList.remove('hidden');
+      return;
+    }
+    if (type === 'stdio' && !command) {
+      errorEl.textContent = 'Command is required for stdio servers.';
+      errorEl.classList.remove('hidden');
+      return;
+    }
+    if ((type === 'http' || type === 'sse') && !url) {
+      errorEl.textContent = 'URL is required for remote servers.';
+      errorEl.classList.remove('hidden');
+      return;
+    }
+
+    const entry: CustomMcpServer = {
+      name,
+      type,
+      tools: ['*'],
+      ...(type === 'stdio' ? { command, args: [] } : { url }),
+    };
+
+    customMcpServers.push(entry);
+    await intentAPI.saveCustomMcp(customMcpServers);
+    renderCustomMcpServers();
+  });
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'persona-form-cancel';
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.addEventListener('click', () => form.remove());
+
+  btnRow.appendChild(saveBtn);
+  btnRow.appendChild(cancelBtn);
+
+  form.appendChild(nameRow);
+  form.appendChild(typeRow);
+  form.appendChild(cmdRow);
+  form.appendChild(urlRow);
+  form.appendChild(errorEl);
+  form.appendChild(btnRow);
+
+  mcpCustomList.appendChild(form);
+  nameInput.focus();
+}
+
+mcpAddBtn.addEventListener('click', showMcpForm);
+
+// ── CLI Tools ───────────────────────────────────────────
+const cliToolsList = document.getElementById('cli-tools-list') as HTMLDivElement;
+const cliToolAddBtn = document.getElementById('cli-tool-add-btn') as HTMLButtonElement;
+let cliTools: CliToolDefinition[] = [];
+
+async function loadCliTools(): Promise<void> {
+  try {
+    cliTools = await intentAPI.listCliTools() || [];
+    renderCliTools();
+  } catch { cliTools = []; }
+}
+
+function renderCliTools(): void {
+  cliToolsList.innerHTML = '';
+  for (const tool of cliTools) {
+    cliToolsList.appendChild(createCliToolCard(tool));
+  }
+}
+
+function createCliToolCard(tool: CliToolDefinition): HTMLElement {
+  const card = document.createElement('div');
+  card.className = 'mcp-card';
+
+  const info = document.createElement('div');
+  info.className = 'mcp-card-info';
+
+  const name = document.createElement('div');
+  name.className = 'mcp-card-name';
+  name.textContent = tool.name;
+
+  const desc = document.createElement('div');
+  desc.className = 'mcp-card-meta';
+  desc.textContent = tool.description;
+
+  info.appendChild(name);
+  info.appendChild(desc);
+
+  const actions = document.createElement('div');
+  actions.className = 'persona-card-actions';
+
+  const editBtn = document.createElement('button');
+  editBtn.className = 'persona-action-btn';
+  editBtn.textContent = '✎';
+  editBtn.title = 'Edit';
+  editBtn.addEventListener('click', () => showCliToolForm(tool));
+
+  const delBtn = document.createElement('button');
+  delBtn.className = 'persona-action-btn danger';
+  delBtn.textContent = '✕';
+  delBtn.title = 'Remove';
+  delBtn.addEventListener('click', async () => {
+    cliTools = cliTools.filter(t => t.name !== tool.name);
+    await intentAPI.saveCliTools(cliTools);
+    renderCliTools();
+  });
+
+  actions.appendChild(editBtn);
+  actions.appendChild(delBtn);
+  card.appendChild(info);
+  card.appendChild(actions);
+  return card;
+}
+
+function showCliToolForm(existing?: CliToolDefinition): void {
+  const prev = cliToolsList.querySelector('.persona-form');
+  if (prev) prev.remove();
+
+  const form = document.createElement('div');
+  form.className = 'persona-form';
+
+  const nameRow = document.createElement('div');
+  nameRow.className = 'persona-form-row';
+  const nameInput = document.createElement('input');
+  nameInput.type = 'text';
+  nameInput.className = 'persona-form-input';
+  nameInput.placeholder = 'Command name (e.g., gh)';
+  nameInput.value = existing?.name || '';
+  nameRow.appendChild(nameInput);
+
+  const descRow = document.createElement('div');
+  descRow.className = 'persona-form-row';
+  const descInput = document.createElement('textarea');
+  descInput.className = 'persona-form-textarea';
+  descInput.placeholder = 'Description (e.g., Used for GitHub operations including git, issues, pull requests, actions)';
+  descInput.value = existing?.description || '';
+  descInput.rows = 2;
+  descInput.maxLength = 500;
+  descRow.appendChild(descInput);
+
+  const errorEl = document.createElement('div');
+  errorEl.className = 'persona-form-error hidden';
+
+  const btnRow = document.createElement('div');
+  btnRow.className = 'persona-form-actions';
+  const saveBtn = document.createElement('button');
+  saveBtn.className = 'persona-form-save';
+  saveBtn.textContent = existing ? 'Save' : 'Add';
+  saveBtn.addEventListener('click', async () => {
+    const name = nameInput.value.trim();
+    const description = descInput.value.trim();
+
+    if (!name) {
+      errorEl.textContent = 'Command name is required.';
+      errorEl.classList.remove('hidden');
+      return;
+    }
+    if (!description) {
+      errorEl.textContent = 'Description is required.';
+      errorEl.classList.remove('hidden');
+      return;
+    }
+    const duplicate = cliTools.find(t => t.name === name && t.name !== (existing?.name || ''));
+    if (duplicate) {
+      errorEl.textContent = `Tool "${name}" already exists.`;
+      errorEl.classList.remove('hidden');
+      return;
+    }
+
+    if (existing) {
+      cliTools = cliTools.map(t => t.name === existing.name ? { name, description } : t);
+    } else {
+      cliTools.push({ name, description });
+    }
+
+    await intentAPI.saveCliTools(cliTools);
+    renderCliTools();
+  });
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'persona-form-cancel';
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.addEventListener('click', () => form.remove());
+
+  btnRow.appendChild(saveBtn);
+  btnRow.appendChild(cancelBtn);
+
+  form.appendChild(nameRow);
+  form.appendChild(descRow);
+  form.appendChild(errorEl);
+  form.appendChild(btnRow);
+
+  if (existing) {
+    const cards = cliToolsList.querySelectorAll('.mcp-card');
+    const idx = cliTools.findIndex(t => t.name === existing.name);
+    if (cards[idx]) {
+      cards[idx].after(form);
+    } else {
+      cliToolsList.appendChild(form);
+    }
+  } else {
+    cliToolsList.appendChild(form);
+  }
+
+  nameInput.focus();
+}
+
+cliToolAddBtn.addEventListener('click', () => showCliToolForm());
 
 // ── Voice Input (spacebar-triggered) ────────────────────
 let mediaRecorder: MediaRecorder | null = null;
@@ -947,7 +1341,7 @@ async function renderAgentsList(): Promise<void> {
   countEl.textContent = String(intents.filter(i => i.status !== 'done').length);
 
   // Gather all agents (including workspace-level ones)
-  let allAgents: Array<{ agentId: string; sessionId: string; status: string; summary: string; selectedText: string; intentId: string }> = [];
+  let allAgents: Array<{ agentId: string; sessionId: string; status: string; summary: string; selectedText: string; intentId: string; createdAt?: string }> = [];
 
   try {
     allAgents = await intentAPI.listAllAgents();
@@ -981,9 +1375,8 @@ async function renderAgentsList(): Promise<void> {
     return;
   }
 
-  // Sort: running first, then waiting, then completed/failed
-  const statusOrder: Record<string, number> = { 'running': 0, 'waiting-approval': 1, 'completed': 2, 'failed': 3 };
-  allAgents.sort((a, b) => (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9));
+  // Sort newest first (DB returns this order, but be explicit)
+  allAgents.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
 
   // Build intent description map for display
   const intentMap = new Map(intents.map(i => [i.id, i.description]));
@@ -1574,7 +1967,7 @@ async function loadFocusState(): Promise<void> {
 // ── Timeline view ───────────────────────────────────────
 function showTimeline(): void {
   mainView.classList.add('hidden');
-  settingsView.classList.add('hidden');
+  hideSettings();
   timelineView.classList.remove('hidden');
   loadTimeline();
 }
@@ -1803,7 +2196,7 @@ async function openCanvas(intentId: string, expanded = false): Promise<void> {
 
   // Show canvas view
   mainView.classList.add('hidden');
-  settingsView.classList.add('hidden');
+  hideSettings();
   timelineView.classList.add('hidden');
   canvasView.classList.remove('hidden');
 
@@ -1887,6 +2280,14 @@ window.addEventListener('beforeunload', () => {
 });
 
 document.addEventListener('keydown', (e) => {
+  // When settings modal is open, only Escape is handled
+  if (settingsModalOpen) {
+    if (e.key === 'Escape') {
+      hideSettings();
+    }
+    return;
+  }
+
   // Arrow/Enter navigation in the intent list
   if (!mainView.classList.contains('hidden')) {
     if (e.key === 'ArrowDown' && selectedIndex >= 0) {
@@ -1935,10 +2336,6 @@ document.addEventListener('keydown', (e) => {
       if (wasExpanded) intentAPI.hideWindow();
       return;
     }
-    if (!settingsView.classList.contains('hidden')) {
-      hideSettings();
-      return;
-    }
     if (!timelineView.classList.contains('hidden')) {
       hideTimeline();
       return;
@@ -1964,7 +2361,7 @@ intentAPI.onWindowToggle(() => {
     closeCanvas();
     return;
   }
-  if (!settingsView.classList.contains('hidden')) {
+  if (settingsModalOpen) {
     hideSettings();
     return;
   }

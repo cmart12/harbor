@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import Database from 'better-sqlite3';
 import { v4 as uuidv4 } from 'uuid';
-import { Intent, Attachment, CanvasAgent, CreateIntentInput } from '../shared/types';
+import { Intent, Attachment, CanvasAgent, AgentSession, CreateIntentInput } from '../shared/types';
 import { appendEvent, replayLog } from './eventlog';
 import { readCanvas } from './workspace';
 
@@ -62,6 +62,20 @@ export function initDatabase(dbPath: string, eventLogPath: string): void {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       FOREIGN KEY (intent_id) REFERENCES intents(id) ON DELETE CASCADE
+    )
+  `);
+
+  db.exec(`
+    CREATE TABLE agent_sessions (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      intent_id TEXT,
+      prompt TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'running',
+      summary TEXT DEFAULT '',
+      working_dir TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
     )
   `);
 
@@ -341,4 +355,56 @@ export function listAllRunningAgents(): CanvasAgent[] {
     `SELECT id, intent_id, selected_text, session_id, pid, status, created_at, updated_at
      FROM canvas_agents WHERE status = 'running'`
   ).all() as CanvasAgent[];
+}
+
+// ── Agent Sessions (central registry) ─────────────────────
+
+export function createAgentSession(session: AgentSession): void {
+  appendEvent(logPath, 'agent_session.created', {
+    id: session.id,
+    session_id: session.session_id,
+    intent_id: session.intent_id,
+    prompt: session.prompt,
+    status: session.status,
+    summary: session.summary,
+    working_dir: session.working_dir,
+    created_at: session.created_at,
+    updated_at: session.updated_at,
+  });
+
+  db.prepare(
+    `INSERT INTO agent_sessions (id, session_id, intent_id, prompt, status, summary, working_dir, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    session.id, session.session_id, session.intent_id, session.prompt,
+    session.status, session.summary, session.working_dir,
+    session.created_at, session.updated_at,
+  );
+}
+
+export function updateAgentSessionStatus(id: string, status: string, summary?: string): void {
+  const now = new Date().toISOString();
+  appendEvent(logPath, 'agent_session.updated', { id, status, summary: summary ?? null, updated_at: now });
+
+  if (summary !== undefined) {
+    db.prepare('UPDATE agent_sessions SET status = ?, summary = ?, updated_at = ? WHERE id = ?')
+      .run(status, summary, now, id);
+  } else {
+    db.prepare('UPDATE agent_sessions SET status = ?, updated_at = ? WHERE id = ?')
+      .run(status, now, id);
+  }
+}
+
+export function getAgentSession(id: string): AgentSession | null {
+  return db.prepare(
+    `SELECT id, session_id, intent_id, prompt, status, summary, working_dir, created_at, updated_at
+     FROM agent_sessions WHERE id = ?`
+  ).get(id) as AgentSession | undefined ?? null;
+}
+
+export function listAgentSessions(): AgentSession[] {
+  return db.prepare(
+    `SELECT id, session_id, intent_id, prompt, status, summary, working_dir, created_at, updated_at
+     FROM agent_sessions ORDER BY created_at DESC`
+  ).all() as AgentSession[];
 }

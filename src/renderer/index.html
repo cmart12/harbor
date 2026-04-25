@@ -57,65 +57,82 @@
       <div id="query-result" class="query-result hidden"></div>
     </div>
 
-    <!-- Settings view -->
-    <div id="settings-view" class="settings-view hidden">
-      <header>
-        <button id="settings-back" class="header-icon-btn" title="Back">←</button>
-        <h1>Settings</h1>
-        <div class="header-actions"></div>
-      </header>
+    <!-- Settings modal overlay -->
+    <div id="settings-overlay" class="settings-overlay hidden">
+      <div class="settings-backdrop"></div>
+      <div id="settings-modal" class="settings-modal">
+        <header>
+          <h1>⚙ Settings</h1>
+          <button id="settings-close" class="header-icon-btn" title="Close (Esc)">✕</button>
+        </header>
 
-      <div class="settings-content">
-        <div class="settings-group">
-          <div class="settings-group-title">Appearance</div>
-          <div class="settings-row">
-            <label>Theme</label>
-            <div class="theme-toggle">
-              <button id="theme-light" class="theme-btn active" title="Light">☀️</button>
-              <button id="theme-dark" class="theme-btn" title="Dark">🌙</button>
+        <div class="settings-content">
+          <div class="settings-group">
+            <div class="settings-group-title">Appearance</div>
+            <div class="settings-row">
+              <label>Theme</label>
+              <div class="theme-toggle">
+                <button id="theme-light" class="theme-btn active" title="Light">☀️</button>
+                <button id="theme-dark" class="theme-btn" title="Dark">🌙</button>
+              </div>
             </div>
           </div>
-        </div>
 
-        <div class="settings-group">
-          <div class="settings-group-title">AI Model</div>
-          <div class="settings-row">
-            <select id="model-select">
-              <option value="">Loading models...</option>
-            </select>
-          </div>
-        </div>
-
-        <div class="settings-group">
-          <div class="settings-group-title">Workspace</div>
-          <div class="settings-row">
-            <div class="workspace-display">
-              <span id="workspace-path" class="workspace-path">Not set</span>
-              <button id="workspace-btn" class="workspace-btn">Change</button>
+          <div class="settings-group">
+            <div class="settings-group-title">AI Model</div>
+            <div class="settings-row">
+              <select id="model-select">
+                <option value="">Loading models...</option>
+              </select>
             </div>
           </div>
-          <div class="settings-hint">The working directory for Copilot CLI sessions.</div>
-        </div>
 
-        <div class="settings-group">
-          <div class="settings-group-title">Copilot CLI</div>
-          <div class="settings-row">
-            <div class="cli-path-display">
-              <input id="cli-path-input" class="cli-path-input" type="text" placeholder="Auto-detect" spellcheck="false" />
-              <button id="cli-path-clear" class="workspace-btn cli-path-clear hidden" title="Reset to auto-detect">✕</button>
+          <div class="settings-group">
+            <div class="settings-group-title">Workspace</div>
+            <div class="settings-row">
+              <div class="workspace-display">
+                <span id="workspace-path" class="workspace-path">Not set</span>
+                <button id="workspace-btn" class="workspace-btn">Change</button>
+              </div>
             </div>
+            <div class="settings-hint">The working directory for Copilot CLI sessions.</div>
           </div>
-          <div class="settings-hint">
-            Detected: <span id="cli-path-detected" class="cli-path-detected">—</span>
-          </div>
-          <div class="settings-hint">Path to the Copilot CLI executable. Leave empty to auto-detect. Changes apply after restart.</div>
-        </div>
 
-        <div class="settings-group">
-          <div class="settings-group-title">Agent Personas</div>
-          <div class="settings-hint">Define personas you can @mention in documents and comments.</div>
-          <div id="personas-list" class="personas-list"></div>
-          <button id="persona-add-btn" class="persona-add-btn" type="button">+ Add Persona</button>
+          <div class="settings-group">
+            <div class="settings-group-title">Copilot CLI</div>
+            <div class="settings-row">
+              <div class="cli-path-display">
+                <input id="cli-path-input" class="cli-path-input" type="text" placeholder="Auto-detect" spellcheck="false" />
+                <button id="cli-path-clear" class="workspace-btn cli-path-clear hidden" title="Reset to auto-detect">✕</button>
+              </div>
+            </div>
+            <div class="settings-hint">
+              Detected: <span id="cli-path-detected" class="cli-path-detected">—</span>
+            </div>
+            <div class="settings-hint">Path to the Copilot CLI executable. Leave empty to auto-detect.</div>
+          </div>
+
+          <div class="settings-group">
+            <div class="settings-group-title">MCP Servers</div>
+            <div class="settings-hint">Model Context Protocol servers provide additional tools to agents.</div>
+            <div id="mcp-discovered-list" class="mcp-list"></div>
+            <div id="mcp-custom-list" class="mcp-list"></div>
+            <button id="mcp-add-btn" class="persona-add-btn" type="button">+ Add MCP Server</button>
+          </div>
+
+          <div class="settings-group">
+            <div class="settings-group-title">CLI Tools</div>
+            <div class="settings-hint">Define CLI tools available in the environment so agents know when to use them.</div>
+            <div id="cli-tools-list" class="cli-tools-list"></div>
+            <button id="cli-tool-add-btn" class="persona-add-btn" type="button">+ Add CLI Tool</button>
+          </div>
+
+          <div class="settings-group">
+            <div class="settings-group-title">Agent Personas</div>
+            <div class="settings-hint">Define personas you can @mention in documents and comments.</div>
+            <div id="personas-list" class="personas-list"></div>
+            <button id="persona-add-btn" class="persona-add-btn" type="button">+ Add Persona</button>
+          </div>
         </div>
       </div>
     </div>

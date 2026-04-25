@@ -8,10 +8,11 @@ import { parseIntentWithAI, evaluateRecurrence, findSimilarIntent, resolveDateWi
 import { launchSession, getActiveSessionIntentIds, resolveCopilotCliPath, invalidateCliPath } from './session';
 import { transcribeAudio } from './voice';
 import { CreateIntentInput, Intent, RecurrenceResult, LinkPreviewMeta } from '../shared/types';
-import { getConfigValue, setConfigValue, type AgentPersona } from './config';
+import { getConfigValue, setConfigValue, type AgentPersona, type CliToolDefinition, type CustomMcpServer } from './config';
 import { initWorkspace, getDbPath, getLogPath, initIntentCanvas, readCanvas, writeCanvas, scheduleAutoCommit, saveAttachment, resolveAttachmentPath, getMimeType } from './workspace';
 import { initDatabase, mergeSessionIds, assignIntentFolder, updateCanvasContent, searchIntents, syncCanvasContent, updateCanvasAgentStatus } from './database';
 import { getConfig } from './config';
+import { listDiscoveredMcpServers } from './mcp';
 
 // Track in-flight recurrence evaluations so we can cancel them
 const pendingRecurrences = new Map<string, { result: RecurrenceResult; version: string; timer: ReturnType<typeof setTimeout> }>();
@@ -287,6 +288,75 @@ export function registerIpcHandlers(): void {
     }
 
     setConfigValue('personas', validated);
+    return { ok: true };
+  });
+
+  // ── MCP Servers ──────────────────────────────────────────
+  ipcMain.handle('mcp:list-discovered', () => {
+    return listDiscoveredMcpServers();
+  });
+
+  ipcMain.handle('mcp:list-custom', () => {
+    return getConfigValue('mcpServers') || [];
+  });
+
+  ipcMain.handle('mcp:save-custom', (_event, servers: unknown) => {
+    if (!Array.isArray(servers)) return { error: 'invalid payload' };
+
+    const validated: CustomMcpServer[] = [];
+    const seen = new Set<string>();
+
+    for (const s of servers) {
+      if (!s || typeof s !== 'object') continue;
+      const raw = s as Record<string, unknown>;
+
+      const name = typeof raw.name === 'string' ? raw.name.trim() : '';
+      const type = typeof raw.type === 'string' && ['stdio', 'http', 'sse'].includes(raw.type) ? raw.type as 'stdio' | 'http' | 'sse' : 'stdio';
+      const command = typeof raw.command === 'string' ? raw.command.trim() : undefined;
+      const args = Array.isArray(raw.args) ? raw.args.filter((a: unknown) => typeof a === 'string') as string[] : [];
+      const url = typeof raw.url === 'string' ? raw.url.trim() : undefined;
+      const tools = Array.isArray(raw.tools) ? raw.tools.filter((t: unknown) => typeof t === 'string') as string[] : ['*'];
+
+      if (!name) continue;
+      if (seen.has(name)) continue;
+      seen.add(name);
+
+      if (type === 'stdio' && !command) continue;
+      if ((type === 'http' || type === 'sse') && !url) continue;
+
+      validated.push({ name, type, command, args, url, tools });
+    }
+
+    setConfigValue('mcpServers', validated);
+    return { ok: true };
+  });
+
+  // ── CLI Tool Definitions ─────────────────────────────────
+  ipcMain.handle('cli-tools:list', () => {
+    return getConfigValue('cliTools') || [];
+  });
+
+  ipcMain.handle('cli-tools:save', (_event, tools: unknown) => {
+    if (!Array.isArray(tools)) return { error: 'invalid payload' };
+
+    const validated: CliToolDefinition[] = [];
+    const seen = new Set<string>();
+
+    for (const t of tools) {
+      if (!t || typeof t !== 'object') continue;
+      const raw = t as Record<string, unknown>;
+
+      const name = typeof raw.name === 'string' ? raw.name.trim() : '';
+      const description = typeof raw.description === 'string' ? raw.description.trim().slice(0, 500) : '';
+
+      if (!name || !description) continue;
+      if (seen.has(name)) continue;
+      seen.add(name);
+
+      validated.push({ name, description });
+    }
+
+    setConfigValue('cliTools', validated);
     return { ok: true };
   });
 

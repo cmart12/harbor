@@ -11,6 +11,20 @@ export interface AgentPersona {
   model: string;        // model ID
 }
 
+export interface CliToolDefinition {
+  name: string;         // e.g. "gh"
+  description: string;  // e.g. "Used for GitHub operations including git, issues, pull requests, actions"
+}
+
+export interface CustomMcpServer {
+  name: string;
+  type: 'stdio' | 'http' | 'sse';
+  command?: string;
+  args?: string[];
+  url?: string;
+  tools: string[];
+}
+
 export interface AppConfig {
   workspace: string | null;
   theme: 'light' | 'dark';
@@ -20,6 +34,8 @@ export interface AppConfig {
   pinned: boolean;
   snapPosition: SnapPosition;
   personas: AgentPersona[];
+  cliTools: CliToolDefinition[];
+  mcpServers: CustomMcpServer[];   // user-added MCP servers
 }
 
 const CONFIG_PATH = path.join(app.getPath('userData'), 'config.json');
@@ -33,6 +49,8 @@ const DEFAULT_CONFIG: AppConfig = {
   pinned: false,
   snapPosition: 'bottom-right',
   personas: [],
+  cliTools: [],
+  mcpServers: [],
 };
 
 let config: AppConfig = { ...DEFAULT_CONFIG };

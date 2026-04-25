@@ -15,6 +15,16 @@ contextBridge.exposeInMainWorld('intentAPI', {
   listModels: () => ipcRenderer.invoke('models:list'),
   listPersonas: () => ipcRenderer.invoke('personas:list'),
   savePersonas: (personas: any[]) => ipcRenderer.invoke('personas:save', personas),
+
+  // MCP servers
+  listDiscoveredMcp: () => ipcRenderer.invoke('mcp:list-discovered'),
+  listCustomMcp: () => ipcRenderer.invoke('mcp:list-custom'),
+  saveCustomMcp: (servers: any[]) => ipcRenderer.invoke('mcp:save-custom', servers),
+
+  // CLI tool definitions
+  listCliTools: () => ipcRenderer.invoke('cli-tools:list'),
+  saveCliTools: (tools: any[]) => ipcRenderer.invoke('cli-tools:save', tools),
+
   listEvents: (limit?: number) => ipcRenderer.invoke('intent:events', limit),
   resolveDate: (dateText: string) => ipcRenderer.invoke('intent:resolve-date', dateText),
   classifyInput: (text: string) => ipcRenderer.invoke('intent:classify', text),

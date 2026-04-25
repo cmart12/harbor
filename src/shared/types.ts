@@ -19,6 +19,18 @@ export interface CanvasAgent {
   updated_at: string;
 }
 
+export interface AgentSession {
+  id: string;
+  session_id: string;
+  intent_id: string | null;
+  prompt: string;
+  status: 'running' | 'waiting-approval' | 'completed' | 'failed';
+  summary: string;
+  working_dir: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface AgentAnchor {
   quote: string;
   prefix: string;
