@@ -412,7 +412,7 @@ header h1 {
 .filter-bar {
   display: flex;
   margin-bottom: 10px;
-  padding: 0;
+  padding: 3px;
   background: rgba(0, 0, 0, 0.02);
   border-radius: 10px;
   border: 1px solid rgba(0, 0, 0, 0.06);
@@ -426,8 +426,8 @@ header h1 {
   border-bottom: 2px solid transparent;
   padding: 8px 8px 7px;
   font-size: 12px;
-  font-weight: 500;
-  color: rgba(0, 0, 0, 0.4);
+  font-weight: 400;
+  color: #1d1d1f;
   cursor: pointer;
   transition: all 0.15s ease;
   text-align: center;
@@ -435,25 +435,27 @@ header h1 {
 }
 
 .filter-btn:hover {
-  color: rgba(0, 0, 0, 0.65);
+  background: rgba(255, 255, 255, 0.5);
 }
 
 .filter-btn.active {
-  color: #2c2c3a;
+  color: #1d1d1f;
+  background: #ffffff;
   border-bottom-color: transparent;
-  font-weight: 600;
+  font-weight: 400;
+  border-radius: 8px;
 }
 
 .filter-btn.active::after {
   content: '';
   position: absolute;
-  bottom: 0;
+  bottom: 2px;
   left: 50%;
   transform: translateX(-50%);
-  width: 24px;
-  height: 2px;
-  background: #7c66dc;
-  border-radius: 1px;
+  width: 20px;
+  height: 2.5px;
+  background: #2563eb;
+  border-radius: 2px;
 }
 
 .filter-btn:focus {
@@ -2182,10 +2184,10 @@ body.dark .timeline-content { scrollbar-color: rgba(255, 255, 255, 0.1) transpar
 
 /* Dark filter bar */
 body.dark .filter-bar { background: rgba(255, 255, 255, 0.04); border-color: rgba(255, 255, 255, 0.06); }
-body.dark .filter-btn { color: rgba(255, 255, 255, 0.35); }
-body.dark .filter-btn:hover { color: rgba(255, 255, 255, 0.6); }
-body.dark .filter-btn.active { color: #e0e0e0; border-bottom-color: transparent; }
-body.dark .filter-btn.active::after { background: #a594e8; }
+body.dark .filter-btn { color: rgba(255, 255, 255, 0.7); }
+body.dark .filter-btn:hover { background: rgba(255, 255, 255, 0.06); }
+body.dark .filter-btn.active { color: #e0e0e0; background: rgba(255, 255, 255, 0.1); border-bottom-color: transparent; }
+body.dark .filter-btn.active::after { background: #5b9cf6; }
 body.dark .filter-btn:focus { outline-color: rgba(165, 148, 232, 0.5); }
 
 /* Dark query result */
