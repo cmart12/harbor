@@ -67,6 +67,8 @@ function createWindow(): BrowserWindow {
     skipTaskbar: true,
     alwaysOnTop: true,
     transparent: true,
+    vibrancy: 'under-window',
+    visualEffectState: 'active',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
