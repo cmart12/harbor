@@ -158,11 +158,19 @@
         <div class="header-actions">
           <span id="canvas-save-status" class="canvas-save-status"></span>
           <button id="canvas-save" class="canvas-save-btn hidden" title="Save (⌘S)">Save</button>
+          <button id="canvas-history-btn" class="header-icon-btn" title="Version history">🕘</button>
           <button id="canvas-launch" class="header-icon-btn" title="Start session">▶</button>
         </div>
       </header>
       <div class="canvas-body">
         <div id="canvas-root" class="canvas-root"></div>
+        <div id="canvas-history-panel" class="canvas-history-panel hidden">
+          <div class="history-panel-header">
+            <span class="history-panel-title">Version History</span>
+            <button id="canvas-history-close" class="header-icon-btn" title="Close">✕</button>
+          </div>
+          <div id="canvas-history-list" class="history-list"></div>
+        </div>
       </div>
     </div>
   </div>

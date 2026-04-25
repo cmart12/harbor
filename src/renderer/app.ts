@@ -41,6 +41,15 @@ interface DiscoveredMcpServer {
   url?: string;
 }
 
+interface FolderCommit {
+  sha: string;
+  shortSha: string;
+  message: string;
+  date: string;
+  relativeDate: string;
+  filesChanged: string[];
+}
+
 interface IntentAPI {
   create(input: { body: string }): Promise<Intent>;
   list(): Promise<Intent[]>;
@@ -68,6 +77,8 @@ interface IntentAPI {
   readCanvas(intentId: string): Promise<{ content: string; error?: string }>;
   writeCanvas(intentId: string, content: string): Promise<{ success?: boolean; error?: string }>;
   closeCanvas(intentId: string, content: string): Promise<void>;
+  canvasHistory(intentId: string): Promise<{ commits: FolderCommit[]; error?: string }>;
+  canvasRestore(intentId: string, sha: string): Promise<{ success: boolean; error?: string }>;
   searchIntents(query: string): Promise<Intent[]>;
   summarizeTitle(canvasContent: string): Promise<{ title: string | null }>;
   pasteFile(intentId: string, filename: string, dataArray: number[]): Promise<{ success?: boolean; relativePath?: string; filename?: string; error?: string }>;
@@ -2081,6 +2092,10 @@ const canvasSaveStatus = document.getElementById('canvas-save-status') as HTMLSp
 const canvasLaunchBtn = document.getElementById('canvas-launch') as HTMLButtonElement;
 const canvasSaveBtn = document.getElementById('canvas-save') as HTMLButtonElement;
 const canvasRoot = document.getElementById('canvas-root') as HTMLDivElement;
+const canvasHistoryBtn = document.getElementById('canvas-history-btn') as HTMLButtonElement;
+const canvasHistoryPanel = document.getElementById('canvas-history-panel') as HTMLDivElement;
+const canvasHistoryClose = document.getElementById('canvas-history-close') as HTMLButtonElement;
+const canvasHistoryList = document.getElementById('canvas-history-list') as HTMLDivElement;
 let canvasIntentId: string | null = null;
 let canvasDirty = false;
 let canvasExpanded = false;
@@ -2246,6 +2261,7 @@ async function saveCanvas(): Promise<void> {
 }
 
 async function closeCanvas(): Promise<void> {
+  closeHistoryPanel();
   const intentId = canvasIntentId;
   const wasNewIntent = canvasIsNewIntent;
   canvasIntentId = null;
@@ -2288,6 +2304,112 @@ canvasBack.addEventListener('click', closeCanvas);
 canvasLaunchBtn.addEventListener('click', () => {
   if (canvasIntentId) launchSession(canvasIntentId);
 });
+
+// ── Canvas History Panel ────────────────────────────────
+let historyPanelOpen = false;
+
+function toggleHistoryPanel(): void {
+  if (historyPanelOpen) {
+    closeHistoryPanel();
+  } else {
+    openHistoryPanel();
+  }
+}
+
+async function openHistoryPanel(): Promise<void> {
+  if (!canvasIntentId) return;
+  canvasHistoryPanel.classList.remove('hidden');
+  canvasHistoryBtn.classList.add('active');
+  historyPanelOpen = true;
+  canvasHistoryList.innerHTML = '<div class="history-loading">Loading history…</div>';
+
+  const result = await intentAPI.canvasHistory(canvasIntentId);
+  if (result.error || result.commits.length === 0) {
+    canvasHistoryList.innerHTML = '<div class="history-empty">No history available</div>';
+    return;
+  }
+
+  canvasHistoryList.innerHTML = '';
+  for (const commit of result.commits) {
+    canvasHistoryList.appendChild(createHistoryItem(commit));
+  }
+}
+
+function closeHistoryPanel(): void {
+  canvasHistoryPanel.classList.add('hidden');
+  canvasHistoryBtn.classList.remove('active');
+  historyPanelOpen = false;
+}
+
+function createHistoryItem(commit: FolderCommit): HTMLElement {
+  const item = document.createElement('div');
+  item.className = 'history-item';
+
+  const meta = document.createElement('div');
+  meta.className = 'history-item-meta';
+  meta.textContent = commit.relativeDate;
+
+  const msg = document.createElement('div');
+  msg.className = 'history-item-message';
+  msg.textContent = commit.message;
+
+  const files = document.createElement('div');
+  files.className = 'history-item-files';
+  const fileNames = commit.filesChanged.map(f => {
+    const parts = f.split('/');
+    return parts[parts.length - 1];
+  });
+  if (fileNames.length > 0) {
+    files.textContent = fileNames.join(', ');
+  }
+
+  const actions = document.createElement('div');
+  actions.className = 'history-item-actions';
+
+  const restoreBtn = document.createElement('button');
+  restoreBtn.className = 'history-restore-btn';
+  restoreBtn.textContent = 'Restore';
+  restoreBtn.title = `Restore to ${commit.shortSha}`;
+  restoreBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (!canvasIntentId) return;
+
+    restoreBtn.disabled = true;
+    restoreBtn.textContent = '…';
+
+    const result = await intentAPI.canvasRestore(canvasIntentId, commit.sha);
+    if (result.success) {
+      // Reload the canvas with restored content
+      const readResult = await intentAPI.readCanvas(canvasIntentId!);
+      if (!readResult.error) {
+        // Re-open the canvas to refresh the editor
+        const intentId = canvasIntentId!;
+        const expanded = canvasExpanded;
+        await closeCanvas();
+        await openCanvas(intentId, expanded);
+      }
+      closeHistoryPanel();
+    } else {
+      restoreBtn.textContent = 'Failed';
+      setTimeout(() => {
+        restoreBtn.textContent = 'Restore';
+        restoreBtn.disabled = false;
+      }, 2000);
+    }
+  });
+
+  actions.appendChild(restoreBtn);
+
+  item.appendChild(meta);
+  item.appendChild(msg);
+  if (fileNames.length > 0) item.appendChild(files);
+  item.appendChild(actions);
+
+  return item;
+}
+
+canvasHistoryBtn.addEventListener('click', toggleHistoryPanel);
+canvasHistoryClose.addEventListener('click', closeHistoryPanel);
 
 (window as any).openCanvas = openCanvas;
 

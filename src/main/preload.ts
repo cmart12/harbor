@@ -35,6 +35,8 @@ contextBridge.exposeInMainWorld('intentAPI', {
   readCanvas: (intentId: string) => ipcRenderer.invoke('canvas:read', intentId),
   writeCanvas: (intentId: string, content: string) => ipcRenderer.invoke('canvas:write', intentId, content),
   closeCanvas: (intentId: string, content: string) => ipcRenderer.invoke('canvas:close', intentId, content),
+  canvasHistory: (intentId: string) => ipcRenderer.invoke('canvas:history', intentId),
+  canvasRestore: (intentId: string, sha: string) => ipcRenderer.invoke('canvas:restore', intentId, sha),
   searchIntents: (query: string) => ipcRenderer.invoke('intent:search', query),
   summarizeTitle: (canvasContent: string) => ipcRenderer.invoke('intent:summarize-title', canvasContent),
 

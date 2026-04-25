@@ -9,7 +9,7 @@ import { launchSession, getActiveSessionIntentIds, resolveCopilotCliPath, invali
 import { transcribeAudio } from './voice';
 import { CreateIntentInput, Intent, RecurrenceResult, LinkPreviewMeta } from '../shared/types';
 import { getConfigValue, setConfigValue, type AgentPersona } from './config';
-import { initWorkspace, getDbPath, getLogPath, initIntentCanvas, readCanvas, writeCanvas, scheduleAutoCommit, saveAttachment, resolveAttachmentPath, getMimeType } from './workspace';
+import { initWorkspace, getDbPath, getLogPath, initIntentCanvas, readCanvas, writeCanvas, scheduleAutoCommit, saveAttachment, resolveAttachmentPath, getMimeType, getIntentHistory, restoreIntentVersion } from './workspace';
 import { initDatabase, mergeSessionIds, assignIntentFolder, updateCanvasContent, searchIntents, syncCanvasContent } from './database';
 import { getConfig } from './config';
 import { listDiscoveredMcpServers } from './mcp';
@@ -526,6 +526,34 @@ export function registerIpcHandlers(): void {
   // ── Link preview ──────────────────────────────────────
   ipcMain.handle('canvas:fetch-link-meta', async (_event, url: string) => {
     return fetchLinkPreview(url);
+  });
+
+  // ── Canvas history ──────────────────────────────────────
+  ipcMain.handle('canvas:history', async (_event, intentId: string) => {
+    const workspace = getConfigValue('workspace');
+    if (!workspace || !isInitialized()) return { commits: [], error: 'no_workspace' };
+
+    const intent = getIntent(intentId);
+    if (!intent || !intent.folder) return { commits: [], error: 'not_found' };
+
+    const commits = await getIntentHistory(workspace, intent.folder);
+    return { commits };
+  });
+
+  ipcMain.handle('canvas:restore', async (_event, intentId: string, sha: string) => {
+    const workspace = getConfigValue('workspace');
+    if (!workspace || !isInitialized()) return { success: false, error: 'no_workspace' };
+
+    const intent = getIntent(intentId);
+    if (!intent || !intent.folder) return { success: false, error: 'not_found' };
+
+    const result = await restoreIntentVersion(workspace, intent.folder, sha);
+    if (result.success) {
+      // Re-read canvas and update DB
+      const content = readCanvas(workspace, intent.folder);
+      updateCanvasContent(intentId, content);
+    }
+    return result;
   });
 
   // ── Canvas agents (SDK-based) ────────────────────────────
