@@ -642,6 +642,27 @@ export function registerIpcHandlers(): void {
     const { setAgentModel } = await import('./agent-service');
     return setAgentModel(agentId, model);
   });
+
+  // ── Sub-agent tracking ─────────────────────────────────
+  ipcMain.handle('subagent:list', async (_event, parentAgentId: string) => {
+    const { subagentTracker } = await import('./agent-service');
+    return subagentTracker.listSubagents(parentAgentId);
+  });
+
+  ipcMain.handle('subagent:read', async (_event, parentAgentId: string, agentId: string) => {
+    const { subagentTracker } = await import('./agent-service');
+    return subagentTracker.getSubagent(parentAgentId, agentId) ?? null;
+  });
+
+  ipcMain.handle('subagent:write', async (_event, _parentAgentId: string, _agentId: string, _message: string) => {
+    // Requires SDK support — stub for now
+    return { success: false, error: 'Not yet supported' };
+  });
+
+  ipcMain.handle('subagent:cancel', async (_event, _parentAgentId: string, _agentId: string) => {
+    // Requires SDK support — stub for now
+    return { success: false, error: 'Not yet supported' };
+  });
 }
 
 // ── Link preview fetching ─────────────────────────────────

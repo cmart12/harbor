@@ -82,6 +82,24 @@ contextBridge.exposeInMainWorld('intentAPI', {
     return () => { ipcRenderer.removeListener(channel, handler); };
   },
 
+  // Sub-agent tracking
+  subagentAPI: {
+    list: (parentAgentId: string) =>
+      ipcRenderer.invoke('subagent:list', parentAgentId),
+    read: (parentAgentId: string, agentId: string) =>
+      ipcRenderer.invoke('subagent:read', parentAgentId, agentId),
+    write: (parentAgentId: string, agentId: string, message: string) =>
+      ipcRenderer.invoke('subagent:write', parentAgentId, agentId, message),
+    cancel: (parentAgentId: string, agentId: string) =>
+      ipcRenderer.invoke('subagent:cancel', parentAgentId, agentId),
+    onChanged: (parentAgentId: string, callback: () => void) => {
+      const channel = `subagent:changed:${parentAgentId}`;
+      const handler = () => callback();
+      ipcRenderer.on(channel, handler);
+      return () => { ipcRenderer.removeListener(channel, handler); };
+    },
+  },
+
   hideWindow: () => ipcRenderer.send('window:hide'),
   expandWindow: () => ipcRenderer.send('window:expand'),
   collapseWindow: () => ipcRenderer.send('window:collapse'),

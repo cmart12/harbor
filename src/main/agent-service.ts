@@ -10,6 +10,14 @@ import { getAllMcpServers } from './mcp';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as crypto from 'crypto';
+import { SubagentTracker } from './subagent-service';
+
+export const subagentTracker = new SubagentTracker();
+
+// Broadcast sub-agent changes to renderer
+subagentTracker.onChange((parentAgentId) => {
+  notifyRenderer(`subagent:changed:${parentAgentId}`);
+});
 
 export type AgentStatus = 'running' | 'waiting-approval' | 'completed' | 'failed';
 
@@ -701,6 +709,132 @@ function setupAgentEventListeners(session: CopilotSession, record: AgentRecord):
     // Clean up presence on failure too
     if (record.commentContext) {
       notifyRenderer('agent:presence-ended', { agentId, intentId: record.intentId });
+    }
+  });
+
+  // Sub-agent tracking via catch-all listener
+  installSubagentSubscription(session, record);
+}
+
+/**
+ * Subscribe to all SDK events and route sub-agent events to the SubagentTracker.
+ * The SDK supports session.on(callback) as a catch-all — it receives every event
+ * including ones tagged with event.agentId for sub-agents.
+ */
+function installSubagentSubscription(session: CopilotSession, record: AgentRecord): void {
+  const parentAgentId = record.agentId;
+  const chatChannel = `chat:event:${parentAgentId}`;
+
+  (session as any).on((event: any) => {
+    const d = event.data ?? event;
+    const type = event.type ?? d.type;
+
+    // --- Sub-agent lifecycle events ---
+    if (type === 'subagent.started') {
+      subagentTracker.trackStarted(parentAgentId, {
+        agentId: d.agentId,
+        toolCallId: d.toolCallId ?? '',
+        agentName: d.name ?? d.agentName ?? '',
+        agentDisplayName: d.displayName ?? d.agentDisplayName ?? d.name ?? '',
+        agentDescription: d.description ?? d.agentDescription ?? '',
+      });
+      notifyRenderer(chatChannel, {
+        type: 'subagent.started',
+        toolCallId: d.toolCallId ?? '',
+        name: d.name ?? d.agentName ?? '',
+        displayName: d.displayName ?? d.agentDisplayName ?? d.name ?? '',
+        description: d.description ?? d.agentDescription ?? '',
+        agentId: d.agentId,
+      });
+      return;
+    }
+
+    if (type === 'subagent.completed') {
+      subagentTracker.trackCompleted(parentAgentId, {
+        agentId: d.agentId,
+        toolCallId: d.toolCallId ?? '',
+        agentName: d.name ?? d.agentName,
+        agentDisplayName: d.displayName ?? d.agentDisplayName,
+        durationMs: d.durationMs,
+        model: d.model,
+        totalTokens: d.totalTokens,
+        totalToolCalls: d.totalToolCalls,
+      });
+      notifyRenderer(chatChannel, {
+        type: 'subagent.completed',
+        toolCallId: d.toolCallId ?? '',
+        name: d.name ?? d.agentName ?? '',
+        agentId: d.agentId,
+        durationMs: d.durationMs,
+        model: d.model,
+        totalTokens: d.totalTokens,
+        totalToolCalls: d.totalToolCalls,
+      });
+      return;
+    }
+
+    if (type === 'subagent.failed') {
+      subagentTracker.trackFailed(parentAgentId, {
+        agentId: d.agentId,
+        toolCallId: d.toolCallId ?? '',
+        agentName: d.name ?? d.agentName,
+        error: d.error ?? 'Unknown error',
+        durationMs: d.durationMs,
+        model: d.model,
+        totalTokens: d.totalTokens,
+        totalToolCalls: d.totalToolCalls,
+      });
+      notifyRenderer(chatChannel, {
+        type: 'subagent.failed',
+        toolCallId: d.toolCallId ?? '',
+        name: d.name ?? d.agentName ?? '',
+        error: d.error ?? 'Unknown error',
+        agentId: d.agentId,
+      });
+      return;
+    }
+
+    // --- agentId-tagged events route to the tracker ---
+    const subAgentId = d.agentId || event.agentId;
+    if (!subAgentId) return; // parent-level events already handled above
+
+    if (type === 'assistant.message_delta') {
+      const delta = d.deltaContent ?? d.delta ?? '';
+      subagentTracker.trackStreamingDelta(parentAgentId, subAgentId, delta);
+    } else if (type === 'assistant.message') {
+      subagentTracker.trackTurnStart(parentAgentId, subAgentId);
+    } else if (type === 'assistant.intent') {
+      const intent = d.intent ?? d.content ?? '';
+      subagentTracker.trackIntent(parentAgentId, subAgentId, intent);
+    } else if (type === 'tool.execution_start') {
+      subagentTracker.trackToolStart(parentAgentId, subAgentId, {
+        toolCallId: d.toolCallId ?? '',
+        toolName: d.toolName ?? '',
+        args: d.arguments ?? d.toolArgs ?? {},
+      });
+    } else if (type === 'tool.execution_complete') {
+      const rawResult = d.result;
+      const result = typeof rawResult === 'string'
+        ? rawResult
+        : rawResult?.detailedContent ?? rawResult?.content ?? '';
+      subagentTracker.trackToolComplete(parentAgentId, subAgentId, {
+        toolCallId: d.toolCallId ?? '',
+        success: d.success !== false,
+        result,
+        error: d.error,
+      });
+    } else if (type === 'assistant.usage') {
+      subagentTracker.trackUsage(
+        parentAgentId,
+        subAgentId,
+        d.inputTokens ?? d.input_tokens ?? 0,
+        d.outputTokens ?? d.output_tokens ?? 0,
+      );
+      if (d.model) {
+        subagentTracker.trackModel(parentAgentId, subAgentId, d.model);
+      }
+    } else if (type === 'session.idle') {
+      subagentTracker.trackIdle(parentAgentId, subAgentId);
     }
   });
 }
