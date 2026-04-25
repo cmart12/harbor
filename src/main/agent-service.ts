@@ -541,7 +541,7 @@ export async function launchQuickAgent(
   }
 }
 
-export function listAllAgents(): Array<{ agentId: string; sessionId: string; status: AgentStatus; summary: string; selectedText: string; intentId: string; createdAt: string; pendingApprovalId: string | null; pendingPermissionKind: string | null; source: 'sdk' | 'cli' }> {
+export function listAllAgents(): Array<{ agentId: string; sessionId: string; status: AgentStatus; summary: string; selectedText: string; intentId: string; createdAt: string; pendingApprovalId: string | null; pendingPermissionKind: string | null; source: 'sdk' | 'cli' | 'cloud' }> {
   // Read persisted sessions from DB (sorted newest first)
   let persisted: AgentSession[] = [];
   try {
@@ -550,7 +550,7 @@ export function listAllAgents(): Array<{ agentId: string; sessionId: string; sta
 
   // Build result: overlay live in-memory state on top of DB records
   const seen = new Set<string>();
-  const result: Array<{ agentId: string; sessionId: string; status: AgentStatus; summary: string; selectedText: string; intentId: string; createdAt: string; pendingApprovalId: string | null; pendingPermissionKind: string | null; source: 'sdk' | 'cli' }> = [];
+  const result: Array<{ agentId: string; sessionId: string; status: AgentStatus; summary: string; selectedText: string; intentId: string; createdAt: string; pendingApprovalId: string | null; pendingPermissionKind: string | null; source: 'sdk' | 'cli' | 'cloud' }> = [];
 
   for (const row of persisted) {
     seen.add(row.id);

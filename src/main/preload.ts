@@ -63,6 +63,10 @@ contextBridge.exposeInMainWorld('intentAPI', {
     ipcRenderer.invoke('agent:list-all'),
   deleteAgentSession: (agentId: string) =>
     ipcRenderer.invoke('agent:delete-session', agentId),
+  launchCloudAgent: (intentId: string, prompt: string) =>
+    ipcRenderer.invoke('agent:launch-cloud', intentId, prompt),
+  getCloudJobStatus: (agentId: string) =>
+    ipcRenderer.invoke('agent:cloud-status', agentId),
 
   // CLI session launch
   launchCliSession: () =>

@@ -9,6 +9,7 @@ export interface AgentPersona {
   handle: string;       // @mention name (stored lowercase, no @ prefix)
   instructions: string;
   model: string;        // model ID
+  runLocation: 'local' | 'cloud';  // where to execute the agent
 }
 
 export interface CliToolDefinition {

@@ -27,7 +27,7 @@ export interface AgentSession {
   status: 'running' | 'waiting-approval' | 'completed' | 'failed';
   summary: string;
   working_dir: string | null;
-  source: 'sdk' | 'cli';
+  source: 'sdk' | 'cli' | 'cloud';
   created_at: string;
   updated_at: string;
 }

@@ -17,6 +17,7 @@ interface AgentPersona {
   handle: string;
   instructions: string;
   model: string;
+  runLocation: 'local' | 'cloud';
 }
 
 interface CliToolDefinition {
@@ -86,6 +87,8 @@ interface IntentAPI {
   quickLaunchAgent(prompt: string): Promise<{ agentId?: string; sessionId?: string; error?: string }>;
   listAllAgents(): Promise<any[]>;
   deleteAgentSession(agentId: string): Promise<{ ok?: boolean; error?: string }>;
+  launchCloudAgent(intentId: string, prompt: string): Promise<{ agentId?: string; sessionId?: string; jobId?: string; error?: string }>;
+  getCloudJobStatus(agentId: string): Promise<any>;
   launchCliSession(): Promise<{ agentId?: string; sessionId?: string; error?: string }>;
   getAgentHistory(agentId: string): Promise<{ events?: any[]; error?: string }>;
   openAgentCli(agentId: string): Promise<{ error?: string }>;
@@ -488,10 +491,12 @@ function createPersonaCard(persona: AgentPersona): HTMLElement {
   const modelName = personaModels.find(m => m.id === persona.model);
   const meta = document.createElement('div');
   meta.className = 'persona-card-meta';
-  meta.textContent = modelName ? (modelName.name || modelName.id) : (persona.model || 'Default model');
+  const locationIcon = persona.runLocation === 'cloud' ? '☁️' : '💻';
+  const locationLabel = persona.runLocation === 'cloud' ? 'Cloud' : 'Local';
+  meta.textContent = (modelName ? (modelName.name || modelName.id) : (persona.model || 'Default model')) + ` · ${locationIcon} ${locationLabel}`;
   if (persona.model && !modelName) {
     meta.classList.add('unavailable');
-    meta.textContent = persona.model + ' (unavailable)';
+    meta.textContent = persona.model + ` (unavailable) · ${locationIcon} ${locationLabel}`;
   }
 
   info.appendChild(handle);
@@ -584,6 +589,26 @@ function showPersonaForm(existing?: AgentPersona): void {
   modelRow.appendChild(modelLabel);
   modelRow.appendChild(modelSelect);
 
+  // Run location dropdown (local vs cloud)
+  const locationRow = document.createElement('div');
+  locationRow.className = 'persona-form-row';
+  const locationLabel = document.createElement('label');
+  locationLabel.textContent = 'Run location';
+  locationLabel.className = 'persona-form-label';
+  const locationSelect = document.createElement('select');
+  locationSelect.className = 'persona-form-select';
+  const localOpt = document.createElement('option');
+  localOpt.value = 'local';
+  localOpt.textContent = '💻 Local';
+  const cloudOpt = document.createElement('option');
+  cloudOpt.value = 'cloud';
+  cloudOpt.textContent = '☁️ Cloud (GitHub CCA)';
+  locationSelect.appendChild(localOpt);
+  locationSelect.appendChild(cloudOpt);
+  if (existing?.runLocation === 'cloud') cloudOpt.selected = true;
+  locationRow.appendChild(locationLabel);
+  locationRow.appendChild(locationSelect);
+
   // Error display
   const errorEl = document.createElement('div');
   errorEl.className = 'persona-form-error hidden';
@@ -599,6 +624,7 @@ function showPersonaForm(existing?: AgentPersona): void {
     const rawHandle = handleInput.value.trim().replace(/^@/, '').toLowerCase();
     const instructions = instrInput.value.trim();
     const model = modelSelect.value;
+    const runLocation = locationSelect.value as 'local' | 'cloud';
 
     // Validate
     if (!HANDLE_RE.test(rawHandle)) {
@@ -622,7 +648,7 @@ function showPersonaForm(existing?: AgentPersona): void {
     if (existing) {
       // Update existing
       personas = personas.map(p => p.id === existing.id
-        ? { ...p, handle: rawHandle, instructions, model }
+        ? { ...p, handle: rawHandle, instructions, model, runLocation }
         : p
       );
     } else {
@@ -632,6 +658,7 @@ function showPersonaForm(existing?: AgentPersona): void {
         handle: rawHandle,
         instructions,
         model,
+        runLocation,
       });
     }
 
@@ -650,6 +677,7 @@ function showPersonaForm(existing?: AgentPersona): void {
   form.appendChild(handleRow);
   form.appendChild(instrRow);
   form.appendChild(modelRow);
+  form.appendChild(locationRow);
   form.appendChild(errorEl);
   form.appendChild(btnRow);
 
@@ -1438,11 +1466,13 @@ function render(): void {
     let agentsHtml = '';
     if (intentAgents.length > 0) {
       const agentCards = intentAgents.map(agent => {
-        const aIcon = agent.status === 'running' ? '⚡' :
+        const isCloud = agent.source === 'cloud';
+        const aIcon = isCloud ? '☁️' :
+                      agent.status === 'running' ? '⚡' :
                       agent.status === 'waiting-approval' ? '⏳' :
                       agent.status === 'completed' ? '✓' :
                       '✗';
-        const aClass = agent.status === 'running' ? 'mini-agent-running' :
+        const aClass = agent.status === 'running' ? (isCloud ? 'mini-agent-cloud' : 'mini-agent-running') :
                        agent.status === 'waiting-approval' ? 'mini-agent-waiting' :
                        agent.status === 'completed' ? 'mini-agent-completed' :
                        'mini-agent-failed';
@@ -1782,7 +1812,7 @@ async function renderAgentsList(): Promise<void> {
   countEl.textContent = String(intents.filter(i => i.status !== 'done').length);
 
   // Gather all agents (including workspace-level ones)
-  let allAgents: Array<{ agentId: string; sessionId: string; status: string; summary: string; selectedText: string; intentId: string; createdAt?: string; pendingApprovalId?: string | null; pendingPermissionKind?: string | null; source?: 'sdk' | 'cli' }> = [];
+  let allAgents: Array<{ agentId: string; sessionId: string; status: string; summary: string; selectedText: string; intentId: string; createdAt?: string; pendingApprovalId?: string | null; pendingPermissionKind?: string | null; source?: 'sdk' | 'cli' | 'cloud' }> = [];
 
   try {
     allAgents = await intentAPI.listAllAgents();
@@ -1842,15 +1872,19 @@ async function renderAgentsList(): Promise<void> {
 
     const statusIcon = agent.source === 'cli'
       ? '🖥'
-      : agent.status === 'running' ? '⚡' :
+      : agent.source === 'cloud'
+        ? '☁️'
+        : agent.status === 'running' ? '⚡' :
                        agent.status === 'waiting-approval' ? '⏳' :
                        agent.status === 'completed' ? '✓' : '✗';
 
     const intentLabel = agent.source === 'cli'
       ? 'CLI Session'
-      : agent.intentId === '__workspace__'
-        ? 'Workspace'
-        : escapeHtml(intentMap.get(agent.intentId) || agent.intentId);
+      : agent.source === 'cloud'
+        ? 'Cloud Agent'
+        : agent.intentId === '__workspace__'
+          ? 'Workspace'
+          : escapeHtml(intentMap.get(agent.intentId) || agent.intentId);
 
     const title = agent.selectedText.length > 80
       ? agent.selectedText.slice(0, 77) + '...'

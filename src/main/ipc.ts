@@ -281,12 +281,13 @@ export function registerIpcHandlers(): void {
         ? raw.instructions.trim().slice(0, 2000)
         : '';
       const model = typeof raw.model === 'string' ? raw.model.trim() : '';
+      const runLocation = raw.runLocation === 'cloud' ? 'cloud' as const : 'local' as const;
 
       if (!id || !HANDLE_RE.test(handle) || !instructions) continue;
       if (seen.has(handle)) continue;
       seen.add(handle);
 
-      validated.push({ id, handle, instructions, model });
+      validated.push({ id, handle, instructions, model, runLocation });
     }
 
     setConfigValue('personas', validated);
@@ -609,6 +610,53 @@ export function registerIpcHandlers(): void {
     return { ok: true };
   });
 
+  // ── Cloud agent launch ────────────────────────────────────
+  ipcMain.handle('agent:launch-cloud', async (_event, intentId: string, prompt: string) => {
+    const workspace = getConfigValue('workspace');
+    if (!workspace) return { error: 'no_workspace' };
+
+    const { getWorkspaceRepo, getGitHubToken, launchCloudAgent } = await import('./cloud-agent');
+    const repoInfo = await getWorkspaceRepo(workspace);
+    if (!repoInfo) return { error: 'Could not determine repository from workspace. Ensure a git remote is configured.' };
+
+    const token = await getGitHubToken();
+    if (!token) return { error: 'No GitHub token found. Run `gh auth login` or set GITHUB_TOKEN.' };
+
+    const result = await launchCloudAgent(repoInfo.owner, repoInfo.repo, prompt, token);
+    if ('error' in result) return result;
+
+    // Register in agent_sessions DB for tracking
+    const { v4: uuid } = await import('uuid');
+    const agentId = uuid();
+    const now = new Date().toISOString();
+    const { createAgentSession } = await import('./database');
+    createAgentSession({
+      id: agentId,
+      session_id: result.sessionId,
+      intent_id: intentId || null,
+      prompt,
+      status: 'running',
+      summary: `Cloud job ${result.jobId}`,
+      working_dir: workspace,
+      source: 'cloud' as any,
+      created_at: now,
+      updated_at: now,
+    });
+
+    // Start polling for this job
+    const { startCloudJobPoller } = await import('./cloud-agent-poller');
+    startCloudJobPoller(agentId, repoInfo.owner, repoInfo.repo, result.jobId, token);
+
+    notifyAllWindows('agent:status-changed', { agentId, status: 'running' });
+
+    return { agentId, sessionId: result.sessionId, jobId: result.jobId };
+  });
+
+  ipcMain.handle('agent:cloud-status', async (_event, agentId: string) => {
+    const { getCloudJobPollResult } = await import('./cloud-agent-poller');
+    return getCloudJobPollResult(agentId) || { status: 'unknown' };
+  });
+
   // ── CLI session launch ──────────────────────────────────
   ipcMain.handle('cli:launch-session', async () => {
     const workspace = getConfigValue('workspace');
@@ -635,6 +683,37 @@ export function registerIpcHandlers(): void {
     const allPersonas = getConfigValue('personas') || [];
     const persona = allPersonas.find(p => p.handle === personaHandle);
     if (!persona) return { error: 'persona_not_found' };
+
+    // Route to cloud if persona is configured for cloud execution
+    if (persona.runLocation === 'cloud') {
+      const prompt = `${persona.instructions}\n\nComment: "${commentBody}"\nOn text: "${quotedText}"`;
+      // Reuse the cloud launch handler
+      const { getWorkspaceRepo, getGitHubToken, launchCloudAgent } = await import('./cloud-agent');
+      const repoInfo = await getWorkspaceRepo(workspace);
+      if (!repoInfo) return { error: 'Could not determine repository from workspace.' };
+
+      const token = await getGitHubToken();
+      if (!token) return { error: 'No GitHub token found.' };
+
+      const result = await launchCloudAgent(repoInfo.owner, repoInfo.repo, prompt, token);
+      if ('error' in result) return result;
+
+      const { v4: uuid } = await import('uuid');
+      const agentId = uuid();
+      const now = new Date().toISOString();
+      const { createAgentSession } = await import('./database');
+      createAgentSession({
+        id: agentId, session_id: result.sessionId, intent_id: intentId,
+        prompt: commentBody, status: 'running', summary: `Cloud job ${result.jobId}`,
+        working_dir: workspace, source: 'cloud' as any, created_at: now, updated_at: now,
+      });
+
+      const { startCloudJobPoller } = await import('./cloud-agent-poller');
+      startCloudJobPoller(agentId, repoInfo.owner, repoInfo.repo, result.jobId, token);
+      notifyAllWindows('agent:status-changed', { agentId, status: 'running' });
+
+      return { agentId, sessionId: result.sessionId };
+    }
 
     const { launchCommentAgent } = await import('./agent-service');
     return launchCommentAgent(intentId, commentBody, quotedText, anchor, persona, threadIndex, workspace, intent.folder);
