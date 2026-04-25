@@ -61,6 +61,8 @@ contextBridge.exposeInMainWorld('intentAPI', {
     ipcRenderer.invoke('agent:quick-launch', prompt),
   listAllAgents: () =>
     ipcRenderer.invoke('agent:list-all'),
+  deleteAgentSession: (agentId: string) =>
+    ipcRenderer.invoke('agent:delete-session', agentId),
 
   // CLI session launch
   launchCliSession: () =>

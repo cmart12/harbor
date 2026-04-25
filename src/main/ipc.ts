@@ -601,6 +601,14 @@ export function registerIpcHandlers(): void {
     return listAllAgents();
   });
 
+  ipcMain.handle('agent:delete-session', async (_event, agentId: string) => {
+    const { abortAgent } = await import('./agent-service');
+    try { await abortAgent(agentId); } catch { /* already stopped */ }
+    const { deleteAgentSession } = await import('./database');
+    deleteAgentSession(agentId);
+    return { ok: true };
+  });
+
   // ── CLI session launch ──────────────────────────────────
   ipcMain.handle('cli:launch-session', async () => {
     const workspace = getConfigValue('workspace');

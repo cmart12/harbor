@@ -1184,6 +1184,134 @@ body.dark .workers-badge {
   font-weight: 500;
 }
 
+.session-badge.agent-attention {
+  color: #f59e0b;
+  font-weight: 500;
+  animation: processingPulse 1.5s ease infinite;
+}
+
+.session-badge.agent-failed-badge {
+  color: #dc2626;
+  font-weight: 500;
+}
+
+/* ── Intent desc row (title + refresh) ───────────────── */
+
+.intent-desc-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.intent-refresh-title {
+  opacity: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 1px 3px;
+  border-radius: 2px;
+  color: rgba(0, 0, 0, 0.3);
+  transition: opacity 0.15s ease, color 0.15s ease;
+  flex-shrink: 0;
+}
+
+.intent-item:hover .intent-refresh-title {
+  opacity: 1;
+}
+
+.intent-refresh-title:hover {
+  color: #7c66dc;
+  background: rgba(124, 102, 220, 0.08);
+}
+
+/* ── Agent-active shimmer on intent title ────────────── */
+
+.intent-desc.agent-active {
+  background: linear-gradient(90deg, #2c2c3a 0%, #7c66dc 50%, #2c2c3a 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: titleShimmer 3s ease-in-out infinite;
+}
+
+@keyframes titleShimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+/* ── Intent has waiting agents ───────────────────────── */
+
+.intent-item.has-waiting-agents {
+  border-color: rgba(245, 158, 11, 0.25);
+}
+
+/* ── Mini-agent cards in intent ──────────────────────── */
+
+.intent-agents {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.mini-agent {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 3px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  max-width: 220px;
+}
+
+.mini-agent:hover {
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+.mini-agent-icon {
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+.mini-agent-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mini-agent-running {
+  background: rgba(22, 163, 74, 0.08);
+  color: #16a34a;
+  border: 1px solid rgba(22, 163, 74, 0.15);
+}
+
+.mini-agent-running .mini-agent-icon {
+  animation: agentPulse 2s ease-in-out infinite;
+}
+
+.mini-agent-waiting {
+  background: rgba(245, 158, 11, 0.08);
+  color: #92400e;
+  border: 1px solid rgba(245, 158, 11, 0.15);
+  animation: processingPulse 1.5s ease infinite;
+}
+
+.mini-agent-completed {
+  background: rgba(0, 0, 0, 0.03);
+  color: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.mini-agent-failed {
+  background: rgba(220, 38, 38, 0.06);
+  color: #dc2626;
+  border: 1px solid rgba(220, 38, 38, 0.12);
+}
+
 /* ── Launch button running state ─────────────────────── */
 
 .intent-launch.is-running {
@@ -2301,6 +2429,46 @@ body.dark .workers-badge {
   font-size: 12px;
   font-weight: 500;
   color: rgba(0, 0, 0, 0.55);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.agent-card:hover .agent-card-actions {
+  opacity: 1;
+}
+
+.agent-card-delete-btn,
+.agent-card-canvas-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 4px;
+  border-radius: 2px;
+  color: rgba(0, 0, 0, 0.3);
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.agent-card-delete-btn:hover {
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.06);
+}
+
+.agent-card-canvas-btn:hover {
+  color: #7c66dc;
+  background: rgba(124, 102, 220, 0.08);
 }
 
 .agent-card-title {
@@ -2509,6 +2677,19 @@ body.dark .intent-delete { color: rgba(255, 255, 255, 0.3); }
 body.dark .intent-launch { color: rgba(255, 255, 255, 0.3); }
 body.dark .processing-badge { color: #a594e8; background: rgba(124, 102, 220, 0.15); }
 body.dark .session-badge { color: rgba(255, 255, 255, 0.3); }
+body.dark .session-badge.agent-attention { color: #f59e0b; }
+body.dark .session-badge.agent-failed-badge { color: #f87171; }
+body.dark .intent-refresh-title { color: rgba(255, 255, 255, 0.3); }
+body.dark .intent-refresh-title:hover { color: #a594e8; background: rgba(165, 148, 232, 0.1); }
+body.dark .intent-desc.agent-active { background: linear-gradient(90deg, #e0e0e0 0%, #a594e8 50%, #e0e0e0 100%); background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; animation: titleShimmer 3s ease-in-out infinite; }
+body.dark .mini-agent-running { background: rgba(22, 163, 74, 0.12); color: #4ade80; border-color: rgba(74, 222, 128, 0.2); }
+body.dark .mini-agent-waiting { background: rgba(245, 158, 11, 0.1); color: #fbbf24; border-color: rgba(251, 191, 36, 0.2); }
+body.dark .mini-agent-completed { background: rgba(255, 255, 255, 0.04); color: rgba(255, 255, 255, 0.4); border-color: rgba(255, 255, 255, 0.08); }
+body.dark .mini-agent-failed { background: rgba(220, 38, 38, 0.1); color: #f87171; border-color: rgba(248, 113, 113, 0.2); }
+body.dark .intent-item.has-waiting-agents { border-color: rgba(245, 158, 11, 0.2); }
+body.dark .agent-card-delete-btn, body.dark .agent-card-canvas-btn { color: rgba(255, 255, 255, 0.3); }
+body.dark .agent-card-delete-btn:hover { color: #f87171; background: rgba(248, 113, 113, 0.1); }
+body.dark .agent-card-canvas-btn:hover { color: #a594e8; background: rgba(165, 148, 232, 0.1); }
 
 body.dark .letter-glow { color: #c7d2fe; text-shadow: 0 0 8px rgba(165, 148, 232, 0.8), 0 0 2px rgba(199, 210, 254, 0.6); }
 body.dark .intent-desc.refined { animation: refinedSettleDark 0.6s ease forwards; }

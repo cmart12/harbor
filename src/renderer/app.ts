@@ -85,6 +85,7 @@ interface IntentAPI {
   listAgents(intentId: string): Promise<any[]>;
   quickLaunchAgent(prompt: string): Promise<{ agentId?: string; sessionId?: string; error?: string }>;
   listAllAgents(): Promise<any[]>;
+  deleteAgentSession(agentId: string): Promise<{ ok?: boolean; error?: string }>;
   launchCliSession(): Promise<{ agentId?: string; sessionId?: string; error?: string }>;
   getAgentHistory(agentId: string): Promise<{ events?: any[]; error?: string }>;
   openAgentCli(agentId: string): Promise<{ error?: string }>;
@@ -177,6 +178,8 @@ let intents: Intent[] = [];
 const processingIntents = new Set<string>();
 // Track intents with active running terminal sessions
 let activeSessionIntents = new Set<string>();
+// Track agents per intent for Spaces view
+let agentsByIntent = new Map<string, Array<{ agentId: string; status: string; summary: string; selectedText: string; source?: string }>>();
 // Current filter
 let currentFilter: 'open' | 'agents' | 'closed' = 'open';
 const filterOrder: Array<'open' | 'agents' | 'closed'> = ['open', 'agents', 'closed'];
@@ -231,7 +234,7 @@ function setFilter(filter: typeof currentFilter): void {
   if (filter === 'agents') {
     form.style.display = 'none';
     newAgentBtn.classList.remove('hidden');
-    launchCliBtn.classList.remove('hidden');
+    launchCliBtn.classList.add('hidden');
     agentSummaryEl.classList.remove('hidden');
   } else if (filter === 'closed') {
     form.style.display = 'none';
@@ -1359,6 +1362,25 @@ async function animateRefinement(intentId: string): Promise<void> {
 async function loadIntents(): Promise<void> {
   intents = await intentAPI.list();
   activeSessionIntents = new Set(await intentAPI.getActiveSessions());
+
+  // Build agents-per-intent map for Spaces view
+  try {
+    const allAgents = await intentAPI.listAllAgents();
+    const map = new Map<string, Array<{ agentId: string; status: string; summary: string; selectedText: string; source?: string }>>();
+    for (const agent of allAgents) {
+      if (!agent.intentId || agent.intentId === '__workspace__') continue;
+      if (!map.has(agent.intentId)) map.set(agent.intentId, []);
+      map.get(agent.intentId)!.push({
+        agentId: agent.agentId,
+        status: agent.status,
+        summary: agent.summary,
+        selectedText: agent.selectedText,
+        source: agent.source,
+      });
+    }
+    agentsByIntent = map;
+  } catch { /* skip */ }
+
   updateFocusBanner();
   render();
 }
@@ -1404,23 +1426,56 @@ function render(): void {
     const isRunning = activeSessionIntents.has(intent.id);
     const dueInfo = formatDueDate(intent.due_at_utc, intent.due_at);
     const hasDue = dueInfo.text !== '';
-
     const isFocused = intent.id === focusedIntentId;
 
+    // Agent data for this intent
+    const intentAgents = agentsByIntent.get(intent.id) || [];
+    const hasRunningAgents = intentAgents.some(a => a.status === 'running');
+    const hasWaitingAgents = intentAgents.some(a => a.status === 'waiting-approval');
+    const hasFailedAgents = intentAgents.some(a => a.status === 'failed');
+
+    // Build agent mini-cards
+    let agentsHtml = '';
+    if (intentAgents.length > 0) {
+      const agentCards = intentAgents.map(agent => {
+        const aIcon = agent.status === 'running' ? '⚡' :
+                      agent.status === 'waiting-approval' ? '⏳' :
+                      agent.status === 'completed' ? '✓' :
+                      '✗';
+        const aClass = agent.status === 'running' ? 'mini-agent-running' :
+                       agent.status === 'waiting-approval' ? 'mini-agent-waiting' :
+                       agent.status === 'completed' ? 'mini-agent-completed' :
+                       'mini-agent-failed';
+        const aLabel = agent.selectedText.length > 50 ? agent.selectedText.slice(0, 47) + '...' : agent.selectedText;
+        return `<div class="mini-agent ${aClass}" data-agent-id="${agent.agentId}" title="${escapeHtml(agent.selectedText)}">`
+          + `<span class="mini-agent-icon">${aIcon}</span>`
+          + `<span class="mini-agent-label">${escapeHtml(aLabel || agent.summary || 'Agent')}</span>`
+          + `</div>`;
+      }).join('');
+      agentsHtml = `<div class="intent-agents">${agentCards}</div>`;
+    }
+
     return `
-    <div class="intent-item ${intent.status === 'done' ? 'done' : ''} ${isProcessing ? 'processing' : ''} ${isFocused ? 'focused' : ''}" data-id="${intent.id}" onclick="openCanvas('${intent.id}', true)">
+    <div class="intent-item ${intent.status === 'done' ? 'done' : ''} ${isProcessing ? 'processing' : ''} ${isFocused ? 'focused' : ''} ${hasRunningAgents ? 'has-running-agents' : ''} ${hasWaitingAgents ? 'has-waiting-agents' : ''}" data-id="${intent.id}" onclick="openCanvas('${intent.id}', true)">
       <div class="intent-check ${intent.status === 'done' ? 'checked' : ''}"
            onclick="event.stopPropagation(); toggleStatus('${intent.id}')">${intent.status === 'done' ? '✓' : ''}</div>
       <div class="intent-content">
-        <div class="intent-desc">${escapeHtml(intent.description)}</div>
+        <div class="intent-desc-row">
+          <div class="intent-desc ${hasRunningAgents ? 'agent-active' : ''}">${escapeHtml(intent.description)}</div>
+          <button class="intent-refresh-title" onclick="event.stopPropagation(); refreshIntentTitle('${intent.id}')" title="Generate title from canvas content">✨</button>
+        </div>
         <div class="intent-meta">
           ${intent.client ? `<span>👤 ${escapeHtml(intent.client)}</span>` : ''}
           ${hasDue ? `<span class="due-badge ${dueInfo.overdue ? 'overdue' : ''}">📅 ${escapeHtml(dueInfo.text)}</span>` : ''}
           ${isRecurring ? '<span class="recurring-badge">↻</span>' : ''}
           ${isRunning ? '<span class="session-badge running">● running</span>' : intent.session_id ? '<span class="session-badge">○ session</span>' : ''}
+          ${hasRunningAgents ? `<span class="session-badge running">⚡ ${intentAgents.filter(a => a.status === 'running').length} working</span>` : ''}
+          ${hasWaitingAgents ? '<span class="session-badge agent-attention">⏳ needs attention</span>' : ''}
+          ${hasFailedAgents ? '<span class="session-badge agent-failed-badge">✗ failed</span>' : ''}
           ${isProcessing ? '<span class="processing-badge">refining...</span>' : ''}
           <span>${timeAgo(intent.updated_at)}</span>
         </div>
+        ${agentsHtml}
         <div class="recall-hint hidden" data-recall-for="${intent.id}"></div>
       </div>
       ${intent.status !== 'done' ? `<button class="intent-focus ${isFocused ? 'is-focused' : ''}" onclick="event.stopPropagation(); setFocus('${intent.id}')" title="${isFocused ? 'Unfocus' : 'Focus'}">🎯</button>` : ''}
@@ -1429,6 +1484,22 @@ function render(): void {
     </div>
   `;
   }).join('');
+
+  // Wire mini-agent click handlers to open chat directly
+  listEl.querySelectorAll('.mini-agent[data-agent-id]').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const agentId = (el as HTMLElement).dataset.agentId!;
+      // Find the agent data
+      for (const agents of agentsByIntent.values()) {
+        const agent = agents.find(a => a.agentId === agentId);
+        if (agent) {
+          openAgentChat(agentId, agent.selectedText, agent.status, agent.source as any);
+          return;
+        }
+      }
+    });
+  });
 
   if (selectedIndex >= displayedIntents.length) {
     selectedIndex = -1;
@@ -1808,11 +1879,19 @@ async function renderAgentsList(): Promise<void> {
       </div>
     ` : '';
 
+    const canvasBtn = agent.intentId && agent.intentId !== '__workspace__' && agent.source !== 'cli'
+      ? `<button class="agent-card-canvas-btn" data-intent-id="${agent.intentId}" title="Open canvas">📄</button>`
+      : '';
+
     return `
       <div class="agent-card ${statusClass}" data-agent-id="${agent.agentId}" title="Click to open chat">
         <div class="agent-card-header">
           <span class="agent-card-icon">${statusIcon}</span>
           <span class="agent-card-name">${intentLabel}</span>
+          <div class="agent-card-actions">
+            ${canvasBtn}
+            <button class="agent-card-delete-btn" data-agent-id="${agent.agentId}" title="Delete session">✕</button>
+          </div>
         </div>
         <div class="agent-card-title">${escapeHtml(title)}</div>
         ${stepsHtml ? `<div class="agent-card-steps">${stepsHtml}</div>` : ''}
@@ -1845,6 +1924,25 @@ async function renderAgentsList(): Promise<void> {
       intentAPI.approveAgent(aid, rid, approved);
       agentApprovals.delete(aid);
       updateAgentCardApproval(aid);
+    });
+  });
+
+  // Wire up delete session handlers
+  listEl.querySelectorAll('.agent-card-delete-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const aid = (e.currentTarget as HTMLElement).dataset.agentId!;
+      await intentAPI.deleteAgentSession(aid);
+      renderAgentsList();
+    });
+  });
+
+  // Wire up canvas button handlers
+  listEl.querySelectorAll('.agent-card-canvas-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const intentId = (e.currentTarget as HTMLElement).dataset.intentId!;
+      openCanvas(intentId, true);
     });
   });
 
@@ -2488,6 +2586,25 @@ async function deleteIntent(id: string): Promise<void> {
 (window as any).toggleStatus = toggleStatus;
 (window as any).deleteIntent = deleteIntent;
 
+// @ts-ignore - called from onclick in HTML
+async function refreshIntentTitle(id: string): Promise<void> {
+  const btn = document.querySelector(`.intent-item[data-id="${id}"] .intent-refresh-title`) as HTMLButtonElement;
+  if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
+  try {
+    const { content } = await intentAPI.readCanvas(id);
+    if (!content || !content.trim()) return;
+    const result = await intentAPI.summarizeTitle(content);
+    if (result.title) {
+      await intentAPI.update(id, { description: result.title });
+      await loadIntents();
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '✨'; }
+  }
+}
+
+(window as any).refreshIntentTitle = refreshIntentTitle;
+
 // ── Canvas view ─────────────────────────────────────────
 import { mountCanvas, unmountCanvas, getCanvasContent, saveCanvas as saveCanvasEditor, updateCanvasPresence, addCanvasCommentReply } from './canvas/mount.tsx';
 import type { Presence } from 'documint';
@@ -3015,6 +3132,8 @@ intentAPI.onAgentReplyReady((data) => {
 // ── Global agent status/approval listeners ─────────────
 intentAPI.onAgentStatusChanged((data: any) => {
   if (currentFilter === 'agents') renderAgentsList();
+  // Refresh Spaces view to update agent indicators
+  if (currentFilter === 'open') loadIntents();
   // Clear steps if agent restarted
   if (data.status === 'running' && !agentSteps.has(data.agentId)) {
     agentSteps.set(data.agentId, []);
@@ -3039,6 +3158,7 @@ intentAPI.onAgentApprovalNeeded((data: any) => {
 
 intentAPI.onAgentCompleted(() => {
   if (currentFilter === 'agents') renderAgentsList();
+  if (currentFilter === 'open') loadIntents();
 });
 
 // When the user clicks an OS notification, switch to Workers tab
@@ -3165,6 +3285,8 @@ intentAPI.onWindowShown(() => {
   selectedIndex = -1;
   searchResults = null;
   if (searchMode) exitSearchMode();
+  // Always land on Spaces tab with focus in capture field
+  setFilter('open');
   descInput.focus();
   descInput.select();
   hideStatus();

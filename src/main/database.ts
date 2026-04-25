@@ -410,3 +410,8 @@ export function listAgentSessions(): AgentSession[] {
      FROM agent_sessions ORDER BY created_at DESC`
   ).all() as AgentSession[];
 }
+
+export function deleteAgentSession(id: string): void {
+  appendEvent(logPath, 'agent_session.deleted', { id });
+  db.prepare('DELETE FROM agent_sessions WHERE id = ?').run(id);
+}
