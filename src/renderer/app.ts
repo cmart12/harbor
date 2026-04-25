@@ -3082,9 +3082,7 @@ document.addEventListener('keydown', (e) => {
       return;
     }
     if (!canvasView.classList.contains('hidden')) {
-      const wasExpanded = canvasExpanded;
       closeCanvas();
-      if (wasExpanded) intentAPI.hideWindow();
       return;
     }
     if (!timelineView.classList.contains('hidden')) {
