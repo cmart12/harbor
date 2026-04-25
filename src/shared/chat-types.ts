@@ -83,4 +83,5 @@ export type ChatEvent =
   | { type: 'tool.complete'; toolCallId: string; result: string; success: boolean }
   | { type: 'session.idle' }
   | { type: 'session.error'; message: string }
-  | { type: 'approval.needed'; requestId: string; agentId: string; permissionKind: string };
+  | { type: 'approval.needed'; requestId: string; agentId: string; permissionKind: string }
+  | { type: 'approval.resolved'; requestId: string; approved: boolean };

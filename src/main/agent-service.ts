@@ -354,6 +354,12 @@ export function approveAgent(agentId: string, requestId: string, approved: boole
     approvalCallbacks.delete(requestId);
     cb(approved);
   }
+  // Notify chat channel so both workers list and chat view stay in sync
+  notifyRenderer(`chat:event:${agentId}`, {
+    type: 'approval.resolved',
+    requestId,
+    approved,
+  });
 }
 
 export async function abortAgent(agentId: string): Promise<void> {

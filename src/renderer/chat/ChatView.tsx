@@ -22,6 +22,8 @@ interface ChatViewProps {
   agentPrompt: string;
   agentStatus: string;
   agentSource?: 'sdk' | 'cli';
+  pendingApprovalId?: string;
+  pendingPermissionKind?: string;
   onClose: () => void;
   onOpenCli: (agentId: string) => void;
 }
@@ -92,7 +94,7 @@ function parseHistoryEvents(events: any[]): ChatMessage[] {
   return messages;
 }
 
-export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: initialStatus, agentSource, onClose, onOpenCli }: ChatViewProps) {
+export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: initialStatus, agentSource, pendingApprovalId, pendingPermissionKind, onClose, onOpenCli }: ChatViewProps) {
   const [currentAgentId, setCurrentAgentId] = useState<string | null>(initialAgentId || null);
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     // For CLI sessions or sessions with history, don't seed — history will load
@@ -106,6 +108,18 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
         content: agentPrompt,
         timestamp: new Date().toISOString(),
       });
+    }
+    // Seed pending approval if agent is waiting when chat opens
+    if (initialAgentId && pendingApprovalId && pendingPermissionKind) {
+      seed.push({
+        id: genId(),
+        type: 'approval',
+        requestId: pendingApprovalId,
+        agentId: initialAgentId,
+        permissionKind: pendingPermissionKind,
+        responded: false,
+        timestamp: new Date().toISOString(),
+      } as ApprovalMessage);
     }
     return seed;
   });
@@ -143,7 +157,15 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
         if (result.events && result.events.length > 0) {
           const historyMessages = parseHistoryEvents(result.events);
           if (historyMessages.length > 0) {
-            setMessages(historyMessages);
+            setMessages(prev => {
+              // Preserve any pending approval message seeded on mount
+              const pendingApproval = prev.find(
+                m => m.type === 'approval' && !m.responded
+              );
+              return pendingApproval
+                ? [...historyMessages, pendingApproval]
+                : historyMessages;
+            });
           }
         }
       } catch (err) {
@@ -300,6 +322,15 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
             responded: false,
             timestamp: new Date().toISOString(),
           } as ApprovalMessage]);
+          break;
+        }
+
+        case 'approval.resolved': {
+          setMessages(prev => prev.map(m =>
+            m.type === 'approval' && m.requestId === event.requestId
+              ? { ...m, responded: true, approved: event.approved }
+              : m
+          ));
           break;
         }
       }

@@ -2906,11 +2906,16 @@ async function openAgentChat(agentId: string | undefined, agentPrompt: string, a
   canvasView.classList.add('hidden');
   chatView.classList.remove('hidden');
 
+  // Look up pending approval info if agent is waiting
+  const approval = agentId ? agentApprovals.get(agentId) : undefined;
+
   mountChat(chatRoot, {
     agentId,
     agentPrompt,
     agentStatus,
     agentSource,
+    pendingApprovalId: approval?.requestId,
+    pendingPermissionKind: approval?.permissionKind,
     onClose: () => closeAgentChat(),
     onOpenCli: (id: string) => intentAPI.openAgentCli(id),
   });
