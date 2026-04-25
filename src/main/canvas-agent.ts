@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import { getIntent, assignIntentFolder, createCanvasAgent } from './database';
 import { checkCopilotCli } from './session';
-import { createIntentFolder, readCanvas } from './workspace';
+import { createIntentFolder } from './workspace';
 import { CanvasAgent } from '../shared/types';
 
 export interface AgentLaunchResult {

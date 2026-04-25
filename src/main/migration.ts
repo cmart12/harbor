@@ -4,7 +4,7 @@ import { app } from 'electron';
 import Database from 'better-sqlite3';
 import { appendEvent } from './eventlog';
 import { getLogPath } from './workspace';
-import { getConfigValue, setConfigValue, loadConfig } from './config';
+import { setConfigValue, loadConfig } from './config';
 
 const OLD_DB_PATH = path.join(app.getPath('userData'), 'intents.db');
 

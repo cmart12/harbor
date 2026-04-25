@@ -1,10 +1,9 @@
-import { CopilotSession, approveAll } from '@github/copilot-sdk';
+import { CopilotSession } from '@github/copilot-sdk';
 import { v4 as uuid } from 'uuid';
 import { BrowserWindow } from 'electron';
 import { getCopilotClient } from './ai';
 import { createCanvasAgent, updateCanvasAgentStatus, createAgentSession, updateAgentSessionStatus, getAgentSession, listAgentSessions } from './database';
-import { CanvasAgent, AgentAnchor, AgentSession } from '../shared/types';
-import { readCanvas } from './workspace';
+import { AgentAnchor, AgentSession } from '../shared/types';
 import { getConfig, getConfigValue, type AgentPersona } from './config';
 import { launchSessionInTerminal } from './session';
 import { getAllMcpServers } from './mcp';
@@ -60,7 +59,7 @@ export async function launchAgent(
   anchor: AgentAnchor,
   workspaceRoot: string,
   intentFolder: string,
-  options?: { repo?: string; model?: string }
+  _options?: { repo?: string; model?: string }
 ): Promise<{ agentId: string; sessionId: string } | { error: string }> {
   const client = getCopilotClient();
   if (!client) {

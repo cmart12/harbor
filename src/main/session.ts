@@ -401,7 +401,7 @@ function launchMac(cli: string, sessionId: string, cwd: string): number | null {
       );
       if (pid) {
         // Update the tracked session with the real PID
-        for (const [intentId, tracked] of runningProcesses) {
+        for (const [_intentId, tracked] of runningProcesses) {
           if (tracked.sessionId === sessionId) {
             tracked.pid = pid;
             break;

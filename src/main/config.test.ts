@@ -9,7 +9,7 @@ vi.mock('electron', () => ({
   },
 }));
 
-import { loadConfig, saveConfig, getConfig, getConfigValue, setConfigValue } from './config';
+import { loadConfig, getConfig, getConfigValue, setConfigValue } from './config';
 
 const CONFIG_PATH = path.join('/tmp/intent-test-config', 'config.json');
 

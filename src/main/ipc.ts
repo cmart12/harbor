@@ -8,9 +8,9 @@ import { parseIntentWithAI, evaluateRecurrence, findSimilarIntent, resolveDateWi
 import { launchSession, getActiveSessionIntentIds, resolveCopilotCliPath, invalidateCliPath } from './session';
 import { transcribeAudio } from './voice';
 import { CreateIntentInput, Intent, RecurrenceResult, LinkPreviewMeta } from '../shared/types';
-import { getConfigValue, setConfigValue, type AgentPersona, type CliToolDefinition, type CustomMcpServer } from './config';
+import { getConfigValue, setConfigValue, type AgentPersona } from './config';
 import { initWorkspace, getDbPath, getLogPath, initIntentCanvas, readCanvas, writeCanvas, scheduleAutoCommit, saveAttachment, resolveAttachmentPath, getMimeType } from './workspace';
-import { initDatabase, mergeSessionIds, assignIntentFolder, updateCanvasContent, searchIntents, syncCanvasContent, updateCanvasAgentStatus } from './database';
+import { initDatabase, mergeSessionIds, assignIntentFolder, updateCanvasContent, searchIntents, syncCanvasContent } from './database';
 import { getConfig } from './config';
 import { listDiscoveredMcpServers } from './mcp';
 import { validateMcpServers, validateCliTools } from './validators';
@@ -116,7 +116,6 @@ function applyRecurrence(intentId: string, expectedVersion: string, result: Recu
   });
 
   if (updated) {
-    const current = getIntent(intentId);
     logIntentEvent(intentId, 'recycled', {
       due_at: result.next_due,
       due_at_utc: result.next_due_utc,

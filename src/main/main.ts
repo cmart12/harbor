@@ -1,7 +1,7 @@
 import { app, BrowserWindow, Tray, Menu, globalShortcut, screen, ipcMain, nativeImage, session, protocol, net, systemPreferences } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
-import { loadConfig, getConfig, getConfigValue, setConfigValue, type SnapPosition } from './config';
+import { loadConfig, getConfigValue, setConfigValue, type SnapPosition } from './config';
 import { initDatabase, mergeSessionIds, syncCanvasContent } from './database';
 import { initWorkspace, getDbPath, getLogPath } from './workspace';
 import { migrateOldDatabase } from './migration';

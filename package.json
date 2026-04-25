@@ -8,6 +8,9 @@
     "build": "tsc -p tsconfig.main.json && node scripts/build-renderer.js && node -e \"const fs=require('fs');const p=require('path');['index.html','styles.css'].forEach(f=>fs.copyFileSync(p.join('src','renderer',f),p.join('dist','renderer',f)))\"",
     "test": "vitest run",
     "test:watch": "vitest",
+    "lint": "oxlint src/",
+    "format": "oxfmt src/",
+    "typecheck": "tsc -p tsconfig.main.json --noEmit",
     "postinstall": "bash scripts/codesign-dev.sh",
     "start": "npm run build && electron .",
     "dev": "npm run build && (tsc -p tsconfig.main.json -w --preserveWatchOutput & node scripts/build-renderer.js --watch & node scripts/watch-assets.js & electron .)",
@@ -66,6 +69,8 @@
     "electron-builder": "^26.8.1",
     "electronmon": "^2.0.4",
     "esbuild": "^0.28.0",
+    "oxfmt": "^0.46.0",
+    "oxlint": "^1.61.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.5"
   }

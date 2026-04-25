@@ -1,0 +1,13 @@
+{
+  "env": {
+    "browser": true,
+    "es2024": true,
+    "node": true
+  },
+  "globals": {
+    "NodeJS": "readonly"
+  },
+  "rules": {
+    "no-console": "off"
+  }
+}
