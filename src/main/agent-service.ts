@@ -1,6 +1,6 @@
 import { CopilotSession } from '@github/copilot-sdk';
 import { v4 as uuid } from 'uuid';
-import { BrowserWindow, app } from 'electron';
+import { BrowserWindow, Notification, app } from 'electron';
 import { getCopilotClient } from './ai';
 import { createCanvasAgent, updateCanvasAgentStatus, createAgentSession, updateAgentSessionStatus, getAgentSession, listAgentSessions } from './database';
 import { AgentAnchor, AgentSession } from '../shared/types';
@@ -62,6 +62,34 @@ function notifyRenderer(channel: string, ...args: any[]): void {
   }
 }
 
+/** Show a native OS notification when approval is needed and the window is unfocused */
+function showApprovalNotification(agentId: string, permissionKind: string): void {
+  const wins = BrowserWindow.getAllWindows();
+  const anyFocused = wins.some(w => w.isFocused());
+  if (anyFocused) return;
+
+  const kindLabel = permissionKind
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, c => c.toUpperCase());
+
+  const notification = new Notification({
+    title: 'Approval needed',
+    body: kindLabel || 'An agent needs your permission to continue',
+    silent: false,
+  });
+
+  notification.on('click', () => {
+    const win = wins[0];
+    if (win) {
+      win.show();
+      win.focus();
+      win.webContents.send('notification:approval-clicked', { agentId });
+    }
+  });
+
+  notification.show();
+}
+
 export async function launchAgent(
   intentId: string,
   selectedText: string,
@@ -101,13 +129,14 @@ export async function launchAgent(
           permissionKind: request.kind,
         });
 
-        // Also forward to chat channel for inline display
         notifyRenderer(`chat:event:${record.agentId}`, {
           type: 'approval.needed',
           requestId: record.pendingApprovalId,
           agentId: record.agentId,
           permissionKind: request.kind,
         });
+
+        showApprovalNotification(record.agentId, request.kind || 'permission');
 
         // Wait for renderer response (stored as a promise)
         return new Promise((resolve) => {
@@ -261,6 +290,8 @@ If you make changes to the document, clearly describe what you changed.${cliTool
           agentId: record.agentId,
           permissionKind: request.kind,
         });
+
+        showApprovalNotification(record.agentId, request.kind || 'permission');
 
         return new Promise((resolve) => {
           approvalCallbacks.set(record.pendingApprovalId!, (approved: boolean) => {
@@ -478,6 +509,8 @@ export async function launchQuickAgent(
           agentId: record.agentId,
           permissionKind: request.kind,
         });
+
+        showApprovalNotification(record.agentId, request.kind || 'permission');
 
         return new Promise((resolve) => {
           approvalCallbacks.set(record.pendingApprovalId!, (approved: boolean) => {
@@ -924,6 +957,8 @@ async function resumeAgentSession(agentId: string): Promise<boolean> {
           agentId: record.agentId,
           permissionKind: request.kind,
         });
+
+        showApprovalNotification(record.agentId, request.kind || 'permission');
 
         return new Promise((resolve) => {
           approvalCallbacks.set(record.pendingApprovalId!, (approved: boolean) => {

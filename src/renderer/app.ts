@@ -109,6 +109,7 @@ interface IntentAPI {
   onAgentStatusChanged(callback: (data: any) => void): void;
   onAgentApprovalNeeded(callback: (data: any) => void): void;
   onAgentCompleted(callback: (data: any) => void): void;
+  onNotificationApprovalClicked(callback: (data: { agentId: string }) => void): void;
   onAgentPresenceStarted(callback: (data: { agentId: string; intentId: string; persona: { name: string; handle: string; color?: string; imageUrl?: string }; anchor: { prefix?: string; suffix?: string } }) => void): void;
   onAgentPresenceEnded(callback: (data: { agentId: string; intentId: string }) => void): void;
   onAgentReplyReady(callback: (data: { agentId: string; intentId: string; threadIndex: number; body: string }) => void): void;
@@ -188,6 +189,7 @@ let displayedIntents: Intent[] = [];
 let searchResults: Intent[] | null = null;
 let searchTimeout: ReturnType<typeof setTimeout> | null = null;
 let searchMode = false;
+const workersBadge = document.getElementById('workers-badge') as HTMLSpanElement;
 
 // ── Status bar helpers ──────────────────────────────────
 function showStatus(msg: string, isError = false): void {
@@ -198,6 +200,15 @@ function showStatus(msg: string, isError = false): void {
 
 function hideStatus(): void {
   statusBar.classList.add('hidden');
+}
+
+// ── Workers badge ───────────────────────────────────────
+function updateWorkersBadge(): void {
+  if (agentApprovals.size > 0 && currentFilter !== 'agents') {
+    workersBadge.classList.remove('hidden');
+  } else {
+    workersBadge.classList.add('hidden');
+  }
 }
 
 // ── Filter bar ──────────────────────────────────────────
@@ -226,6 +237,7 @@ function setFilter(filter: typeof currentFilter): void {
     agentSummaryEl.classList.add('hidden');
   }
 
+  updateWorkersBadge();
   render();
 }
 
@@ -2969,6 +2981,11 @@ intentAPI.onAgentStatusChanged((data: any) => {
   if (data.status === 'running' && !agentSteps.has(data.agentId)) {
     agentSteps.set(data.agentId, []);
   }
+  // Clear approval and badge when agent is no longer waiting
+  if (data.status !== 'waiting-approval') {
+    agentApprovals.delete(data.agentId);
+    updateWorkersBadge();
+  }
 });
 
 intentAPI.onAgentApprovalNeeded((data: any) => {
@@ -2979,10 +2996,16 @@ intentAPI.onAgentApprovalNeeded((data: any) => {
   if (currentFilter === 'agents') {
     updateAgentCardApproval(data.agentId);
   }
+  updateWorkersBadge();
 });
 
 intentAPI.onAgentCompleted(() => {
   if (currentFilter === 'agents') renderAgentsList();
+});
+
+// When the user clicks an OS notification, switch to Workers tab
+intentAPI.onNotificationApprovalClicked(() => {
+  setFilter('agents');
 });
 
 // ── Init ────────────────────────────────────────────────

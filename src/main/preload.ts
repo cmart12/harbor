@@ -126,6 +126,9 @@ contextBridge.exposeInMainWorld('intentAPI', {
   onAgentCompleted: (callback: (data: any) => void) => {
     ipcRenderer.on('agent:completed', (_event: any, data: any) => callback(data));
   },
+  onNotificationApprovalClicked: (callback: (data: { agentId: string }) => void) => {
+    ipcRenderer.on('notification:approval-clicked', (_event: any, data: any) => callback(data));
+  },
   onAgentPresenceStarted: (callback: (data: any) => void) => {
     ipcRenderer.on('agent:presence-started', (_event: any, data: any) => callback(data));
   },

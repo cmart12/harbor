@@ -641,6 +641,38 @@ header h1 {
   outline-offset: -2px;
 }
 
+/* ── Workers badge (pending approvals indicator) ──────── */
+
+.filter-btn {
+  position: relative;
+}
+
+.workers-badge {
+  position: absolute;
+  top: 3px;
+  right: 6px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #f59e0b;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.45);
+  animation: badge-pulse 2s ease-in-out infinite;
+}
+
+.workers-badge.hidden {
+  display: none;
+}
+
+@keyframes badge-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(0.85); }
+}
+
+body.dark .workers-badge {
+  background: #fbbf24;
+  box-shadow: 0 0 0 2px rgba(28, 28, 32, 0.8);
+}
+
 /* ── Focus banner ─────────────────────────────────────── */
 
 .focus-banner {
