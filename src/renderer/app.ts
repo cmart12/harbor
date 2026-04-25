@@ -154,7 +154,7 @@ const modelSelect = document.getElementById('model-select') as HTMLSelectElement
 const recordingIndicator = document.getElementById('recording-indicator') as HTMLDivElement;
 const themeLightBtn = document.getElementById('theme-light') as HTMLButtonElement;
 const themeDarkBtn = document.getElementById('theme-dark') as HTMLButtonElement;
-const timelineBtn = document.getElementById('timeline-btn') as HTMLButtonElement;
+const timelineBtn = document.getElementById('timeline-btn') as HTMLButtonElement | null;
 const timelineView = document.getElementById('timeline-view') as HTMLDivElement;
 const timelineBack = document.getElementById('timeline-back') as HTMLButtonElement;
 const timelineContent = document.getElementById('timeline-content') as HTMLDivElement;
@@ -171,6 +171,7 @@ const filterOrder: Array<'open' | 'agents' | 'closed'> = ['open', 'agents', 'clo
 let renderGeneration = 0;
 const filterBar = document.getElementById('filter-bar') as HTMLDivElement;
 const newAgentBtn = document.getElementById('new-agent-btn') as HTMLButtonElement;
+const agentSummaryEl = document.getElementById('agent-summary') as HTMLDivElement;
 const queryResult = document.getElementById('query-result') as HTMLDivElement;
 const focusBanner = document.getElementById('focus-banner') as HTMLDivElement;
 const focusDesc = document.getElementById('focus-desc') as HTMLDivElement;
@@ -203,13 +204,19 @@ function setFilter(filter: typeof currentFilter): void {
   const btn = filterBar.querySelector(`[data-filter="${filter}"]`) as HTMLElement;
   if (btn) btn.classList.add('active');
 
-  // Toggle capture form vs new-agent button
+  // Toggle capture form vs new-agent button vs past
   if (filter === 'agents') {
     form.style.display = 'none';
     newAgentBtn.classList.remove('hidden');
+    agentSummaryEl.classList.remove('hidden');
+  } else if (filter === 'closed') {
+    form.style.display = 'none';
+    newAgentBtn.classList.add('hidden');
+    agentSummaryEl.classList.add('hidden');
   } else {
     form.style.display = '';
     newAgentBtn.classList.add('hidden');
+    agentSummaryEl.classList.add('hidden');
   }
 
   render();
@@ -1326,18 +1333,13 @@ function render(): void {
     // Agents mode — render agent list instead of intents
     renderAgentsList();
     return;
+  } else if (currentFilter === 'closed') {
+    // Past mode — render card-based combined view
+    renderPastView();
+    return;
   } else {
-    // Normal mode — apply filter
-    let filtered: Intent[];
-    switch (currentFilter) {
-      case 'closed':
-        filtered = intents.filter(i => i.status === 'done');
-        break;
-      default: // 'open'
-        filtered = intents.filter(i => i.status !== 'done');
-    }
-
-    displayList = filtered;
+    // Normal mode — open spaces
+    displayList = intents.filter(i => i.status !== 'done');
   }
   displayedIntents = displayList;
 
@@ -1345,9 +1347,8 @@ function render(): void {
 
   if (displayList.length === 0) {
     const emptyMsg = searchResults !== null ? 'No matching intents.' :
-                     currentFilter === 'open' ? 'No intents yet. Type or speak one above.' :
-                     currentFilter === 'closed' ? 'No closed intents.' :
-                     'No agents running.';
+                     currentFilter === 'open' ? 'No spaces yet. Type or speak one above.' :
+                     'Nothing here.';
     listEl.innerHTML = `
       <div class="empty-state">
         <span class="icon">🎯</span>
@@ -1395,6 +1396,161 @@ function render(): void {
   updateSelection();
 }
 
+async function renderPastView(): Promise<void> {
+  const gen = ++renderGeneration;
+  displayedIntents = [];
+  countEl.textContent = String(intents.filter(i => i.status !== 'done').length);
+
+  const closedIntents = intents.filter(i => i.status === 'done');
+
+  // Load timeline events
+  let events: any[] = [];
+  try {
+    events = await intentAPI.listEvents(200);
+  } catch { /* skip */ }
+
+  if (gen !== renderGeneration) return;
+
+  // Build a map of events per intent
+  const eventsByIntent = new Map<string, any[]>();
+  for (const event of events) {
+    const id = event.intent_id;
+    if (!id) continue;
+    if (!eventsByIntent.has(id)) eventsByIntent.set(id, []);
+    eventsByIntent.get(id)!.push(event);
+  }
+
+  // Also gather orphan events (no matching closed intent)
+  const closedIds = new Set(closedIntents.map(i => i.id));
+
+  if (closedIntents.length === 0 && events.length === 0) {
+    listEl.innerHTML = `
+      <div class="empty-state">
+        <span class="icon">📋</span>
+        <span>No past activity yet.</span>
+      </div>
+    `;
+    return;
+  }
+
+  // Sort closed intents newest first by completed_at or updated_at
+  const sorted = [...closedIntents].sort((a, b) =>
+    (b.completed_at || b.updated_at).localeCompare(a.completed_at || a.updated_at)
+  );
+
+  let html = '';
+
+  for (const intent of sorted) {
+    const intentEvents = eventsByIntent.get(intent.id) || [];
+    // Sort events oldest first for step display
+    intentEvents.sort((a: any, b: any) => a.created_at.localeCompare(b.created_at));
+
+    const hasSession = !!intent.session_id;
+    const typeIcon = hasSession ? '▶' : intent.recurrence ? '↻' : '✓';
+    const typeLabel = hasSession ? 'Session' : intent.recurrence ? 'Recurring' : 'Completed';
+    const completedAgo = intent.completed_at ? timeAgo(intent.completed_at) : timeAgo(intent.updated_at);
+
+    // Build activity steps from events
+    let stepsHtml = '';
+    if (intentEvents.length > 0) {
+      const steps = intentEvents.slice(-5).map((ev: any) => {
+        const evIcon = ev.event_type === 'completed' ? '✅' :
+                       ev.event_type === 'recycled' ? '↻' :
+                       ev.event_type === 'recurrence_dismissed' ? '✕' : '•';
+        const evLabel = ev.event_type === 'completed' ? 'Completed' :
+                        ev.event_type === 'recycled' ? 'Rescheduled' :
+                        ev.event_type === 'recurrence_dismissed' ? 'Dismissed' :
+                        ev.event_type;
+        return `<div class="past-card-step"><span class="past-step-icon">${evIcon}</span><span>${evLabel}</span></div>`;
+      });
+      stepsHtml = `<div class="past-card-steps">${steps.join('<div class="past-step-connector"></div>')}</div>`;
+    }
+
+    html += `
+      <div class="past-card" data-id="${intent.id}" onclick="openCanvas('${intent.id}', true)">
+        <div class="past-card-type"><span class="past-type-icon">${typeIcon}</span> ${typeLabel}</div>
+        <div class="past-card-title">${escapeHtml(intent.description)}</div>
+        ${intent.client ? `<div class="past-card-client">👤 ${escapeHtml(intent.client)}</div>` : ''}
+        ${stepsHtml}
+        <div class="past-card-meta">${completedAgo}</div>
+      </div>
+    `;
+  }
+
+  // Add orphan timeline events not tied to a closed intent
+  const orphanEvents = events.filter(e => e.intent_id && !closedIds.has(e.intent_id));
+  if (orphanEvents.length > 0) {
+    // Group by date for context
+    const groups = new Map<string, typeof orphanEvents>();
+    for (const event of orphanEvents) {
+      const date = new Date(event.created_at).toLocaleDateString('en-US', {
+        weekday: 'long', month: 'short', day: 'numeric'
+      });
+      if (!groups.has(date)) groups.set(date, []);
+      groups.get(date)!.push(event);
+    }
+
+    for (const [date, dateEvents] of groups) {
+      html += `<div class="past-date-label">${date}</div>`;
+      for (const event of dateEvents) {
+        const icon = event.event_type === 'completed' ? '✅' :
+                     event.event_type === 'recycled' ? '↻' : '•';
+        const desc = event.intent_description ? escapeHtml(event.intent_description) : 'Unknown';
+        const time = new Date(event.created_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+        html += `
+          <div class="past-card past-card-mini">
+            <div class="past-card-type"><span class="past-type-icon">${icon}</span> ${escapeHtml(event.event_type)}</div>
+            <div class="past-card-title">${desc}</div>
+            <div class="past-card-meta">${time}</div>
+          </div>
+        `;
+      }
+    }
+  }
+
+  listEl.innerHTML = html;
+}
+
+function renderAgentSummary(agents: Array<{ status: string; createdAt?: string }>): void {
+  const running = agents.filter(a => a.status === 'running' || a.status === 'waiting-approval').length;
+  const completed = agents.filter(a => a.status === 'completed').length;
+  const failed = agents.filter(a => a.status !== 'running' && a.status !== 'waiting-approval' && a.status !== 'completed').length;
+  const openTasks = intents.filter(i => i.status !== 'done').length;
+  const scheduled = intents.filter(i => i.due_at_utc || i.due_at).length;
+  const recurring = intents.filter(i => i.recurrence).length;
+
+  const lines: string[] = [];
+
+  // Agent activity line
+  if (agents.length === 0) {
+    lines.push('No agents are active right now.');
+  } else {
+    const parts: string[] = [];
+    if (running > 0) parts.push(`${running} ${running === 1 ? 'agent is' : 'agents are'} currently working`);
+    if (completed > 0) parts.push(`${completed} recently completed`);
+    if (failed > 0) parts.push(`${failed} need${failed === 1 ? 's' : ''} attention`);
+    lines.push(parts.join(', and ') + '.');
+  }
+
+  // Tasks context line
+  const taskParts: string[] = [];
+  if (openTasks > 0) taskParts.push(`${openTasks} open ${openTasks === 1 ? 'task' : 'tasks'}`);
+  if (scheduled > 0) taskParts.push(`${scheduled} scheduled ${scheduled === 1 ? 'item' : 'items'} coming up`);
+  if (recurring > 0) taskParts.push(`${recurring} recurring`);
+
+  if (taskParts.length > 0) {
+    lines.push('You have ' + taskParts.join(', and there\'s ') + '.');
+  }
+
+  agentSummaryEl.innerHTML = `
+    <div class="agent-summary-header">
+      <span class="summary-icon">✦</span>
+      Summary
+    </div>
+    <div class="agent-summary-body">${lines.join('<br>')}</div>
+  `;
+}
+
 async function renderAgentsList(): Promise<void> {
   const gen = ++renderGeneration;
   displayedIntents = [];
@@ -1423,6 +1579,9 @@ async function renderAgentsList(): Promise<void> {
   // Store for keyboard nav
   renderedAgents = allAgents;
   selectedIndex = -1;
+
+  // Render the summary card
+  renderAgentSummary(allAgents);
 
   if (allAgents.length === 0) {
     listEl.innerHTML = `
@@ -2033,7 +2192,7 @@ function hideTimeline(): void {
   descInput.focus();
 }
 
-timelineBtn.addEventListener('click', showTimeline);
+timelineBtn?.addEventListener('click', showTimeline);
 timelineBack.addEventListener('click', hideTimeline);
 
 async function loadTimeline(): Promise<void> {
@@ -2132,6 +2291,10 @@ const canvasHistoryBtn = document.getElementById('canvas-history-btn') as HTMLBu
 const canvasHistoryPanel = document.getElementById('canvas-history-panel') as HTMLDivElement;
 const canvasHistoryClose = document.getElementById('canvas-history-close') as HTMLButtonElement;
 const canvasHistoryList = document.getElementById('canvas-history-list') as HTMLDivElement;
+const canvasAgentsBtn = document.getElementById('canvas-agents-btn') as HTMLButtonElement;
+const canvasAgentsPanel = document.getElementById('canvas-agents-panel') as HTMLDivElement;
+const canvasAgentsClose = document.getElementById('canvas-agents-close') as HTMLButtonElement;
+const canvasAgentsList = document.getElementById('canvas-agents-list') as HTMLDivElement;
 let canvasIntentId: string | null = null;
 let canvasDirty = false;
 let canvasExpanded = false;
@@ -2298,6 +2461,7 @@ async function saveCanvas(): Promise<void> {
 
 async function closeCanvas(): Promise<void> {
   closeHistoryPanel();
+  closeAgentsPanel();
   const intentId = canvasIntentId;
   const wasNewIntent = canvasIsNewIntent;
   canvasIntentId = null;
@@ -2354,6 +2518,7 @@ function toggleHistoryPanel(): void {
 
 async function openHistoryPanel(): Promise<void> {
   if (!canvasIntentId) return;
+  closeAgentsPanel();
   canvasHistoryPanel.classList.remove('hidden');
   canvasHistoryBtn.classList.add('active');
   historyPanelOpen = true;
@@ -2453,6 +2618,84 @@ intentAPI.onWorkspaceCommitted(() => {
     openHistoryPanel();
   }
 });
+
+// ── Canvas Agents Panel ─────────────────────────────────
+let agentsPanelOpen = false;
+
+function toggleAgentsPanel(): void {
+  if (agentsPanelOpen) {
+    closeAgentsPanel();
+  } else {
+    openAgentsPanel();
+  }
+}
+
+async function openAgentsPanel(): Promise<void> {
+  if (!canvasIntentId) return;
+  closeHistoryPanel();
+  canvasAgentsPanel.classList.remove('hidden');
+  canvasAgentsBtn.classList.add('active');
+  agentsPanelOpen = true;
+  canvasAgentsList.innerHTML = '<div class="history-loading">Loading sessions…</div>';
+
+  let agents: Array<{ agentId: string; sessionId: string; status: string; summary: string; selectedText: string; createdAt?: string }> = [];
+  try {
+    agents = await intentAPI.listAgents(canvasIntentId);
+  } catch { /* skip */ }
+
+  if (agents.length === 0) {
+    canvasAgentsList.innerHTML = '<div class="history-empty">No agent sessions for this space</div>';
+    return;
+  }
+
+  agents.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+
+  canvasAgentsList.innerHTML = agents.map(agent => {
+    const statusIcon = agent.status === 'running' ? '⚡' :
+                       agent.status === 'waiting-approval' ? '⏳' :
+                       agent.status === 'completed' ? '✓' : '✗';
+    const statusClass = agent.status === 'running' ? 'agent-running' :
+                        agent.status === 'waiting-approval' ? 'agent-waiting' :
+                        agent.status === 'completed' ? 'agent-completed' : 'agent-failed';
+    const preview = agent.selectedText.length > 60
+      ? agent.selectedText.slice(0, 57) + '...'
+      : agent.selectedText;
+    const ago = agent.createdAt ? timeAgo(agent.createdAt) : '';
+
+    return `
+      <div class="canvas-agent-item ${statusClass}" data-agent-id="${agent.agentId}">
+        <div class="canvas-agent-status">${statusIcon}</div>
+        <div class="canvas-agent-body">
+          <div class="canvas-agent-text">${escapeHtml(preview || agent.summary || 'Agent session')}</div>
+          <div class="canvas-agent-meta">
+            <span>${escapeHtml(agent.status)}</span>
+            ${ago ? `<span>${ago}</span>` : ''}
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  canvasAgentsList.querySelectorAll('.canvas-agent-item[data-agent-id]').forEach(el => {
+    el.addEventListener('click', () => {
+      const agentId = (el as HTMLElement).dataset.agentId;
+      if (!agentId) return;
+      const agent = agents.find(a => a.agentId === agentId);
+      if (agent) {
+        openAgentChat(agentId, agent.selectedText, agent.status);
+      }
+    });
+  });
+}
+
+function closeAgentsPanel(): void {
+  canvasAgentsPanel.classList.add('hidden');
+  canvasAgentsBtn.classList.remove('active');
+  agentsPanelOpen = false;
+}
+
+canvasAgentsBtn.addEventListener('click', toggleAgentsPanel);
+canvasAgentsClose.addEventListener('click', closeAgentsPanel);
 
 (window as any).openCanvas = openCanvas;
 

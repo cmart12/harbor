@@ -15,15 +15,14 @@
         <div class="header-actions">
           <span id="intent-count" class="badge">0</span>
           <button id="pin-btn" class="header-icon-btn" title="Pin window (keep visible)">📌</button>
-          <button id="timeline-btn" class="header-icon-btn" title="Activity log">📋</button>
           <button id="settings-btn" class="header-icon-btn" title="Settings">⚙</button>
         </div>
       </header>
 
       <div id="filter-bar" class="filter-bar">
-        <button class="filter-btn active" data-filter="open">Open</button>
-        <button class="filter-btn" data-filter="agents">Agents</button>
-        <button class="filter-btn" data-filter="closed">Closed</button>
+        <button class="filter-btn active" data-filter="open">Spaces</button>
+        <button class="filter-btn" data-filter="agents">Workers</button>
+        <button class="filter-btn" data-filter="closed">Past</button>
       </div>
 
       <div id="focus-banner" class="focus-banner hidden">
@@ -54,6 +53,8 @@
       </form>
 
       <button id="new-agent-btn" class="new-agent-btn hidden">+ New Agent</button>
+
+      <div id="agent-summary" class="agent-summary hidden"></div>
 
       <div id="intent-list"></div>
       <div id="query-result" class="query-result hidden"></div>
@@ -160,12 +161,20 @@
         <div class="header-actions">
           <span id="canvas-save-status" class="canvas-save-status"></span>
           <button id="canvas-save" class="canvas-save-btn hidden" title="Save (⌘S)">Save</button>
+          <button id="canvas-agents-btn" class="header-icon-btn" title="Agent sessions">⚡</button>
           <button id="canvas-history-btn" class="header-icon-btn" title="Version history">🕘</button>
           <button id="canvas-launch" class="header-icon-btn" title="Start session">▶</button>
         </div>
       </header>
       <div class="canvas-body">
         <div id="canvas-root" class="canvas-root"></div>
+        <div id="canvas-agents-panel" class="canvas-agents-panel hidden">
+          <div class="history-panel-header">
+            <span class="history-panel-title">Agent Sessions</span>
+            <button id="canvas-agents-close" class="header-icon-btn" title="Close">✕</button>
+          </div>
+          <div id="canvas-agents-list" class="canvas-agents-list"></div>
+        </div>
         <div id="canvas-history-panel" class="canvas-history-panel hidden">
           <div class="history-panel-header">
             <span class="history-panel-title">Version History</span>
