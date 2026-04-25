@@ -686,6 +686,9 @@ function setupAgentEventListeners(session: CopilotSession, record: AgentRecord):
       notifyRenderer('agent:completed', { agentId, summary: record.summary });
       notifyRenderer(chatChannel, { type: 'session.idle' });
 
+      // Clean up sub-agent state
+      subagentTracker.clearParent(agentId);
+
       // Handle comment agent auto-reply + presence cleanup
       if (record.commentContext) {
         handleCommentAgentCompletion(record);

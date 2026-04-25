@@ -275,6 +275,12 @@ export class SubagentTracker {
 
   /** Remove all agents for a parent (on session destroy) */
   clearParent(parentAgentId: string): void {
+    // Clear pending throttle timer to prevent leaks
+    const timer = this.throttleTimers.get(parentAgentId);
+    if (timer) {
+      clearTimeout(timer);
+      this.throttleTimers.delete(parentAgentId);
+    }
     const parent = this.agents.get(parentAgentId);
     if (parent) {
       for (const agent of parent.values()) {

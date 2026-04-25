@@ -12,8 +12,11 @@
     "format": "oxfmt src/",
     "typecheck": "tsc -p tsconfig.main.json --noEmit",
     "postinstall": "node -e \"if(process.platform==='darwin'){require('child_process').execSync('bash scripts/codesign-dev.sh',{stdio:'inherit'})}else{console.log('[codesign] Skipping — not macOS')}\"",
-    "start": "npm run build && electron .",
-    "dev": "npm run build && (tsc -p tsconfig.main.json -w --preserveWatchOutput & node scripts/build-renderer.js --watch & node scripts/watch-assets.js & electron .)",
+    "rebuild:electron": "node -e \"const v=require('electron/package.json').version; const {execSync}=require('child_process'); execSync('npx --yes node-gyp rebuild --target='+v+' --arch='+process.arch+' --dist-url=https://electronjs.org/headers --runtime=electron', {cwd:'node_modules/better-sqlite3', stdio:'inherit'})\"",
+    "rebuild:node": "npm rebuild better-sqlite3 2>/dev/null || true",
+    "pretest": "npm run rebuild:node",
+    "start": "npm run build && npm run rebuild:electron && electron .",
+    "dev": "npm run build && npm run rebuild:electron && (tsc -p tsconfig.main.json -w --preserveWatchOutput & node scripts/build-renderer.js --watch & node scripts/watch-assets.js & electron .)",
     "dev:packaged": "npm run build:mac && open build/mac-arm64/Copilot\\ Intent.app",
     "build:mac": "npm run build && electron-builder --mac --dir",
     "build:installer:mac": "npm run build && electron-builder --mac"

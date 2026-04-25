@@ -21,6 +21,8 @@ const buildOptions = {
   alias: {
     'react': path.resolve(__dirname, '..', 'node_modules', 'react'),
     'react-dom': path.resolve(__dirname, '..', 'node_modules', 'react-dom'),
+    'react/jsx-dev-runtime': path.resolve(__dirname, 'jsx-dev-shim.js'),
+    'react/jsx-runtime': path.resolve(__dirname, '..', 'node_modules', 'react', 'jsx-runtime.js'),
   },
   logLevel: 'info',
 };

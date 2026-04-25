@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import type { ChatMessage, ChatEvent, AssistantMessage as AssistantMsgType, ToolCallMessage, ReasoningMessage, ApprovalMessage, SessionEventMessage } from '../../shared/chat-types';
+import type { ChatMessage, ChatEvent, ChatAttachment, AssistantMessage as AssistantMsgType, ToolCallMessage, ReasoningMessage, ApprovalMessage, SessionEventMessage } from '../../shared/chat-types';
 import { MessageList } from './MessageList';
 import { PromptBar } from './PromptBar';
+import { SubagentDetailOverlay } from './SubagentDetailOverlay';
 
 declare const intentAPI: {
   sendChatMessage: (agentId: string, prompt: string, attachments?: any[]) => Promise<{ error?: string }>;
@@ -129,6 +130,7 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
   const [historyLoaded, setHistoryLoaded] = useState(!initialAgentId);
   const [models, setModels] = useState<{ id: string; name?: string }[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>('');
+  const [overlayAgentId, setOverlayAgentId] = useState<string | null>(null);
 
   // Track the current streaming assistant message ID
   const currentAssistantId = useRef<string | null>(null);
@@ -333,18 +335,88 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
           ));
           break;
         }
+
+        case 'subagent.started': {
+          setMessages(prev => [...prev, {
+            id: genId(),
+            type: 'tool_call',
+            toolCallId: event.toolCallId,
+            toolName: '__subagent__',
+            args: {
+              name: event.name,
+              displayName: event.displayName,
+              description: event.description,
+              agentType: event.name,
+              agentId: event.agentId,
+              completed: false,
+            },
+            completed: false,
+            timestamp: new Date().toISOString(),
+          } as ToolCallMessage]);
+          break;
+        }
+
+        case 'subagent.completed': {
+          setMessages(prev => prev.map(m =>
+            m.type === 'tool_call' && m.toolCallId === event.toolCallId
+              ? {
+                  ...m,
+                  completed: true,
+                  success: true,
+                  args: {
+                    ...m.args,
+                    completed: true,
+                    success: true,
+                    agentId: event.agentId ?? m.args.agentId,
+                    durationMs: event.durationMs,
+                    model: event.model,
+                    totalTokens: event.totalTokens,
+                    totalToolCalls: event.totalToolCalls,
+                  },
+                }
+              : m
+          ));
+          break;
+        }
+
+        case 'subagent.failed': {
+          setMessages(prev => prev.map(m =>
+            m.type === 'tool_call' && m.toolCallId === event.toolCallId
+              ? {
+                  ...m,
+                  completed: true,
+                  success: false,
+                  args: {
+                    ...m.args,
+                    completed: true,
+                    success: false,
+                    error: event.error,
+                    agentId: event.agentId ?? m.args.agentId,
+                  },
+                }
+              : m
+          ));
+          break;
+        }
       }
     });
 
     return () => unsubscribe();
   }, [currentAgentId, historyLoaded]);
 
-  const handleSend = useCallback(async (message: string) => {
+  const handleSend = useCallback(async (message: string, attachments?: Array<{ type: 'file'; name: string; path: string }>) => {
+    const chatAttachments: ChatAttachment[] | undefined = attachments?.map(a => ({
+      type: a.type,
+      name: a.name,
+      path: a.path,
+    }));
+
     // Add user message to state
     setMessages(prev => [...prev, {
       id: genId(),
       type: 'user',
       content: message,
+      attachments: chatAttachments,
       timestamp: new Date().toISOString(),
     }]);
     setIsBusy(true);
@@ -366,11 +438,11 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
         return;
       }
       // Set the new agent ID — useEffect will pick up the subscription
-      setCurrentAgentId(launchResult.agentId);
+      setCurrentAgentId((launchResult as { agentId: string }).agentId);
       return;
     }
 
-    const result = await intentAPI.sendChatMessage(currentAgentId, message);
+    const result = await intentAPI.sendChatMessage(currentAgentId, message, chatAttachments);
     if (result.error) {
       setMessages(prev => [...prev, {
         id: genId(),
@@ -451,7 +523,7 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
         <div className="chat-loading-history">Loading conversation history...</div>
       )}
 
-      <MessageList messages={messages} onApprovalRespond={handleApprovalRespond} />
+      <MessageList messages={messages} onApprovalRespond={handleApprovalRespond} parentAgentId={currentAgentId || ''} onOpenSubagentDetail={setOverlayAgentId} />
 
       <PromptBar
         onSend={handleSend}
@@ -463,6 +535,14 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
           'Send a follow-up message...'
         }
       />
+
+      {overlayAgentId && currentAgentId && (
+        <SubagentDetailOverlay
+          parentAgentId={currentAgentId}
+          agentId={overlayAgentId}
+          onClose={() => setOverlayAgentId(null)}
+        />
+      )}
     </div>
   );
 }
