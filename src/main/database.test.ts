@@ -45,6 +45,7 @@ import {
   updateAgentSessionStatus,
   getAgentSession,
   listAgentSessions,
+  deleteAgentSession,
 } from './database';
 import { appendEvent } from './eventlog';
 import { readCanvas } from './workspace';
@@ -504,6 +505,40 @@ describe('database', () => {
       const list = listAgentSessions();
       expect(list[0].id).toBe('as-new');
       expect(list[1].id).toBe('as-old');
+    });
+
+    it('deleteAgentSession removes the session from the database', () => {
+      const session = makeAgentSession({ id: 'as-del', session_id: 'sid-del', prompt: 'Delete me' });
+      createAgentSession(session);
+      expect(getAgentSession('as-del')).not.toBeNull();
+
+      deleteAgentSession('as-del');
+      expect(getAgentSession('as-del')).toBeNull();
+
+      // Verify event was logged
+      expect(appendEvent).toHaveBeenCalledWith(
+        expect.any(String),
+        'agent_session.deleted',
+        { id: 'as-del' },
+      );
+    });
+
+    it('deleteAgentSession is idempotent for nonexistent id', () => {
+      // Should not throw
+      deleteAgentSession('nonexistent-id');
+      expect(getAgentSession('nonexistent-id')).toBeNull();
+    });
+
+    it('deleteAgentSession only removes the targeted session', () => {
+      const s1 = makeAgentSession({ id: 'as-keep', session_id: 'sid-keep' });
+      const s2 = makeAgentSession({ id: 'as-remove', session_id: 'sid-remove' });
+      createAgentSession(s1);
+      createAgentSession(s2);
+
+      deleteAgentSession('as-remove');
+      expect(getAgentSession('as-keep')).not.toBeNull();
+      expect(getAgentSession('as-remove')).toBeNull();
+      expect(listAgentSessions()).toHaveLength(1);
     });
   });
 
