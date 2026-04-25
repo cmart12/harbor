@@ -86,6 +86,7 @@ interface IntentAPI {
   quickLaunchAgent(prompt: string): Promise<{ agentId?: string; sessionId?: string; error?: string }>;
   listAllAgents(): Promise<any[]>;
   openAgentCli(agentId: string): Promise<{ error?: string }>;
+  onChatEvent(agentId: string, callback: (event: any) => void): () => void;
   launchAgent(intentId: string, selectedText: string, anchor: any, options?: { repo?: string; model?: string }): Promise<any>;
   launchCommentAgent(intentId: string, commentBody: string, quotedText: string, anchor: any, personaHandle: string, threadIndex: number): Promise<{ agentId?: string; sessionId?: string; error?: string }>;
   approveAgent(agentId: string, requestId: string, approved: boolean): Promise<void>;
@@ -272,7 +273,7 @@ newAgentBtn.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowDown') {
     e.preventDefault();
     e.stopPropagation();
-    const items = listEl.querySelectorAll('.agent-list-item');
+    const items = listEl.querySelectorAll('.agent-card');
     if (items.length > 0) {
       selectedIndex = 0;
       updateAgentSelection();
@@ -1551,13 +1552,127 @@ function renderAgentSummary(agents: Array<{ status: string; createdAt?: string }
   `;
 }
 
+// ── Agent step & approval tracking ────────────────────────
+interface AgentStep {
+  toolCallId: string;
+  label: string;
+  status: 'running' | 'done' | 'failed';
+}
+const agentSteps = new Map<string, AgentStep[]>();
+const agentApprovals = new Map<string, { requestId: string; permissionKind: string }>();
+const agentChatUnsubs = new Map<string, () => void>();
+
+function humanizeToolName(toolName: string): string {
+  const map: Record<string, string> = {
+    bash: 'Running command',
+    edit: 'Editing file',
+    create: 'Creating file',
+    view: 'Reading file',
+    grep: 'Searching code',
+    glob: 'Finding files',
+    web_fetch: 'Fetching web page',
+    web_search: 'Searching the web',
+    sql: 'Running query',
+  };
+  return map[toolName] || toolName.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function subscribeAgentChat(agentId: string): void {
+  if (agentChatUnsubs.has(agentId)) return;
+  const unsub = intentAPI.onChatEvent(agentId, (event: any) => {
+    if (event.type === 'tool.start') {
+      const steps = agentSteps.get(agentId) || [];
+      steps.push({
+        toolCallId: event.toolCallId,
+        label: humanizeToolName(event.toolName || 'Working'),
+        status: 'running',
+      });
+      agentSteps.set(agentId, steps);
+      updateAgentCardSteps(agentId);
+    } else if (event.type === 'tool.progress') {
+      const steps = agentSteps.get(agentId);
+      if (steps) {
+        const step = steps.find(s => s.toolCallId === event.toolCallId);
+        if (step && event.message) step.label = event.message;
+        updateAgentCardSteps(agentId);
+      }
+    } else if (event.type === 'tool.complete') {
+      const steps = agentSteps.get(agentId);
+      if (steps) {
+        const step = steps.find(s => s.toolCallId === event.toolCallId);
+        if (step) step.status = event.success ? 'done' : 'failed';
+        updateAgentCardSteps(agentId);
+      }
+    } else if (event.type === 'approval.needed') {
+      agentApprovals.set(agentId, { requestId: event.requestId, permissionKind: event.permissionKind });
+      updateAgentCardApproval(agentId);
+    }
+  });
+  agentChatUnsubs.set(agentId, unsub);
+}
+
+function unsubscribeAllAgentChats(): void {
+  for (const unsub of agentChatUnsubs.values()) unsub();
+  agentChatUnsubs.clear();
+}
+
+function updateAgentCardSteps(agentId: string): void {
+  const stepsEl = document.querySelector(`.agent-card[data-agent-id="${agentId}"] .agent-card-steps`);
+  if (!stepsEl) return;
+  const steps = agentSteps.get(agentId) || [];
+  // Show last 6 steps max
+  const visible = steps.slice(-6);
+  stepsEl.innerHTML = visible.map((step, i) => {
+    const icon = step.status === 'done' ? '<span class="step-icon step-done">✓</span>' :
+                 step.status === 'failed' ? '<span class="step-icon step-failed">✗</span>' :
+                 '<span class="step-icon step-running"></span>';
+    const connector = i < visible.length - 1 ? '<div class="step-connector"></div>' : '';
+    return `<div class="step-item">${icon}<span class="step-label">${escapeHtml(step.label)}</span></div>${connector}`;
+  }).join('');
+}
+
+function updateAgentCardApproval(agentId: string): void {
+  const card = document.querySelector(`.agent-card[data-agent-id="${agentId}"]`);
+  if (!card) return;
+  let approvalEl = card.querySelector('.agent-card-approval');
+  const approval = agentApprovals.get(agentId);
+  if (!approval) {
+    if (approvalEl) approvalEl.remove();
+    return;
+  }
+  if (!approvalEl) {
+    approvalEl = document.createElement('div');
+    approvalEl.className = 'agent-card-approval';
+    card.appendChild(approvalEl);
+  }
+  approvalEl.innerHTML = `
+    <span class="approval-label">⏳ Approval needed: ${escapeHtml(approval.permissionKind)}</span>
+    <div class="approval-actions">
+      <button class="approval-btn approve" data-agent-id="${agentId}" data-request-id="${approval.requestId}">Approve</button>
+      <button class="approval-btn deny" data-agent-id="${agentId}" data-request-id="${approval.requestId}">Deny</button>
+    </div>
+  `;
+  approvalEl.querySelectorAll('.approval-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const el = e.currentTarget as HTMLElement;
+      const aid = el.dataset.agentId!;
+      const rid = el.dataset.requestId!;
+      const approved = el.classList.contains('approve');
+      intentAPI.approveAgent(aid, rid, approved);
+      agentApprovals.delete(aid);
+      updateAgentCardApproval(aid);
+    });
+  });
+}
+
 async function renderAgentsList(): Promise<void> {
   const gen = ++renderGeneration;
   displayedIntents = [];
   countEl.textContent = String(intents.filter(i => i.status !== 'done').length);
 
   // Gather all agents (including workspace-level ones)
-  let allAgents: Array<{ agentId: string; sessionId: string; status: string; summary: string; selectedText: string; intentId: string; createdAt?: string }> = [];
+  let allAgents: Array<{ agentId: string; sessionId: string; status: string; summary: string; selectedText: string; intentId: string; createdAt?: string; pendingApprovalId?: string | null; pendingPermissionKind?: string | null }> = [];
 
   try {
     allAgents = await intentAPI.listAllAgents();
@@ -1599,39 +1714,73 @@ async function renderAgentsList(): Promise<void> {
   // Build intent description map for display
   const intentMap = new Map(intents.map(i => [i.id, i.description]));
 
+  // Populate approvals from API data
+  for (const agent of allAgents) {
+    if (agent.status === 'waiting-approval' && agent.pendingApprovalId) {
+      agentApprovals.set(agent.agentId, {
+        requestId: agent.pendingApprovalId,
+        permissionKind: agent.pendingPermissionKind || 'permission',
+      });
+    }
+  }
+
   listEl.innerHTML = allAgents.map(agent => {
-    const statusIcon = agent.status === 'running' ? '⚡' :
-                       agent.status === 'waiting-approval' ? '⏳' :
-                       agent.status === 'completed' ? '✓' :
-                       '✗';
     const statusClass = agent.status === 'running' ? 'agent-running' :
                         agent.status === 'waiting-approval' ? 'agent-waiting' :
                         agent.status === 'completed' ? 'agent-completed' :
                         'agent-failed';
-    const preview = agent.selectedText.length > 50
-      ? agent.selectedText.slice(0, 47) + '...'
-      : agent.selectedText;
 
     const intentLabel = agent.intentId === '__workspace__'
       ? 'Workspace'
       : escapeHtml(intentMap.get(agent.intentId) || agent.intentId);
 
-    return `
-      <div class="agent-list-item ${statusClass}" data-agent-id="${agent.agentId}" title="Click to open chat">
-        <div class="agent-list-status">${statusIcon}</div>
-        <div class="agent-list-body">
-          <div class="agent-list-text">"${escapeHtml(preview)}"</div>
-          <div class="agent-list-meta">
-            <span class="agent-list-intent">${intentLabel}</span>
-            <span class="agent-list-summary">${escapeHtml(agent.summary)}</span>
-          </div>
+    const statusIcon = agent.status === 'running' ? '⚡' :
+                       agent.status === 'waiting-approval' ? '⏳' :
+                       agent.status === 'completed' ? '✓' : '✗';
+
+    const title = agent.selectedText.length > 80
+      ? agent.selectedText.slice(0, 77) + '...'
+      : agent.selectedText;
+
+    // Build steps HTML (live steps if available, else just summary)
+    const steps = agentSteps.get(agent.agentId) || [];
+    const visible = steps.slice(-6);
+    const stepsHtml = visible.length > 0 ? visible.map((step, i) => {
+      const icon = step.status === 'done' ? '<span class="step-icon step-done">✓</span>' :
+                   step.status === 'failed' ? '<span class="step-icon step-failed">✗</span>' :
+                   '<span class="step-icon step-running"></span>';
+      const connector = i < visible.length - 1 ? '<div class="step-connector"></div>' : '';
+      return `<div class="step-item">${icon}<span class="step-label">${escapeHtml(step.label)}</span></div>${connector}`;
+    }).join('') : (agent.status === 'running' ? `<div class="step-item"><span class="step-icon step-running"></span><span class="step-label">${escapeHtml(agent.summary)}</span></div>` : '');
+
+    // Build approval HTML
+    const approval = agentApprovals.get(agent.agentId);
+    const approvalHtml = approval ? `
+      <div class="agent-card-approval">
+        <span class="approval-label">⏳ Approval needed: ${escapeHtml(approval.permissionKind)}</span>
+        <div class="approval-actions">
+          <button class="approval-btn approve" data-agent-id="${agent.agentId}" data-request-id="${approval.requestId}">Approve</button>
+          <button class="approval-btn deny" data-agent-id="${agent.agentId}" data-request-id="${approval.requestId}">Deny</button>
         </div>
+      </div>
+    ` : '';
+
+    return `
+      <div class="agent-card ${statusClass}" data-agent-id="${agent.agentId}" title="Click to open chat">
+        <div class="agent-card-header">
+          <span class="agent-card-icon">${statusIcon}</span>
+          <span class="agent-card-name">${intentLabel}</span>
+        </div>
+        <div class="agent-card-title">${escapeHtml(title)}</div>
+        ${stepsHtml ? `<div class="agent-card-steps">${stepsHtml}</div>` : ''}
+        ${agent.status === 'completed' || agent.status === 'failed' ? `<div class="agent-card-summary">${escapeHtml(agent.summary)}</div>` : ''}
+        ${approvalHtml}
       </div>
     `;
   }).join('');
 
   // Attach click handlers to open chat view
-  listEl.querySelectorAll('.agent-list-item[data-agent-id]').forEach(el => {
+  listEl.querySelectorAll('.agent-card[data-agent-id]').forEach(el => {
     el.addEventListener('click', () => {
       const agentId = (el as HTMLElement).dataset.agentId;
       if (!agentId) return;
@@ -1641,12 +1790,33 @@ async function renderAgentsList(): Promise<void> {
       }
     });
   });
+
+  // Wire up approval button handlers
+  listEl.querySelectorAll('.approval-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const el = e.currentTarget as HTMLElement;
+      const aid = el.dataset.agentId!;
+      const rid = el.dataset.requestId!;
+      const approved = el.classList.contains('approve');
+      intentAPI.approveAgent(aid, rid, approved);
+      agentApprovals.delete(aid);
+      updateAgentCardApproval(aid);
+    });
+  });
+
+  // Subscribe to chat events for live agents
+  for (const agent of allAgents) {
+    if (agent.status === 'running' || agent.status === 'waiting-approval') {
+      subscribeAgentChat(agent.agentId);
+    }
+  }
 }
 
 let renderedAgents: Array<{ agentId: string; sessionId: string; status: string; summary: string; selectedText: string; intentId: string; createdAt?: string }> = [];
 
 function updateAgentSelection(): void {
-  const items = listEl.querySelectorAll('.agent-list-item');
+  const items = listEl.querySelectorAll('.agent-card');
   items.forEach((item, i) => {
     item.classList.toggle('kb-selected', i === selectedIndex);
   });
@@ -2704,14 +2874,9 @@ import { mountChat, unmountChat } from './chat/mount.tsx';
 
 const chatView = document.getElementById('chat-view') as HTMLDivElement;
 const chatRoot = document.getElementById('chat-root') as HTMLDivElement;
-let chatExpanded = false;
 
 async function openAgentChat(agentId: string | undefined, agentPrompt: string, agentStatus: string): Promise<void> {
-  // Expand window for better chat experience
-  chatExpanded = true;
-  intentAPI.expandWindow();
-
-  // Hide other views, show chat
+  // Hide other views, show chat inline
   mainView.classList.add('hidden');
   hideSettings();
   timelineView.classList.add('hidden');
@@ -2729,11 +2894,6 @@ async function openAgentChat(agentId: string | undefined, agentPrompt: string, a
 
 function closeAgentChat(): void {
   unmountChat();
-
-  if (chatExpanded) {
-    chatExpanded = false;
-    intentAPI.collapseWindow();
-  }
 
   chatView.classList.add('hidden');
   mainView.classList.remove('hidden');
@@ -2773,6 +2933,29 @@ intentAPI.onAgentReplyReady((data) => {
   addCanvasCommentReply(data.threadIndex, data.body);
 });
 
+// ── Global agent status/approval listeners ─────────────
+intentAPI.onAgentStatusChanged((data: any) => {
+  if (currentFilter === 'agents') renderAgentsList();
+  // Clear steps if agent restarted
+  if (data.status === 'running' && !agentSteps.has(data.agentId)) {
+    agentSteps.set(data.agentId, []);
+  }
+});
+
+intentAPI.onAgentApprovalNeeded((data: any) => {
+  agentApprovals.set(data.agentId, {
+    requestId: data.requestId,
+    permissionKind: data.permissionKind || 'permission',
+  });
+  if (currentFilter === 'agents') {
+    updateAgentCardApproval(data.agentId);
+  }
+});
+
+intentAPI.onAgentCompleted(() => {
+  if (currentFilter === 'agents') renderAgentsList();
+});
+
 // ── Init ────────────────────────────────────────────────
 descInput.focus();
 loadSettings();
@@ -2800,7 +2983,7 @@ document.addEventListener('keydown', (e) => {
   if (!mainView.classList.contains('hidden')) {
     // Agent list navigation
     if (currentFilter === 'agents') {
-      const agentItems = listEl.querySelectorAll('.agent-list-item');
+      const agentItems = listEl.querySelectorAll('.agent-card');
       if (e.key === 'ArrowDown' && selectedIndex >= 0) {
         e.preventDefault();
         if (selectedIndex < agentItems.length - 1) {

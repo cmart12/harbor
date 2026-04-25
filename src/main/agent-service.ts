@@ -33,6 +33,7 @@ interface AgentRecord {
   anchor: AgentAnchor;
   status: AgentStatus;
   pendingApprovalId: string | null;
+  pendingPermissionKind: string | null;
   summary: string;
   commentContext?: CommentAgentContext;
 }
@@ -83,6 +84,7 @@ export async function launchAgent(
         // Forward approval request to renderer
         record.status = 'waiting-approval';
         record.pendingApprovalId = request.toolCallId || agentId;
+        record.pendingPermissionKind = request.kind || null;
         updateAgentStatus(record);
 
         notifyRenderer('agent:approval-needed', {
@@ -103,6 +105,7 @@ export async function launchAgent(
         return new Promise((resolve) => {
           approvalCallbacks.set(record.pendingApprovalId!, (approved: boolean) => {
             record.pendingApprovalId = null;
+            record.pendingPermissionKind = null;
             record.status = 'running';
             updateAgentStatus(record);
             resolve(approved
@@ -130,6 +133,7 @@ export async function launchAgent(
       anchor,
       status: 'running',
       pendingApprovalId: null,
+      pendingPermissionKind: null,
       summary: 'Starting...',
     };
     agents.set(agentId, record);
@@ -224,6 +228,7 @@ If you make changes to the document, clearly describe what you changed.${cliTool
 
         record.status = 'waiting-approval';
         record.pendingApprovalId = request.toolCallId || agentId;
+        record.pendingPermissionKind = request.kind || null;
         updateAgentStatus(record);
 
         notifyRenderer('agent:approval-needed', {
@@ -242,6 +247,7 @@ If you make changes to the document, clearly describe what you changed.${cliTool
         return new Promise((resolve) => {
           approvalCallbacks.set(record.pendingApprovalId!, (approved: boolean) => {
             record.pendingApprovalId = null;
+            record.pendingPermissionKind = null;
             record.status = 'running';
             updateAgentStatus(record);
             resolve(approved
@@ -269,6 +275,7 @@ If you make changes to the document, clearly describe what you changed.${cliTool
       anchor: { quote: quotedText, prefix: anchor.prefix || '', suffix: anchor.suffix || '' },
       status: 'running',
       pendingApprovalId: null,
+      pendingPermissionKind: null,
       summary: 'Starting...',
       commentContext: {
         threadIndex,
@@ -420,6 +427,7 @@ export async function launchQuickAgent(
 
         record.status = 'waiting-approval';
         record.pendingApprovalId = request.toolCallId || agentId;
+        record.pendingPermissionKind = request.kind || null;
         updateAgentStatus(record);
 
         notifyRenderer('agent:approval-needed', {
@@ -438,6 +446,7 @@ export async function launchQuickAgent(
         return new Promise((resolve) => {
           approvalCallbacks.set(record.pendingApprovalId!, (approved: boolean) => {
             record.pendingApprovalId = null;
+            record.pendingPermissionKind = null;
             record.status = 'running';
             updateAgentStatus(record);
             resolve(approved
@@ -461,6 +470,7 @@ export async function launchQuickAgent(
       anchor: { quote: '', prefix: '', suffix: '' },
       status: 'running',
       pendingApprovalId: null,
+      pendingPermissionKind: null,
       summary: 'Starting...',
     };
     agents.set(agentId, record);
@@ -487,7 +497,7 @@ export async function launchQuickAgent(
   }
 }
 
-export function listAllAgents(): Array<{ agentId: string; sessionId: string; status: AgentStatus; summary: string; selectedText: string; intentId: string; createdAt: string }> {
+export function listAllAgents(): Array<{ agentId: string; sessionId: string; status: AgentStatus; summary: string; selectedText: string; intentId: string; createdAt: string; pendingApprovalId: string | null; pendingPermissionKind: string | null }> {
   // Read persisted sessions from DB (sorted newest first)
   let persisted: AgentSession[] = [];
   try {
@@ -496,7 +506,7 @@ export function listAllAgents(): Array<{ agentId: string; sessionId: string; sta
 
   // Build result: overlay live in-memory state on top of DB records
   const seen = new Set<string>();
-  const result: Array<{ agentId: string; sessionId: string; status: AgentStatus; summary: string; selectedText: string; intentId: string; createdAt: string }> = [];
+  const result: Array<{ agentId: string; sessionId: string; status: AgentStatus; summary: string; selectedText: string; intentId: string; createdAt: string; pendingApprovalId: string | null; pendingPermissionKind: string | null }> = [];
 
   for (const row of persisted) {
     seen.add(row.id);
@@ -509,6 +519,8 @@ export function listAllAgents(): Array<{ agentId: string; sessionId: string; sta
       selectedText: live?.selectedText ?? row.prompt,
       intentId: live?.intentId ?? row.intent_id ?? '__workspace__',
       createdAt: row.created_at,
+      pendingApprovalId: live?.pendingApprovalId ?? null,
+      pendingPermissionKind: live?.pendingPermissionKind ?? null,
     });
   }
 
@@ -523,6 +535,8 @@ export function listAllAgents(): Array<{ agentId: string; sessionId: string; sta
         selectedText: a.selectedText,
         intentId: a.intentId,
         createdAt: '',
+        pendingApprovalId: a.pendingApprovalId,
+        pendingPermissionKind: a.pendingPermissionKind ?? null,
       });
     }
   }
@@ -703,6 +717,7 @@ async function resumeAgentSession(agentId: string): Promise<boolean> {
 
         record.status = 'waiting-approval';
         record.pendingApprovalId = request.toolCallId || agentId;
+        record.pendingPermissionKind = request.kind || null;
         updateAgentStatus(record);
 
         notifyRenderer('agent:approval-needed', {
@@ -721,6 +736,7 @@ async function resumeAgentSession(agentId: string): Promise<boolean> {
         return new Promise((resolve) => {
           approvalCallbacks.set(record.pendingApprovalId!, (approved: boolean) => {
             record.pendingApprovalId = null;
+            record.pendingPermissionKind = null;
             record.status = 'running';
             updateAgentStatus(record);
             resolve(approved
@@ -741,6 +757,7 @@ async function resumeAgentSession(agentId: string): Promise<boolean> {
       anchor: { quote: '', prefix: '', suffix: '' },
       status: 'completed',
       pendingApprovalId: null,
+      pendingPermissionKind: null,
       summary: persisted.summary || 'Resumed',
     };
     agents.set(agentId, record);
