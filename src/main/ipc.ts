@@ -616,6 +616,17 @@ export function registerIpcHandlers(): void {
     const { launchCommentAgent } = await import('./agent-service');
     return launchCommentAgent(intentId, commentBody, quotedText, anchor, persona, threadIndex, workspace, intent.folder);
   });
+
+  // ── Chat (in-app agent conversation) ────────────────────
+  ipcMain.handle('chat:send-message', async (_event, agentId: string, prompt: string, attachments?: Array<{ type: 'file'; path: string }>) => {
+    const { sendChatMessage } = await import('./agent-service');
+    return sendChatMessage(agentId, prompt, attachments);
+  });
+
+  ipcMain.handle('chat:set-model', async (_event, agentId: string, model: string) => {
+    const { setAgentModel } = await import('./agent-service');
+    return setAgentModel(agentId, model);
+  });
 }
 
 // ── Link preview fetching ─────────────────────────────────

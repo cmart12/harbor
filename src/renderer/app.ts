@@ -230,15 +230,6 @@ filterBar.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowDown') {
     e.preventDefault();
     e.stopPropagation();
-    if (currentFilter !== 'agents' && displayedIntents.length > 0) {
-      selectedIndex = 0;
-      updateSelection();
-      (document.activeElement as HTMLElement)?.blur();
-    }
-    return;
-  }
-  if (e.key === 'ArrowUp') {
-    e.preventDefault();
     descInput.focus();
     return;
   }
@@ -1117,18 +1108,22 @@ descInput.addEventListener('keydown', (e) => {
     return;
   }
 
-  // Down arrow: in search mode go to list, otherwise go to filter bar
+  // Up arrow: go to filter bar (tabs are above the prompt now)
+  if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    e.stopPropagation();
+    focusActiveFilter();
+    return;
+  }
+
+  // Down arrow: go to intent list
   if (e.key === 'ArrowDown') {
     e.preventDefault();
     e.stopPropagation();
-    if (searchMode) {
-      if (displayedIntents.length > 0) {
-        selectedIndex = 0;
-        updateSelection();
-        descInput.blur();
-      }
-    } else {
-      focusActiveFilter();
+    if (currentFilter !== 'agents' && displayedIntents.length > 0) {
+      selectedIndex = 0;
+      updateSelection();
+      descInput.blur();
     }
     return;
   }
@@ -1381,7 +1376,7 @@ async function renderAgentsList(): Promise<void> {
   if (gen !== renderGeneration) return;
 
   // Add + button header
-  const addBtn = `<div class="agent-add-bar"><button class="agent-add-btn" id="agent-quick-launch" title="Launch test agent">+ New Agent</button></div>`;
+  const addBtn = `<div class="agent-add-bar"><button class="agent-add-btn" id="agent-quick-launch" title="Start a new agent session">+ New Agent</button></div>`;
 
   if (allAgents.length === 0) {
     listEl.innerHTML = `
@@ -1450,17 +1445,8 @@ async function renderAgentsList(): Promise<void> {
 function attachAgentAddHandler(): void {
   const btn = document.getElementById('agent-quick-launch');
   if (btn) {
-    btn.addEventListener('click', async () => {
-      btn.textContent = 'Launching...';
-      (btn as HTMLButtonElement).disabled = true;
-      const result = await intentAPI.quickLaunchAgent('calc 5+5');
-      if ('error' in result && result.error) {
-        btn.textContent = `Error: ${result.error}`;
-        setTimeout(() => { btn.textContent = '+ New Agent'; (btn as HTMLButtonElement).disabled = false; }, 3000);
-      } else {
-        // Re-render to show the new agent
-        renderAgentsList();
-      }
+    btn.addEventListener('click', () => {
+      openAgentChat(undefined as any, '', 'new');
     });
   }
 }
@@ -2432,7 +2418,7 @@ const chatView = document.getElementById('chat-view') as HTMLDivElement;
 const chatRoot = document.getElementById('chat-root') as HTMLDivElement;
 let chatExpanded = false;
 
-async function openAgentChat(agentId: string, agentPrompt: string, agentStatus: string): Promise<void> {
+async function openAgentChat(agentId: string | undefined, agentPrompt: string, agentStatus: string): Promise<void> {
   // Expand window for better chat experience
   chatExpanded = true;
   intentAPI.expandWindow();
@@ -2464,6 +2450,8 @@ function closeAgentChat(): void {
   chatView.classList.add('hidden');
   mainView.classList.remove('hidden');
   descInput.focus();
+  // Refresh the agents list in case a new agent was created
+  if (currentFilter === 'agents') renderAgentsList();
 }
 
 (window as any).openAgentChat = openAgentChat;
@@ -2535,7 +2523,7 @@ document.addEventListener('keydown', (e) => {
       if (selectedIndex === 0) {
         selectedIndex = -1;
         updateSelection();
-        focusActiveFilter();
+        descInput.focus();
       } else {
         selectedIndex--;
         updateSelection();

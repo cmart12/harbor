@@ -11,6 +11,9 @@ import {
   lightTheme,
   darkTheme,
   type DocumintState,
+  type MentionSuggestion,
+  type MentionTriggerEvent,
+  type Presence,
 } from 'documint';
 
 declare const intentAPI: {
@@ -19,17 +22,38 @@ declare const intentAPI: {
   getSetting(key: string): Promise<string | null>;
 };
 
+export interface AgentPersona {
+  id: string;
+  handle: string;
+  instructions: string;
+  model: string;
+}
+
+export interface MentionEvent {
+  handles: string[];
+  commentBody: string;
+  quote: string;
+  anchor: { prefix?: string; suffix?: string };
+  threadIndex: number;
+}
+
 export interface DocumintCanvasProps {
   intentId: string;
   initialContent: string;
   theme: 'light' | 'dark';
+  personas?: AgentPersona[];
+  agentPresence?: Presence[];
   onDirtyChange: (dirty: boolean) => void;
   onSaveStatus: (status: string) => void;
+  onAgentMentioned?: (event: MentionEvent) => void;
 }
 
 export interface DocumintCanvasHandle {
   saveNow(): Promise<void>;
   getContent(): string;
+  updatePresence(presence: Presence[]): void;
+  updatePersonas(personas: AgentPersona[]): void;
+  addCommentReply(threadIndex: number, body: string): void;
 }
 
 const AUTOSAVE_DELAY_MS = 2000;
@@ -44,7 +68,7 @@ function formatAttachmentRef(filename: string, relativePath: string, mimeType: s
 }
 
 export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasProps>(
-  function DocumintCanvas({ intentId, initialContent, theme, onDirtyChange, onSaveStatus }, ref) {
+  function DocumintCanvas({ intentId, initialContent, theme, personas: initialPersonas, agentPresence: initialPresence, onDirtyChange, onSaveStatus, onAgentMentioned }, ref) {
     const [content, setContent] = useState(initialContent);
     const lastSavedRef = useRef(initialContent);
     const pendingSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -53,8 +77,16 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
     const stateRef = useRef<DocumintState | null>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const [isDragging, setIsDragging] = useState(false);
+    const [personas, setPersonas] = useState<AgentPersona[]>(initialPersonas || []);
+    const [presence, setPresence] = useState<Presence[]>(initialPresence || []);
 
     contentRef.current = content;
+
+    // Convert personas to mention suggestions
+    const mentionSuggestions: MentionSuggestion[] = React.useMemo(
+      () => personas.map(p => ({ handle: p.handle, name: p.handle, color: undefined, imageUrl: undefined })),
+      [personas],
+    );
 
     const doSave = useCallback(async () => {
       if (savingRef.current) return;
@@ -92,11 +124,6 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
       await doSave();
     }, [doSave]);
 
-    useImperativeHandle(ref, () => ({
-      saveNow,
-      getContent: () => contentRef.current,
-    }), [saveNow]);
-
     const handleContentChange = useCallback((newContent: string) => {
       if (newContent === contentRef.current) return;
       setContent(newContent);
@@ -108,9 +135,37 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
       }
     }, [onDirtyChange, onSaveStatus, scheduleSave]);
 
+    const handleMentionTriggered = useCallback((event: MentionTriggerEvent) => {
+      if (!onAgentMentioned) return;
+      // Filter to only known persona handles
+      const knownHandles = event.handles.filter(h => personas.some(p => p.handle === h));
+      if (knownHandles.length === 0) return;
+      onAgentMentioned({
+        handles: knownHandles,
+        commentBody: event.commentBody,
+        quote: event.quote,
+        anchor: event.anchor,
+        threadIndex: event.threadIndex,
+      });
+    }, [onAgentMentioned, personas]);
+
     const handleStateChange = useCallback((state: DocumintState) => {
       stateRef.current = state;
     }, []);
+
+    useImperativeHandle(ref, () => ({
+      saveNow,
+      getContent: () => contentRef.current,
+      updatePresence: (nextPresence: Presence[]) => setPresence(nextPresence),
+      updatePersonas: (nextPersonas: AgentPersona[]) => setPersonas(nextPersonas),
+      addCommentReply: (threadIndex: number, body: string) => {
+        const current = contentRef.current;
+        const updated = insertCommentReply(current, threadIndex, body);
+        if (updated !== current) {
+          handleContentChange(updated);
+        }
+      },
+    }), [saveNow, handleContentChange]);
 
     // Cmd+S handler
     useEffect(() => {
@@ -260,11 +315,45 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
       >
         <Documint
           content={content}
+          mentionSuggestions={mentionSuggestions}
           onContentChange={handleContentChange}
+          onMentionTriggered={handleMentionTriggered}
           onStateChange={handleStateChange}
+          presence={presence}
           theme={documintTheme}
         />
       </div>
     );
   }
 );
+
+const COMMENTS_START = ':::documint-comments';
+const COMMENTS_END = ':::';
+
+function insertCommentReply(content: string, threadIndex: number, body: string): string {
+  const startIdx = content.indexOf(COMMENTS_START);
+  if (startIdx < 0) return content;
+
+  const jsonStart = startIdx + COMMENTS_START.length;
+  const endIdx = content.indexOf(COMMENTS_END, jsonStart);
+  if (endIdx < 0) return content;
+
+  const jsonStr = content.slice(jsonStart, endIdx).trim();
+  try {
+    const threads = JSON.parse(jsonStr);
+    if (!Array.isArray(threads) || threadIndex < 0 || threadIndex >= threads.length) return content;
+
+    const thread = threads[threadIndex];
+    if (!thread || !Array.isArray(thread.comments)) return content;
+
+    thread.comments.push({
+      body,
+      updatedAt: new Date().toISOString(),
+    });
+
+    const newJson = JSON.stringify(threads, null, 2);
+    return content.slice(0, jsonStart) + '\n' + newJson + '\n' + content.slice(endIdx);
+  } catch {
+    return content;
+  }
+}

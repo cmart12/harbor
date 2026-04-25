@@ -91,6 +91,14 @@ export async function launchAgent(
           permissionKind: request.kind,
         });
 
+        // Also forward to chat channel for inline display
+        notifyRenderer(`chat:event:${record.agentId}`, {
+          type: 'approval.needed',
+          requestId: record.pendingApprovalId,
+          agentId: record.agentId,
+          permissionKind: request.kind,
+        });
+
         // Wait for renderer response (stored as a promise)
         return new Promise((resolve) => {
           approvalCallbacks.set(record.pendingApprovalId!, (approved: boolean) => {
@@ -221,6 +229,13 @@ If you make changes to the document, clearly describe what you changed.${cliTool
         notifyRenderer('agent:approval-needed', {
           agentId: record.agentId,
           requestId: record.pendingApprovalId,
+          permissionKind: request.kind,
+        });
+
+        notifyRenderer(`chat:event:${record.agentId}`, {
+          type: 'approval.needed',
+          requestId: record.pendingApprovalId,
+          agentId: record.agentId,
           permissionKind: request.kind,
         });
 
@@ -413,6 +428,13 @@ export async function launchQuickAgent(
           permissionKind: request.kind,
         });
 
+        notifyRenderer(`chat:event:${record.agentId}`, {
+          type: 'approval.needed',
+          requestId: record.pendingApprovalId,
+          agentId: record.agentId,
+          permissionKind: request.kind,
+        });
+
         return new Promise((resolve) => {
           approvalCallbacks.set(record.pendingApprovalId!, (approved: boolean) => {
             record.pendingApprovalId = null;
@@ -517,12 +539,36 @@ function findBySessionId(sessionId: string): AgentRecord | undefined {
 
 function setupAgentEventListeners(session: CopilotSession, record: AgentRecord): void {
   const agentId = record.agentId;
+  const chatChannel = `chat:event:${agentId}`;
+
+  session.on('assistant.message_delta', (event: any) => {
+    const delta = event.deltaContent ?? event.delta ?? '';
+    notifyRenderer(chatChannel, { type: 'assistant.message_delta', delta });
+  });
 
   session.on('assistant.message', (event: any) => {
-    record.summary = truncate(event.content || event.message || 'Agent responded', 100);
+    const content = event.content || event.message || '';
+    record.summary = truncate(content || 'Agent responded', 100);
     persistSummary(record);
     notifyRenderer('agent:status-changed', {
       agentId, status: record.status, summary: record.summary,
+    });
+    notifyRenderer(chatChannel, { type: 'assistant.message', content });
+  });
+
+  session.on('assistant.reasoning_delta', (event: any) => {
+    notifyRenderer(chatChannel, {
+      type: 'assistant.reasoning_delta',
+      reasoningId: event.reasoningId ?? '',
+      delta: event.deltaContent ?? event.delta ?? '',
+    });
+  });
+
+  session.on('assistant.reasoning', (event: any) => {
+    notifyRenderer(chatChannel, {
+      type: 'assistant.reasoning',
+      reasoningId: event.reasoningId ?? '',
+      content: event.content ?? '',
     });
   });
 
@@ -530,6 +576,29 @@ function setupAgentEventListeners(session: CopilotSession, record: AgentRecord):
     record.summary = `Using ${event.toolName || 'tool'}...`;
     notifyRenderer('agent:status-changed', {
       agentId, status: record.status, summary: record.summary,
+    });
+    notifyRenderer(chatChannel, {
+      type: 'tool.start',
+      toolCallId: event.toolCallId ?? '',
+      toolName: event.toolName ?? '',
+      args: event.arguments ?? event.toolArgs ?? {},
+    });
+  });
+
+  session.on('tool.execution_progress', (event: any) => {
+    notifyRenderer(chatChannel, {
+      type: 'tool.progress',
+      toolCallId: event.toolCallId ?? '',
+      message: event.progressMessage ?? '',
+    });
+  });
+
+  session.on('tool.execution_complete', (event: any) => {
+    notifyRenderer(chatChannel, {
+      type: 'tool.complete',
+      toolCallId: event.toolCallId ?? '',
+      result: event.result ?? '',
+      success: event.success !== false,
     });
   });
 
@@ -539,6 +608,7 @@ function setupAgentEventListeners(session: CopilotSession, record: AgentRecord):
       record.summary = 'Completed';
       updateAgentStatus(record);
       notifyRenderer('agent:completed', { agentId, summary: record.summary });
+      notifyRenderer(chatChannel, { type: 'session.idle' });
 
       // Handle comment agent auto-reply + presence cleanup
       if (record.commentContext) {
@@ -554,12 +624,150 @@ function setupAgentEventListeners(session: CopilotSession, record: AgentRecord):
     notifyRenderer('agent:status-changed', {
       agentId, status: 'failed', summary: record.summary,
     });
+    notifyRenderer(chatChannel, {
+      type: 'session.error',
+      message: event.message || 'Unknown error',
+    });
 
     // Clean up presence on failure too
     if (record.commentContext) {
       notifyRenderer('agent:presence-ended', { agentId, intentId: record.intentId });
     }
   });
+}
+
+/** Send a follow-up message to an active agent session (multi-turn chat). */
+export async function sendChatMessage(
+  agentId: string,
+  prompt: string,
+  attachments?: Array<{ type: 'file'; path: string }>,
+): Promise<{ error?: string }> {
+  const record = agents.get(agentId);
+  if (!record) {
+    // Agent not in memory — might be historical (app restarted).
+    // Try to re-create a session for it.
+    const resumed = await resumeAgentSession(agentId);
+    if (!resumed) return { error: 'Agent session expired — open in CLI to resume' };
+    return sendChatMessage(agentId, prompt, attachments);
+  }
+  if (record.status !== 'completed' && record.status !== 'running') {
+    return { error: `Agent is ${record.status}, cannot send message` };
+  }
+
+  // Reactivate completed agents for multi-turn
+  record.status = 'running';
+  updateAgentStatus(record);
+  notifyRenderer('agent:status-changed', {
+    agentId, status: 'running', summary: record.summary,
+  });
+
+  try {
+    await record.session.send({
+      prompt,
+      ...(attachments ? { attachments } : {}),
+    });
+    return {};
+  } catch (err: any) {
+    return { error: err.message || 'Failed to send message' };
+  }
+}
+
+/** Attempt to resume a historical agent by creating a new SDK session. */
+async function resumeAgentSession(agentId: string): Promise<boolean> {
+  const persisted = getAgentSession(agentId);
+  if (!persisted) return false;
+
+  const client = getCopilotClient();
+  if (!client) return false;
+
+  const config = getConfig();
+  const workspaceRoot = config.workspace;
+  if (!workspaceRoot) return false;
+
+  const workingDir = persisted.working_dir || workspaceRoot;
+
+  try {
+    const mcpServers = getAllMcpServers();
+    const cliToolsPrompt = buildCliToolsPrompt();
+
+    const session = await client.createSession({
+      sessionId: persisted.session_id,
+      workingDirectory: workingDir,
+      mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
+      ...(cliToolsPrompt ? {
+        systemMessage: { mode: 'append' as const, content: cliToolsPrompt },
+      } : {}),
+      onPermissionRequest: async (request, invocation) => {
+        const record = findBySessionId(invocation.sessionId);
+        if (!record) return { kind: 'denied-interactively-by-user' as const };
+
+        record.status = 'waiting-approval';
+        record.pendingApprovalId = request.toolCallId || agentId;
+        updateAgentStatus(record);
+
+        notifyRenderer('agent:approval-needed', {
+          agentId: record.agentId,
+          requestId: record.pendingApprovalId,
+          permissionKind: request.kind,
+        });
+
+        notifyRenderer(`chat:event:${record.agentId}`, {
+          type: 'approval.needed',
+          requestId: record.pendingApprovalId,
+          agentId: record.agentId,
+          permissionKind: request.kind,
+        });
+
+        return new Promise((resolve) => {
+          approvalCallbacks.set(record.pendingApprovalId!, (approved: boolean) => {
+            record.pendingApprovalId = null;
+            record.status = 'running';
+            updateAgentStatus(record);
+            resolve(approved
+              ? { kind: 'approved' as const }
+              : { kind: 'denied-interactively-by-user' as const }
+            );
+          });
+        });
+      },
+    });
+
+    const record: AgentRecord = {
+      agentId,
+      sessionId: persisted.session_id,
+      session,
+      intentId: persisted.intent_id || '__workspace__',
+      selectedText: persisted.prompt,
+      anchor: { quote: '', prefix: '', suffix: '' },
+      status: 'completed',
+      pendingApprovalId: null,
+      summary: persisted.summary || 'Resumed',
+    };
+    agents.set(agentId, record);
+
+    setupAgentEventListeners(session, record);
+    return true;
+  } catch (err) {
+    console.error('[agent-service] Failed to resume session:', err);
+    return false;
+  }
+}
+
+/** Change the model for an active agent session. */
+export async function setAgentModel(agentId: string, model: string): Promise<{ error?: string }> {
+  let record = agents.get(agentId);
+  if (!record) {
+    const resumed = await resumeAgentSession(agentId);
+    if (!resumed) return { error: 'Agent session not found' };
+    record = agents.get(agentId)!;
+  }
+
+  try {
+    await record.session.setModel(model);
+    return {};
+  } catch (err: any) {
+    return { error: err.message || 'Failed to change model' };
+  }
 }
 
 function persistSummary(record: AgentRecord): void {
