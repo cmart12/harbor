@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import * as path from 'path';
 
 // Mock electron (required by config.ts)
 vi.mock('electron', () => ({
@@ -39,6 +40,12 @@ const mockReadFileSync = vi.mocked(readFileSync);
 const mockReaddirSync = vi.mocked(readdirSync);
 const mockGetConfigValue = vi.mocked(getConfigValue);
 
+// Build platform-correct paths from the mock homedir
+const MOCK_HOME = '/mock-home';
+const copilotDir = path.join(MOCK_HOME, '.copilot');
+const mcpConfigPath = path.join(copilotDir, 'mcp-config.json');
+const pluginsDir = path.join(copilotDir, 'installed-plugins');
+
 describe('mcp', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -54,7 +61,7 @@ describe('mcp', () => {
 
     it('reads from ~/.copilot/mcp-config.json', () => {
       mockExistsSync.mockImplementation((p: any) => {
-        return String(p) === '/mock-home/.copilot/mcp-config.json';
+        return String(p) === mcpConfigPath;
       });
       mockReadFileSync.mockReturnValue(JSON.stringify({
         mcpServers: {
@@ -75,13 +82,13 @@ describe('mcp', () => {
     it('reads from installed plugins', () => {
       mockExistsSync.mockImplementation((p: any) => {
         const s = String(p);
-        return s === '/mock-home/.copilot/installed-plugins' ||
-               s === '/mock-home/.copilot/installed-plugins/ns1/plugin1/.mcp.json';
+        return s === pluginsDir ||
+               s === path.join(pluginsDir, 'ns1', 'plugin1', '.mcp.json');
       });
       mockReaddirSync.mockImplementation((p: any) => {
         const s = String(p);
-        if (s === '/mock-home/.copilot/installed-plugins') return ['ns1'] as any;
-        if (s === '/mock-home/.copilot/installed-plugins/ns1') return ['plugin1'] as any;
+        if (s === pluginsDir) return ['ns1'] as any;
+        if (s === path.join(pluginsDir, 'ns1')) return ['plugin1'] as any;
         return [] as any;
       });
       mockReadFileSync.mockReturnValue(JSON.stringify({
@@ -101,7 +108,7 @@ describe('mcp', () => {
 
     it('handles malformed JSON gracefully', () => {
       mockExistsSync.mockImplementation((p: any) => {
-        return String(p) === '/mock-home/.copilot/mcp-config.json';
+        return String(p) === mcpConfigPath;
       });
       mockReadFileSync.mockReturnValue('not valid json');
 
@@ -113,13 +120,13 @@ describe('mcp', () => {
       mockExistsSync.mockReturnValue(true);
       mockReaddirSync.mockImplementation((p: any) => {
         const s = String(p);
-        if (s === '/mock-home/.copilot/installed-plugins') return ['ns1'] as any;
-        if (s === '/mock-home/.copilot/installed-plugins/ns1') return ['p1'] as any;
+        if (s === pluginsDir) return ['ns1'] as any;
+        if (s === path.join(pluginsDir, 'ns1')) return ['p1'] as any;
         return [] as any;
       });
       mockReadFileSync.mockImplementation((p: any) => {
         const s = String(p);
-        if (s === '/mock-home/.copilot/mcp-config.json') {
+        if (s === mcpConfigPath) {
           return JSON.stringify({ mcpServers: { 'from-config': { command: 'a', args: [], tools: ['*'] } } });
         }
         if (s.endsWith('.mcp.json')) {
@@ -138,7 +145,7 @@ describe('mcp', () => {
     it('merges discovered and custom servers', () => {
       // Set up discovered
       mockExistsSync.mockImplementation((p: any) => {
-        return String(p) === '/mock-home/.copilot/mcp-config.json';
+        return String(p) === mcpConfigPath;
       });
       mockReadFileSync.mockReturnValue(JSON.stringify({
         mcpServers: { 'discovered': { command: 'x', args: [], tools: ['*'] } },
@@ -156,7 +163,7 @@ describe('mcp', () => {
 
     it('custom servers override discovered with same name', () => {
       mockExistsSync.mockImplementation((p: any) => {
-        return String(p) === '/mock-home/.copilot/mcp-config.json';
+        return String(p) === mcpConfigPath;
       });
       mockReadFileSync.mockReturnValue(JSON.stringify({
         mcpServers: { 'server': { command: 'old', args: [], tools: ['*'] } },
@@ -174,7 +181,7 @@ describe('mcp', () => {
   describe('listDiscoveredMcpServers', () => {
     it('returns sanitized server info (no env/headers)', () => {
       mockExistsSync.mockImplementation((p: any) => {
-        return String(p) === '/mock-home/.copilot/mcp-config.json';
+        return String(p) === mcpConfigPath;
       });
       mockReadFileSync.mockReturnValue(JSON.stringify({
         mcpServers: {
@@ -200,13 +207,13 @@ describe('mcp', () => {
     it('labels plugin-discovered servers correctly', () => {
       mockExistsSync.mockImplementation((p: any) => {
         const s = String(p);
-        return s === '/mock-home/.copilot/installed-plugins' ||
-               s === '/mock-home/.copilot/installed-plugins/org/tool/.mcp.json';
+        return s === pluginsDir ||
+               s === path.join(pluginsDir, 'org', 'tool', '.mcp.json');
       });
       mockReaddirSync.mockImplementation((p: any) => {
         const s = String(p);
-        if (s === '/mock-home/.copilot/installed-plugins') return ['org'] as any;
-        if (s === '/mock-home/.copilot/installed-plugins/org') return ['tool'] as any;
+        if (s === pluginsDir) return ['org'] as any;
+        if (s === path.join(pluginsDir, 'org')) return ['tool'] as any;
         return [] as any;
       });
       mockReadFileSync.mockReturnValue(JSON.stringify({

@@ -244,7 +244,11 @@ export async function getIntentHistory(workspaceRoot: string, folder: string, li
         message,
         date,
         relativeDate,
-        filesChanged: fileLines.filter(f => f.startsWith(folder + '/')),
+        filesChanged: fileLines.filter(f => {
+          // git always uses forward slashes in output, normalize folder to match
+          const prefix = folder.replace(/\\/g, '/') + '/';
+          return f.startsWith(prefix);
+        }),
       });
     }
 

@@ -32,6 +32,7 @@ function autoDetectCopilotCli(): string | null {
     const candidates = [
       path.join(process.env.APPDATA || '', 'npm', 'copilot.cmd'),
       path.join(process.env.LOCALAPPDATA || '', 'npm', 'copilot.cmd'),
+      path.join(process.env.ProgramData || 'C:\\ProgramData', 'npm', 'copilot.cmd'),
     ];
     for (const p of candidates) {
       if (fs.existsSync(p)) return p;
@@ -55,8 +56,21 @@ function autoDetectCopilotCli(): string | null {
   try {
     const cmd = process.platform === 'win32' ? 'where.exe copilot' : 'which copilot';
     const result = execSync(cmd, { windowsHide: true, timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
-    const firstLine = result.split(/\r?\n/)[0];
-    if (firstLine && fs.existsSync(firstLine)) return firstLine;
+    const lines = result.split(/\r?\n/).filter(Boolean);
+
+    // Skip node_modules shims — we want the real globally-installed CLI,
+    // not the local project shim that npm puts on PATH during `npm run`.
+    const isGlobal = (l: string) => !l.includes('node_modules');
+
+    if (process.platform === 'win32') {
+      // On Windows, prefer .cmd files — bare "copilot" entries are Unix shell
+      // scripts that Node's spawn() cannot execute (ENOENT).
+      const cmdLine = lines.find(l => /\.cmd$/i.test(l) && isGlobal(l));
+      if (cmdLine && fs.existsSync(cmdLine)) return cmdLine;
+    }
+
+    const globalLine = lines.find(l => isGlobal(l));
+    if (globalLine && fs.existsSync(globalLine)) return globalLine;
   } catch {
     // Not found
   }

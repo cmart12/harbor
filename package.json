@@ -11,7 +11,7 @@
     "lint": "oxlint src/",
     "format": "oxfmt src/",
     "typecheck": "tsc -p tsconfig.main.json --noEmit",
-    "postinstall": "bash scripts/codesign-dev.sh",
+    "postinstall": "node -e \"if(process.platform==='darwin'){require('child_process').execSync('bash scripts/codesign-dev.sh',{stdio:'inherit'})}else{console.log('[codesign] Skipping — not macOS')}\"",
     "start": "npm run build && electron .",
     "dev": "npm run build && (tsc -p tsconfig.main.json -w --preserveWatchOutput & node scripts/build-renderer.js --watch & node scripts/watch-assets.js & electron .)",
     "dev:packaged": "npm run build:mac && open build/mac-arm64/Copilot\\ Intent.app",
