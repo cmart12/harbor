@@ -249,7 +249,9 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
       return () => cancelAnimationFrame(raf);
     }, []);
 
-    const documintTheme = theme === 'dark' ? darkTheme : lightTheme;
+    const documintTheme = theme === 'dark'
+      ? { ...darkTheme, background: '#1c1c20', leafBackground: '#1c1c20', selectionHandleBackground: '#1c1c20' }
+      : lightTheme;
 
     return (
       <div

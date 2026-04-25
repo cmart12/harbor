@@ -28,6 +28,7 @@ interface IntentAPI {
   transcribe(audioData: number[]): Promise<string>;
   getSetting(key: string): Promise<string | null>;
   setSetting(key: string, value: string): Promise<void>;
+  resolveCliPath(): Promise<string | null>;
   listModels(): Promise<{ id: string; name?: string }[]>;
   listPersonas(): Promise<AgentPersona[]>;
   savePersonas(personas: AgentPersona[]): Promise<{ ok?: boolean; error?: string }>;
@@ -44,6 +45,12 @@ interface IntentAPI {
   summarizeTitle(canvasContent: string): Promise<{ title: string | null }>;
   pasteFile(intentId: string, filename: string, dataArray: number[]): Promise<{ success?: boolean; relativePath?: string; filename?: string; error?: string }>;
   listAgents(intentId: string): Promise<any[]>;
+  quickLaunchAgent(prompt: string): Promise<{ agentId?: string; sessionId?: string; error?: string }>;
+  listAllAgents(): Promise<any[]>;
+  openAgentCli(agentId: string): Promise<{ error?: string }>;
+  launchAgent(intentId: string, selectedText: string, anchor: any, options?: { repo?: string; model?: string }): Promise<any>;
+  approveAgent(agentId: string, requestId: string, approved: boolean): Promise<void>;
+  abortAgent(agentId: string): Promise<void>;
   hideWindow(): void;
   expandWindow(): void;
   collapseWindow(): void;
@@ -198,6 +205,7 @@ function showSettings(): void {
   loadWorkspaceSetting();
   loadThemeSetting();
   loadPersonas();
+  loadCliPathSetting();
 }
 
 function hideSettings(): void {
@@ -938,34 +946,38 @@ async function renderAgentsList(): Promise<void> {
   displayedIntents = [];
   countEl.textContent = String(intents.filter(i => i.status !== 'done').length);
 
-  // Gather agents across all intents
-  const allAgents: Array<{ agentId: string; sessionId: string; status: string; summary: string; selectedText: string; intentId: string; intentDesc: string }> = [];
+  // Gather all agents (including workspace-level ones)
+  let allAgents: Array<{ agentId: string; sessionId: string; status: string; summary: string; selectedText: string; intentId: string }> = [];
 
-  for (const intent of intents) {
-    try {
-      const agents = await intentAPI.listAgents(intent.id);
-      for (const agent of agents) {
-        allAgents.push({
-          ...agent,
-          intentId: intent.id,
-          intentDesc: intent.description,
-        });
-      }
-    } catch {
-      // skip
+  try {
+    allAgents = await intentAPI.listAllAgents();
+  } catch {
+    // Fallback: iterate intents
+    for (const intent of intents) {
+      try {
+        const agents = await intentAPI.listAgents(intent.id);
+        for (const agent of agents) {
+          allAgents.push({ ...agent, intentId: intent.id });
+        }
+      } catch { /* skip */ }
     }
   }
 
   // Bail if user switched away from agents while loading
   if (gen !== renderGeneration) return;
 
+  // Add + button header
+  const addBtn = `<div class="agent-add-bar"><button class="agent-add-btn" id="agent-quick-launch" title="Launch test agent">+ New Agent</button></div>`;
+
   if (allAgents.length === 0) {
     listEl.innerHTML = `
+      ${addBtn}
       <div class="empty-state">
         <span class="icon">⚡</span>
-        <span>No agents running. Select text in a canvas and create a comment to deploy an agent.</span>
+        <span>No agents running.</span>
       </div>
     `;
+    attachAgentAddHandler();
     return;
   }
 
@@ -973,7 +985,10 @@ async function renderAgentsList(): Promise<void> {
   const statusOrder: Record<string, number> = { 'running': 0, 'waiting-approval': 1, 'completed': 2, 'failed': 3 };
   allAgents.sort((a, b) => (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9));
 
-  listEl.innerHTML = allAgents.map(agent => {
+  // Build intent description map for display
+  const intentMap = new Map(intents.map(i => [i.id, i.description]));
+
+  listEl.innerHTML = addBtn + allAgents.map(agent => {
     const statusIcon = agent.status === 'running' ? '⚡' :
                        agent.status === 'waiting-approval' ? '⏳' :
                        agent.status === 'completed' ? '✓' :
@@ -986,19 +1001,51 @@ async function renderAgentsList(): Promise<void> {
       ? agent.selectedText.slice(0, 47) + '...'
       : agent.selectedText;
 
+    const intentLabel = agent.intentId === '__workspace__'
+      ? 'Workspace'
+      : escapeHtml(intentMap.get(agent.intentId) || agent.intentId);
+
     return `
-      <div class="agent-list-item ${statusClass}" onclick="openCanvas('${agent.intentId}', true)">
+      <div class="agent-list-item ${statusClass}" data-agent-id="${agent.agentId}" title="Click to open in Copilot CLI">
         <div class="agent-list-status">${statusIcon}</div>
         <div class="agent-list-body">
           <div class="agent-list-text">"${escapeHtml(preview)}"</div>
           <div class="agent-list-meta">
-            <span class="agent-list-intent">${escapeHtml(agent.intentDesc)}</span>
+            <span class="agent-list-intent">${intentLabel}</span>
             <span class="agent-list-summary">${escapeHtml(agent.summary)}</span>
           </div>
         </div>
       </div>
     `;
   }).join('');
+
+  // Attach click handlers to open CLI
+  listEl.querySelectorAll('.agent-list-item[data-agent-id]').forEach(el => {
+    el.addEventListener('click', () => {
+      const agentId = (el as HTMLElement).dataset.agentId;
+      if (agentId) intentAPI.openAgentCli(agentId);
+    });
+  });
+
+  attachAgentAddHandler();
+}
+
+function attachAgentAddHandler(): void {
+  const btn = document.getElementById('agent-quick-launch');
+  if (btn) {
+    btn.addEventListener('click', async () => {
+      btn.textContent = 'Launching...';
+      (btn as HTMLButtonElement).disabled = true;
+      const result = await intentAPI.quickLaunchAgent('calc 5+5');
+      if ('error' in result && result.error) {
+        btn.textContent = `Error: ${result.error}`;
+        setTimeout(() => { btn.textContent = '+ New Agent'; (btn as HTMLButtonElement).disabled = false; }, 3000);
+      } else {
+        // Re-render to show the new agent
+        renderAgentsList();
+      }
+    });
+  }
 }
 
 function updateSelection(): void {
@@ -1186,9 +1233,11 @@ function updateWorkspaceDisplay(path: string | null): void {
     const short = parts.length > 2 ? '…/' + parts.slice(-2).join('/') : path;
     workspacePathEl.textContent = short;
     workspacePathEl.title = path;
+    workspacePathEl.classList.add('clickable');
   } else {
     workspacePathEl.textContent = 'Not set';
     workspacePathEl.title = '';
+    workspacePathEl.classList.remove('clickable');
   }
 }
 
@@ -1197,6 +1246,50 @@ workspaceBtn.addEventListener('click', async () => {
   if (result.selected) {
     updateWorkspaceDisplay(result.path);
   }
+});
+
+workspacePathEl.addEventListener('click', () => {
+  const path = workspacePathEl.title;
+  if (path) {
+    intentAPI.openPath(path);
+  }
+});
+
+// ── CLI Path setting ────────────────────────────────────
+const cliPathInput = document.getElementById('cli-path-input') as HTMLInputElement;
+const cliPathClear = document.getElementById('cli-path-clear') as HTMLButtonElement;
+const cliPathDetected = document.getElementById('cli-path-detected') as HTMLSpanElement;
+
+async function loadCliPathSetting(): Promise<void> {
+  const override = await intentAPI.getSetting('cli_path');
+  const detected = await intentAPI.resolveCliPath();
+
+  cliPathInput.value = override || '';
+  cliPathClear.classList.toggle('hidden', !override);
+  cliPathDetected.textContent = detected || 'Not found';
+  cliPathDetected.title = detected || '';
+}
+
+let cliPathDebounce: ReturnType<typeof setTimeout> | null = null;
+cliPathInput.addEventListener('input', () => {
+  if (cliPathDebounce) clearTimeout(cliPathDebounce);
+  cliPathDebounce = setTimeout(async () => {
+    const val = cliPathInput.value.trim();
+    await intentAPI.setSetting('cli_path', val);
+    cliPathClear.classList.toggle('hidden', !val);
+    const detected = await intentAPI.resolveCliPath();
+    cliPathDetected.textContent = detected || 'Not found';
+    cliPathDetected.title = detected || '';
+  }, 500);
+});
+
+cliPathClear.addEventListener('click', async () => {
+  cliPathInput.value = '';
+  await intentAPI.setSetting('cli_path', '');
+  cliPathClear.classList.add('hidden');
+  const detected = await intentAPI.resolveCliPath();
+  cliPathDetected.textContent = detected || 'Not found';
+  cliPathDetected.title = detected || '';
 });
 
 // ── Inline editing ──────────────────────────────────────

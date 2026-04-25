@@ -1,11 +1,11 @@
-import { ipcMain, BrowserWindow, dialog } from 'electron';
+import { ipcMain, BrowserWindow, dialog, shell } from 'electron';
 import * as fs from 'fs';
 import * as https from 'https';
 import * as http from 'http';
 import { URL } from 'url';
 import { isInitialized, createIntent, listIntents, updateIntent, updateIntentCAS, deleteIntent, getIntent, logIntentEvent, listIntentEvents } from './database';
 import { parseIntentWithAI, evaluateRecurrence, findSimilarIntent, resolveDateWithAI, classifyInput, setAIModel, listAvailableModels } from './ai';
-import { launchSession, getActiveSessionIntentIds } from './session';
+import { launchSession, getActiveSessionIntentIds, resolveCopilotCliPath, invalidateCliPath } from './session';
 import { transcribeAudio } from './voice';
 import { CreateIntentInput, Intent, RecurrenceResult, LinkPreviewMeta } from '../shared/types';
 import { getConfigValue, setConfigValue, type AgentPersona } from './config';
@@ -226,6 +226,7 @@ export function registerIpcHandlers(): void {
       workspace_root: 'workspace',
       theme: 'theme',
       model: 'model',
+      cli_path: 'cliPath',
     };
     const configKey = configKeyMap[key];
     if (configKey) return getConfigValue(configKey);
@@ -238,7 +239,14 @@ export function registerIpcHandlers(): void {
     } else if (key === 'model') {
       setConfigValue('model', value);
       await setAIModel(value);
+    } else if (key === 'cli_path') {
+      setConfigValue('cliPath', value || null);
+      invalidateCliPath();
     }
+  });
+
+  ipcMain.handle('cli:resolve-path', () => {
+    return resolveCopilotCliPath();
   });
 
   ipcMain.handle('models:list', async () => {
@@ -385,6 +393,11 @@ export function registerIpcHandlers(): void {
     }
   });
 
+  // Open a folder in the system file manager
+  ipcMain.handle('shell:openPath', (_event, folderPath: string) => {
+    return shell.openPath(folderPath);
+  });
+
   // ── Canvas I/O ──────────────────────────────────────────
   ipcMain.handle('canvas:read', (_event, intentId: string) => {
     const workspace = getConfigValue('workspace');
@@ -514,6 +527,19 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('agent:open-cli', async (_event, agentId: string) => {
     const { openAgentCli } = await import('./agent-service');
     return openAgentCli(agentId);
+  });
+
+  ipcMain.handle('agent:quick-launch', async (_event, prompt: string) => {
+    const workspace = getConfigValue('workspace');
+    if (!workspace) return { error: 'no_workspace' };
+
+    const { launchQuickAgent } = await import('./agent-service');
+    return launchQuickAgent(prompt, workspace);
+  });
+
+  ipcMain.handle('agent:list-all', async () => {
+    const { listAllAgents } = await import('./agent-service');
+    return listAllAgents();
   });
 }
 

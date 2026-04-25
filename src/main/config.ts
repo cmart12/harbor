@@ -15,6 +15,7 @@ export interface AppConfig {
   workspace: string | null;
   theme: 'light' | 'dark';
   model: string | null;
+  cliPath: string | null;          // user override for Copilot CLI path; null = auto-detect
   sessions: Record<string, string>; // intentId → copilot CLI sessionId
   pinned: boolean;
   snapPosition: SnapPosition;
@@ -27,6 +28,7 @@ const DEFAULT_CONFIG: AppConfig = {
   workspace: null,
   theme: 'light',
   model: null,
+  cliPath: null,
   sessions: {},
   pinned: false,
   snapPosition: 'bottom-right',

@@ -2,7 +2,7 @@ import { spawn, execSync } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 import { getIntent, assignIntentFolder } from './database';
-import { getSessionId, setSessionId as configSetSessionId } from './config';
+import { getSessionId, setSessionId as configSetSessionId, getConfigValue } from './config';
 import { setIntentSessionId } from './database';
 import { createIntentFolder } from './workspace';
 
@@ -16,8 +16,8 @@ interface TrackedSession {
 }
 const runningProcesses = new Map<string, TrackedSession>();
 
-let copilotPath: string | null = null;
-let copilotChecked = false;
+let resolvedCliPath: string | null = null;
+let cliResolved = false;
 
 export interface LaunchResult {
   success: boolean;
@@ -27,7 +27,7 @@ export interface LaunchResult {
 
 // ── CLI discovery ───────────────────────────────────────
 
-function findCopilotCli(): string | null {
+function autoDetectCopilotCli(): string | null {
   if (process.platform === 'win32') {
     const candidates = [
       path.join(process.env.APPDATA || '', 'npm', 'copilot.cmd'),
@@ -64,17 +64,43 @@ function findCopilotCli(): string | null {
   return null;
 }
 
-export async function checkCopilotCli(): Promise<string | null> {
-  if (copilotChecked) return copilotPath;
-  copilotChecked = true;
+/**
+ * Resolve the effective Copilot CLI path.
+ * Priority: user config override → auto-detect.
+ * Result is cached; call invalidateCliPath() to reset after config changes.
+ */
+export function resolveCopilotCliPath(): string | null {
+  if (cliResolved) return resolvedCliPath;
+  cliResolved = true;
 
-  copilotPath = findCopilotCli();
-  if (copilotPath) {
-    console.log(`[session] Copilot CLI found at: ${copilotPath}`);
+  const override = getConfigValue('cliPath');
+  if (override && fs.existsSync(override)) {
+    resolvedCliPath = override;
+    console.log(`[session] Using configured CLI path: ${resolvedCliPath}`);
+    return resolvedCliPath;
+  }
+  if (override) {
+    console.warn(`[session] Configured CLI path not found: ${override}, falling back to auto-detect`);
+  }
+
+  resolvedCliPath = autoDetectCopilotCli();
+  if (resolvedCliPath) {
+    console.log(`[session] Auto-detected CLI at: ${resolvedCliPath}`);
   } else {
     console.warn('[session] Copilot CLI not found');
   }
-  return copilotPath;
+  return resolvedCliPath;
+}
+
+/** Clear cached CLI path so the next call to resolveCopilotCliPath() re-resolves. */
+export function invalidateCliPath(): void {
+  cliResolved = false;
+  resolvedCliPath = null;
+}
+
+/** @deprecated Use resolveCopilotCliPath() instead */
+export async function checkCopilotCli(): Promise<string | null> {
+  return resolveCopilotCliPath();
 }
 
 // ── Process tracking ────────────────────────────────────

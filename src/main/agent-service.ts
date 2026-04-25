@@ -217,6 +217,115 @@ export async function openAgentCli(agentId: string): Promise<{ error?: string }>
   }
 }
 
+export async function launchQuickAgent(
+  prompt: string,
+  workspaceRoot: string,
+): Promise<{ agentId: string; sessionId: string } | { error: string }> {
+  const client = getCopilotClient();
+  if (!client) {
+    return { error: 'Copilot SDK not initialized' };
+  }
+
+  const agentId = uuid();
+
+  try {
+    const session = await client.createSession({
+      workingDirectory: workspaceRoot,
+      onPermissionRequest: async (request, invocation) => {
+        const record = findBySessionId(invocation.sessionId);
+        if (!record) return { kind: 'denied-interactively-by-user' as const };
+
+        record.status = 'waiting-approval';
+        record.pendingApprovalId = request.toolCallId || agentId;
+        updateAgentStatus(record);
+
+        notifyRenderer('agent:approval-needed', {
+          agentId: record.agentId,
+          requestId: record.pendingApprovalId,
+          permissionKind: request.kind,
+        });
+
+        return new Promise((resolve) => {
+          approvalCallbacks.set(record.pendingApprovalId!, (approved: boolean) => {
+            record.pendingApprovalId = null;
+            record.status = 'running';
+            updateAgentStatus(record);
+            resolve(approved
+              ? { kind: 'approved' as const }
+              : { kind: 'denied-interactively-by-user' as const }
+            );
+          });
+        });
+      },
+    });
+
+    const sessionId = (session as any).sessionId || agentId;
+
+    const record: AgentRecord = {
+      agentId,
+      sessionId,
+      session,
+      intentId: '__workspace__',
+      selectedText: prompt,
+      anchor: { quote: '', prefix: '', suffix: '' },
+      status: 'running',
+      pendingApprovalId: null,
+      summary: 'Starting...',
+    };
+    agents.set(agentId, record);
+
+    session.on('assistant.message', (event: any) => {
+      record.summary = truncate(event.content || event.message || 'Agent responded', 100);
+      notifyRenderer('agent:status-changed', {
+        agentId, status: record.status, summary: record.summary,
+      });
+    });
+
+    session.on('tool.execution_start', (event: any) => {
+      record.summary = `Using ${event.toolName || 'tool'}...`;
+      notifyRenderer('agent:status-changed', {
+        agentId, status: record.status, summary: record.summary,
+      });
+    });
+
+    session.on('session.idle', () => {
+      if (record.status === 'running') {
+        record.status = 'completed';
+        record.summary = 'Completed';
+        updateAgentStatus(record);
+        notifyRenderer('agent:completed', { agentId, summary: record.summary });
+      }
+    });
+
+    session.on('session.error', (event: any) => {
+      record.status = 'failed';
+      record.summary = `Error: ${event.message || 'Unknown error'}`;
+      updateAgentStatus(record);
+      notifyRenderer('agent:status-changed', {
+        agentId, status: 'failed', summary: record.summary,
+      });
+    });
+
+    await session.send({ prompt });
+
+    return { agentId, sessionId };
+  } catch (err: any) {
+    return { error: err.message || 'Failed to launch agent' };
+  }
+}
+
+export function listAllAgents(): Array<{ agentId: string; sessionId: string; status: AgentStatus; summary: string; selectedText: string; intentId: string }> {
+  return Array.from(agents.values())
+    .map(a => ({
+      agentId: a.agentId,
+      sessionId: a.sessionId,
+      status: a.status,
+      summary: a.summary,
+      selectedText: a.selectedText,
+      intentId: a.intentId,
+    }));
+}
+
 function findBySessionId(sessionId: string): AgentRecord | undefined {
   for (const record of agents.values()) {
     if (record.sessionId === sessionId) return record;

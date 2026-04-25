@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('intentAPI', {
   transcribe: (audioData: number[]) => ipcRenderer.invoke('voice:transcribe', audioData),
   getSetting: (key: string) => ipcRenderer.invoke('settings:get', key),
   setSetting: (key: string, value: string) => ipcRenderer.invoke('settings:set', key, value),
+  resolveCliPath: () => ipcRenderer.invoke('cli:resolve-path'),
   listModels: () => ipcRenderer.invoke('models:list'),
   listPersonas: () => ipcRenderer.invoke('personas:list'),
   savePersonas: (personas: any[]) => ipcRenderer.invoke('personas:save', personas),
@@ -20,6 +21,7 @@ contextBridge.exposeInMainWorld('intentAPI', {
   launchSession: (intentId: string) => ipcRenderer.invoke('session:launch', intentId),
   getActiveSessions: () => ipcRenderer.invoke('session:active-intents'),
   selectWorkspace: () => ipcRenderer.invoke('workspace:select'),
+  openPath: (folderPath: string) => ipcRenderer.invoke('shell:openPath', folderPath),
   readCanvas: (intentId: string) => ipcRenderer.invoke('canvas:read', intentId),
   writeCanvas: (intentId: string, content: string) => ipcRenderer.invoke('canvas:write', intentId, content),
   closeCanvas: (intentId: string, content: string) => ipcRenderer.invoke('canvas:close', intentId, content),
@@ -41,6 +43,10 @@ contextBridge.exposeInMainWorld('intentAPI', {
     ipcRenderer.invoke('agent:abort', agentId),
   openAgentCli: (agentId: string) =>
     ipcRenderer.invoke('agent:open-cli', agentId),
+  quickLaunchAgent: (prompt: string) =>
+    ipcRenderer.invoke('agent:quick-launch', prompt),
+  listAllAgents: () =>
+    ipcRenderer.invoke('agent:list-all'),
 
   hideWindow: () => ipcRenderer.send('window:hide'),
   expandWindow: () => ipcRenderer.send('window:expand'),

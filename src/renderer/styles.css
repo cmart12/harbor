@@ -69,6 +69,7 @@ header h1 {
   display: flex;
   align-items: center;
   justify-content: center;
+  -webkit-app-region: no-drag;
 }
 
 .header-icon-btn:hover {
@@ -942,6 +943,15 @@ header h1 {
   flex: 1;
 }
 
+.workspace-path.clickable {
+  cursor: pointer;
+}
+
+.workspace-path.clickable:hover {
+  color: rgba(0, 0, 0, 0.7);
+  text-decoration: underline;
+}
+
 .workspace-btn {
   background: #ffffff;
   border: 1px solid rgba(0, 0, 0, 0.1);
@@ -957,6 +967,43 @@ header h1 {
 .workspace-btn:hover {
   background: #f0f0f4;
   color: rgba(0, 0, 0, 0.7);
+}
+
+/* ── CLI Path ───────────────────────────────────────────── */
+
+.cli-path-display {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.cli-path-input {
+  flex: 1;
+  font-size: 12px;
+  font-family: 'SF Mono', 'Menlo', monospace;
+  color: rgba(0, 0, 0, 0.7);
+  background: rgba(0, 0, 0, 0.03);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 6px;
+  padding: 4px 8px;
+  min-width: 0;
+}
+
+.cli-path-input::placeholder {
+  color: rgba(0, 0, 0, 0.3);
+}
+
+.cli-path-clear {
+  flex-shrink: 0;
+  font-size: 10px;
+  padding: 3px 6px;
+}
+
+.cli-path-detected {
+  font-family: 'SF Mono', 'Menlo', monospace;
+  font-size: 11px;
 }
 
 /* ── Agent Personas ──────────────────────────────────────── */
@@ -1760,6 +1807,33 @@ header h1 {
   50% { opacity: 0.4; }
 }
 
+.agent-add-bar {
+  padding: 4px 0 8px;
+}
+
+.agent-add-btn {
+  background: none;
+  border: 1px dashed rgba(0, 0, 0, 0.15);
+  border-radius: 8px;
+  color: rgba(0, 0, 0, 0.4);
+  font-size: 12px;
+  padding: 6px 12px;
+  cursor: pointer;
+  width: 100%;
+  transition: all 0.15s ease;
+}
+
+.agent-add-btn:hover {
+  border-color: rgba(99, 102, 241, 0.4);
+  color: #6366f1;
+  background: rgba(99, 102, 241, 0.04);
+}
+
+.agent-add-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 /* ── Dark theme ──────────────────────────────────────── */
 
 body.dark #app {
@@ -1805,6 +1879,8 @@ body.dark #intent-list { scrollbar-color: rgba(255, 255, 255, 0.1) transparent; 
 body.dark .agent-list-item:hover { background: rgba(255, 255, 255, 0.06); }
 body.dark .agent-list-text { color: #e0e0e0; }
 body.dark .agent-list-meta { color: rgba(255, 255, 255, 0.35); }
+body.dark .agent-add-btn { border-color: rgba(255, 255, 255, 0.1); color: rgba(255, 255, 255, 0.35); }
+body.dark .agent-add-btn:hover { border-color: rgba(129, 140, 248, 0.4); color: #818cf8; background: rgba(129, 140, 248, 0.06); }
 
 /* Dark settings */
 body.dark .settings-group-title { color: rgba(255, 255, 255, 0.35); }
@@ -1813,8 +1889,11 @@ body.dark .settings-row select { background: rgba(255, 255, 255, 0.06); border-c
 body.dark .settings-row select option { background: #1c1c20; color: #e0e0e0; }
 body.dark .settings-hint { color: rgba(255, 255, 255, 0.25); }
 body.dark .workspace-path { color: rgba(255, 255, 255, 0.5); }
+body.dark .workspace-path.clickable:hover { color: rgba(255, 255, 255, 0.8); }
 body.dark .workspace-btn { background: rgba(255, 255, 255, 0.06); border-color: rgba(255, 255, 255, 0.08); color: rgba(255, 255, 255, 0.5); }
 body.dark .workspace-btn:hover { background: rgba(255, 255, 255, 0.1); color: rgba(255, 255, 255, 0.8); }
+body.dark .cli-path-input { background: rgba(255, 255, 255, 0.06); border-color: rgba(255, 255, 255, 0.08); color: #e0e0e0; }
+body.dark .cli-path-input::placeholder { color: rgba(255, 255, 255, 0.25); }
 body.dark .theme-toggle { background: rgba(255, 255, 255, 0.06); }
 body.dark .theme-btn.active { background: rgba(255, 255, 255, 0.1); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3); }
 body.dark .theme-btn:hover:not(.active) { background: rgba(255, 255, 255, 0.04); }

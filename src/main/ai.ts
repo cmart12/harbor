@@ -1,5 +1,6 @@
 import { CopilotClient, CopilotSession } from '@github/copilot-sdk';
 import { getConfigValue } from './config';
+import { resolveCopilotCliPath } from './session';
 import { RecurrenceResult, RecallMatch, Intent } from '../shared/types';
 
 export interface ParsedIntent {
@@ -98,7 +99,15 @@ async function getRecallSession(): Promise<CopilotSession | null> {
 
 export async function initCopilot(): Promise<void> {
   try {
-    client = new CopilotClient({ useStdio: false });
+    const cliPath = resolveCopilotCliPath();
+    const opts: Record<string, unknown> = { useStdio: false };
+    if (cliPath) {
+      opts.cliPath = cliPath;
+      console.log(`[copilot-sdk] Using local CLI: ${cliPath}`);
+    } else {
+      console.warn('[copilot-sdk] Local CLI not found, using bundled CLI (sessions may not be resumable from terminal)');
+    }
+    client = new CopilotClient(opts as any);
     await client.start();
     // Eagerly init the parse session (most commonly used)
     await getParseSession();

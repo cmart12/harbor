@@ -98,6 +98,20 @@
         </div>
 
         <div class="settings-group">
+          <div class="settings-group-title">Copilot CLI</div>
+          <div class="settings-row">
+            <div class="cli-path-display">
+              <input id="cli-path-input" class="cli-path-input" type="text" placeholder="Auto-detect" spellcheck="false" />
+              <button id="cli-path-clear" class="workspace-btn cli-path-clear hidden" title="Reset to auto-detect">✕</button>
+            </div>
+          </div>
+          <div class="settings-hint">
+            Detected: <span id="cli-path-detected" class="cli-path-detected">—</span>
+          </div>
+          <div class="settings-hint">Path to the Copilot CLI executable. Leave empty to auto-detect. Changes apply after restart.</div>
+        </div>
+
+        <div class="settings-group">
           <div class="settings-group-title">Agent Personas</div>
           <div class="settings-hint">Define personas you can @mention in documents and comments.</div>
           <div id="personas-list" class="personas-list"></div>
