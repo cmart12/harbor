@@ -2592,30 +2592,32 @@ async function openCanvas(intentId: string, expanded = false): Promise<void> {
   canvasDirty = false;
   canvasSaveBtn.classList.add('hidden');
 
-  // Load canvas content
-  const result = await intentAPI.readCanvas(intentId);
-  if (result.error === 'no_workspace') {
-    showStatus('Select a workspace first');
-    return;
-  }
-
-  // Determine current theme
-  const currentTheme = (await intentAPI.getSetting('theme') || 'light') as 'light' | 'dark';
-
   // Expand window if requested
   canvasExpanded = expanded;
   if (expanded) {
     intentAPI.expandWindow();
   }
 
-  // Show canvas view
+  // Show canvas view immediately while data loads
   mainView.classList.add('hidden');
   hideSettings();
   timelineView.classList.add('hidden');
   canvasView.classList.remove('hidden');
 
-  // Load personas for @mention autocomplete
-  const canvasPersonas = await intentAPI.listPersonas() || [];
+  // Load all data in parallel
+  const [result, currentTheme, canvasPersonas] = await Promise.all([
+    intentAPI.readCanvas(intentId),
+    intentAPI.getSetting('theme').then(t => (t || 'light') as 'light' | 'dark'),
+    intentAPI.listPersonas().then(p => p || []),
+  ]);
+
+  if (result.error === 'no_workspace') {
+    // Revert view back to main
+    canvasView.classList.add('hidden');
+    mainView.classList.remove('hidden');
+    showStatus('Select a workspace first');
+    return;
+  }
 
   // Mount Documint editor
   mountCanvas(canvasRoot, {

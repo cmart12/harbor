@@ -159,8 +159,8 @@ header h1 {
 }
 
 @keyframes slideRight {
-  from { opacity: 0; transform: translateX(8px); }
-  to { opacity: 1; transform: translateX(0); }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 @keyframes modalFadeIn {
@@ -1652,7 +1652,7 @@ header h1 {
   height: 100%;
   display: flex;
   flex-direction: column;
-  animation: slideRight 0.08s ease-out;
+  animation: slideRight 0.04s ease-out;
 }
 
 .timeline-view.hidden {
@@ -1737,7 +1737,7 @@ header h1 {
   height: 100%;
   display: flex;
   flex-direction: column;
-  animation: slideRight 0.08s ease-out;
+  animation: slideRight 0.04s ease-out;
 }
 
 .canvas-view.hidden {
@@ -2657,7 +2657,7 @@ body.dark .canvas-agent-meta { color: rgba(255, 255, 255, 0.35); }
   inset: 0;
   display: flex;
   flex-direction: column;
-  animation: slideRight 0.08s ease-out;
+  animation: slideRight 0.04s ease-out;
   background: rgba(240, 243, 250, 0.92);
   backdrop-filter: blur(40px);
   -webkit-backdrop-filter: blur(40px);
