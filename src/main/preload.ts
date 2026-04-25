@@ -45,6 +45,8 @@ contextBridge.exposeInMainWorld('intentAPI', {
   // Agent operations
   launchAgent: (intentId: string, selectedText: string, anchor: any, options?: { repo?: string; model?: string }) =>
     ipcRenderer.invoke('agent:launch', intentId, selectedText, anchor, options),
+  launchCommentAgent: (intentId: string, commentBody: string, quotedText: string, anchor: any, personaHandle: string, threadIndex: number) =>
+    ipcRenderer.invoke('agent:launch-from-comment', intentId, commentBody, quotedText, anchor, personaHandle, threadIndex),
   listAgents: (intentId: string) =>
     ipcRenderer.invoke('agent:list', intentId),
   approveAgent: (agentId: string, requestId: string, approved: boolean) =>
@@ -80,6 +82,15 @@ contextBridge.exposeInMainWorld('intentAPI', {
   },
   onAgentCompleted: (callback: (data: any) => void) => {
     ipcRenderer.on('agent:completed', (_event: any, data: any) => callback(data));
+  },
+  onAgentPresenceStarted: (callback: (data: any) => void) => {
+    ipcRenderer.on('agent:presence-started', (_event: any, data: any) => callback(data));
+  },
+  onAgentPresenceEnded: (callback: (data: any) => void) => {
+    ipcRenderer.on('agent:presence-ended', (_event: any, data: any) => callback(data));
+  },
+  onAgentReplyReady: (callback: (data: any) => void) => {
+    ipcRenderer.on('agent:reply-ready', (_event: any, data: any) => callback(data));
   },
   onIntentProcessed: (callback: (id: string) => void) => {
     ipcRenderer.on('intent:processed', (_event: any, id: string) => callback(id));

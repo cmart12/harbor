@@ -76,6 +76,7 @@ interface IntentAPI {
   listAllAgents(): Promise<any[]>;
   openAgentCli(agentId: string): Promise<{ error?: string }>;
   launchAgent(intentId: string, selectedText: string, anchor: any, options?: { repo?: string; model?: string }): Promise<any>;
+  launchCommentAgent(intentId: string, commentBody: string, quotedText: string, anchor: any, personaHandle: string, threadIndex: number): Promise<{ agentId?: string; sessionId?: string; error?: string }>;
   approveAgent(agentId: string, requestId: string, approved: boolean): Promise<void>;
   abortAgent(agentId: string): Promise<void>;
   hideWindow(): void;
@@ -90,6 +91,13 @@ interface IntentAPI {
   onRecurrenceResult(callback: (intentId: string, result: RecurrenceResult) => void): void;
   onRecurrenceApplied(callback: (intentId: string) => void): void;
   onRecallHint(callback: (intentId: string, match: RecallMatch) => void): void;
+  onAgentStatusChanged(callback: (data: any) => void): void;
+  onAgentApprovalNeeded(callback: (data: any) => void): void;
+  onAgentCompleted(callback: (data: any) => void): void;
+  onAgentPresenceStarted(callback: (data: { agentId: string; intentId: string; persona: { name: string; handle: string; color?: string; imageUrl?: string }; anchor: { prefix?: string; suffix?: string } }) => void): void;
+  onAgentPresenceEnded(callback: (data: { agentId: string; intentId: string }) => void): void;
+  onAgentReplyReady(callback: (data: { agentId: string; intentId: string; threadIndex: number; body: string }) => void): void;
+  openPath(folderPath: string): Promise<void>;
 }
 
 interface Attachment {
@@ -2062,7 +2070,8 @@ async function deleteIntent(id: string): Promise<void> {
 (window as any).deleteIntent = deleteIntent;
 
 // ── Canvas view ─────────────────────────────────────────
-import { mountCanvas, unmountCanvas, getCanvasContent, saveCanvas as saveCanvasEditor } from './canvas/mount.tsx';
+import { mountCanvas, unmountCanvas, getCanvasContent, saveCanvas as saveCanvasEditor, updateCanvasPresence, addCanvasCommentReply } from './canvas/mount.tsx';
+import type { Presence } from 'documint';
 
 const canvasView = document.getElementById('canvas-view') as HTMLDivElement;
 const canvasBack = document.getElementById('canvas-back') as HTMLButtonElement;
@@ -2200,17 +2209,34 @@ async function openCanvas(intentId: string, expanded = false): Promise<void> {
   timelineView.classList.add('hidden');
   canvasView.classList.remove('hidden');
 
+  // Load personas for @mention autocomplete
+  const canvasPersonas = await intentAPI.listPersonas() || [];
+
   // Mount Documint editor
   mountCanvas(canvasRoot, {
     intentId,
     content: result.content || '',
     theme: currentTheme,
+    personas: canvasPersonas,
     onDirtyChange: (dirty: boolean) => {
       canvasDirty = dirty;
       canvasSaveBtn.classList.toggle('hidden', !dirty);
     },
     onSaveStatus: (status: string) => {
       canvasSaveStatus.textContent = status;
+    },
+    onAgentMentioned: (event) => {
+      // Launch an agent for each @mentioned persona
+      for (const handle of event.handles) {
+        intentAPI.launchCommentAgent(
+          intentId,
+          event.commentBody,
+          event.quote,
+          event.anchor,
+          handle,
+          event.threadIndex,
+        );
+      }
     },
   });
 }
@@ -2264,6 +2290,35 @@ canvasLaunchBtn.addEventListener('click', () => {
 });
 
 (window as any).openCanvas = openCanvas;
+
+// ── Agent Presence Management ──────────────────────────
+const canvasAgentPresence = new Map<string, Presence>();
+
+function syncCanvasPresence(): void {
+  updateCanvasPresence(Array.from(canvasAgentPresence.values()));
+}
+
+intentAPI.onAgentPresenceStarted((data) => {
+  if (data.intentId !== canvasIntentId) return;
+  canvasAgentPresence.set(data.agentId, {
+    name: data.persona.name,
+    color: data.persona.color,
+    imageUrl: data.persona.imageUrl,
+    cursor: data.anchor?.prefix || data.anchor?.suffix ? data.anchor : undefined,
+  });
+  syncCanvasPresence();
+});
+
+intentAPI.onAgentPresenceEnded((data) => {
+  if (!canvasAgentPresence.has(data.agentId)) return;
+  canvasAgentPresence.delete(data.agentId);
+  syncCanvasPresence();
+});
+
+intentAPI.onAgentReplyReady((data) => {
+  if (data.intentId !== canvasIntentId) return;
+  addCanvasCommentReply(data.threadIndex, data.body);
+});
 
 // ── Init ────────────────────────────────────────────────
 descInput.focus();

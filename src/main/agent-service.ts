@@ -5,12 +5,25 @@ import { getCopilotClient } from './ai';
 import { createCanvasAgent, updateCanvasAgentStatus, createAgentSession, updateAgentSessionStatus, getAgentSession, listAgentSessions } from './database';
 import { CanvasAgent, AgentAnchor, AgentSession } from '../shared/types';
 import { readCanvas } from './workspace';
-import { getConfig, getConfigValue } from './config';
+import { getConfig, getConfigValue, type AgentPersona } from './config';
 import { launchSessionInTerminal } from './session';
 import { getAllMcpServers } from './mcp';
 import * as path from 'path';
+import * as fs from 'fs';
+import * as crypto from 'crypto';
 
 export type AgentStatus = 'running' | 'waiting-approval' | 'completed' | 'failed';
+
+interface CommentAgentContext {
+  threadIndex: number;
+  personaHandle: string;
+  personaName: string;
+  commentBody: string;
+  quotedText: string;
+  anchor: { prefix?: string; suffix?: string };
+  canvasHashBefore: string;
+  canvasPath: string;
+}
 
 interface AgentRecord {
   agentId: string;
@@ -22,12 +35,13 @@ interface AgentRecord {
   status: AgentStatus;
   pendingApprovalId: string | null;
   summary: string;
+  commentContext?: CommentAgentContext;
 }
 
 const agents = new Map<string, AgentRecord>();
 
 /** Build a system prompt fragment describing available CLI tools */
-function buildCliToolsPrompt(): string {
+export function buildCliToolsPrompt(): string {
   const tools = getConfigValue('cliTools') || [];
   if (tools.length === 0) return '';
   const lines = tools.map(t => `- \`${t.name}\`: ${t.description}`);
@@ -149,6 +163,142 @@ export async function launchAgent(
     return { agentId, sessionId };
   } catch (err: any) {
     return { error: err.message || 'Failed to launch agent' };
+  }
+}
+
+/** Launch an agent session triggered by an @mention in a canvas comment */
+export async function launchCommentAgent(
+  intentId: string,
+  commentBody: string,
+  quotedText: string,
+  anchor: { prefix?: string; suffix?: string },
+  persona: AgentPersona,
+  threadIndex: number,
+  workspaceRoot: string,
+  intentFolder: string,
+): Promise<{ agentId: string; sessionId: string } | { error: string }> {
+  const client = getCopilotClient();
+  if (!client) {
+    return { error: 'Copilot SDK not initialized' };
+  }
+
+  const agentId = uuid();
+  const workingDir = path.join(workspaceRoot, intentFolder);
+  const canvasPath = path.join(workingDir, 'canvas.md');
+
+  // Snapshot canvas hash for change detection
+  let canvasHashBefore = '';
+  try {
+    const canvasContent = fs.readFileSync(canvasPath, 'utf-8');
+    canvasHashBefore = crypto.createHash('md5').update(canvasContent).digest('hex');
+  } catch { /* file may not exist yet */ }
+
+  try {
+    const mcpServers = getAllMcpServers();
+    const cliToolsPrompt = buildCliToolsPrompt();
+
+    const systemPrompt = `${persona.instructions}
+
+You are responding to a comment on a canvas document. The user wrote:
+
+Comment: "${commentBody}"
+On this text: "${quotedText}"
+
+The full canvas document is available as canvas.md in the working directory.
+If you make changes to the document, clearly describe what you changed.${cliToolsPrompt}`;
+
+    const session = await client.createSession({
+      workingDirectory: workingDir,
+      mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
+      ...(persona.model ? { model: persona.model } : {}),
+      onPermissionRequest: async (request, invocation) => {
+        const record = findBySessionId(invocation.sessionId);
+        if (!record) return { kind: 'denied-interactively-by-user' as const };
+
+        record.status = 'waiting-approval';
+        record.pendingApprovalId = request.toolCallId || agentId;
+        updateAgentStatus(record);
+
+        notifyRenderer('agent:approval-needed', {
+          agentId: record.agentId,
+          requestId: record.pendingApprovalId,
+          permissionKind: request.kind,
+        });
+
+        return new Promise((resolve) => {
+          approvalCallbacks.set(record.pendingApprovalId!, (approved: boolean) => {
+            record.pendingApprovalId = null;
+            record.status = 'running';
+            updateAgentStatus(record);
+            resolve(approved
+              ? { kind: 'approved' as const }
+              : { kind: 'denied-interactively-by-user' as const }
+            );
+          });
+        });
+      },
+      systemMessage: {
+        mode: 'append',
+        content: `\n${systemPrompt}`,
+      },
+    });
+
+    const sessionId = (session as any).sessionId || agentId;
+    const now = new Date().toISOString();
+
+    const record: AgentRecord = {
+      agentId,
+      sessionId,
+      session,
+      intentId,
+      selectedText: commentBody,
+      anchor: { quote: quotedText, prefix: anchor.prefix || '', suffix: anchor.suffix || '' },
+      status: 'running',
+      pendingApprovalId: null,
+      summary: 'Starting...',
+      commentContext: {
+        threadIndex,
+        personaHandle: persona.handle,
+        personaName: persona.handle,
+        commentBody,
+        quotedText,
+        anchor,
+        canvasHashBefore,
+        canvasPath,
+      },
+    };
+    agents.set(agentId, record);
+
+    createAgentSession({
+      id: agentId,
+      session_id: sessionId,
+      intent_id: intentId,
+      prompt: commentBody,
+      status: 'running',
+      summary: 'Starting...',
+      working_dir: workingDir,
+      created_at: now,
+      updated_at: now,
+    });
+
+    setupAgentEventListeners(session, record);
+
+    // Notify renderer to show presence
+    notifyRenderer('agent:presence-started', {
+      agentId,
+      intentId,
+      persona: { name: persona.handle, handle: persona.handle },
+      anchor,
+    });
+
+    await session.send({
+      prompt: commentBody,
+      attachments: [{ type: 'file' as const, path: canvasPath }],
+    });
+
+    return { agentId, sessionId };
+  } catch (err: any) {
+    return { error: err.message || 'Failed to launch comment agent' };
   }
 }
 
@@ -390,6 +540,11 @@ function setupAgentEventListeners(session: CopilotSession, record: AgentRecord):
       record.summary = 'Completed';
       updateAgentStatus(record);
       notifyRenderer('agent:completed', { agentId, summary: record.summary });
+
+      // Handle comment agent auto-reply + presence cleanup
+      if (record.commentContext) {
+        handleCommentAgentCompletion(record);
+      }
     }
   });
 
@@ -400,6 +555,11 @@ function setupAgentEventListeners(session: CopilotSession, record: AgentRecord):
     notifyRenderer('agent:status-changed', {
       agentId, status: 'failed', summary: record.summary,
     });
+
+    // Clean up presence on failure too
+    if (record.commentContext) {
+      notifyRenderer('agent:presence-ended', { agentId, intentId: record.intentId });
+    }
   });
 }
 
@@ -420,4 +580,35 @@ function updateAgentStatus(record: AgentRecord): void {
 
 function truncate(s: string, maxLen: number): string {
   return s.length > maxLen ? s.slice(0, maxLen - 3) + '...' : s;
+}
+
+function handleCommentAgentCompletion(record: AgentRecord): void {
+  const ctx = record.commentContext;
+  if (!ctx) return;
+
+  // End presence
+  notifyRenderer('agent:presence-ended', {
+    agentId: record.agentId,
+    intentId: record.intentId,
+  });
+
+  // Detect if agent modified canvas.md
+  let documentChanged = false;
+  try {
+    const currentContent = fs.readFileSync(ctx.canvasPath, 'utf-8');
+    const currentHash = crypto.createHash('md5').update(currentContent).digest('hex');
+    documentChanged = ctx.canvasHashBefore !== '' && currentHash !== ctx.canvasHashBefore;
+  } catch { /* non-fatal */ }
+
+  // Send reply to renderer (renderer is single writer for canvas content)
+  const replyBody = documentChanged
+    ? `[bot] I've made changes to the document. Ready for your review.`
+    : `[bot] ${record.summary}`;
+
+  notifyRenderer('agent:reply-ready', {
+    agentId: record.agentId,
+    intentId: record.intentId,
+    threadIndex: ctx.threadIndex,
+    body: replyBody,
+  });
 }

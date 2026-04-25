@@ -13,6 +13,7 @@ import { initWorkspace, getDbPath, getLogPath, initIntentCanvas, readCanvas, wri
 import { initDatabase, mergeSessionIds, assignIntentFolder, updateCanvasContent, searchIntents, syncCanvasContent, updateCanvasAgentStatus } from './database';
 import { getConfig } from './config';
 import { listDiscoveredMcpServers } from './mcp';
+import { validateMcpServers, validateCliTools } from './validators';
 
 // Track in-flight recurrence evaluations so we can cancel them
 const pendingRecurrences = new Map<string, { result: RecurrenceResult; version: string; timer: ReturnType<typeof setTimeout> }>();
@@ -127,6 +128,8 @@ function applyRecurrence(intentId: string, expectedVersion: string, result: Recu
     console.log(`[ipc] Recurrence CAS failed for ${intentId} — intent was modified`);
   }
 }
+
+export { validateMcpServers, validateCliTools } from './validators';
 
 export function registerIpcHandlers(): void {
   ipcMain.handle('intent:create', (_event, input: CreateIntentInput) => {
@@ -301,33 +304,9 @@ export function registerIpcHandlers(): void {
   });
 
   ipcMain.handle('mcp:save-custom', (_event, servers: unknown) => {
-    if (!Array.isArray(servers)) return { error: 'invalid payload' };
-
-    const validated: CustomMcpServer[] = [];
-    const seen = new Set<string>();
-
-    for (const s of servers) {
-      if (!s || typeof s !== 'object') continue;
-      const raw = s as Record<string, unknown>;
-
-      const name = typeof raw.name === 'string' ? raw.name.trim() : '';
-      const type = typeof raw.type === 'string' && ['stdio', 'http', 'sse'].includes(raw.type) ? raw.type as 'stdio' | 'http' | 'sse' : 'stdio';
-      const command = typeof raw.command === 'string' ? raw.command.trim() : undefined;
-      const args = Array.isArray(raw.args) ? raw.args.filter((a: unknown) => typeof a === 'string') as string[] : [];
-      const url = typeof raw.url === 'string' ? raw.url.trim() : undefined;
-      const tools = Array.isArray(raw.tools) ? raw.tools.filter((t: unknown) => typeof t === 'string') as string[] : ['*'];
-
-      if (!name) continue;
-      if (seen.has(name)) continue;
-      seen.add(name);
-
-      if (type === 'stdio' && !command) continue;
-      if ((type === 'http' || type === 'sse') && !url) continue;
-
-      validated.push({ name, type, command, args, url, tools });
-    }
-
-    setConfigValue('mcpServers', validated);
+    const result = validateMcpServers(servers);
+    if ('error' in result) return result;
+    setConfigValue('mcpServers', result);
     return { ok: true };
   });
 
@@ -337,26 +316,9 @@ export function registerIpcHandlers(): void {
   });
 
   ipcMain.handle('cli-tools:save', (_event, tools: unknown) => {
-    if (!Array.isArray(tools)) return { error: 'invalid payload' };
-
-    const validated: CliToolDefinition[] = [];
-    const seen = new Set<string>();
-
-    for (const t of tools) {
-      if (!t || typeof t !== 'object') continue;
-      const raw = t as Record<string, unknown>;
-
-      const name = typeof raw.name === 'string' ? raw.name.trim() : '';
-      const description = typeof raw.description === 'string' ? raw.description.trim().slice(0, 500) : '';
-
-      if (!name || !description) continue;
-      if (seen.has(name)) continue;
-      seen.add(name);
-
-      validated.push({ name, description });
-    }
-
-    setConfigValue('cliTools', validated);
+    const result = validateCliTools(tools);
+    if ('error' in result) return result;
+    setConfigValue('cliTools', result);
     return { ok: true };
   });
 
@@ -610,6 +572,22 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('agent:list-all', async () => {
     const { listAllAgents } = await import('./agent-service');
     return listAllAgents();
+  });
+
+  // ── Comment-triggered agent launch ───────────────────────
+  ipcMain.handle('agent:launch-from-comment', async (_event, intentId: string, commentBody: string, quotedText: string, anchor: any, personaHandle: string, threadIndex: number) => {
+    const workspace = getConfigValue('workspace');
+    if (!workspace || !isInitialized()) return { error: 'no_workspace' };
+
+    const intent = getIntent(intentId);
+    if (!intent || !intent.folder) return { error: 'intent_not_found' };
+
+    const allPersonas = getConfigValue('personas') || [];
+    const persona = allPersonas.find(p => p.handle === personaHandle);
+    if (!persona) return { error: 'persona_not_found' };
+
+    const { launchCommentAgent } = await import('./agent-service');
+    return launchCommentAgent(intentId, commentBody, quotedText, anchor, persona, threadIndex, workspace, intent.folder);
   });
 }
 
