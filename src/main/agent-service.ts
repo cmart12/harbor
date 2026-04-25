@@ -42,6 +42,7 @@ interface AgentRecord {
   status: AgentStatus;
   pendingApprovalId: string | null;
   pendingPermissionKind: string | null;
+  pendingApprovals: Map<string, { permissionKind: string | null }>;
   summary: string;
   commentContext?: CommentAgentContext;
 }
@@ -113,45 +114,7 @@ export async function launchAgent(
     const session = await client.createSession({
       workingDirectory: workingDir,
       mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
-      onPermissionRequest: async (request, invocation) => {
-        const record = findBySessionId(invocation.sessionId);
-        if (!record) return { kind: 'denied-interactively-by-user' as const };
-
-        // Forward approval request to renderer
-        record.status = 'waiting-approval';
-        record.pendingApprovalId = request.toolCallId || agentId;
-        record.pendingPermissionKind = request.kind || null;
-        updateAgentStatus(record);
-
-        notifyRenderer('agent:approval-needed', {
-          agentId: record.agentId,
-          requestId: record.pendingApprovalId,
-          permissionKind: request.kind,
-        });
-
-        notifyRenderer(`chat:event:${record.agentId}`, {
-          type: 'approval.needed',
-          requestId: record.pendingApprovalId,
-          agentId: record.agentId,
-          permissionKind: request.kind,
-        });
-
-        showApprovalNotification(record.agentId, request.kind || 'permission');
-
-        // Wait for renderer response (stored as a promise)
-        return new Promise((resolve) => {
-          approvalCallbacks.set(record.pendingApprovalId!, (approved: boolean) => {
-            record.pendingApprovalId = null;
-            record.pendingPermissionKind = null;
-            record.status = 'running';
-            updateAgentStatus(record);
-            resolve(approved
-              ? { kind: 'approved' as const }
-              : { kind: 'denied-interactively-by-user' as const }
-            );
-          });
-        });
-      },
+      onPermissionRequest: createPermissionHandler(findBySessionId),
       systemMessage: {
         mode: 'append',
         content: `\nThe user selected the following text from their canvas document and wants you to work on it:\n\n---\n${selectedText}\n---\n\nThe full canvas document is available as canvas.md in the working directory.${cliToolsPrompt}`,
@@ -171,6 +134,7 @@ export async function launchAgent(
       status: 'running',
       pendingApprovalId: null,
       pendingPermissionKind: null,
+      pendingApprovals: new Map(),
       summary: 'Starting...',
     };
     agents.set(agentId, record);
@@ -269,43 +233,7 @@ If you make changes to the document, clearly describe what you changed.${cliTool
       workingDirectory: workingDir,
       mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
       ...(persona.model ? { model: persona.model } : {}),
-      onPermissionRequest: async (request, invocation) => {
-        const record = findBySessionId(invocation.sessionId);
-        if (!record) return { kind: 'denied-interactively-by-user' as const };
-
-        record.status = 'waiting-approval';
-        record.pendingApprovalId = request.toolCallId || agentId;
-        record.pendingPermissionKind = request.kind || null;
-        updateAgentStatus(record);
-
-        notifyRenderer('agent:approval-needed', {
-          agentId: record.agentId,
-          requestId: record.pendingApprovalId,
-          permissionKind: request.kind,
-        });
-
-        notifyRenderer(`chat:event:${record.agentId}`, {
-          type: 'approval.needed',
-          requestId: record.pendingApprovalId,
-          agentId: record.agentId,
-          permissionKind: request.kind,
-        });
-
-        showApprovalNotification(record.agentId, request.kind || 'permission');
-
-        return new Promise((resolve) => {
-          approvalCallbacks.set(record.pendingApprovalId!, (approved: boolean) => {
-            record.pendingApprovalId = null;
-            record.pendingPermissionKind = null;
-            record.status = 'running';
-            updateAgentStatus(record);
-            resolve(approved
-              ? { kind: 'approved' as const }
-              : { kind: 'denied-interactively-by-user' as const }
-            );
-          });
-        });
-      },
+      onPermissionRequest: createPermissionHandler(findBySessionId),
       systemMessage: {
         mode: 'append',
         content: `\n${systemPrompt}`,
@@ -325,6 +253,7 @@ If you make changes to the document, clearly describe what you changed.${cliTool
       status: 'running',
       pendingApprovalId: null,
       pendingPermissionKind: null,
+      pendingApprovals: new Map(),
       summary: 'Starting...',
       commentContext: {
         threadIndex,
@@ -387,6 +316,75 @@ If you make changes to the document, clearly describe what you changed.${cliTool
 // Approval callback registry
 const approvalCallbacks = new Map<string, (approved: boolean) => void>();
 
+/**
+ * Shared permission request handler for all agent types.
+ * Each concurrent request gets a unique requestId so callbacks never overwrite each other.
+ */
+function createPermissionHandler(findRecord: (sessionId: string) => AgentRecord | undefined) {
+  return async (request: { kind?: string; toolCallId?: string; [key: string]: unknown }, invocation: { sessionId: string }) => {
+    const record = findRecord(invocation.sessionId);
+    if (!record) return { kind: 'denied-interactively-by-user' as const };
+
+    const requestId = request.toolCallId ?? crypto.randomUUID();
+
+    record.status = 'waiting-approval';
+    record.pendingApprovalId = requestId;
+    record.pendingPermissionKind = request.kind || null;
+    record.pendingApprovals.set(requestId, { permissionKind: request.kind || null });
+    updateAgentStatus(record);
+
+    notifyRenderer('agent:approval-needed', {
+      agentId: record.agentId,
+      requestId,
+      permissionKind: request.kind,
+    });
+
+    notifyRenderer(`chat:event:${record.agentId}`, {
+      type: 'approval.needed',
+      requestId,
+      agentId: record.agentId,
+      permissionKind: request.kind,
+    });
+
+    showApprovalNotification(record.agentId, request.kind || 'permission');
+
+    return new Promise<{ kind: 'approved' } | { kind: 'denied-interactively-by-user' }>((resolve) => {
+      approvalCallbacks.set(requestId, (approved: boolean) => {
+        record.pendingApprovals.delete(requestId);
+        if (record.pendingApprovals.size === 0) {
+          record.pendingApprovalId = null;
+          record.pendingPermissionKind = null;
+          record.status = 'running';
+        } else {
+          // Update to reflect the next pending approval
+          const [nextId, next] = [...record.pendingApprovals.entries()][0];
+          record.pendingApprovalId = nextId;
+          record.pendingPermissionKind = next.permissionKind;
+        }
+        updateAgentStatus(record);
+        resolve(approved
+          ? { kind: 'approved' as const }
+          : { kind: 'denied-interactively-by-user' as const }
+        );
+      });
+    });
+  };
+}
+
+/** Deny and clean up all pending approval callbacks for a given agent. */
+function clearPendingApprovals(record: AgentRecord): void {
+  for (const requestId of record.pendingApprovals.keys()) {
+    const cb = approvalCallbacks.get(requestId);
+    if (cb) {
+      approvalCallbacks.delete(requestId);
+      cb(false);
+    }
+  }
+  record.pendingApprovals.clear();
+  record.pendingApprovalId = null;
+  record.pendingPermissionKind = null;
+}
+
 export function approveAgent(agentId: string, requestId: string, approved: boolean): void {
   const cb = approvalCallbacks.get(requestId);
   if (cb) {
@@ -406,6 +404,7 @@ export async function abortAgent(agentId: string): Promise<void> {
   if (!record) return;
 
   try {
+    clearPendingApprovals(record);
     await record.session.abort();
     record.status = 'failed';
     record.summary = 'Aborted by user';
@@ -488,43 +487,7 @@ export async function launchQuickAgent(
           content: cliToolsPrompt,
         },
       } : {}),
-      onPermissionRequest: async (request, invocation) => {
-        const record = findBySessionId(invocation.sessionId);
-        if (!record) return { kind: 'denied-interactively-by-user' as const };
-
-        record.status = 'waiting-approval';
-        record.pendingApprovalId = request.toolCallId || agentId;
-        record.pendingPermissionKind = request.kind || null;
-        updateAgentStatus(record);
-
-        notifyRenderer('agent:approval-needed', {
-          agentId: record.agentId,
-          requestId: record.pendingApprovalId,
-          permissionKind: request.kind,
-        });
-
-        notifyRenderer(`chat:event:${record.agentId}`, {
-          type: 'approval.needed',
-          requestId: record.pendingApprovalId,
-          agentId: record.agentId,
-          permissionKind: request.kind,
-        });
-
-        showApprovalNotification(record.agentId, request.kind || 'permission');
-
-        return new Promise((resolve) => {
-          approvalCallbacks.set(record.pendingApprovalId!, (approved: boolean) => {
-            record.pendingApprovalId = null;
-            record.pendingPermissionKind = null;
-            record.status = 'running';
-            updateAgentStatus(record);
-            resolve(approved
-              ? { kind: 'approved' as const }
-              : { kind: 'denied-interactively-by-user' as const }
-            );
-          });
-        });
-      },
+      onPermissionRequest: createPermissionHandler(findBySessionId),
     });
 
     const sessionId = (session as any).sessionId || agentId;
@@ -540,6 +503,7 @@ export async function launchQuickAgent(
       status: 'running',
       pendingApprovalId: null,
       pendingPermissionKind: null,
+      pendingApprovals: new Map(),
       summary: 'Starting...',
     };
     agents.set(agentId, record);
@@ -936,43 +900,7 @@ async function resumeAgentSession(agentId: string): Promise<boolean> {
       ...(cliToolsPrompt ? {
         systemMessage: { mode: 'append' as const, content: cliToolsPrompt },
       } : {}),
-      onPermissionRequest: async (request, invocation) => {
-        const record = findBySessionId(invocation.sessionId);
-        if (!record) return { kind: 'denied-interactively-by-user' as const };
-
-        record.status = 'waiting-approval';
-        record.pendingApprovalId = request.toolCallId || agentId;
-        record.pendingPermissionKind = request.kind || null;
-        updateAgentStatus(record);
-
-        notifyRenderer('agent:approval-needed', {
-          agentId: record.agentId,
-          requestId: record.pendingApprovalId,
-          permissionKind: request.kind,
-        });
-
-        notifyRenderer(`chat:event:${record.agentId}`, {
-          type: 'approval.needed',
-          requestId: record.pendingApprovalId,
-          agentId: record.agentId,
-          permissionKind: request.kind,
-        });
-
-        showApprovalNotification(record.agentId, request.kind || 'permission');
-
-        return new Promise((resolve) => {
-          approvalCallbacks.set(record.pendingApprovalId!, (approved: boolean) => {
-            record.pendingApprovalId = null;
-            record.pendingPermissionKind = null;
-            record.status = 'running';
-            updateAgentStatus(record);
-            resolve(approved
-              ? { kind: 'approved' as const }
-              : { kind: 'denied-interactively-by-user' as const }
-            );
-          });
-        });
-      },
+      onPermissionRequest: createPermissionHandler(findBySessionId),
     });
 
     const record: AgentRecord = {
@@ -985,6 +913,7 @@ async function resumeAgentSession(agentId: string): Promise<boolean> {
       status: 'completed',
       pendingApprovalId: null,
       pendingPermissionKind: null,
+      pendingApprovals: new Map(),
       summary: persisted.summary || 'Resumed',
     };
     agents.set(agentId, record);
