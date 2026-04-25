@@ -19,14 +19,31 @@ body {
     radial-gradient(ellipse at 35% 92%, rgba(219, 186, 230, 0.14) 0%, transparent 50%),
     radial-gradient(ellipse at 72% 55%, rgba(190, 210, 250, 0.10) 0%, transparent 40%),
     linear-gradient(170deg, rgba(240, 234, 252, 0.92) 0%, rgba(238, 242, 255, 0.90) 35%, rgba(249, 245, 253, 0.88) 65%, rgba(255, 255, 255, 0.85) 100%);
-  border: 1px solid rgba(255, 255, 255, 0.5);
-  border-radius: 2px;
+  border: 1px solid rgba(160, 160, 170, 0.4);
+  border-radius: 0.5px;
   padding: 16px;
   height: 100vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 8px 40px rgba(120, 100, 180, 0.1), 0 2px 10px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 0 8px rgba(140, 140, 160, 0.25), 0 8px 40px rgba(120, 100, 180, 0.1), 0 2px 10px rgba(0, 0, 0, 0.05);
   backdrop-filter: blur(20px);
+}
+
+#main-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+#main-view > header {
+  order: 99;
+  margin-bottom: 0;
+  margin-top: 12px;
+  padding-bottom: 0;
+  padding-top: 10px;
+  border-bottom: none;
+  border-top: 1px solid rgba(140, 120, 180, 0.1);
 }
 
 header {
@@ -60,7 +77,7 @@ header h1 {
   font-size: 11px;
   font-weight: 600;
   padding: 2px 8px;
-  border-radius: 10px;
+  border-radius: 2.5px;
 }
 
 .header-icon-btn {
@@ -70,7 +87,7 @@ header h1 {
   cursor: pointer;
   font-size: 15px;
   padding: 4px;
-  border-radius: 6px;
+  border-radius: 1.5px;
   transition: all 0.15s ease;
   display: flex;
   align-items: center;
@@ -122,7 +139,7 @@ header h1 {
 .settings-modal {
   position: relative;
   background: linear-gradient(170deg, #f6f1fd 0%, #f0f3ff 40%, #ffffff 100%);
-  border-radius: 14px;
+  border-radius: 3.5px;
   box-shadow: 0 12px 48px rgba(120, 100, 180, 0.15), 0 2px 8px rgba(0, 0, 0, 0.06);
   width: calc(100% - 32px);
   max-width: 520px;
@@ -196,7 +213,7 @@ header h1 {
   flex: 1;
   background: rgba(255, 255, 255, 0.6);
   border: 1px solid rgba(140, 120, 180, 0.1);
-  border-radius: 8px;
+  border-radius: 2px;
   padding: 8px 10px;
   color: #2c2c3a;
   font-size: 13px;
@@ -228,7 +245,7 @@ header h1 {
 .theme-toggle {
   display: flex;
   background: rgba(255, 255, 255, 0.5);
-  border-radius: 8px;
+  border-radius: 2px;
   padding: 2px;
   gap: 2px;
   border: 1px solid rgba(140, 120, 180, 0.08);
@@ -238,7 +255,7 @@ header h1 {
   background: none;
   border: none;
   padding: 6px 14px;
-  border-radius: 6px;
+  border-radius: 1.5px;
   cursor: pointer;
   font-size: 14px;
   transition: all 0.15s ease;
@@ -251,12 +268,6 @@ header h1 {
 
 .theme-btn:hover:not(.active) {
   background: rgba(0, 0, 0, 0.04);
-}
-
-#main-view {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
 }
 
 #main-view.hidden {
@@ -282,7 +293,7 @@ header h1 {
   width: 100%;
   background: rgba(255, 255, 255, 0.7);
   border: 1px solid rgba(140, 120, 180, 0.12);
-  border-radius: 12px;
+  border-radius: 3px;
   padding: 10px 60px 10px 14px;
   color: #2c2c3a;
   font-size: 14px;
@@ -339,7 +350,7 @@ header h1 {
   bottom: 6px;
   background: rgba(124, 102, 220, 0.12);
   border: none;
-  border-radius: 8px;
+  border-radius: 2px;
   color: #7c66dc;
   font-size: 14px;
   width: 28px;
@@ -391,7 +402,7 @@ header h1 {
 .status-bar {
   font-size: 11px;
   padding: 6px 10px;
-  border-radius: 8px;
+  border-radius: 2px;
   background: rgba(124, 102, 220, 0.08);
   color: #7c66dc;
   text-align: center;
@@ -414,7 +425,7 @@ header h1 {
   margin-bottom: 10px;
   padding: 3px;
   background: rgba(0, 0, 0, 0.02);
-  border-radius: 10px;
+  border-radius: 2.5px;
   border: 1px solid rgba(0, 0, 0, 0.06);
   overflow: hidden;
 }
@@ -443,7 +454,7 @@ header h1 {
   background: #ffffff;
   border-bottom-color: transparent;
   font-weight: 400;
-  border-radius: 8px;
+  border-radius: 2px;
 }
 
 .filter-btn.active::after {
@@ -455,7 +466,7 @@ header h1 {
   width: 20px;
   height: 2.5px;
   background: #2563eb;
-  border-radius: 2px;
+  border-radius: 0.5px;
 }
 
 .filter-btn:focus {
@@ -473,7 +484,7 @@ header h1 {
   margin-bottom: 10px;
   background: rgba(124, 102, 220, 0.08);
   border: 1px solid rgba(124, 102, 220, 0.15);
-  border-radius: 10px;
+  border-radius: 2.5px;
   animation: slideIn 0.2s ease;
 }
 
@@ -515,7 +526,7 @@ header h1 {
   font-size: 13px;
   cursor: pointer;
   padding: 2px 4px;
-  border-radius: 4px;
+  border-radius: 1px;
   transition: background 0.15s ease;
   color: rgba(0, 0, 0, 0.4);
 }
@@ -534,7 +545,7 @@ header h1 {
   font-size: 11px;
   cursor: pointer;
   padding: 2px 4px;
-  border-radius: 4px;
+  border-radius: 1px;
   transition: opacity 0.15s ease, background 0.15s ease;
   flex-shrink: 0;
 }
@@ -573,7 +584,7 @@ header h1 {
 .query-answer {
   background: rgba(255, 255, 255, 0.8);
   border: 1px solid rgba(255, 255, 255, 0.6);
-  border-radius: 12px;
+  border-radius: 3px;
   padding: 12px;
   position: relative;
   animation: slideIn 0.2s ease;
@@ -629,7 +640,7 @@ header h1 {
 .intent-item {
   background: rgba(255, 255, 255, 0.82);
   border: 1px solid rgba(255, 255, 255, 0.7);
-  border-radius: 12px;
+  border-radius: 3px;
   padding: 10px 12px;
   display: flex;
   align-items: flex-start;
@@ -728,7 +739,7 @@ header h1 {
   margin-top: 4px;
   padding: 4px 6px;
   background: rgba(0, 0, 0, 0.02);
-  border-radius: 6px;
+  border-radius: 1.5px;
   cursor: pointer;
   line-height: 1.4;
   transition: all 0.15s ease;
@@ -767,7 +778,7 @@ header h1 {
   width: 100%;
   background: #ffffff;
   border: 1px solid rgba(124, 102, 220, 0.4);
-  border-radius: 6px;
+  border-radius: 1.5px;
   padding: 6px 8px;
   color: #2c2c3a;
   font-size: 12px;
@@ -794,7 +805,7 @@ header h1 {
   text-decoration: none;
   background: rgba(124, 102, 220, 0.08);
   padding: 2px 6px;
-  border-radius: 4px;
+  border-radius: 1px;
   max-width: 180px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -852,7 +863,7 @@ header h1 {
   font-size: 11px;
   cursor: pointer;
   padding: 1px 4px;
-  border-radius: 4px;
+  border-radius: 1px;
   transition: background 0.15s ease;
   opacity: 0.5;
 }
@@ -868,7 +879,7 @@ header h1 {
   color: #7c66dc;
   background: rgba(124, 102, 220, 0.1);
   padding: 1px 6px;
-  border-radius: 4px;
+  border-radius: 1px;
   animation: processingPulse 1.5s ease infinite;
 }
 
@@ -935,7 +946,7 @@ header h1 {
   cursor: pointer;
   font-size: 12px;
   padding: 2px 4px;
-  border-radius: 4px;
+  border-radius: 1px;
   transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
   flex-shrink: 0;
 }
@@ -1016,7 +1027,7 @@ header h1 {
 .workspace-btn {
   background: #ffffff;
   border: 1px solid rgba(0, 0, 0, 0.1);
-  border-radius: 6px;
+  border-radius: 1.5px;
   color: rgba(0, 0, 0, 0.5);
   font-size: 11px;
   padding: 3px 8px;
@@ -1047,7 +1058,7 @@ header h1 {
   color: rgba(0, 0, 0, 0.7);
   background: rgba(0, 0, 0, 0.03);
   border: 1px solid rgba(0, 0, 0, 0.08);
-  border-radius: 6px;
+  border-radius: 1.5px;
   padding: 4px 8px;
   min-width: 0;
 }
@@ -1082,7 +1093,7 @@ header h1 {
   padding: 8px 10px;
   background: rgba(255, 255, 255, 0.6);
   border: 1px solid rgba(140, 120, 180, 0.08);
-  border-radius: 8px;
+  border-radius: 2px;
   transition: background 0.15s ease;
 }
 
@@ -1134,7 +1145,7 @@ header h1 {
   font-size: 13px;
   color: rgba(0, 0, 0, 0.3);
   padding: 2px 4px;
-  border-radius: 4px;
+  border-radius: 1px;
   transition: all 0.15s ease;
 }
 
@@ -1151,7 +1162,7 @@ header h1 {
 .persona-add-btn {
   background: none;
   border: 1px dashed rgba(0, 0, 0, 0.15);
-  border-radius: 8px;
+  border-radius: 2px;
   padding: 6px 10px;
   font-size: 12px;
   color: rgba(0, 0, 0, 0.4);
@@ -1175,7 +1186,7 @@ header h1 {
   padding: 10px;
   background: rgba(255, 255, 255, 0.6);
   border: 1px solid rgba(124, 102, 220, 0.3);
-  border-radius: 8px;
+  border-radius: 2px;
 }
 
 .persona-form-row {
@@ -1195,7 +1206,7 @@ header h1 {
   flex: 1;
   background: #ffffff;
   border: 1px solid rgba(140, 120, 180, 0.12);
-  border-radius: 6px;
+  border-radius: 1.5px;
   padding: 6px 8px;
   font-size: 13px;
   color: #2c2c3a;
@@ -1211,7 +1222,7 @@ header h1 {
   width: 100%;
   background: #ffffff;
   border: 1px solid rgba(140, 120, 180, 0.12);
-  border-radius: 6px;
+  border-radius: 1.5px;
   padding: 6px 8px;
   font-size: 12px;
   color: #2c2c3a;
@@ -1237,7 +1248,7 @@ header h1 {
   flex: 1;
   background: #ffffff;
   border: 1px solid rgba(140, 120, 180, 0.12);
-  border-radius: 6px;
+  border-radius: 1.5px;
   padding: 6px 8px;
   font-size: 12px;
   color: #2c2c3a;
@@ -1274,7 +1285,7 @@ header h1 {
   background: #7c66dc;
   color: #ffffff;
   border: none;
-  border-radius: 6px;
+  border-radius: 1.5px;
   padding: 5px 12px;
   font-size: 12px;
   cursor: pointer;
@@ -1289,7 +1300,7 @@ header h1 {
   background: none;
   color: rgba(0, 0, 0, 0.4);
   border: 1px solid rgba(0, 0, 0, 0.1);
-  border-radius: 6px;
+  border-radius: 1.5px;
   padding: 5px 12px;
   font-size: 12px;
   cursor: pointer;
@@ -1317,7 +1328,7 @@ header h1 {
   padding: 8px 10px;
   background: rgba(255, 255, 255, 0.6);
   border: 1px solid rgba(140, 120, 180, 0.08);
-  border-radius: 8px;
+  border-radius: 2px;
   transition: background 0.15s ease;
 }
 
@@ -1373,7 +1384,7 @@ header h1 {
 
 .due-badge {
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: 1px;
   padding: 0 4px;
   margin: -1px -4px;
   transition: background 0.15s ease;
@@ -1389,7 +1400,7 @@ header h1 {
 
 .intent-desc {
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: 1px;
   padding: 1px 2px;
   margin: -1px -2px;
   transition: background 0.15s ease;
@@ -1405,7 +1416,7 @@ header h1 {
   width: 100%;
   background: #ffffff;
   border: 1px solid rgba(124, 102, 220, 0.4);
-  border-radius: 4px;
+  border-radius: 1px;
   padding: 2px 4px;
   color: #2c2c3a;
   font-size: inherit;
@@ -1427,7 +1438,7 @@ header h1 {
   margin-top: 4px;
   padding: 4px 8px;
   background: rgba(124, 102, 220, 0.06);
-  border-radius: 6px;
+  border-radius: 1.5px;
   animation: metaAppear 0.3s ease;
 }
 
@@ -1548,7 +1559,7 @@ header h1 {
   color: #7c66dc;
   background: rgba(124, 102, 220, 0.1);
   padding: 0 4px;
-  border-radius: 3px;
+  border-radius: 0.8px;
   font-size: 10px;
 }
 
@@ -1579,7 +1590,7 @@ header h1 {
   text-overflow: ellipsis;
   white-space: nowrap;
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: 1px;
   padding: 2px 4px;
   margin: -2px -4px;
   border: 1px solid transparent;
@@ -1643,7 +1654,7 @@ header h1 {
 .canvas-save-btn {
   background: rgba(124, 102, 220, 0.12);
   border: none;
-  border-radius: 6px;
+  border-radius: 1.5px;
   color: #7c66dc;
   font-size: 11px;
   font-weight: 500;
@@ -1733,7 +1744,7 @@ header h1 {
 
 .history-item {
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: 2px;
   transition: background 0.15s ease;
   cursor: default;
 }
@@ -1773,7 +1784,7 @@ header h1 {
 .history-restore-btn {
   background: none;
   border: 1px solid rgba(0, 0, 0, 0.12);
-  border-radius: 5px;
+  border-radius: 1.2px;
   color: rgba(0, 0, 0, 0.5);
   font-size: 11px;
   padding: 2px 8px;
@@ -1802,7 +1813,7 @@ header h1 {
 
 .documint-canvas-container.drag-over {
   box-shadow: inset 0 0 0 2px rgba(124, 102, 220, 0.3);
-  border-radius: 6px;
+  border-radius: 1.5px;
 }
 
 /* Agent approval bar */
@@ -1832,7 +1843,7 @@ header h1 {
 
 .agent-approval-btn {
   border: none;
-  border-radius: 4px;
+  border-radius: 1px;
   padding: 3px 10px;
   font-size: 11px;
   font-weight: 600;
@@ -1914,7 +1925,7 @@ header h1 {
   font-size: 12px;
   padding: 4px 6px;
   border: 1px solid rgba(0, 0, 0, 0.1);
-  border-radius: 4px;
+  border-radius: 1px;
   background: rgba(0, 0, 0, 0.02);
   color: inherit;
   outline: none;
@@ -1930,7 +1941,7 @@ header h1 {
   margin-top: 2px;
   padding: 5px 10px;
   border: none;
-  border-radius: 5px;
+  border-radius: 1.2px;
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
@@ -1984,7 +1995,7 @@ header h1 {
   align-items: flex-start;
   gap: 8px;
   padding: 8px 6px;
-  border-radius: 8px;
+  border-radius: 2px;
   cursor: pointer;
   transition: background 0.15s ease;
 }
@@ -2050,7 +2061,7 @@ header h1 {
 .agent-add-btn {
   background: none;
   border: 1px dashed rgba(0, 0, 0, 0.15);
-  border-radius: 8px;
+  border-radius: 2px;
   color: rgba(0, 0, 0, 0.4);
   font-size: 12px;
   padding: 6px 12px;
@@ -2080,6 +2091,7 @@ body.dark #app {
 }
 
 body.dark header { border-bottom-color: rgba(255, 255, 255, 0.06); }
+body.dark #main-view > header { border-top-color: rgba(255, 255, 255, 0.06); }
 body.dark header h1 { color: #ffffff; }
 body.dark .header-icon-btn { color: rgba(255, 255, 255, 0.4); }
 body.dark .header-icon-btn:hover { color: rgba(255, 255, 255, 0.8); background: rgba(255, 255, 255, 0.06); }
@@ -2300,7 +2312,7 @@ body.dark .history-restore-btn:hover { border-color: rgba(165, 148, 232, 0.4); c
   font-size: 11px;
   font-weight: 500;
   padding: 2px 8px;
-  border-radius: 10px;
+  border-radius: 2.5px;
   white-space: nowrap;
 }
 
@@ -2332,7 +2344,7 @@ body.dark .history-restore-btn:hover { border-color: rgba(165, 148, 232, 0.4); c
 .chat-abort-btn {
   font-size: 11px;
   padding: 3px 10px;
-  border-radius: 6px;
+  border-radius: 1.5px;
   border: 1px solid rgba(239, 68, 68, 0.3);
   background: rgba(239, 68, 68, 0.08);
   color: #ef4444;
@@ -2348,7 +2360,7 @@ body.dark .history-restore-btn:hover { border-color: rgba(165, 148, 232, 0.4); c
 .chat-model-select {
   font-size: 11px;
   padding: 2px 6px;
-  border-radius: 6px;
+  border-radius: 1.5px;
   border: 1px solid rgba(0, 0, 0, 0.08);
   background: rgba(0, 0, 0, 0.03);
   color: #555;
@@ -2397,7 +2409,7 @@ body.dark .history-restore-btn:hover { border-color: rgba(165, 148, 232, 0.4); c
   padding: 8px 12px;
   background: linear-gradient(135deg, #7c66dc, #6a52c9);
   color: white;
-  border-radius: 14px 14px 4px 14px;
+  border-radius: 3.5px 3.5px 1px 3.5px;
   font-size: 13px;
   line-height: 1.5;
   word-wrap: break-word;
@@ -2444,7 +2456,7 @@ body.dark .history-restore-btn:hover { border-color: rgba(165, 148, 232, 0.4); c
 .chat-inline-code {
   background: rgba(0, 0, 0, 0.06);
   padding: 1px 5px;
-  border-radius: 4px;
+  border-radius: 1px;
   font-family: 'SF Mono', 'Menlo', 'Monaco', monospace;
   font-size: 12px;
 }
@@ -2453,7 +2465,7 @@ body.dark .history-restore-btn:hover { border-color: rgba(165, 148, 232, 0.4); c
   background: #1e1e2e;
   color: #cdd6f4;
   padding: 10px 12px;
-  border-radius: 8px;
+  border-radius: 2px;
   overflow-x: auto;
   margin: 8px 0;
   font-family: 'SF Mono', 'Menlo', 'Monaco', monospace;
@@ -2482,7 +2494,7 @@ body.dark .history-restore-btn:hover { border-color: rgba(165, 148, 232, 0.4); c
 /* Tool tile */
 .chat-tool-tile {
   background: rgba(0, 0, 0, 0.03);
-  border-radius: 8px;
+  border-radius: 2px;
   border-left: 3px solid #d4a017;
   overflow: hidden;
   font-size: 12px;
@@ -2662,7 +2674,7 @@ body.dark .history-restore-btn:hover { border-color: rgba(165, 148, 232, 0.4); c
 /* Reasoning tile */
 .chat-reasoning-tile {
   background: rgba(245, 158, 11, 0.06);
-  border-radius: 8px;
+  border-radius: 2px;
   font-size: 12px;
   overflow: hidden;
 }
@@ -2712,7 +2724,7 @@ body.dark .history-restore-btn:hover { border-color: rgba(165, 148, 232, 0.4); c
   gap: 8px;
   padding: 8px 10px;
   background: rgba(245, 158, 11, 0.08);
-  border-radius: 8px;
+  border-radius: 2px;
   border: 1px solid rgba(245, 158, 11, 0.2);
   font-size: 12px;
 }
@@ -2752,7 +2764,7 @@ body.dark .history-restore-btn:hover { border-color: rgba(165, 148, 232, 0.4); c
 
 .chat-approval-btn {
   padding: 4px 14px;
-  border-radius: 6px;
+  border-radius: 1.5px;
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
@@ -2819,7 +2831,7 @@ body.dark .history-restore-btn:hover { border-color: rgba(165, 148, 232, 0.4); c
   gap: 6px;
   background: rgba(255, 255, 255, 0.6);
   border: 1px solid rgba(140, 120, 180, 0.12);
-  border-radius: 12px;
+  border-radius: 3px;
   padding: 6px 8px;
   transition: border-color 0.15s;
   backdrop-filter: blur(8px);
@@ -2854,7 +2866,7 @@ body.dark .history-restore-btn:hover { border-color: rgba(165, 148, 232, 0.4); c
 .chat-prompt-send {
   width: 28px;
   height: 28px;
-  border-radius: 8px;
+  border-radius: 2px;
   border: none;
   background: #7c66dc;
   color: white;

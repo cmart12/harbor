@@ -213,9 +213,18 @@ function toggleWindow(): void {
     // Let the renderer decide: navigate back to list or hide
     mainWindow.webContents.send('window:toggle');
   } else {
-    const pos = getWindowPosition();
+    const cursorPoint = screen.getCursorScreenPoint();
+    const display = screen.getDisplayNearestPoint(cursorPoint);
+    const { x, y, width, height } = display.workArea;
+
+    const snap = getConfigValue('snapPosition') || 'bottom-right';
+    const isLeft = snap.includes('left');
+    const winX = isLeft ? x + SNAP_MARGIN : x + width - WINDOW_WIDTH - SNAP_MARGIN;
+    const winY = y + SNAP_MARGIN;
+    const winHeight = height - SNAP_MARGIN * 2;
+
     showTimestamp = Date.now();
-    mainWindow.setPosition(pos.x, pos.y, false);
+    mainWindow.setBounds({ x: winX, y: winY, width: WINDOW_WIDTH, height: winHeight }, false);
     mainWindow.show();
     mainWindow.focus();
     mainWindow.webContents.send('window:shown');
@@ -395,8 +404,17 @@ app.whenReady().then(async () => {
     mainWindow.setSkipTaskbar(true);
 
     isSnapping = true;
-    const pos = getWindowPosition();
-    mainWindow.setBounds({ x: pos.x, y: pos.y, width: WINDOW_WIDTH, height: WINDOW_HEIGHT }, true);
+    const cursorPoint = screen.getCursorScreenPoint();
+    const display = screen.getDisplayNearestPoint(cursorPoint);
+    const { x, y, width, height } = display.workArea;
+
+    const snap = getConfigValue('snapPosition') || 'bottom-right';
+    const isLeft = snap.includes('left');
+    const winX = isLeft ? x + SNAP_MARGIN : x + width - WINDOW_WIDTH - SNAP_MARGIN;
+    const winY = y + SNAP_MARGIN;
+    const winHeight = height - SNAP_MARGIN * 2;
+
+    mainWindow.setBounds({ x: winX, y: winY, width: WINDOW_WIDTH, height: winHeight }, true);
     mainWindow.setResizable(false);
     setTimeout(() => { isSnapping = false; }, 300);
   });
