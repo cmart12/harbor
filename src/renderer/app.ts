@@ -99,6 +99,11 @@ interface IntentAPI {
   getPinned(): Promise<boolean>;
   setPinned(pinned: boolean): void;
   onPinnedChanged(callback: (pinned: boolean) => void): void;
+  openCanvasWindow(intentId: string, description: string): void;
+  onLoadCanvasIntent(callback: (intentId: string, description: string) => void): void;
+  onCanvasWindowClosed(callback: () => void): void;
+  notifyCanvasThemeChanged(theme: string): void;
+  onCanvasThemeChanged(callback: (theme: string) => void): void;
   onWindowShown(callback: () => void): void;
   onWindowToggle(callback: () => void): void;
   onWorkspaceCommitted(callback: () => void): void;
@@ -143,6 +148,9 @@ interface Intent {
 }
 
 declare const intentAPI: IntentAPI;
+
+// ── Canvas window mode detection ────────────────────────
+const isCanvasMode = new URLSearchParams(window.location.search).get('mode') === 'canvas';
 
 const descInput = document.getElementById('description-input') as HTMLTextAreaElement;
 const form = document.getElementById('capture-form') as HTMLFormElement;
@@ -422,11 +430,13 @@ async function loadThemeSetting(): Promise<void> {
 themeLightBtn.addEventListener('click', async () => {
   await intentAPI.setSetting('theme', 'light');
   applyTheme('light');
+  intentAPI.notifyCanvasThemeChanged('light');
 });
 
 themeDarkBtn.addEventListener('click', async () => {
   await intentAPI.setSetting('theme', 'dark');
   applyTheme('dark');
+  intentAPI.notifyCanvasThemeChanged('dark');
 });
 
 async function loadWorkspaceSetting(): Promise<void> {
@@ -2502,6 +2512,7 @@ let canvasIntentId: string | null = null;
 let canvasDirty = false;
 let canvasExpanded = false;
 let canvasIsNewIntent = false;
+let canvasMountGen = 0;
 let titleBeforeEdit = '';
 
 function startEditingTitle(): void {
@@ -2595,6 +2606,15 @@ async function openCanvas(intentId: string, expanded = false): Promise<void> {
   const intent = intents.find(i => i.id === intentId);
   if (!intent) return;
 
+  // When pinned (and not already in canvas mode), pop out to separate window
+  if (!isCanvasMode && expanded) {
+    const pinned = await intentAPI.getPinned();
+    if (pinned) {
+      intentAPI.openCanvasWindow(intentId, intent.description);
+      return;
+    }
+  }
+
   canvasIntentId = intentId;
   canvasTitle.textContent = intent.description;
   canvasTitle.contentEditable = 'false';
@@ -2604,17 +2624,21 @@ async function openCanvas(intentId: string, expanded = false): Promise<void> {
   canvasDirty = false;
   canvasSaveBtn.classList.add('hidden');
 
-  // Expand window if requested
-  canvasExpanded = expanded;
-  if (expanded) {
+  // Expand window if requested (only in main window mode)
+  canvasExpanded = expanded && !isCanvasMode;
+  if (canvasExpanded) {
     intentAPI.expandWindow();
   }
 
   // Show canvas view immediately while data loads
-  mainView.classList.add('hidden');
-  hideSettings();
-  timelineView.classList.add('hidden');
+  if (!isCanvasMode) {
+    mainView.classList.add('hidden');
+    hideSettings();
+    timelineView.classList.add('hidden');
+  }
   canvasView.classList.remove('hidden');
+
+  const myGen = ++canvasMountGen;
 
   // Load all data in parallel
   const [result, currentTheme, canvasPersonas] = await Promise.all([
@@ -2623,11 +2647,15 @@ async function openCanvas(intentId: string, expanded = false): Promise<void> {
     intentAPI.listPersonas().then(p => p || []),
   ]);
 
+  // Abort if user already switched to another intent
+  if (canvasMountGen !== myGen) return;
+
   if (result.error === 'no_workspace') {
-    // Revert view back to main
-    canvasView.classList.add('hidden');
-    mainView.classList.remove('hidden');
-    showStatus('Select a workspace first');
+    if (!isCanvasMode) {
+      canvasView.classList.add('hidden');
+      mainView.classList.remove('hidden');
+      showStatus('Select a workspace first');
+    }
     return;
   }
 
@@ -2645,7 +2673,6 @@ async function openCanvas(intentId: string, expanded = false): Promise<void> {
       canvasSaveStatus.textContent = status;
     },
     onAgentMentioned: (event) => {
-      // Launch an agent for each @mentioned persona
       for (const handle of event.handles) {
         intentAPI.launchCommentAgent(
           intentId,
@@ -2671,6 +2698,7 @@ async function closeCanvas(): Promise<void> {
   const wasNewIntent = canvasIsNewIntent;
   canvasIntentId = null;
   canvasIsNewIntent = false;
+  canvasClosing = true;
 
   // Get content BEFORE unmounting (unmount destroys the React ref)
   const finalContent = getCanvasContent();
@@ -2690,18 +2718,28 @@ async function closeCanvas(): Promise<void> {
     }
   }
 
-  // Collapse window if it was expanded
-  if (canvasExpanded) {
-    canvasExpanded = false;
-    intentAPI.collapseWindow();
-  }
-
   canvasDirty = false;
-  canvasView.classList.add('hidden');
-  mainView.classList.remove('hidden');
-  descInput.focus();
-  loadIntents();
+
+  if (isCanvasMode) {
+    // In canvas popout window, close the window itself.
+    // Keep canvasClosing=true so beforeunload doesn't double-save.
+    window.close();
+  } else {
+    // In main window, collapse and navigate back
+    if (canvasExpanded) {
+      canvasExpanded = false;
+      intentAPI.collapseWindow();
+    }
+    canvasView.classList.add('hidden');
+    mainView.classList.remove('hidden');
+    descInput.focus();
+    canvasClosing = false;
+    loadIntents();
+  }
 }
+
+// Guard against double-save in beforeunload
+let canvasClosing = false;
 
 canvasSaveBtn.addEventListener('click', saveCanvas);
 canvasBack.addEventListener('click', closeCanvas);
@@ -3016,7 +3054,7 @@ loadPinState();
 
 // Flush canvas saves when the window is about to close (app quit, reload)
 window.addEventListener('beforeunload', () => {
-  if (canvasIntentId) {
+  if (canvasIntentId && !canvasClosing) {
     const content = getCanvasContent();
     intentAPI.closeCanvas(canvasIntentId, content);
   }
@@ -3157,3 +3195,62 @@ intentAPI.onWindowToggle(() => {
 });
 
 loadIntents();
+
+// Refresh the intent list when the canvas popout window is closed
+intentAPI.onCanvasWindowClosed(() => {
+  if (!isCanvasMode) loadIntents();
+});
+
+// ── Canvas popout window mode ───────────────────────────
+if (isCanvasMode) {
+  // Hide everything except canvas view
+  mainView.classList.add('hidden');
+  canvasView.classList.remove('hidden');
+  document.body.classList.add('canvas-window');
+
+  // Apply theme
+  intentAPI.getSetting('theme').then(t => {
+    if (t === 'dark') document.body.classList.add('dark');
+  });
+
+  // Listen for theme changes from main window
+  intentAPI.onCanvasThemeChanged((theme: string) => {
+    document.body.classList.toggle('dark', theme === 'dark');
+  });
+
+  // Listen for intent to load (from main process)
+  intentAPI.onLoadCanvasIntent(async (intentId: string, description: string) => {
+    // If a canvas is already open, save and close it first
+    if (canvasIntentId) {
+      const finalContent = getCanvasContent();
+      await unmountCanvas();
+      await intentAPI.closeCanvas(canvasIntentId, finalContent);
+      canvasIntentId = null;
+      canvasAgentPresence.clear();
+    }
+
+    // Populate intent data so openCanvas() can find it
+    if (!intents.find(i => i.id === intentId)) {
+      intents.push({
+        id: intentId,
+        description,
+        body: null, raw_text: null, client: null,
+        due_at: null, due_at_utc: null, recurrence: null,
+        completed_at: null, folder: null, session_id: null,
+        attachments: [],
+        status: 'captured',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+    } else {
+      // Update description in case it changed
+      const existing = intents.find(i => i.id === intentId)!;
+      existing.description = description;
+    }
+
+    await openCanvas(intentId);
+  });
+
+  // Also load full intents in background for metadata
+  intentAPI.list().then(list => { intents = list; });
+}

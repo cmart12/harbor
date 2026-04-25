@@ -3900,3 +3900,102 @@ body:not(.dark) .chat-subagent-tile.clickable:hover {
 body.dark .chat-subagent-tile {
   background: rgba(255, 255, 255, 0.04);
 }
+
+/* ── Canvas popout window ───────────────────────────── */
+
+body.canvas-window {
+  background: transparent;
+}
+
+body.canvas-window #app {
+  border-radius: 0;
+  padding: 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.98) 100%);
+}
+
+body.canvas-window #main-view {
+  display: none !important;
+}
+
+body.canvas-window .canvas-view {
+  animation: none;
+}
+
+body.canvas-window .canvas-view > header {
+  -webkit-app-region: drag;
+  padding: 0 16px;
+  height: 52px;
+  min-height: 52px;
+  /* Leave room for macOS traffic lights */
+  padding-left: 78px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(20px);
+  margin-bottom: 0;
+}
+
+body.canvas-window .canvas-view > header * {
+  -webkit-app-region: no-drag;
+}
+
+body.canvas-window #canvas-back {
+  display: none;
+}
+
+body.canvas-window .canvas-title-header {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+body.canvas-window .header-actions {
+  gap: 2px;
+}
+
+body.canvas-window .header-icon-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s ease;
+}
+
+body.canvas-window .header-icon-btn:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+body.canvas-window .canvas-save-btn {
+  border-radius: 6px;
+  padding: 4px 12px;
+  font-size: 12px;
+}
+
+body.canvas-window .canvas-body {
+  padding: 0;
+}
+
+/* Dark canvas window */
+body.dark.canvas-window #app {
+  background: linear-gradient(180deg, rgba(30, 30, 30, 0.98) 0%, rgba(24, 24, 24, 0.99) 100%);
+}
+
+body.dark.canvas-window .canvas-view > header {
+  background: rgba(38, 38, 38, 0.8);
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+
+body.dark.canvas-window .canvas-title-header {
+  color: #e8e8e8;
+}
+
+body.dark.canvas-window .header-icon-btn {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+body.dark.canvas-window .header-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.85);
+}

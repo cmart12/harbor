@@ -108,6 +108,19 @@ contextBridge.exposeInMainWorld('intentAPI', {
   onPinnedChanged: (callback: (pinned: boolean) => void) => {
     ipcRenderer.on('window:pinned-changed', (_event: any, pinned: boolean) => callback(pinned));
   },
+
+  // Canvas popout window
+  openCanvasWindow: (intentId: string, description: string) => ipcRenderer.send('canvas-window:open', intentId, description),
+  onLoadCanvasIntent: (callback: (intentId: string, description: string) => void) => {
+    ipcRenderer.on('canvas-window:load-intent', (_event: any, intentId: string, description: string) => callback(intentId, description));
+  },
+  onCanvasWindowClosed: (callback: () => void) => {
+    ipcRenderer.on('canvas-window:closed', callback);
+  },
+  notifyCanvasThemeChanged: (theme: string) => ipcRenderer.send('canvas-window:theme-changed', theme),
+  onCanvasThemeChanged: (callback: (theme: string) => void) => {
+    ipcRenderer.on('canvas-window:theme-changed', (_event: any, theme: string) => callback(theme));
+  },
   onWindowShown: (callback: () => void) => {
     ipcRenderer.on('window:shown', callback);
   },

@@ -12,6 +12,7 @@ import { startCliExitMonitor, stopCliExitMonitor } from './agent-service';
 
 let tray: Tray | null = null;
 let mainWindow: BrowserWindow | null = null;
+let canvasWindow: BrowserWindow | null = null;
 
 const WINDOW_WIDTH = 420;
 const WINDOW_HEIGHT = 520;
@@ -453,6 +454,69 @@ app.whenReady().then(async () => {
     // Notify all windows so UI can update
     for (const win of BrowserWindow.getAllWindows()) {
       win.webContents.send('window:pinned-changed', pinned);
+    }
+
+    // Close canvas popout when unpinning
+    if (!pinned && canvasWindow && !canvasWindow.isDestroyed()) {
+      canvasWindow.close();
+    }
+  });
+
+  // ── Canvas popout window ────────────────────────────────
+  const CANVAS_WIDTH = 780;
+  const CANVAS_HEIGHT = 700;
+
+  function createCanvasWindow(): BrowserWindow {
+    const cursorPoint = screen.getCursorScreenPoint();
+    const display = screen.getDisplayNearestPoint(cursorPoint);
+    const { x, y, width, height } = display.workArea;
+
+    const win = new BrowserWindow({
+      width: CANVAS_WIDTH,
+      height: CANVAS_HEIGHT,
+      x: Math.round(x + (width - CANVAS_WIDTH) / 2),
+      y: Math.round(y + (height - CANVAS_HEIGHT) / 2),
+      show: false,
+      titleBarStyle: 'hiddenInset',
+      trafficLightPosition: { x: 16, y: 16 },
+      vibrancy: 'under-window',
+      visualEffectState: 'active',
+      webPreferences: {
+        preload: path.join(__dirname, 'preload.js'),
+        contextIsolation: true,
+        nodeIntegration: false,
+      },
+    });
+
+    win.loadURL('copilot-intent://app/renderer/index.html?mode=canvas');
+
+    win.on('closed', () => {
+      canvasWindow = null;
+      mainWindow?.webContents.send('canvas-window:closed');
+    });
+
+    return win;
+  }
+
+  ipcMain.on('canvas-window:open', (_event, intentId: string, description: string) => {
+    if (canvasWindow && !canvasWindow.isDestroyed()) {
+      // Reuse existing canvas window — switch intent
+      canvasWindow.webContents.send('canvas-window:load-intent', intentId, description);
+      canvasWindow.focus();
+    } else {
+      // Create new canvas window
+      canvasWindow = createCanvasWindow();
+      canvasWindow.webContents.once('did-finish-load', () => {
+        canvasWindow?.webContents.send('canvas-window:load-intent', intentId, description);
+        canvasWindow?.show();
+      });
+    }
+  });
+
+  // Forward theme changes to canvas window
+  ipcMain.on('canvas-window:theme-changed', (_event, theme: string) => {
+    if (canvasWindow && !canvasWindow.isDestroyed()) {
+      canvasWindow.webContents.send('canvas-window:theme-changed', theme);
     }
   });
 });
