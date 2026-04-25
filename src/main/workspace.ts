@@ -1,6 +1,7 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import { execFile } from 'child_process';
+import { BrowserWindow } from 'electron';
 
 const INTENT_DIR = '.intent';
 const LOG_FILE = 'events.jsonl';
@@ -177,6 +178,11 @@ async function doCommit(workspaceRoot: string): Promise<void> {
     });
     await runGit(workspaceRoot, ['commit', '-m', `intent: auto-save ${timestamp}`, '--no-verify']);
     console.log(`[workspace] Auto-committed at ${timestamp}`);
+
+    // Notify renderer so history panel can refresh
+    for (const win of BrowserWindow.getAllWindows()) {
+      win.webContents.send('workspace:committed');
+    }
   } catch (err: any) {
     // Silently skip if not a git repo or git not available
     if (err?.message?.includes('not a git repository') || err?.code === 'ENOENT') {
@@ -214,77 +220,31 @@ export interface FolderCommit {
 /** Get git commit history for an intent folder. */
 export async function getIntentHistory(workspaceRoot: string, folder: string, limit = 50): Promise<FolderCommit[]> {
   try {
-    const SEP = '---COMMIT---';
+    const SEPARATOR = '---COMMIT---';
     const raw = await runGitOutput(workspaceRoot, [
       'log', `--max-count=${limit}`,
-      '--format=' + [
-        '%H',   // full sha
-        '%h',   // short sha
-        '%s',   // subject
-        '%aI',  // author date ISO
-        '%ar',  // relative date
-      ].join('%x00'),
+      `--format=${SEPARATOR}%n%H%n%h%n%s%n%aI%n%ar`,
       '--name-only',
-      '--diff-filter=ACDMR',
-      '-z',    // null-delimit filenames
       '--', `${folder}/`,
     ]);
 
     if (!raw.trim()) return [];
 
-    // Parse the log output. With -z and --name-only, the format is:
-    // <format fields>\n\0file1\0file2\0\n<format fields>\n\0file1\0...
-    // We split by the pattern: a line matching our 5-field format
     const commits: FolderCommit[] = [];
-    const lines = raw.split('\n');
-    let current: Partial<FolderCommit> | null = null;
-    let fileBuffer: string[] = [];
+    const blocks = raw.split(SEPARATOR).filter(b => b.trim());
 
-    for (const line of lines) {
-      const parts = line.split('\0').filter(p => p !== '');
-      // Check if this line looks like a commit header (5 fields separated by \0)
-      const headerParts = line.split('\0');
-      if (headerParts.length >= 5 && /^[0-9a-f]{40}$/.test(headerParts[0])) {
-        // Flush previous commit
-        if (current?.sha) {
-          commits.push({
-            sha: current.sha!,
-            shortSha: current.shortSha!,
-            message: current.message!,
-            date: current.date!,
-            relativeDate: current.relativeDate!,
-            filesChanged: fileBuffer.filter(f => f.startsWith(folder + '/')),
-          });
-        }
-        current = {
-          sha: headerParts[0],
-          shortSha: headerParts[1],
-          message: headerParts[2],
-          date: headerParts[3],
-          relativeDate: headerParts[4],
-        };
-        fileBuffer = [];
-        // Remaining parts after the header are filenames
-        for (let i = 5; i < headerParts.length; i++) {
-          if (headerParts[i].trim()) fileBuffer.push(headerParts[i].trim());
-        }
-      } else {
-        // File names from --name-only
-        for (const p of parts) {
-          if (p.trim()) fileBuffer.push(p.trim());
-        }
-      }
-    }
+    for (const block of blocks) {
+      const lines = block.split('\n').filter(l => l !== '');
+      if (lines.length < 5) continue;
 
-    // Flush last commit
-    if (current?.sha) {
+      const [sha, shortSha, message, date, relativeDate, ...fileLines] = lines;
       commits.push({
-        sha: current.sha!,
-        shortSha: current.shortSha!,
-        message: current.message!,
-        date: current.date!,
-        relativeDate: current.relativeDate!,
-        filesChanged: fileBuffer.filter(f => f.startsWith(folder + '/')),
+        sha,
+        shortSha,
+        message,
+        date,
+        relativeDate,
+        filesChanged: fileLines.filter(f => f.startsWith(folder + '/')),
       });
     }
 

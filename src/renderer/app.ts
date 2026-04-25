@@ -98,6 +98,7 @@ interface IntentAPI {
   onPinnedChanged(callback: (pinned: boolean) => void): void;
   onWindowShown(callback: () => void): void;
   onWindowToggle(callback: () => void): void;
+  onWorkspaceCommitted(callback: () => void): void;
   onIntentProcessed(callback: (id: string) => void): void;
   onRecurrenceResult(callback: (intentId: string, result: RecurrenceResult) => void): void;
   onRecurrenceApplied(callback: (intentId: string) => void): void;
@@ -1418,7 +1419,7 @@ async function renderAgentsList(): Promise<void> {
       : escapeHtml(intentMap.get(agent.intentId) || agent.intentId);
 
     return `
-      <div class="agent-list-item ${statusClass}" data-agent-id="${agent.agentId}" title="Click to open in Copilot CLI">
+      <div class="agent-list-item ${statusClass}" data-agent-id="${agent.agentId}" title="Click to open chat">
         <div class="agent-list-status">${statusIcon}</div>
         <div class="agent-list-body">
           <div class="agent-list-text">"${escapeHtml(preview)}"</div>
@@ -1431,11 +1432,15 @@ async function renderAgentsList(): Promise<void> {
     `;
   }).join('');
 
-  // Attach click handlers to open CLI
+  // Attach click handlers to open chat view
   listEl.querySelectorAll('.agent-list-item[data-agent-id]').forEach(el => {
     el.addEventListener('click', () => {
       const agentId = (el as HTMLElement).dataset.agentId;
-      if (agentId) intentAPI.openAgentCli(agentId);
+      if (!agentId) return;
+      const agent = allAgents.find(a => a.agentId === agentId);
+      if (agent) {
+        openAgentChat(agentId, agent.selectedText, agent.status);
+      }
     });
   });
 
@@ -2411,7 +2416,57 @@ function createHistoryItem(commit: FolderCommit): HTMLElement {
 canvasHistoryBtn.addEventListener('click', toggleHistoryPanel);
 canvasHistoryClose.addEventListener('click', closeHistoryPanel);
 
+// Refresh history panel when a new auto-commit happens
+intentAPI.onWorkspaceCommitted(() => {
+  if (historyPanelOpen && canvasIntentId) {
+    openHistoryPanel();
+  }
+});
+
 (window as any).openCanvas = openCanvas;
+
+// ── Agent Chat View ────────────────────────────────────
+import { mountChat, unmountChat } from './chat/mount.tsx';
+
+const chatView = document.getElementById('chat-view') as HTMLDivElement;
+const chatRoot = document.getElementById('chat-root') as HTMLDivElement;
+let chatExpanded = false;
+
+async function openAgentChat(agentId: string, agentPrompt: string, agentStatus: string): Promise<void> {
+  // Expand window for better chat experience
+  chatExpanded = true;
+  intentAPI.expandWindow();
+
+  // Hide other views, show chat
+  mainView.classList.add('hidden');
+  hideSettings();
+  timelineView.classList.add('hidden');
+  canvasView.classList.add('hidden');
+  chatView.classList.remove('hidden');
+
+  mountChat(chatRoot, {
+    agentId,
+    agentPrompt,
+    agentStatus,
+    onClose: () => closeAgentChat(),
+    onOpenCli: (id: string) => intentAPI.openAgentCli(id),
+  });
+}
+
+function closeAgentChat(): void {
+  unmountChat();
+
+  if (chatExpanded) {
+    chatExpanded = false;
+    intentAPI.collapseWindow();
+  }
+
+  chatView.classList.add('hidden');
+  mainView.classList.remove('hidden');
+  descInput.focus();
+}
+
+(window as any).openAgentChat = openAgentChat;
 
 // ── Agent Presence Management ──────────────────────────
 const canvasAgentPresence = new Map<string, Presence>();
@@ -2507,6 +2562,10 @@ document.addEventListener('keydown', (e) => {
 
   if (e.key === 'Escape') {
     if (isRecording) stopRecording();
+    if (!chatView.classList.contains('hidden')) {
+      closeAgentChat();
+      return;
+    }
     if (!canvasView.classList.contains('hidden')) {
       const wasExpanded = canvasExpanded;
       closeCanvas();
@@ -2534,6 +2593,10 @@ intentAPI.onWindowShown(() => {
 
 intentAPI.onWindowToggle(() => {
   // If on a sub-view, navigate back to the intent list
+  if (!chatView.classList.contains('hidden')) {
+    closeAgentChat();
+    return;
+  }
   if (!canvasView.classList.contains('hidden')) {
     closeCanvas();
     return;

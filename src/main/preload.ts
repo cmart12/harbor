@@ -62,6 +62,18 @@ contextBridge.exposeInMainWorld('intentAPI', {
   listAllAgents: () =>
     ipcRenderer.invoke('agent:list-all'),
 
+  // Chat (in-app agent conversation)
+  sendChatMessage: (agentId: string, prompt: string, attachments?: Array<{ type: 'file'; path: string }>) =>
+    ipcRenderer.invoke('chat:send-message', agentId, prompt, attachments),
+  setChatModel: (agentId: string, model: string) =>
+    ipcRenderer.invoke('chat:set-model', agentId, model),
+  onChatEvent: (agentId: string, callback: (event: any) => void) => {
+    const channel = `chat:event:${agentId}`;
+    const handler = (_event: any, data: any) => callback(data);
+    ipcRenderer.on(channel, handler);
+    return () => { ipcRenderer.removeListener(channel, handler); };
+  },
+
   hideWindow: () => ipcRenderer.send('window:hide'),
   expandWindow: () => ipcRenderer.send('window:expand'),
   collapseWindow: () => ipcRenderer.send('window:collapse'),
@@ -75,6 +87,9 @@ contextBridge.exposeInMainWorld('intentAPI', {
   },
   onWindowToggle: (callback: () => void) => {
     ipcRenderer.on('window:toggle', callback);
+  },
+  onWorkspaceCommitted: (callback: () => void) => {
+    ipcRenderer.on('workspace:committed', callback);
   },
   onAgentStatusChanged: (callback: (data: any) => void) => {
     ipcRenderer.on('agent:status-changed', (_event: any, data: any) => callback(data));
