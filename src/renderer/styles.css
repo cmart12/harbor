@@ -15,7 +15,7 @@ body {
 #app {
   position: relative;
   background:
-    linear-gradient(180deg, rgba(235, 238, 248, 0.88) 0%, rgba(240, 243, 250, 0.82) 50%, rgba(245, 247, 252, 0.78) 100%);
+    linear-gradient(180deg, rgba(235, 238, 248, 0.45) 0%, rgba(240, 243, 250, 0.38) 50%, rgba(245, 247, 252, 0.32) 100%);
   border: 1px solid rgba(0, 0, 0, 0.08);
   border-radius: 0.5px;
   padding: 16px;
