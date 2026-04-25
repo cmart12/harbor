@@ -192,6 +192,8 @@ function detectSnapSlot(winX: number, winY: number, winWidth: number, winHeight:
 /** Snap the window to the nearest edge after a user drag. Only operates in collapsed mode. */
 function handleWindowMoved(): void {
   if (!mainWindow || isExpanded || isSnapping) return;
+  // Don't snap when pinned — allow free positioning
+  if (getConfigValue('pinned')) return;
 
   const bounds = mainWindow.getBounds();
   const slot = detectSnapSlot(bounds.x, bounds.y, bounds.width, bounds.height);
@@ -199,7 +201,7 @@ function handleWindowMoved(): void {
 
   isSnapping = true;
   const coords = getSnapCoords(slot, bounds.width, bounds.height);
-  mainWindow.setPosition(coords.x, coords.y, true);
+  mainWindow.setPosition(coords.x, coords.y, false);
   setConfigValue('snapPosition', slot);
 
   // Clear guard after animation
@@ -225,6 +227,7 @@ function toggleWindow(): void {
 
     showTimestamp = Date.now();
     mainWindow.setBounds({ x: winX, y: winY, width: WINDOW_WIDTH, height: winHeight }, false);
+    mainWindow.setResizable(!!getConfigValue('pinned'));
     mainWindow.show();
     mainWindow.focus();
     mainWindow.webContents.send('window:shown');
@@ -347,16 +350,12 @@ app.whenReady().then(async () => {
   preloadModel();
   initCopilot();
 
-  // Snap-on-drop: listen for window movement end
-  if (process.platform === 'darwin') {
-    mainWindow.on('moved', handleWindowMoved);
-  } else {
-    let moveDebounce: ReturnType<typeof setTimeout> | null = null;
-    mainWindow.on('move', () => {
-      if (moveDebounce) clearTimeout(moveDebounce);
-      moveDebounce = setTimeout(handleWindowMoved, 150);
-    });
-  }
+  // Snap-on-drop: debounce move events so snap only fires after drag ends
+  let snapDebounce: ReturnType<typeof setTimeout> | null = null;
+  mainWindow.on('move', () => {
+    if (snapDebounce) clearTimeout(snapDebounce);
+    snapDebounce = setTimeout(handleWindowMoved, 500);
+  });
 
   // Dev mode: watch renderer files and auto-reload windows
   if (!app.isPackaged) {
@@ -415,7 +414,7 @@ app.whenReady().then(async () => {
     const winHeight = height - SNAP_MARGIN * 2;
 
     mainWindow.setBounds({ x: winX, y: winY, width: WINDOW_WIDTH, height: winHeight }, true);
-    mainWindow.setResizable(false);
+    mainWindow.setResizable(!!getConfigValue('pinned'));
     setTimeout(() => { isSnapping = false; }, 300);
   });
 
@@ -426,6 +425,9 @@ app.whenReady().then(async () => {
 
   ipcMain.on('window:set-pinned', (_event, pinned: boolean) => {
     setConfigValue('pinned', pinned);
+    if (mainWindow && !isExpanded) {
+      mainWindow.setResizable(pinned);
+    }
     // Notify all windows so UI can update
     for (const win of BrowserWindow.getAllWindows()) {
       win.webContents.send('window:pinned-changed', pinned);

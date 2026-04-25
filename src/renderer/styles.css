@@ -14,18 +14,14 @@ body {
 
 #app {
   background:
-    radial-gradient(ellipse at 8% 8%, rgba(186, 169, 228, 0.22) 0%, transparent 50%),
-    radial-gradient(ellipse at 92% 12%, rgba(166, 192, 245, 0.18) 0%, transparent 45%),
-    radial-gradient(ellipse at 35% 92%, rgba(219, 186, 230, 0.14) 0%, transparent 50%),
-    radial-gradient(ellipse at 72% 55%, rgba(190, 210, 250, 0.10) 0%, transparent 40%),
-    linear-gradient(170deg, rgba(240, 234, 252, 0.92) 0%, rgba(238, 242, 255, 0.90) 35%, rgba(249, 245, 253, 0.88) 65%, rgba(255, 255, 255, 0.85) 100%);
-  border: 1px solid rgba(160, 160, 170, 0.4);
+    linear-gradient(180deg, #f3f3f3 0%, #fafafa 100%);
+  border: 1px solid rgba(0, 0, 0, 0.08);
   border-radius: 0.5px;
   padding: 16px;
   height: 100vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 0 8px rgba(140, 140, 160, 0.25), 0 8px 40px rgba(120, 100, 180, 0.1), 0 2px 10px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 0 8px rgba(0, 0, 0, 0.06), 0 8px 32px rgba(0, 0, 0, 0.04);
   backdrop-filter: blur(20px);
 }
 
@@ -120,8 +116,6 @@ header h1 {
   inset: 0;
   z-index: 100;
   display: flex;
-  align-items: center;
-  justify-content: center;
   animation: modalFadeIn 0.15s ease;
 }
 
@@ -138,12 +132,11 @@ header h1 {
 
 .settings-modal {
   position: relative;
-  background: linear-gradient(170deg, #f6f1fd 0%, #f0f3ff 40%, #ffffff 100%);
-  border-radius: 3.5px;
-  box-shadow: 0 12px 48px rgba(120, 100, 180, 0.15), 0 2px 8px rgba(0, 0, 0, 0.06);
-  width: calc(100% - 32px);
-  max-width: 520px;
-  max-height: calc(100vh - 48px);
+  background: linear-gradient(180deg, #f3f3f3 0%, #fafafa 100%);
+  border-radius: 0;
+  box-shadow: none;
+  width: 100%;
+  height: 100%;
   display: flex;
   flex-direction: column;
   animation: modalScaleIn 0.15s ease;
@@ -281,6 +274,39 @@ header h1 {
   flex-direction: column;
   gap: 8px;
   margin-bottom: 12px;
+}
+
+/* ── New Agent button (agents tab) ────────────────────── */
+
+.new-agent-btn {
+  display: block;
+  width: 100%;
+  background: none;
+  border: 1px dashed rgba(0, 0, 0, 0.15);
+  border-radius: 3px;
+  color: rgba(0, 0, 0, 0.4);
+  font-size: 13px;
+  font-family: inherit;
+  padding: 9px 12px;
+  margin-bottom: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: center;
+}
+
+.new-agent-btn:hover {
+  border-color: rgba(124, 102, 220, 0.4);
+  color: #7c66dc;
+  background: rgba(124, 102, 220, 0.04);
+}
+
+.new-agent-btn:focus {
+  outline: 2px solid rgba(124, 102, 220, 0.4);
+  outline-offset: -2px;
+}
+
+.new-agent-btn.hidden {
+  display: none;
 }
 
 .input-wrapper {
@@ -423,8 +449,8 @@ header h1 {
 .filter-bar {
   display: flex;
   margin-bottom: 10px;
-  padding: 3px;
-  background: rgba(0, 0, 0, 0.02);
+  padding: 0;
+  background: none;
   border-radius: 2.5px;
   border: 1px solid rgba(0, 0, 0, 0.06);
   overflow: hidden;
@@ -435,7 +461,7 @@ header h1 {
   background: none;
   border: none;
   border-bottom: 2px solid transparent;
-  padding: 8px 8px 7px;
+  padding: 3px 8px;
   font-size: 12px;
   font-weight: 400;
   color: #1d1d1f;
@@ -1693,8 +1719,8 @@ header h1 {
   right: 0;
   bottom: 0;
   width: 260px;
-  background: linear-gradient(170deg, #f6f1fd 0%, #f0f3ff 40%, #ffffff 100%);
-  border-left: 1px solid rgba(140, 120, 180, 0.1);
+  background: linear-gradient(180deg, #f3f3f3 0%, #fafafa 100%);
+  border-left: 1px solid rgba(0, 0, 0, 0.06);
   display: flex;
   flex-direction: column;
   z-index: 10;
@@ -2084,10 +2110,10 @@ header h1 {
 /* ── Dark theme ──────────────────────────────────────── */
 
 body.dark #app {
-  background: #1c1c20;
-  border-color: rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, #202020 0%, #1c1c1c 100%);
+  border-color: rgba(255, 255, 255, 0.06);
   color: #e0e0e0;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3), 0 2px 8px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 0 8px rgba(0, 0, 0, 0.2), 0 8px 32px rgba(0, 0, 0, 0.3);
 }
 
 body.dark header { border-bottom-color: rgba(255, 255, 255, 0.06); }
@@ -2130,9 +2156,11 @@ body.dark .agent-list-text { color: #e0e0e0; }
 body.dark .agent-list-meta { color: rgba(255, 255, 255, 0.35); }
 body.dark .agent-add-btn { border-color: rgba(255, 255, 255, 0.1); color: rgba(255, 255, 255, 0.35); }
 body.dark .agent-add-btn:hover { border-color: rgba(165, 148, 232, 0.4); color: #a594e8; background: rgba(165, 148, 232, 0.06); }
+body.dark .new-agent-btn { border-color: rgba(255, 255, 255, 0.1); color: rgba(255, 255, 255, 0.35); }
+body.dark .new-agent-btn:hover { border-color: rgba(165, 148, 232, 0.4); color: #a594e8; background: rgba(165, 148, 232, 0.06); }
 
 /* Dark settings */
-body.dark .settings-modal { background: #1c1c20; border-color: rgba(255, 255, 255, 0.08); }
+body.dark .settings-modal { background: #1c1c20; }
 body.dark .settings-modal header { border-bottom-color: rgba(255, 255, 255, 0.06); }
 body.dark .settings-backdrop { background: rgba(0, 0, 0, 0.6); }
 body.dark .settings-group-title { color: rgba(255, 255, 255, 0.35); }

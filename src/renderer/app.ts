@@ -170,6 +170,7 @@ let currentFilter: 'open' | 'agents' | 'closed' = 'open';
 const filterOrder: Array<'open' | 'agents' | 'closed'> = ['open', 'agents', 'closed'];
 let renderGeneration = 0;
 const filterBar = document.getElementById('filter-bar') as HTMLDivElement;
+const newAgentBtn = document.getElementById('new-agent-btn') as HTMLButtonElement;
 const queryResult = document.getElementById('query-result') as HTMLDivElement;
 const focusBanner = document.getElementById('focus-banner') as HTMLDivElement;
 const focusDesc = document.getElementById('focus-desc') as HTMLDivElement;
@@ -201,6 +202,16 @@ function setFilter(filter: typeof currentFilter): void {
   filterBar.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
   const btn = filterBar.querySelector(`[data-filter="${filter}"]`) as HTMLElement;
   if (btn) btn.classList.add('active');
+
+  // Toggle capture form vs new-agent button
+  if (filter === 'agents') {
+    form.style.display = 'none';
+    newAgentBtn.classList.remove('hidden');
+  } else {
+    form.style.display = '';
+    newAgentBtn.classList.add('hidden');
+  }
+
   render();
 }
 
@@ -230,7 +241,41 @@ filterBar.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowDown') {
     e.preventDefault();
     e.stopPropagation();
-    descInput.focus();
+    if (currentFilter === 'agents') {
+      newAgentBtn.focus();
+    } else {
+      descInput.focus();
+    }
+    return;
+  }
+});
+
+// ── New Agent button ────────────────────────────────────
+newAgentBtn.addEventListener('click', () => {
+  openAgentChat(undefined as any, '', 'new');
+});
+
+newAgentBtn.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    e.stopPropagation();
+    focusActiveFilter();
+    return;
+  }
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    e.stopPropagation();
+    const items = listEl.querySelectorAll('.agent-list-item');
+    if (items.length > 0) {
+      selectedIndex = 0;
+      updateAgentSelection();
+      newAgentBtn.blur();
+    }
+    return;
+  }
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    openAgentChat(undefined as any, '', 'new');
     return;
   }
 });
@@ -1375,18 +1420,17 @@ async function renderAgentsList(): Promise<void> {
   // Bail if user switched away from agents while loading
   if (gen !== renderGeneration) return;
 
-  // Add + button header
-  const addBtn = `<div class="agent-add-bar"><button class="agent-add-btn" id="agent-quick-launch" title="Start a new agent session">+ New Agent</button></div>`;
+  // Store for keyboard nav
+  renderedAgents = allAgents;
+  selectedIndex = -1;
 
   if (allAgents.length === 0) {
     listEl.innerHTML = `
-      ${addBtn}
       <div class="empty-state">
         <span class="icon">⚡</span>
         <span>No agents running.</span>
       </div>
     `;
-    attachAgentAddHandler();
     return;
   }
 
@@ -1396,7 +1440,7 @@ async function renderAgentsList(): Promise<void> {
   // Build intent description map for display
   const intentMap = new Map(intents.map(i => [i.id, i.description]));
 
-  listEl.innerHTML = addBtn + allAgents.map(agent => {
+  listEl.innerHTML = allAgents.map(agent => {
     const statusIcon = agent.status === 'running' ? '⚡' :
                        agent.status === 'waiting-approval' ? '⏳' :
                        agent.status === 'completed' ? '✓' :
@@ -1438,16 +1482,17 @@ async function renderAgentsList(): Promise<void> {
       }
     });
   });
-
-  attachAgentAddHandler();
 }
 
-function attachAgentAddHandler(): void {
-  const btn = document.getElementById('agent-quick-launch');
-  if (btn) {
-    btn.addEventListener('click', () => {
-      openAgentChat(undefined as any, '', 'new');
-    });
+let renderedAgents: Array<{ agentId: string; sessionId: string; status: string; summary: string; selectedText: string; intentId: string; createdAt?: string }> = [];
+
+function updateAgentSelection(): void {
+  const items = listEl.querySelectorAll('.agent-list-item');
+  items.forEach((item, i) => {
+    item.classList.toggle('kb-selected', i === selectedIndex);
+  });
+  if (selectedIndex >= 0 && items[selectedIndex]) {
+    (items[selectedIndex] as HTMLElement).scrollIntoView({ block: 'nearest' });
   }
 }
 
@@ -2510,41 +2555,75 @@ document.addEventListener('keydown', (e) => {
 
   // Arrow/Enter navigation in the intent list
   if (!mainView.classList.contains('hidden')) {
-    if (e.key === 'ArrowDown' && selectedIndex >= 0) {
-      e.preventDefault();
-      if (selectedIndex < displayedIntents.length - 1) {
-        selectedIndex++;
-        updateSelection();
+    // Agent list navigation
+    if (currentFilter === 'agents') {
+      const agentItems = listEl.querySelectorAll('.agent-list-item');
+      if (e.key === 'ArrowDown' && selectedIndex >= 0) {
+        e.preventDefault();
+        if (selectedIndex < agentItems.length - 1) {
+          selectedIndex++;
+          updateAgentSelection();
+        }
+        return;
       }
-      return;
-    }
-    if (e.key === 'ArrowUp' && selectedIndex >= 0) {
-      e.preventDefault();
-      if (selectedIndex === 0) {
-        selectedIndex = -1;
-        updateSelection();
-        descInput.focus();
-      } else {
-        selectedIndex--;
-        updateSelection();
+      if (e.key === 'ArrowUp' && selectedIndex >= 0) {
+        e.preventDefault();
+        if (selectedIndex === 0) {
+          selectedIndex = -1;
+          updateAgentSelection();
+          newAgentBtn.focus();
+        } else {
+          selectedIndex--;
+          updateAgentSelection();
+        }
+        return;
       }
-      return;
-    }
-    // Cmd+Enter: open small canvas (summary view) for selected intent
-    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-      e.preventDefault();
-      const target = selectedIndex >= 0
-        ? displayedIntents[selectedIndex]
-        : displayedIntents[0];
-      if (target) openCanvas(target.id);
-      return;
-    }
-    // Enter: open full editor for selected intent
-    if (e.key === 'Enter' && selectedIndex >= 0 && document.activeElement !== descInput) {
-      e.preventDefault();
-      const intent = displayedIntents[selectedIndex];
-      if (intent) openCanvas(intent.id, true);
-      return;
+      if (e.key === 'Enter' && selectedIndex >= 0 && document.activeElement !== newAgentBtn) {
+        e.preventDefault();
+        const agent = renderedAgents[selectedIndex];
+        if (agent) {
+          openAgentChat(agent.agentId, agent.selectedText, agent.status);
+        }
+        return;
+      }
+    } else {
+      // Intent list navigation
+      if (e.key === 'ArrowDown' && selectedIndex >= 0) {
+        e.preventDefault();
+        if (selectedIndex < displayedIntents.length - 1) {
+          selectedIndex++;
+          updateSelection();
+        }
+        return;
+      }
+      if (e.key === 'ArrowUp' && selectedIndex >= 0) {
+        e.preventDefault();
+        if (selectedIndex === 0) {
+          selectedIndex = -1;
+          updateSelection();
+          descInput.focus();
+        } else {
+          selectedIndex--;
+          updateSelection();
+        }
+        return;
+      }
+      // Cmd+Enter: open small canvas (summary view) for selected intent
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault();
+        const target = selectedIndex >= 0
+          ? displayedIntents[selectedIndex]
+          : displayedIntents[0];
+        if (target) openCanvas(target.id);
+        return;
+      }
+      // Enter: open full editor for selected intent
+      if (e.key === 'Enter' && selectedIndex >= 0 && document.activeElement !== descInput) {
+        e.preventDefault();
+        const intent = displayedIntents[selectedIndex];
+        if (intent) openCanvas(intent.id, true);
+        return;
+      }
     }
   }
 
