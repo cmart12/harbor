@@ -1,6 +1,6 @@
 import { CopilotSession } from '@github/copilot-sdk';
 import { v4 as uuid } from 'uuid';
-import { BrowserWindow } from 'electron';
+import { BrowserWindow, app } from 'electron';
 import { getCopilotClient } from './ai';
 import { createCanvasAgent, updateCanvasAgentStatus, createAgentSession, updateAgentSessionStatus, getAgentSession, listAgentSessions } from './database';
 import { AgentAnchor, AgentSession } from '../shared/types';
@@ -158,6 +158,7 @@ export async function launchAgent(
       status: 'running',
       summary: 'Starting...',
       working_dir: workingDir,
+      source: 'sdk',
       created_at: now,
       updated_at: now,
     });
@@ -298,6 +299,7 @@ If you make changes to the document, clearly describe what you changed.${cliTool
       status: 'running',
       summary: 'Starting...',
       working_dir: workingDir,
+      source: 'sdk',
       created_at: now,
       updated_at: now,
     });
@@ -483,6 +485,7 @@ export async function launchQuickAgent(
       status: 'running',
       summary: 'Starting...',
       working_dir: workspaceRoot,
+      source: 'sdk',
       created_at: now,
       updated_at: now,
     });
@@ -497,7 +500,7 @@ export async function launchQuickAgent(
   }
 }
 
-export function listAllAgents(): Array<{ agentId: string; sessionId: string; status: AgentStatus; summary: string; selectedText: string; intentId: string; createdAt: string; pendingApprovalId: string | null; pendingPermissionKind: string | null }> {
+export function listAllAgents(): Array<{ agentId: string; sessionId: string; status: AgentStatus; summary: string; selectedText: string; intentId: string; createdAt: string; pendingApprovalId: string | null; pendingPermissionKind: string | null; source: 'sdk' | 'cli' }> {
   // Read persisted sessions from DB (sorted newest first)
   let persisted: AgentSession[] = [];
   try {
@@ -506,7 +509,7 @@ export function listAllAgents(): Array<{ agentId: string; sessionId: string; sta
 
   // Build result: overlay live in-memory state on top of DB records
   const seen = new Set<string>();
-  const result: Array<{ agentId: string; sessionId: string; status: AgentStatus; summary: string; selectedText: string; intentId: string; createdAt: string; pendingApprovalId: string | null; pendingPermissionKind: string | null }> = [];
+  const result: Array<{ agentId: string; sessionId: string; status: AgentStatus; summary: string; selectedText: string; intentId: string; createdAt: string; pendingApprovalId: string | null; pendingPermissionKind: string | null; source: 'sdk' | 'cli' }> = [];
 
   for (const row of persisted) {
     seen.add(row.id);
@@ -521,6 +524,7 @@ export function listAllAgents(): Array<{ agentId: string; sessionId: string; sta
       createdAt: row.created_at,
       pendingApprovalId: live?.pendingApprovalId ?? null,
       pendingPermissionKind: live?.pendingPermissionKind ?? null,
+      source: row.source ?? 'sdk',
     });
   }
 
@@ -537,6 +541,7 @@ export function listAllAgents(): Array<{ agentId: string; sessionId: string; sta
         createdAt: '',
         pendingApprovalId: a.pendingApprovalId,
         pendingPermissionKind: a.pendingPermissionKind ?? null,
+        source: 'sdk',
       });
     }
   }
@@ -835,4 +840,121 @@ function handleCommentAgentCompletion(record: AgentRecord): void {
     threadIndex: ctx.threadIndex,
     body: replyBody,
   });
+}
+
+// ── CLI Session Launch ─────────────────────────────────
+
+const CLI_EXIT_DIR = path.join(app.getPath('userData'), 'cli-exits');
+let cliExitMonitorInterval: ReturnType<typeof setInterval> | null = null;
+
+function ensureCliExitDir(): void {
+  if (!fs.existsSync(CLI_EXIT_DIR)) {
+    fs.mkdirSync(CLI_EXIT_DIR, { recursive: true });
+  }
+}
+
+/** Launch a new Copilot CLI session in a terminal, tracked as an agent. */
+export async function launchCliSession(
+  workspaceRoot: string,
+): Promise<{ agentId: string; sessionId: string } | { error: string }> {
+  const agentId = uuid();
+  const sessionId = uuid();
+  const now = new Date().toISOString();
+
+  // Ensure signal directory exists
+  ensureCliExitDir();
+  const signalPath = path.join(CLI_EXIT_DIR, agentId);
+
+  // Register in DB
+  createAgentSession({
+    id: agentId,
+    session_id: sessionId,
+    intent_id: null,
+    prompt: 'CLI Session',
+    status: 'running',
+    summary: 'Running in terminal...',
+    working_dir: workspaceRoot,
+    source: 'cli',
+    created_at: now,
+    updated_at: now,
+  });
+
+  // Launch CLI in terminal with exit signal
+  try {
+    await launchSessionInTerminal(sessionId, workspaceRoot, signalPath);
+  } catch (err: any) {
+    updateAgentSessionStatus(agentId, 'failed', err.message || 'Failed to launch CLI');
+    return { error: err.message || 'Failed to launch CLI' };
+  }
+
+  // Notify renderer
+  notifyRenderer('agent:status-changed', {
+    agentId, status: 'running', summary: 'Running in terminal...',
+  });
+
+  console.log(`[agent-service] Launched CLI session: agentId=${agentId}, sessionId=${sessionId}`);
+  return { agentId, sessionId };
+}
+
+/** Start polling for CLI exit signal files. Call on app startup. */
+export function startCliExitMonitor(): void {
+  if (cliExitMonitorInterval) return;
+  ensureCliExitDir();
+
+  cliExitMonitorInterval = setInterval(() => {
+    try {
+      const files = fs.readdirSync(CLI_EXIT_DIR);
+      for (const agentId of files) {
+        if (agentId.startsWith('.')) continue;
+        const signalPath = path.join(CLI_EXIT_DIR, agentId);
+
+        // Clean up signal file
+        try { fs.unlinkSync(signalPath); } catch { /* ignore */ }
+
+        // Update agent status
+        try {
+          updateAgentSessionStatus(agentId, 'completed', 'CLI session ended');
+        } catch { /* DB may not be ready */ }
+
+        notifyRenderer('agent:status-changed', {
+          agentId, status: 'completed', summary: 'CLI session ended',
+        });
+        notifyRenderer('agent:completed', {
+          agentId, summary: 'CLI session ended',
+        });
+
+        console.log(`[agent-service] CLI session exited: ${agentId}`);
+      }
+    } catch { /* directory may not exist yet */ }
+  }, 10_000);
+}
+
+/** Stop the CLI exit monitor. Call on app quit. */
+export function stopCliExitMonitor(): void {
+  if (cliExitMonitorInterval) {
+    clearInterval(cliExitMonitorInterval);
+    cliExitMonitorInterval = null;
+  }
+}
+
+// ── Agent History ──────────────────────────────────────
+
+/** Resume an agent session and return its conversation history. */
+export async function getAgentHistory(agentId: string): Promise<{ events: any[] } | { error: string }> {
+  // Resume if not already in memory
+  let record = agents.get(agentId);
+  if (!record) {
+    const resumed = await resumeAgentSession(agentId);
+    if (!resumed) return { error: 'Failed to resume session' };
+    record = agents.get(agentId);
+  }
+  if (!record) return { error: 'Agent not found' };
+
+  try {
+    const events = await (record.session as any).getMessages();
+    return { events: events || [] };
+  } catch (err: any) {
+    console.error('[agent-service] Failed to get history:', err);
+    return { error: err.message || 'Failed to load history' };
+  }
 }

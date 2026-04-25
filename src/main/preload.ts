@@ -62,6 +62,14 @@ contextBridge.exposeInMainWorld('intentAPI', {
   listAllAgents: () =>
     ipcRenderer.invoke('agent:list-all'),
 
+  // CLI session launch
+  launchCliSession: () =>
+    ipcRenderer.invoke('cli:launch-session'),
+
+  // Agent history
+  getAgentHistory: (agentId: string) =>
+    ipcRenderer.invoke('agent:get-history', agentId),
+
   // Chat (in-app agent conversation)
   sendChatMessage: (agentId: string, prompt: string, attachments?: Array<{ type: 'file'; path: string }>) =>
     ipcRenderer.invoke('chat:send-message', agentId, prompt, attachments),

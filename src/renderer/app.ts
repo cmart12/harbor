@@ -85,6 +85,8 @@ interface IntentAPI {
   listAgents(intentId: string): Promise<any[]>;
   quickLaunchAgent(prompt: string): Promise<{ agentId?: string; sessionId?: string; error?: string }>;
   listAllAgents(): Promise<any[]>;
+  launchCliSession(): Promise<{ agentId?: string; sessionId?: string; error?: string }>;
+  getAgentHistory(agentId: string): Promise<{ events?: any[]; error?: string }>;
   openAgentCli(agentId: string): Promise<{ error?: string }>;
   onChatEvent(agentId: string, callback: (event: any) => void): () => void;
   launchAgent(intentId: string, selectedText: string, anchor: any, options?: { repo?: string; model?: string }): Promise<any>;
@@ -172,6 +174,7 @@ const filterOrder: Array<'open' | 'agents' | 'closed'> = ['open', 'agents', 'clo
 let renderGeneration = 0;
 const filterBar = document.getElementById('filter-bar') as HTMLDivElement;
 const newAgentBtn = document.getElementById('new-agent-btn') as HTMLButtonElement;
+const launchCliBtn = document.getElementById('launch-cli-btn') as HTMLButtonElement;
 const agentSummaryEl = document.getElementById('agent-summary') as HTMLDivElement;
 const queryResult = document.getElementById('query-result') as HTMLDivElement;
 const focusBanner = document.getElementById('focus-banner') as HTMLDivElement;
@@ -209,14 +212,17 @@ function setFilter(filter: typeof currentFilter): void {
   if (filter === 'agents') {
     form.style.display = 'none';
     newAgentBtn.classList.remove('hidden');
+    launchCliBtn.classList.remove('hidden');
     agentSummaryEl.classList.remove('hidden');
   } else if (filter === 'closed') {
     form.style.display = 'none';
     newAgentBtn.classList.add('hidden');
+    launchCliBtn.classList.add('hidden');
     agentSummaryEl.classList.add('hidden');
   } else {
     form.style.display = '';
     newAgentBtn.classList.add('hidden');
+    launchCliBtn.classList.add('hidden');
     agentSummaryEl.classList.add('hidden');
   }
 
@@ -285,6 +291,17 @@ newAgentBtn.addEventListener('keydown', (e) => {
     e.preventDefault();
     openAgentChat(undefined as any, '', 'new');
     return;
+  }
+});
+
+// ── Launch CLI button ───────────────────────────────────
+launchCliBtn.addEventListener('click', async () => {
+  const result = await intentAPI.launchCliSession();
+  if (result && 'error' in result) {
+    console.error('[app] CLI launch failed:', result.error);
+  } else {
+    // Refresh agents list
+    if (currentFilter === 'agents') renderAgentsList();
   }
 });
 
@@ -1672,7 +1689,7 @@ async function renderAgentsList(): Promise<void> {
   countEl.textContent = String(intents.filter(i => i.status !== 'done').length);
 
   // Gather all agents (including workspace-level ones)
-  let allAgents: Array<{ agentId: string; sessionId: string; status: string; summary: string; selectedText: string; intentId: string; createdAt?: string; pendingApprovalId?: string | null; pendingPermissionKind?: string | null }> = [];
+  let allAgents: Array<{ agentId: string; sessionId: string; status: string; summary: string; selectedText: string; intentId: string; createdAt?: string; pendingApprovalId?: string | null; pendingPermissionKind?: string | null; source?: 'sdk' | 'cli' }> = [];
 
   try {
     allAgents = await intentAPI.listAllAgents();
@@ -1730,13 +1747,17 @@ async function renderAgentsList(): Promise<void> {
                         agent.status === 'completed' ? 'agent-completed' :
                         'agent-failed';
 
-    const intentLabel = agent.intentId === '__workspace__'
-      ? 'Workspace'
-      : escapeHtml(intentMap.get(agent.intentId) || agent.intentId);
-
-    const statusIcon = agent.status === 'running' ? '⚡' :
+    const statusIcon = agent.source === 'cli'
+      ? '🖥'
+      : agent.status === 'running' ? '⚡' :
                        agent.status === 'waiting-approval' ? '⏳' :
                        agent.status === 'completed' ? '✓' : '✗';
+
+    const intentLabel = agent.source === 'cli'
+      ? 'CLI Session'
+      : agent.intentId === '__workspace__'
+        ? 'Workspace'
+        : escapeHtml(intentMap.get(agent.intentId) || agent.intentId);
 
     const title = agent.selectedText.length > 80
       ? agent.selectedText.slice(0, 77) + '...'
@@ -1786,7 +1807,7 @@ async function renderAgentsList(): Promise<void> {
       if (!agentId) return;
       const agent = allAgents.find(a => a.agentId === agentId);
       if (agent) {
-        openAgentChat(agentId, agent.selectedText, agent.status);
+        openAgentChat(agentId, agent.selectedText, agent.status, agent.source);
       }
     });
   });
@@ -2875,7 +2896,7 @@ import { mountChat, unmountChat } from './chat/mount.tsx';
 const chatView = document.getElementById('chat-view') as HTMLDivElement;
 const chatRoot = document.getElementById('chat-root') as HTMLDivElement;
 
-async function openAgentChat(agentId: string | undefined, agentPrompt: string, agentStatus: string): Promise<void> {
+async function openAgentChat(agentId: string | undefined, agentPrompt: string, agentStatus: string, agentSource?: 'sdk' | 'cli'): Promise<void> {
   // Hide other views, show chat inline
   mainView.classList.add('hidden');
   hideSettings();
@@ -2887,6 +2908,7 @@ async function openAgentChat(agentId: string | undefined, agentPrompt: string, a
     agentId,
     agentPrompt,
     agentStatus,
+    agentSource,
     onClose: () => closeAgentChat(),
     onOpenCli: (id: string) => intentAPI.openAgentCli(id),
   });
@@ -3008,7 +3030,7 @@ document.addEventListener('keydown', (e) => {
         e.preventDefault();
         const agent = renderedAgents[selectedIndex];
         if (agent) {
-          openAgentChat(agent.agentId, agent.selectedText, agent.status);
+          openAgentChat(agent.agentId, agent.selectedText, agent.status, agent.source);
         }
         return;
       }

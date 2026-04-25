@@ -74,6 +74,7 @@ export function initDatabase(dbPath: string, eventLogPath: string): void {
       status TEXT NOT NULL DEFAULT 'running',
       summary TEXT DEFAULT '',
       working_dir TEXT,
+      source TEXT NOT NULL DEFAULT 'sdk',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     )
@@ -368,16 +369,17 @@ export function createAgentSession(session: AgentSession): void {
     status: session.status,
     summary: session.summary,
     working_dir: session.working_dir,
+    source: session.source,
     created_at: session.created_at,
     updated_at: session.updated_at,
   });
 
   db.prepare(
-    `INSERT INTO agent_sessions (id, session_id, intent_id, prompt, status, summary, working_dir, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO agent_sessions (id, session_id, intent_id, prompt, status, summary, working_dir, source, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     session.id, session.session_id, session.intent_id, session.prompt,
-    session.status, session.summary, session.working_dir,
+    session.status, session.summary, session.working_dir, session.source,
     session.created_at, session.updated_at,
   );
 }
@@ -397,14 +399,14 @@ export function updateAgentSessionStatus(id: string, status: string, summary?: s
 
 export function getAgentSession(id: string): AgentSession | null {
   return db.prepare(
-    `SELECT id, session_id, intent_id, prompt, status, summary, working_dir, created_at, updated_at
+    `SELECT id, session_id, intent_id, prompt, status, summary, working_dir, source, created_at, updated_at
      FROM agent_sessions WHERE id = ?`
   ).get(id) as AgentSession | undefined ?? null;
 }
 
 export function listAgentSessions(): AgentSession[] {
   return db.prepare(
-    `SELECT id, session_id, intent_id, prompt, status, summary, working_dir, created_at, updated_at
+    `SELECT id, session_id, intent_id, prompt, status, summary, working_dir, source, created_at, updated_at
      FROM agent_sessions ORDER BY created_at DESC`
   ).all() as AgentSession[];
 }

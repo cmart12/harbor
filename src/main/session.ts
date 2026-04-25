@@ -274,10 +274,10 @@ function focusWindowLinux(tracked: TrackedSession): boolean {
 
 // ── Launch / reactivate ─────────────────────────────────
 
-export async function launchSessionInTerminal(sessionId: string, cwd: string): Promise<{ pid: number | null }> {
+export async function launchSessionInTerminal(sessionId: string, cwd: string, signalPath?: string): Promise<{ pid: number | null }> {
   const cli = await checkCopilotCli();
   if (!cli) throw new Error('Copilot CLI not found');
-  const pid = launchInTerminal(cli, sessionId, cwd);
+  const pid = launchInTerminal(cli, sessionId, cwd, signalPath);
   return { pid };
 }
 
@@ -354,14 +354,14 @@ export async function launchSession(intentId: string, workspaceRoot: string): Pr
 
 // ── Platform-specific terminal launch ───────────────────
 
-function launchInTerminal(cli: string, sessionId: string, cwd: string): number | null {
+function launchInTerminal(cli: string, sessionId: string, cwd: string, signalPath?: string): number | null {
   try {
     if (process.platform === 'win32') {
-      return launchWindows(cli, sessionId, cwd);
+      return launchWindows(cli, sessionId, cwd, signalPath);
     } else if (process.platform === 'darwin') {
-      return launchMac(cli, sessionId, cwd);
+      return launchMac(cli, sessionId, cwd, signalPath);
     } else {
-      return launchLinux(cli, sessionId, cwd);
+      return launchLinux(cli, sessionId, cwd, signalPath);
     }
   } catch (err) {
     console.error('[session] Terminal launch failed:', err);
@@ -369,13 +369,14 @@ function launchInTerminal(cli: string, sessionId: string, cwd: string): number |
   }
 }
 
-function launchWindows(cli: string, sessionId: string, cwd: string): number | null {
+function launchWindows(cli: string, sessionId: string, cwd: string, signalPath?: string): number | null {
   // Use PowerShell Start-Process to create a visible cmd.exe window
   // (spawn with detached:true from Electron creates hidden windows)
   const copilotCmd = `"${cli}" --resume=${sessionId}`;
+  const exitSignal = signalPath ? ` & echo.>"${signalPath.replace(/\\/g, '\\\\')}"` : '';
   try {
     const output = execSync(
-      `powershell -NoProfile -Command "$p = Start-Process cmd.exe -ArgumentList '/k ${copilotCmd.replace(/'/g, "''")}' -WorkingDirectory '${cwd.replace(/'/g, "''")}' -PassThru; $p.Id"`,
+      `powershell -NoProfile -Command "$p = Start-Process cmd.exe -ArgumentList '/k ${(copilotCmd + exitSignal).replace(/'/g, "''")}' -WorkingDirectory '${cwd.replace(/'/g, "''")}' -PassThru; $p.Id"`,
       { windowsHide: true, timeout: 10000 }
     ).toString().trim();
 
@@ -390,13 +391,14 @@ function launchWindows(cli: string, sessionId: string, cwd: string): number | nu
   return null;
 }
 
-function launchMac(cli: string, sessionId: string, cwd: string): number | null {
+function launchMac(cli: string, sessionId: string, cwd: string, signalPath?: string): number | null {
   // Use AppleScript to open a new Terminal window with the command
   // This gives us a proper Terminal.app window that we can find later
   const escapedCwd = cwd.replace(/'/g, "'\\''");
   const escapedCli = cli.replace(/'/g, "'\\''");
+  const exitSignal = signalPath ? ` ; touch '${signalPath.replace(/'/g, "'\\''")}'` : '';
   const script = `tell application "Terminal"
-    do script "cd '${escapedCwd}' && '${escapedCli}' --resume=${sessionId}"
+    do script "cd '${escapedCwd}' && '${escapedCli}' --resume=${sessionId}${exitSignal}"
     activate
   end tell`;
 
@@ -429,10 +431,11 @@ function launchMac(cli: string, sessionId: string, cwd: string): number | null {
   return 0;
 }
 
-function launchLinux(cli: string, sessionId: string, cwd: string): number | null {
+function launchLinux(cli: string, sessionId: string, cwd: string, signalPath?: string): number | null {
   const escapedCwd = shellEscape(cwd);
   const escapedCli = shellEscape(cli);
-  const command = `cd ${escapedCwd} && ${escapedCli} --resume=${sessionId}`;
+  const exitSignal = signalPath ? ` ; touch ${shellEscape(signalPath)}` : '';
+  const command = `cd ${escapedCwd} && ${escapedCli} --resume=${sessionId}${exitSignal}`;
 
   // Try terminal emulators in preference order
   const launchers: Array<{ cmd: string; args: string[] }> = [

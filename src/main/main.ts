@@ -8,6 +8,7 @@ import { migrateOldDatabase } from './migration';
 import { registerIpcHandlers } from './ipc';
 import { preloadModel } from './voice';
 import { initCopilot, shutdownCopilot } from './ai';
+import { startCliExitMonitor, stopCliExitMonitor } from './agent-service';
 
 let tray: Tray | null = null;
 let mainWindow: BrowserWindow | null = null;
@@ -351,6 +352,7 @@ app.whenReady().then(async () => {
   mainWindow = createWindow();
   preloadModel();
   initCopilot();
+  startCliExitMonitor();
 
   // Snap-on-drop: debounce move events so snap only fires after drag ends
   let snapDebounce: ReturnType<typeof setTimeout> | null = null;
@@ -457,6 +459,7 @@ app.whenReady().then(async () => {
 
 app.on('will-quit', async () => {
   globalShortcut.unregisterAll();
+  stopCliExitMonitor();
   await shutdownCopilot();
 });
 

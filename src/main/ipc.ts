@@ -601,6 +601,21 @@ export function registerIpcHandlers(): void {
     return listAllAgents();
   });
 
+  // ── CLI session launch ──────────────────────────────────
+  ipcMain.handle('cli:launch-session', async () => {
+    const workspace = getConfigValue('workspace');
+    if (!workspace) return { error: 'no_workspace' };
+
+    const { launchCliSession } = await import('./agent-service');
+    return launchCliSession(workspace);
+  });
+
+  // ── Agent history ───────────────────────────────────────
+  ipcMain.handle('agent:get-history', async (_event, agentId: string) => {
+    const { getAgentHistory } = await import('./agent-service');
+    return getAgentHistory(agentId);
+  });
+
   // ── Comment-triggered agent launch ───────────────────────
   ipcMain.handle('agent:launch-from-comment', async (_event, intentId: string, commentBody: string, quotedText: string, anchor: any, personaHandle: string, threadIndex: number) => {
     const workspace = getConfigValue('workspace');

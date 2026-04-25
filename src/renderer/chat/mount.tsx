@@ -8,6 +8,7 @@ export interface MountChatOptions {
   agentId?: string;
   agentPrompt: string;
   agentStatus: string;
+  agentSource?: 'sdk' | 'cli';
   onClose: () => void;
   onOpenCli: (agentId: string) => void;
 }
@@ -23,6 +24,7 @@ export function mountChat(container: HTMLElement, options: MountChatOptions): vo
       agentId={options.agentId}
       agentPrompt={options.agentPrompt}
       agentStatus={options.agentStatus}
+      agentSource={options.agentSource}
       onClose={options.onClose}
       onOpenCli={options.onOpenCli}
     />

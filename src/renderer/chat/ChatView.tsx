@@ -13,6 +13,7 @@ declare const intentAPI: {
   getSetting: (key: string) => Promise<string | null>;
   setChatModel: (agentId: string, model: string) => Promise<{ error?: string }>;
   quickLaunchAgent: (prompt: string) => Promise<{ agentId: string; sessionId: string } | { error: string }>;
+  getAgentHistory: (agentId: string) => Promise<{ events?: any[]; error?: string }>;
   [key: string]: any;
 };
 
@@ -20,6 +21,7 @@ interface ChatViewProps {
   agentId?: string;
   agentPrompt: string;
   agentStatus: string;
+  agentSource?: 'sdk' | 'cli';
   onClose: () => void;
   onOpenCli: (agentId: string) => void;
 }
@@ -29,9 +31,68 @@ function genId(): string {
   return `msg-${nextMsgId++}`;
 }
 
-export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: initialStatus, onClose, onOpenCli }: ChatViewProps) {
+/** Transform SDK SessionEvent[] into ChatMessage[] for display. */
+function parseHistoryEvents(events: any[]): ChatMessage[] {
+  const messages: ChatMessage[] = [];
+  // Track tool calls by ID so we can update them with completion data
+  const toolMsgMap = new Map<string, number>();
+
+  for (const event of events) {
+    const type = event.type || event.kind;
+    const data = event.data || event;
+    const ts = event.timestamp || new Date().toISOString();
+
+    if (type === 'user.message' || type === 'user_message') {
+      const content = data.content || data.prompt || data.message || '';
+      if (content) {
+        messages.push({ id: genId(), type: 'user', content, timestamp: ts });
+      }
+    } else if (type === 'assistant.message' || type === 'assistant_message') {
+      const content = data.content || data.message || '';
+      if (content) {
+        messages.push({ id: genId(), type: 'assistant', content, isStreaming: false, timestamp: ts } as AssistantMsgType);
+      }
+    } else if (type === 'assistant.reasoning' || type === 'assistant_reasoning') {
+      const content = data.content || '';
+      if (content) {
+        messages.push({
+          id: genId(), type: 'reasoning',
+          reasoningId: data.reasoningId || '', content, isStreaming: false, timestamp: ts,
+        } as ReasoningMessage);
+      }
+    } else if (type === 'tool.execution_start' || type === 'tool_execution_start') {
+      const toolCallId = data.toolCallId || '';
+      const msg: ToolCallMessage = {
+        id: genId(), type: 'tool_call', toolCallId,
+        toolName: data.toolName || 'tool', args: data.arguments || data.toolArgs || {},
+        completed: false, timestamp: ts,
+      };
+      toolMsgMap.set(toolCallId, messages.length);
+      messages.push(msg);
+    } else if (type === 'tool.execution_complete' || type === 'tool_execution_complete') {
+      const toolCallId = data.toolCallId || '';
+      const idx = toolMsgMap.get(toolCallId);
+      if (idx !== undefined && messages[idx]?.type === 'tool_call') {
+        const msg = messages[idx] as ToolCallMessage;
+        msg.completed = true;
+        msg.result = data.result ?? '';
+        msg.success = data.success !== false;
+      }
+    } else if (type === 'session.error' || type === 'session_error') {
+      messages.push({
+        id: genId(), type: 'session_event', eventType: 'error',
+        message: data.message || 'Unknown error', timestamp: ts,
+      } as SessionEventMessage);
+    }
+  }
+  return messages;
+}
+
+export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: initialStatus, agentSource, onClose, onOpenCli }: ChatViewProps) {
   const [currentAgentId, setCurrentAgentId] = useState<string | null>(initialAgentId || null);
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    // For CLI sessions or sessions with history, don't seed — history will load
+    if (initialAgentId && agentSource === 'cli') return [];
     // Seed with the initial agent prompt as the first "user" message
     const seed: ChatMessage[] = [];
     if (agentPrompt) {
@@ -44,8 +105,10 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
     }
     return seed;
   });
-  const [isBusy, setIsBusy] = useState(initialStatus === 'running');
+  const [isBusy, setIsBusy] = useState(initialStatus === 'running' && agentSource !== 'cli');
   const [status, setStatus] = useState(initialAgentId ? initialStatus : 'new');
+  const [isLoadingHistory, setIsLoadingHistory] = useState(!!initialAgentId);
+  const [historyLoaded, setHistoryLoaded] = useState(!initialAgentId);
   const [models, setModels] = useState<{ id: string; name?: string }[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>('');
 
@@ -67,9 +130,30 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
     })();
   }, []);
 
-  // Subscribe to chat events
+  // Load conversation history for existing agents (especially CLI sessions)
   useEffect(() => {
-    if (!currentAgentId) return;
+    if (!initialAgentId) return;
+    (async () => {
+      try {
+        const result = await intentAPI.getAgentHistory(initialAgentId);
+        if (result.events && result.events.length > 0) {
+          const historyMessages = parseHistoryEvents(result.events);
+          if (historyMessages.length > 0) {
+            setMessages(historyMessages);
+          }
+        }
+      } catch (err) {
+        console.error('[ChatView] Failed to load history:', err);
+      } finally {
+        setIsLoadingHistory(false);
+        setHistoryLoaded(true);
+      }
+    })();
+  }, [initialAgentId]);
+
+  // Subscribe to chat events — wait for history to load first to avoid race
+  useEffect(() => {
+    if (!currentAgentId || !historyLoaded) return;
     const unsubscribe = intentAPI.onChatEvent(currentAgentId, (event: ChatEvent) => {
       switch (event.type) {
         case 'assistant.message_delta': {
@@ -218,7 +302,7 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
     });
 
     return () => unsubscribe();
-  }, [currentAgentId]);
+  }, [currentAgentId, historyLoaded]);
 
   const handleSend = useCallback(async (message: string) => {
     // Add user message to state
@@ -328,12 +412,21 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
         </div>
       </header>
 
+      {isLoadingHistory && (
+        <div className="chat-loading-history">Loading conversation history...</div>
+      )}
+
       <MessageList messages={messages} onApprovalRespond={handleApprovalRespond} />
 
       <PromptBar
         onSend={handleSend}
         disabled={false}
-        placeholder={!currentAgentId ? 'What would you like the agent to do?' : isBusy ? 'Agent is working...' : 'Send a follow-up message...'}
+        placeholder={
+          !currentAgentId ? 'What would you like the agent to do?' :
+          isBusy ? 'Agent is working...' :
+          agentSource === 'cli' ? 'Continue this CLI session here...' :
+          'Send a follow-up message...'
+        }
       />
     </div>
   );
