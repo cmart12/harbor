@@ -166,10 +166,19 @@ export async function launchAgent(
     // Set up event listeners
     setupAgentEventListeners(session, record);
 
-    // Send the prompt
-    await session.send({
+    // Fire-and-forget: return agentId immediately so the renderer can subscribe
+    // before events start flowing. Errors are handled by the session.error listener.
+    session.send({
       prompt: selectedText,
       attachments: [{ type: 'file' as const, path: path.join(workingDir, 'canvas.md') }],
+    }).catch((err: any) => {
+      record.status = 'failed';
+      record.summary = `Error: ${err.message || 'Unknown'}`;
+      updateAgentStatus(record);
+      notifyRenderer(`chat:event:${agentId}`, {
+        type: 'session.error',
+        message: err.message || 'Failed to process message',
+      });
     });
 
     return { agentId, sessionId };
@@ -314,9 +323,20 @@ If you make changes to the document, clearly describe what you changed.${cliTool
       anchor,
     });
 
-    await session.send({
+    session.send({
       prompt: commentBody,
       attachments: [{ type: 'file' as const, path: canvasPath }],
+    }).catch((err: any) => {
+      record.status = 'failed';
+      record.summary = `Error: ${err.message || 'Unknown'}`;
+      updateAgentStatus(record);
+      notifyRenderer(`chat:event:${agentId}`, {
+        type: 'session.error',
+        message: err.message || 'Failed to process message',
+      });
+      if (record.commentContext) {
+        notifyRenderer('agent:presence-ended', { agentId, intentId: record.intentId });
+      }
     });
 
     return { agentId, sessionId };
@@ -492,7 +512,17 @@ export async function launchQuickAgent(
 
     setupAgentEventListeners(session, record);
 
-    await session.send({ prompt });
+    // Fire-and-forget: return agentId immediately so the renderer can subscribe
+    // before events start flowing. Errors are handled by the session.error listener.
+    session.send({ prompt }).catch((err: any) => {
+      record.status = 'failed';
+      record.summary = `Error: ${err.message || 'Unknown'}`;
+      updateAgentStatus(record);
+      notifyRenderer(`chat:event:${agentId}`, {
+        type: 'session.error',
+        message: err.message || 'Failed to process message',
+      });
+    });
 
     return { agentId, sessionId };
   } catch (err: any) {
@@ -560,13 +590,16 @@ function setupAgentEventListeners(session: CopilotSession, record: AgentRecord):
   const agentId = record.agentId;
   const chatChannel = `chat:event:${agentId}`;
 
+  // SDK events wrap payloads in event.data; fall back to top-level for compat
   session.on('assistant.message_delta', (event: any) => {
-    const delta = event.deltaContent ?? event.delta ?? '';
+    const d = event.data ?? event;
+    const delta = d.deltaContent ?? d.delta ?? '';
     notifyRenderer(chatChannel, { type: 'assistant.message_delta', delta });
   });
 
   session.on('assistant.message', (event: any) => {
-    const content = event.content || event.message || '';
+    const d = event.data ?? event;
+    const content = d.content || d.message || '';
     record.summary = truncate(content || 'Agent responded', 100);
     persistSummary(record);
     notifyRenderer('agent:status-changed', {
@@ -576,48 +609,58 @@ function setupAgentEventListeners(session: CopilotSession, record: AgentRecord):
   });
 
   session.on('assistant.reasoning_delta', (event: any) => {
+    const d = event.data ?? event;
     notifyRenderer(chatChannel, {
       type: 'assistant.reasoning_delta',
-      reasoningId: event.reasoningId ?? '',
-      delta: event.deltaContent ?? event.delta ?? '',
+      reasoningId: d.reasoningId ?? '',
+      delta: d.deltaContent ?? d.delta ?? '',
     });
   });
 
   session.on('assistant.reasoning', (event: any) => {
+    const d = event.data ?? event;
     notifyRenderer(chatChannel, {
       type: 'assistant.reasoning',
-      reasoningId: event.reasoningId ?? '',
-      content: event.content ?? '',
+      reasoningId: d.reasoningId ?? '',
+      content: d.content ?? '',
     });
   });
 
   session.on('tool.execution_start', (event: any) => {
-    record.summary = `Using ${event.toolName || 'tool'}...`;
+    const d = event.data ?? event;
+    record.summary = `Using ${d.toolName || 'tool'}...`;
     notifyRenderer('agent:status-changed', {
       agentId, status: record.status, summary: record.summary,
     });
     notifyRenderer(chatChannel, {
       type: 'tool.start',
-      toolCallId: event.toolCallId ?? '',
-      toolName: event.toolName ?? '',
-      args: event.arguments ?? event.toolArgs ?? {},
+      toolCallId: d.toolCallId ?? '',
+      toolName: d.toolName ?? '',
+      args: d.arguments ?? d.toolArgs ?? {},
     });
   });
 
   session.on('tool.execution_progress', (event: any) => {
+    const d = event.data ?? event;
     notifyRenderer(chatChannel, {
       type: 'tool.progress',
-      toolCallId: event.toolCallId ?? '',
-      message: event.progressMessage ?? '',
+      toolCallId: d.toolCallId ?? '',
+      message: d.progressMessage ?? '',
     });
   });
 
   session.on('tool.execution_complete', (event: any) => {
+    const d = event.data ?? event;
+    // SDK result is { content, detailedContent? } — flatten to string
+    const rawResult = d.result;
+    const result = typeof rawResult === 'string'
+      ? rawResult
+      : rawResult?.detailedContent ?? rawResult?.content ?? '';
     notifyRenderer(chatChannel, {
       type: 'tool.complete',
-      toolCallId: event.toolCallId ?? '',
-      result: event.result ?? '',
-      success: event.success !== false,
+      toolCallId: d.toolCallId ?? '',
+      result,
+      success: d.success !== false,
     });
   });
 
@@ -637,15 +680,16 @@ function setupAgentEventListeners(session: CopilotSession, record: AgentRecord):
   });
 
   session.on('session.error', (event: any) => {
+    const d = event.data ?? event;
     record.status = 'failed';
-    record.summary = `Error: ${event.message || 'Unknown error'}`;
+    record.summary = `Error: ${d.message || 'Unknown error'}`;
     updateAgentStatus(record);
     notifyRenderer('agent:status-changed', {
       agentId, status: 'failed', summary: record.summary,
     });
     notifyRenderer(chatChannel, {
       type: 'session.error',
-      message: event.message || 'Unknown error',
+      message: d.message || 'Unknown error',
     });
 
     // Clean up presence on failure too

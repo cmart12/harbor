@@ -75,7 +75,11 @@ function parseHistoryEvents(events: any[]): ChatMessage[] {
       if (idx !== undefined && messages[idx]?.type === 'tool_call') {
         const msg = messages[idx] as ToolCallMessage;
         msg.completed = true;
-        msg.result = data.result ?? '';
+        // SDK result may be { content, detailedContent? } or a plain string
+        const rawResult = data.result;
+        msg.result = typeof rawResult === 'string'
+          ? rawResult
+          : rawResult?.detailedContent ?? rawResult?.content ?? '';
         msg.success = data.success !== false;
       }
     } else if (type === 'session.error' || type === 'session_error') {
