@@ -1943,8 +1943,8 @@ async function renderSkillsList(): Promise<void> {
     return;
   }
 
-  listEl.innerHTML = skills.map(skill => `
-    <div class="intent-item skill-card" data-skill-id="${skill.id}">
+  listEl.innerHTML = skills.map((skill, i) => `
+    <div class="intent-item skill-card" data-skill-id="${skill.id}" tabindex="0" data-skill-index="${i}">
       <div class="skill-icon">🧩</div>
       <div class="intent-content">
         <div class="intent-desc">${escapeHtml(skill.name)}</div>
@@ -1958,11 +1958,26 @@ async function renderSkillsList(): Promise<void> {
     </div>
   `).join('');
 
-  // Click handler for skill cards → open skill editor
+  // Click + keyboard handler for skill cards
   listEl.querySelectorAll('.skill-card[data-skill-id]').forEach(el => {
     el.addEventListener('click', () => {
       const skillId = (el as HTMLElement).dataset.skillId!;
       openSkillEditor(skillId);
+    });
+    el.addEventListener('keydown', (e) => {
+      const idx = parseInt((el as HTMLElement).dataset.skillIndex || '0', 10);
+      const items = listEl.querySelectorAll('.skill-card');
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (idx < items.length - 1) (items[idx + 1] as HTMLElement).focus();
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (idx === 0) descInput.focus();
+        else (items[idx - 1] as HTMLElement).focus();
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        openSkillEditor((el as HTMLElement).dataset.skillId!);
+      }
     });
   });
 }

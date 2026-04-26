@@ -118,6 +118,53 @@ export function registerSkillHandlers(): void {
     shell.openPath(path.join(workspace, skill.folder));
   });
 
+  ipcMain.handle('skill:create-from-prompt', async (_event, description: string) => {
+    const workspace = getConfigValue('workspace');
+    if (!workspace || !isInitialized()) return { error: 'no_workspace' };
+
+    const { launchQuickAgent } = await import('../agent-service');
+    const skillsDir = getSkillsDir(workspace);
+
+    // List existing skill slugs so the agent avoids collisions
+    const existingSlugs = listSkills().map(s => s.id);
+    const existingNote = existingSlugs.length > 0
+      ? `\nExisting skill folders (DO NOT overwrite these): ${existingSlugs.join(', ')}`
+      : '';
+
+    const systemPrompt = [
+      'You are a skill template generator. The user will give you a short description of a skill they want to create.',
+      'Your job is to:',
+      '1. Choose a short, descriptive name for the skill (e.g. "Issue Triage", "PR Review", "Release Notes")',
+      '2. Choose a unique kebab-case slug for the folder name (e.g. "issue-triage", "pr-review", "release-notes")',
+      '3. Write a concise one-line description',
+      '4. Write a detailed SKILL.md body with instructions for how an agent should perform this skill',
+      '',
+      `Create the skill folder and SKILL.md file inside: ${skillsDir}`,
+      'The folder structure must be: {skills-dir}/{slug}/SKILL.md',
+      existingNote,
+      'IMPORTANT: Never overwrite an existing skill folder. Choose a unique slug.',
+      '',
+      'The SKILL.md file MUST have this exact format:',
+      '```',
+      '---',
+      'name: <skill name>',
+      "description: '<one-line description>'",
+      '---',
+      '',
+      '<detailed instructions for the skill>',
+      '```',
+      '',
+      'Create the folder and write the file. Do not ask for confirmation.',
+    ].join('\n');
+
+    const result = await launchQuickAgent(
+      `${systemPrompt}\n\nUser description: ${description}`,
+      workspace,
+    );
+
+    return result;
+  });
+
   ipcMain.handle('skill:create-intent', (_event, skillId: string) => {
     const workspace = getConfigValue('workspace');
     if (!workspace || !isInitialized()) return { error: 'no_workspace' };

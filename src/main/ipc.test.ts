@@ -527,6 +527,14 @@ describe('IPC handlers', () => {
     });
   });
 
+  describe('skill:create-from-prompt', () => {
+    it('returns error when no workspace', async () => {
+      vi.mocked(getConfigValue).mockReturnValueOnce(null as any);
+      const result = await invoke('skill:create-from-prompt', 'triage github issues');
+      expect(result).toEqual({ error: 'no_workspace' });
+    });
+  });
+
   describe('handler registration', () => {
     it('registers all expected channels', () => {
       const expected = [
@@ -538,6 +546,7 @@ describe('IPC handlers', () => {
         'personas:list', 'personas:save',
         'agent:launch', 'agent:quick-launch', 'agent:list-all',
         'session:launch',
+        'skill:create-from-prompt',
       ];
       for (const ch of expected) {
         expect(handlers.has(ch), `Missing handler: ${ch}`).toBe(true);

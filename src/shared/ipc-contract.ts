@@ -223,6 +223,7 @@ export interface IpcCommands {
   'skill:read': { args: [skillId: string]; result: SkillContent | { error: string } };
   'skill:write': { args: [skillId: string, frontmatter: Record<string, unknown>, body: string]; result: { success: boolean } | { error: string } };
   'skill:create': { args: [name: string]; result: Skill | { error: string } };
+  'skill:create-from-prompt': { args: [description: string]; result: { agentId: string; sessionId: string } | { error: string } };
   'skill:delete': { args: [skillId: string]; result: boolean };
   'skill:open-folder': { args: [skillId: string]; result: void };
   'skill:create-intent': { args: [skillId: string]; result: Intent | { error: string } };

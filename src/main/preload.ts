@@ -145,6 +145,7 @@ export interface IntentAPI {
   readSkill(skillId: string): Promise<IpcCommandResult<'skill:read'>>;
   writeSkill(skillId: string, frontmatter: Record<string, unknown>, body: string): Promise<IpcCommandResult<'skill:write'>>;
   createSkill(name: string): Promise<IpcCommandResult<'skill:create'>>;
+  createSkillFromPrompt(description: string): Promise<IpcCommandResult<'skill:create-from-prompt'>>;
   deleteSkill(skillId: string): Promise<IpcCommandResult<'skill:delete'>>;
   openSkillFolder(skillId: string): Promise<IpcCommandResult<'skill:open-folder'>>;
   createIntentFromSkill(skillId: string): Promise<IpcCommandResult<'skill:create-intent'>>;
@@ -355,6 +356,7 @@ const api: IntentAPI = {
   readSkill: (skillId) => ipcRenderer.invoke('skill:read', skillId),
   writeSkill: (skillId, frontmatter, body) => ipcRenderer.invoke('skill:write', skillId, frontmatter, body),
   createSkill: (name) => ipcRenderer.invoke('skill:create', name),
+  createSkillFromPrompt: (description) => ipcRenderer.invoke('skill:create-from-prompt', description),
   deleteSkill: (skillId) => ipcRenderer.invoke('skill:delete', skillId),
   openSkillFolder: (skillId) => ipcRenderer.invoke('skill:open-folder', skillId),
   createIntentFromSkill: (skillId) => ipcRenderer.invoke('skill:create-intent', skillId),
