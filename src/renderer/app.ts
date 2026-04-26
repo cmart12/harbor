@@ -1994,6 +1994,7 @@ async function openSkillEditor(skillId: string): Promise<void> {
   canvasSaveStatus.textContent = '';
   canvasDirty = false;
   canvasSaveBtn.classList.add('hidden');
+  updateModeToggleUI('rendered');
 
   // Hide intent-specific controls for skills
   canvasLaunchBtn.classList.add('hidden');
@@ -2946,7 +2947,7 @@ async function refreshIntentTitle(id: string): Promise<void> {
 (window as any).refreshIntentTitle = refreshIntentTitle;
 
 // ── Canvas view ─────────────────────────────────────────
-import { mountCanvas, unmountCanvas, getCanvasContent, saveCanvas as saveCanvasEditor, updateCanvasPresence, addCanvasCommentReply } from './canvas/mount.tsx';
+import { mountCanvas, unmountCanvas, getCanvasContent, saveCanvas as saveCanvasEditor, updateCanvasPresence, addCanvasCommentReply, toggleCanvasMode, getCanvasEditorMode } from './canvas/mount.tsx';
 import type { Presence } from 'documint';
 
 const canvasView = document.getElementById('canvas-view') as HTMLDivElement;
@@ -2962,6 +2963,8 @@ const canvasHistoryPanel = document.getElementById('canvas-history-panel') as HT
 const canvasHistoryClose = document.getElementById('canvas-history-close') as HTMLButtonElement;
 const canvasHistoryList = document.getElementById('canvas-history-list') as HTMLDivElement;
 const canvasAgentsBtn = document.getElementById('canvas-agents-btn') as HTMLButtonElement;
+const modeToggleRendered = document.getElementById('mode-toggle-rendered') as HTMLButtonElement;
+const modeToggleRaw = document.getElementById('mode-toggle-raw') as HTMLButtonElement;
 const canvasAgentsPanel = document.getElementById('canvas-agents-panel') as HTMLDivElement;
 const canvasAgentsClose = document.getElementById('canvas-agents-close') as HTMLButtonElement;
 const canvasAgentsList = document.getElementById('canvas-agents-list') as HTMLDivElement;
@@ -3079,6 +3082,7 @@ async function openCanvas(intentId: string, expanded = false): Promise<void> {
   canvasSaveStatus.textContent = '';
   canvasDirty = false;
   canvasSaveBtn.classList.add('hidden');
+  updateModeToggleUI('rendered');
 
   // Show intent-specific controls
   canvasLaunchBtn.classList.remove('hidden');
@@ -3375,6 +3379,23 @@ function closeAgentsPanel(): void {
 
 canvasAgentsBtn.addEventListener('click', toggleAgentsPanel);
 canvasAgentsClose.addEventListener('click', closeAgentsPanel);
+
+function updateModeToggleUI(mode: string): void {
+  modeToggleRendered.classList.toggle('active', mode === 'rendered');
+  modeToggleRaw.classList.toggle('active', mode === 'raw');
+}
+
+modeToggleRendered.addEventListener('click', () => {
+  if (getCanvasEditorMode() === 'rendered') return;
+  const result = toggleCanvasMode();
+  updateModeToggleUI(result.mode);
+});
+
+modeToggleRaw.addEventListener('click', () => {
+  if (getCanvasEditorMode() === 'raw') return;
+  const result = toggleCanvasMode();
+  updateModeToggleUI(result.mode);
+});
 
 (window as any).openCanvas = openCanvas;
 

@@ -23,6 +23,7 @@ import {
   initDatabase,
   getDatabase,
   isInitialized,
+  closeDatabase,
   createIntent,
   getIntent,
   listIntents,
@@ -667,6 +668,37 @@ describe('database', () => {
       const result = updateIntent('nonexistent', { description: 'nope' });
       // appendEvent is still called (log-first), but getIntent returns null
       expect(result).toBeNull();
+    });
+  });
+
+  // ── closeDatabase ──────────────────────────────────────
+
+  describe('closeDatabase', () => {
+    it('makes isInitialized return false', () => {
+      expect(isInitialized()).toBe(true);
+      closeDatabase();
+      expect(isInitialized()).toBe(false);
+    });
+
+    it('is safe to call when no DB is open', () => {
+      closeDatabase();
+      expect(isInitialized()).toBe(false);
+      // Double-close should not throw
+      closeDatabase();
+      expect(isInitialized()).toBe(false);
+    });
+
+    it('allows reinitializing after close', () => {
+      closeDatabase();
+      expect(isInitialized()).toBe(false);
+
+      freshDb();
+      expect(isInitialized()).toBe(true);
+
+      // DB is functional after reinit
+      const intent = createIntent({ body: 'after reopen' });
+      expect(intent.id).toBeDefined();
+      expect(getIntent(intent.id)).not.toBeNull();
     });
   });
 });

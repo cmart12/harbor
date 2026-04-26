@@ -72,3 +72,11 @@ export function updateCanvasPersonas(personas: AgentPersona[]): void {
 export function addCanvasCommentReply(threadIndex: number, body: string): void {
   canvasRef.current?.addCommentReply(threadIndex, body);
 }
+
+export function toggleCanvasMode(): { mode: string; error?: string } {
+  return canvasRef.current?.toggleMode() ?? { mode: 'rendered' };
+}
+
+export function getCanvasEditorMode(): string {
+  return canvasRef.current?.getEditorMode() ?? 'rendered';
+}

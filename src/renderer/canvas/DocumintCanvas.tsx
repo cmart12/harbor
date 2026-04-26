@@ -53,6 +53,8 @@ export interface DocumintCanvasProps {
 export interface DocumintCanvasHandle {
   saveNow(): Promise<void>;
   getContent(): string;
+  getEditorMode(): EditorMode;
+  toggleMode(): { mode: EditorMode; error?: string };
   updatePresence(presence: Presence[]): void;
   updatePersonas(personas: AgentPersona[]): void;
   addCommentReply(threadIndex: number, body: string): void;
@@ -128,6 +130,8 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
     const savingRef = useRef(false);
     const contentRef = useRef(content);
     const frontmatterRef = useRef(frontmatter);
+    const editorModeRef = useRef<EditorMode>(editorMode);
+    const rawContentRef = useRef(rawContent);
     const stateRef = useRef<DocumintState | null>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const [isDragging, setIsDragging] = useState(false);
@@ -136,6 +140,8 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
 
     contentRef.current = content;
     frontmatterRef.current = frontmatter;
+    editorModeRef.current = editorMode;
+    rawContentRef.current = rawContent;
 
     /** Build the full document string for saving. */
     const getFullContent = useCallback(() => {
@@ -209,36 +215,42 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
       }
     }, [onDirtyChange, onSaveStatus, scheduleSave]);
 
-    const handleToggleMode = useCallback(() => {
-      if (editorMode === 'rendered') {
-        // Switch to raw: serialize current state
-        setRawContent(getFullContent());
+    const handleToggleMode = useCallback((): { mode: EditorMode; error?: string } => {
+      if (editorModeRef.current === 'rendered') {
+        const full = getFullContent();
+        setRawContent(full);
+        rawContentRef.current = full;
         setParseError(null);
         setEditorMode('raw');
+        editorModeRef.current = 'raw';
+        return { mode: 'raw' };
       } else {
-        // Switch to rendered: try to parse raw content
         if (hasFrontmatter) {
-          const parsed = tryParseFm(rawContent);
+          const parsed = tryParseFm(rawContentRef.current);
           if (!parsed) {
-            setParseError('Invalid YAML frontmatter. Fix the syntax before switching to rendered view.');
-            return;
+            const err = 'Invalid YAML frontmatter. Fix the syntax before switching to rendered view.';
+            setParseError(err);
+            return { mode: 'raw', error: err };
           }
           setFrontmatter(parsed.frontmatter);
           frontmatterRef.current = parsed.frontmatter;
           setContent(parsed.body);
           contentRef.current = parsed.body;
         } else {
-          setContent(rawContent);
-          contentRef.current = rawContent;
+          setContent(rawContentRef.current);
+          contentRef.current = rawContentRef.current;
         }
         setParseError(null);
         setEditorMode('rendered');
+        editorModeRef.current = 'rendered';
+        return { mode: 'rendered' };
       }
-    }, [editorMode, hasFrontmatter, rawContent, getFullContent]);
+    }, [hasFrontmatter, getFullContent]);
 
     const handleRawContentChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
       const newRaw = e.target.value;
       setRawContent(newRaw);
+      rawContentRef.current = newRaw;
       setParseError(null);
       const dirty = newRaw !== lastSavedRef.current;
       onDirtyChange(dirty);
@@ -279,6 +291,8 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
     useImperativeHandle(ref, () => ({
       saveNow,
       getContent: () => getFullContent(),
+      getEditorMode: () => editorModeRef.current,
+      toggleMode: () => handleToggleMode(),
       updatePresence: (nextPresence: Presence[]) => setPresence(nextPresence),
       updatePersonas: (nextPersonas: AgentPersona[]) => setPersonas(nextPersonas),
       addCommentReply: (threadIndex: number, body: string) => {
@@ -436,15 +450,6 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
         ref={containerRef}
         className={`documint-canvas-container${isDragging ? ' drag-over' : ''}`}
       >
-        <div className="canvas-mode-toggle">
-          <button
-            className={`mode-toggle-btn${editorMode === 'rendered' ? ' active' : ''}`}
-            onClick={handleToggleMode}
-            title={editorMode === 'rendered' ? 'Switch to raw markdown' : 'Switch to rendered view'}
-          >
-            {editorMode === 'rendered' ? '</>' : '¶'}
-          </button>
-        </div>
         {parseError && (
           <div className="frontmatter-parse-error">{parseError}</div>
         )}

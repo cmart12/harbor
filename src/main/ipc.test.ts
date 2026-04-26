@@ -20,7 +20,7 @@ vi.mock('electron', () => ({
 
 vi.mock('fs', async () => {
   const actual = await vi.importActual<typeof import('fs')>('fs');
-  return { ...actual, existsSync: vi.fn(() => true) };
+  return { ...actual, existsSync: vi.fn(() => true), writeFileSync: vi.fn() };
 });
 
 vi.mock('./database', () => ({
@@ -47,17 +47,30 @@ vi.mock('./database', () => ({
     completed_at: null,
     updated_at: '2024-01-01',
   })),
+  getSkill: vi.fn((id: string) => ({
+    id,
+    name: 'Test Skill',
+    description: 'A test skill',
+    folder: '.agents/skills/' + id,
+    filePath: '/mock/workspace/.agents/skills/' + id + '/SKILL.md',
+    created_at: '2024-01-01',
+    updated_at: '2024-01-01',
+  })),
   searchIntents: vi.fn(() => [{ id: 'i1', description: 'found' }]),
   updateIntentCAS: vi.fn(() => true),
   logIntentEvent: vi.fn(),
   listIntentEvents: vi.fn(() => []),
   initDatabase: vi.fn(),
+  closeDatabase: vi.fn(),
   mergeSessionIds: vi.fn(),
   assignIntentFolder: vi.fn(),
   updateCanvasContent: vi.fn(),
   syncCanvasContent: vi.fn(),
   createAgentSession: vi.fn(),
   deleteAgentSession: vi.fn(),
+  listSkills: vi.fn(() => []),
+  upsertSkill: vi.fn(),
+  removeSkill: vi.fn(),
 }));
 
 vi.mock('./ai', () => ({
@@ -87,6 +100,11 @@ vi.mock('./session', () => ({
 
 vi.mock('./voice', () => ({
   transcribeAudio: vi.fn(async () => 'transcribed text'),
+}));
+
+vi.mock('./frontmatter', () => ({
+  parseFrontmatter: vi.fn((content: string) => ({ frontmatter: {}, body: content })),
+  serializeFrontmatter: vi.fn((fm: any, body: string) => `---\n---\n${body}`),
 }));
 
 vi.mock('./workspace', () => ({
@@ -124,6 +142,13 @@ vi.mock('./mcp', () => ({
 
 vi.mock('./notify', () => ({
   notifyAllWindows: vi.fn(),
+}));
+
+vi.mock('./skill-watcher', () => ({
+  getSkillsDir: vi.fn(() => '/mock/workspace/.agents/skills'),
+  syncAllSkills: vi.fn(),
+  startSkillWatcher: vi.fn(),
+  stopSkillWatcher: vi.fn(),
 }));
 
 vi.mock('./validators', () => ({
@@ -175,7 +200,7 @@ vi.mock('uuid', () => ({
 
 // ── Import after mocks ─────────────────────────────────────────────
 import { registerIpcHandlers } from './ipc';
-import { isInitialized, createIntent, listIntents, updateIntent, deleteIntent, getIntent, searchIntents, logIntentEvent, listIntentEvents, assignIntentFolder, updateCanvasContent } from './database';
+import { isInitialized, createIntent, listIntents, updateIntent, deleteIntent, getIntent, getSkill, searchIntents, logIntentEvent, listIntentEvents, assignIntentFolder, updateCanvasContent } from './database';
 import { classifyInput, setAIModel, evaluateRecurrence } from './ai';
 import { initIntentCanvas, readCanvas, writeCanvas, scheduleAutoCommit } from './workspace';
 import { getConfigValue, setConfigValue } from './config';
@@ -337,6 +362,21 @@ describe('IPC handlers', () => {
       expect(writeCanvas).toHaveBeenCalledWith('/mock/workspace', 'test-folder', 'new content');
       expect(updateCanvasContent).toHaveBeenCalledWith('intent-1', 'new content');
       expect(result).toEqual({ success: true });
+    });
+
+    it('routes __skill__ prefix to skill file write', () => {
+      vi.clearAllMocks();
+      const result = invoke('canvas:write', '__skill__my-skill', '---\nname: Test\n---\nBody text');
+      expect(getSkill).toHaveBeenCalledWith('my-skill');
+      // Should NOT call writeCanvas (that's for intents)
+      expect(writeCanvas).not.toHaveBeenCalled();
+      expect(result).toEqual({ success: true });
+    });
+
+    it('returns not_found for unknown skill', () => {
+      vi.mocked(getSkill).mockReturnValueOnce(undefined as any);
+      const result = invoke('canvas:write', '__skill__unknown', 'content');
+      expect(result).toEqual({ error: 'not_found' });
     });
   });
 
