@@ -139,6 +139,7 @@ interface IntentAPI {
   readSkill(skillId: string): Promise<{ frontmatter: Record<string, unknown>; body: string } | { error: string }>;
   writeSkill(skillId: string, frontmatter: Record<string, unknown>, body: string): Promise<{ success: boolean } | { error: string }>;
   createSkill(name: string): Promise<any>;
+  createSkillFromPrompt(description: string): Promise<{ agentId?: string; sessionId?: string; error?: string }>;
   deleteSkill(skillId: string): Promise<boolean>;
   openSkillFolder(skillId: string): Promise<void>;
   createIntentFromSkill(skillId: string): Promise<any>;
@@ -260,6 +261,15 @@ function updateWorkersBadge(): void {
 }
 
 // ── Filter bar ──────────────────────────────────────────
+
+function getPlaceholderForFilter(filter: typeof currentFilter): string {
+  switch (filter) {
+    case 'agents': return 'Describe a task for an agent...';
+    case 'skills': return 'Describe a skill to create...';
+    default: return 'Capture an intent...';
+  }
+}
+
 function setFilter(filter: typeof currentFilter): void {
   if (filter === currentFilter) return;
   currentFilter = filter;
@@ -267,27 +277,28 @@ function setFilter(filter: typeof currentFilter): void {
   const btn = filterBar.querySelector(`[data-filter="${filter}"]`) as HTMLElement;
   if (btn) btn.classList.add('active');
 
-  // Toggle capture form vs new-agent button vs past vs skills
-  if (filter === 'agents') {
+  // Show capture form on Spaces, Workers, and Skills; hide on Past
+  if (filter === 'closed') {
     form.style.display = 'none';
-    newAgentBtn.classList.remove('hidden');
-    launchCliBtn.classList.add('hidden');
-    agentSummaryEl.classList.remove('hidden');
-  } else if (filter === 'skills') {
-    form.style.display = 'none';
-    newAgentBtn.classList.add('hidden');
-    launchCliBtn.classList.add('hidden');
-    agentSummaryEl.classList.add('hidden');
-  } else if (filter === 'closed') {
-    form.style.display = 'none';
-    newAgentBtn.classList.add('hidden');
-    launchCliBtn.classList.add('hidden');
-    agentSummaryEl.classList.add('hidden');
   } else {
     form.style.display = '';
-    newAgentBtn.classList.add('hidden');
-    launchCliBtn.classList.add('hidden');
+    descInput.placeholder = getPlaceholderForFilter(filter);
+  }
+
+  // Agents tab shows the summary panel; all others hide it
+  if (filter === 'agents') {
+    agentSummaryEl.classList.remove('hidden');
+  } else {
     agentSummaryEl.classList.add('hidden');
+  }
+
+  // Old new-agent button is replaced by the prompt box
+  newAgentBtn.classList.add('hidden');
+  launchCliBtn.classList.add('hidden');
+
+  // Exit search mode when switching away from Spaces
+  if (filter !== 'open' && searchMode) {
+    exitSearchMode();
   }
 
   updateWorkersBadge();
@@ -320,11 +331,7 @@ filterBar.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowDown') {
     e.preventDefault();
     e.stopPropagation();
-    if (currentFilter === 'agents') {
-      newAgentBtn.focus();
-    } else {
-      descInput.focus();
-    }
+    descInput.focus();
     return;
   }
 });
@@ -1185,7 +1192,7 @@ function setInputState(state: 'idle' | 'recording' | 'transcribing'): void {
       descInput.placeholder = 'Transcribing...';
       break;
     default:
-      descInput.placeholder = searchMode ? '🔍 Search intents...' : 'Capture an intent...';
+      descInput.placeholder = searchMode ? '🔍 Search intents...' : getPlaceholderForFilter(currentFilter);
   }
 }
 
@@ -1251,7 +1258,7 @@ function enterSearchMode(): void {
 function exitSearchMode(): void {
   searchMode = false;
   descInput.classList.remove('search-mode');
-  descInput.placeholder = 'Capture an intent...';
+  descInput.placeholder = getPlaceholderForFilter(currentFilter);
   descInput.value = '';
   descInput.style.height = 'auto';
   searchResults = null;
@@ -1262,8 +1269,9 @@ function exitSearchMode(): void {
 
 // Spacebar handling on the textarea
 descInput.addEventListener('keydown', (e) => {
-  // Shift+Tab toggles between search and intent mode
+  // Shift+Tab: only toggle search mode on Spaces tab
   if (e.key === 'Tab' && e.shiftKey) {
+    if (currentFilter !== 'open') return; // search mode only on Spaces
     e.preventDefault();
     if (searchMode) exitSearchMode();
     else enterSearchMode();
@@ -1278,11 +1286,24 @@ descInput.addEventListener('keydown', (e) => {
     return;
   }
 
-  // Down arrow: go to intent list
+  // Down arrow: go to list items below
   if (e.key === 'ArrowDown') {
     e.preventDefault();
     e.stopPropagation();
-    if (currentFilter !== 'agents' && displayedIntents.length > 0) {
+    if (currentFilter === 'agents') {
+      const items = listEl.querySelectorAll('.agent-card');
+      if (items.length > 0) {
+        selectedIndex = 0;
+        updateAgentSelection();
+        descInput.blur();
+      }
+    } else if (currentFilter === 'skills') {
+      const items = listEl.querySelectorAll('.skill-card');
+      if (items.length > 0) {
+        (items[0] as HTMLElement).focus();
+        descInput.blur();
+      }
+    } else if (displayedIntents.length > 0) {
       selectedIndex = 0;
       updateSelection();
       descInput.blur();
@@ -1300,11 +1321,10 @@ descInput.addEventListener('keydown', (e) => {
   }
 
   // Enter submits by default; Shift+Enter inserts newline
-  // If input is empty, create a blank intent and open it in the full editor
   if (e.key === 'Enter' && !e.shiftKey && !(e.metaKey || e.ctrlKey)) {
     e.preventDefault();
     const text = descInput.value.trim();
-    if (!text) {
+    if (currentFilter === 'open' && !text) {
       createAndOpenCanvas();
     } else {
       form.requestSubmit();
@@ -1917,20 +1937,13 @@ async function renderSkillsList(): Promise<void> {
     listEl.innerHTML = `
       <div class="empty-state">
         <span class="icon">🧩</span>
-        <span>No skills found. Create a SKILL.md in .agents/skills/</span>
-      </div>
-      <div style="text-align: center; margin-top: 8px;">
-        <button class="new-agent-btn" onclick="createNewSkill()">+ New Skill</button>
+        <span>No skills yet. Describe a skill above to create one.</span>
       </div>
     `;
     return;
   }
 
-  listEl.innerHTML = `
-    <div style="text-align: right; margin-bottom: 8px; padding: 0 8px;">
-      <button class="new-agent-btn" onclick="createNewSkill()" style="display: inline-block; width: auto; padding: 4px 12px; font-size: 12px;">+ New Skill</button>
-    </div>
-  ` + skills.map(skill => `
+  listEl.innerHTML = skills.map(skill => `
     <div class="intent-item skill-card" data-skill-id="${skill.id}">
       <div class="skill-icon">🧩</div>
       <div class="intent-content">
@@ -2128,7 +2141,7 @@ async function renderAgentsList(): Promise<void> {
     listEl.innerHTML = `
       <div class="empty-state">
         <span class="icon">⚡</span>
-        <span>No agents running.</span>
+        <span>No agents yet. Describe a task above to launch one.</span>
       </div>
     `;
     return;
@@ -2359,6 +2372,58 @@ form.addEventListener('submit', async (e) => {
   e.preventDefault();
   if (searchMode) return;
   const text = descInput.value.trim();
+
+  // ── Workers tab: launch an agent ──────────────────────
+  if (currentFilter === 'agents') {
+    if (!text) {
+      // Empty prompt → open new agent chat
+      openAgentChat(undefined as any, '', 'new');
+      return;
+    }
+    showStatus('⚡ Launching agent...');
+    const result = await intentAPI.quickLaunchAgent(text);
+    if ('error' in result && result.error) {
+      if (result.error === 'no_workspace') {
+        showStatus('Select a workspace directory first');
+        const ws = await intentAPI.selectWorkspace();
+        if (ws.selected) updateWorkspaceDisplay(ws.path!);
+      } else {
+        showStatus(`Failed: ${result.error}`, true);
+      }
+      return;
+    }
+    descInput.value = '';
+    descInput.style.height = 'auto';
+    descInput.focus();
+    hideStatus();
+    openAgentChat(result.agentId, text, 'running');
+    return;
+  }
+
+  // ── Skills tab: create a skill from description ───────
+  if (currentFilter === 'skills') {
+    if (!text) return; // require a description
+    showStatus('✨ Creating skill...');
+    const result = await intentAPI.createSkillFromPrompt(text);
+    if ('error' in result && result.error) {
+      if (result.error === 'no_workspace') {
+        showStatus('Select a workspace directory first');
+        const ws = await intentAPI.selectWorkspace();
+        if (ws.selected) updateWorkspaceDisplay(ws.path!);
+      } else {
+        showStatus(`Failed: ${result.error}`, true);
+      }
+      return;
+    }
+    descInput.value = '';
+    descInput.style.height = 'auto';
+    descInput.focus();
+    showStatus('✨ Creating skill...');
+    setTimeout(hideStatus, 4000);
+    return;
+  }
+
+  // ── Spaces tab: create an intent (original behavior) ──
   if (!text) return;
 
   descInput.value = '';
@@ -3552,7 +3617,7 @@ document.addEventListener('keydown', (e) => {
         if (selectedIndex === 0) {
           selectedIndex = -1;
           updateAgentSelection();
-          newAgentBtn.focus();
+          newAgentBtn.classList.contains('hidden') ? descInput.focus() : newAgentBtn.focus();
         } else {
           selectedIndex--;
           updateAgentSelection();
