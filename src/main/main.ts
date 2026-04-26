@@ -1,7 +1,7 @@
-import { app, BrowserWindow, Tray, Menu, globalShortcut, screen, ipcMain, nativeImage, session, protocol, net, systemPreferences } from 'electron';
+import { app, BrowserWindow, globalShortcut, session, protocol, net, systemPreferences } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
-import { loadConfig, getConfigValue, setConfigValue, type SnapPosition } from './config';
+import { loadConfig, getConfigValue, setConfigValue } from './config';
 import { initDatabase, mergeSessionIds, syncCanvasContent } from './database';
 import { initWorkspace, getDbPath, getLogPath } from './workspace';
 import { migrateOldDatabase } from './migration';
@@ -9,19 +9,11 @@ import { registerIpcHandlers } from './ipc';
 import { preloadModel } from './voice';
 import { initCopilot, shutdownCopilot } from './ai';
 import { startCliExitMonitor, stopCliExitMonitor } from './agent-service';
+import { createMainWindow, toggleWindow, setupSnapOnDrop, registerWindowIpcHandlers } from './window-manager';
+import { createTray } from './tray-controller';
 
-let tray: Tray | null = null;
-let mainWindow: BrowserWindow | null = null;
-let canvasWindow: BrowserWindow | null = null;
-
-const WINDOW_WIDTH = 420;
-const WINDOW_HEIGHT = 520;
-const EXPANDED_WIDTH = 720;
-const EXPANDED_HEIGHT = 700;
-const SNAP_MARGIN = 12;
-
-let isExpanded = false;
-let isSnapping = false;
+// Prevent tray from being garbage-collected
+let tray: Electron.Tray | null = null;
 
 // Register custom scheme as privileged (must happen before app ready)
 protocol.registerSchemesAsPrivileged([
@@ -56,213 +48,6 @@ const MIME_TYPES: Record<string, string> = {
   '.mov': 'video/quicktime',
   '.pdf': 'application/pdf',
 };
-
-let showTimestamp = 0;
-
-function createWindow(): BrowserWindow {
-  const win = new BrowserWindow({
-    width: WINDOW_WIDTH,
-    height: WINDOW_HEIGHT,
-    show: false,
-    frame: false,
-    resizable: false,
-    skipTaskbar: true,
-    alwaysOnTop: true,
-    transparent: true,
-    vibrancy: 'under-window',
-    visualEffectState: 'active',
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
-  });
-
-  // Load via custom protocol so Web Speech API works (needs a real origin, not file://)
-  // Use intent://app/renderer/index.html so host="app" and pathname="/renderer/index.html"
-  win.loadURL('copilot-intent://app/renderer/index.html');
-
-  attachBlurHide(win);
-
-  return win;
-}
-
-/** Attach blur handler that hides the window only when the user isn't actively working. */
-function attachBlurHide(win: BrowserWindow): void {
-  win.on('blur', async () => {
-    // Ignore blur if window was just shown (e.g. from tray menu click)
-    if (Date.now() - showTimestamp < 300) return;
-
-    // Never hide when pinned
-    if (getConfigValue('pinned')) return;
-
-    // Don't auto-hide if the user has content in the input or is on a sub-view
-    try {
-      const shouldStay = await win.webContents.executeJavaScript(
-        `(function() {
-          var input = document.getElementById('description-input');
-          var hasInput = input && input.value.trim().length > 0;
-          var canvasOpen = !document.getElementById('canvas-view').classList.contains('hidden');
-          return hasInput || canvasOpen;
-        })()`
-      );
-      if (shouldStay) return;
-    } catch {
-      // If check fails, hide anyway
-    }
-
-    win.hide();
-  });
-}
-
-/** Derive pixel coordinates from a snap position on the nearest display. */
-function getSnapCoords(snap: SnapPosition, winWidth = WINDOW_WIDTH, winHeight = WINDOW_HEIGHT): { x: number; y: number } {
-  const cursorPoint = screen.getCursorScreenPoint();
-  const display = screen.getDisplayNearestPoint(cursorPoint);
-  const { x, y, width, height } = display.workArea;
-
-  let sx: number;
-  let sy: number;
-
-  switch (snap) {
-    case 'top-left':
-      sx = x + SNAP_MARGIN;
-      sy = y + SNAP_MARGIN;
-      break;
-    case 'top-right':
-      sx = x + width - winWidth - SNAP_MARGIN;
-      sy = y + SNAP_MARGIN;
-      break;
-    case 'bottom-left':
-      sx = x + SNAP_MARGIN;
-      sy = y + height - winHeight - SNAP_MARGIN;
-      break;
-    case 'left-center':
-      sx = x + SNAP_MARGIN;
-      sy = Math.round(y + (height - winHeight) / 2);
-      break;
-    case 'right-center':
-      sx = x + width - winWidth - SNAP_MARGIN;
-      sy = Math.round(y + (height - winHeight) / 2);
-      break;
-    case 'bottom-right':
-    default:
-      sx = x + width - winWidth - SNAP_MARGIN;
-      sy = y + height - winHeight - SNAP_MARGIN;
-      break;
-  }
-
-  return { x: sx, y: sy };
-}
-
-function getWindowPosition(): { x: number; y: number } {
-  const snap = getConfigValue('snapPosition') || 'bottom-right';
-  return getSnapCoords(snap);
-}
-
-/** Determine the nearest snap slot from arbitrary pixel coordinates. Returns null if not near any edge. */
-function detectSnapSlot(winX: number, winY: number, winWidth: number, winHeight: number): SnapPosition | null {
-  const centerX = winX + winWidth / 2;
-  const centerY = winY + winHeight / 2;
-  const display = screen.getDisplayNearestPoint({ x: centerX, y: centerY });
-  const area = display.workArea;
-
-  const edgeThreshold = 80;
-  const nearLeft = winX - area.x < edgeThreshold;
-  const nearRight = (area.x + area.width) - (winX + winWidth) < edgeThreshold;
-  const nearTop = winY - area.y < edgeThreshold;
-  const nearBottom = (area.y + area.height) - (winY + winHeight) < edgeThreshold;
-
-  // Must be near at least one edge
-  if (!nearLeft && !nearRight && !nearTop && !nearBottom) return null;
-
-  const midY = area.y + area.height / 2;
-  const isCenterVertical = Math.abs(centerY - midY) < area.height * 0.2;
-
-  if (nearLeft && isCenterVertical) return 'left-center';
-  if (nearRight && isCenterVertical) return 'right-center';
-  if (nearLeft && nearTop) return 'top-left';
-  if (nearRight && nearTop) return 'top-right';
-  if (nearLeft && nearBottom) return 'bottom-left';
-  if (nearRight && nearBottom) return 'bottom-right';
-  if (nearTop) return centerX < area.x + area.width / 2 ? 'top-left' : 'top-right';
-  if (nearBottom) return centerX < area.x + area.width / 2 ? 'bottom-left' : 'bottom-right';
-  if (nearLeft) return 'left-center';
-  if (nearRight) return 'right-center';
-
-  return null;
-}
-
-/** Snap the window to the nearest edge after a user drag. Only operates in collapsed mode. */
-function handleWindowMoved(): void {
-  if (!mainWindow || isExpanded || isSnapping) return;
-  // Don't snap when pinned — allow free positioning
-  if (getConfigValue('pinned')) return;
-
-  const bounds = mainWindow.getBounds();
-  const slot = detectSnapSlot(bounds.x, bounds.y, bounds.width, bounds.height);
-  if (!slot) return;
-
-  isSnapping = true;
-  const coords = getSnapCoords(slot, bounds.width, bounds.height);
-  mainWindow.setPosition(coords.x, coords.y, false);
-  setConfigValue('snapPosition', slot);
-
-  // Clear guard after animation
-  setTimeout(() => { isSnapping = false; }, 300);
-}
-
-function toggleWindow(): void {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
-
-  if (mainWindow.isVisible()) {
-    // Let the renderer decide: navigate back to list or hide
-    mainWindow.webContents.send('window:toggle');
-  } else {
-    const cursorPoint = screen.getCursorScreenPoint();
-    const display = screen.getDisplayNearestPoint(cursorPoint);
-    const { x, y, width, height } = display.workArea;
-
-    const snap = getConfigValue('snapPosition') || 'bottom-right';
-    const isLeft = snap.includes('left');
-    const winX = isLeft ? x + SNAP_MARGIN : x + width - WINDOW_WIDTH - SNAP_MARGIN;
-    const winY = y + SNAP_MARGIN;
-    const winHeight = height - SNAP_MARGIN * 2;
-
-    showTimestamp = Date.now();
-    mainWindow.setBounds({ x: winX, y: winY, width: WINDOW_WIDTH, height: winHeight }, false);
-    mainWindow.setResizable(!!getConfigValue('pinned'));
-    mainWindow.show();
-    mainWindow.focus();
-    mainWindow.webContents.send('window:shown');
-  }
-}
-
-function createTray(): void {
-  const iconPath = path.join(__dirname, '..', '..', 'src', 'assets', 'tray-icon.png');
-  const fallbackPath = path.join(__dirname, '..', 'assets', 'tray-icon.png');
-  const resolvedPath = fs.existsSync(iconPath) ? iconPath : fallbackPath;
-
-  let icon: Electron.NativeImage;
-  if (fs.existsSync(resolvedPath)) {
-    icon = nativeImage.createFromPath(resolvedPath);
-  } else {
-    // Fallback: inline 16x16 lightning bolt
-    icon = nativeImage.createFromPath(path.join(__dirname, '..', '..', 'src', 'assets', 'tray-icon-16.png'));
-  }
-
-  tray = new Tray(icon.resize({ width: 16, height: 16 }));
-  tray.setToolTip('Intent — Quick Capture');
-
-  const contextMenu = Menu.buildFromTemplate([
-    { label: 'Show', click: toggleWindow },
-    { type: 'separator' },
-    { label: 'Quit', click: () => app.quit() },
-  ]);
-
-  tray.setContextMenu(contextMenu);
-  tray.on('click', toggleWindow);
-}
 
 app.whenReady().then(async () => {
   // Register custom protocol to serve renderer files (Web Speech API needs a real origin, not file://)
@@ -348,19 +133,17 @@ app.whenReady().then(async () => {
   }
   // If no workspace, DB is not initialized — IPC handlers return empty/error states
 
+  // ── Module initialization ──────────────────────────────
+  const preloadPath = path.join(__dirname, 'preload.js');
+
   registerIpcHandlers();
-  createTray();
-  mainWindow = createWindow();
+  tray = createTray({ onToggleWindow: toggleWindow, onQuit: () => app.quit() });
+  createMainWindow({ preloadPath });
+  registerWindowIpcHandlers(preloadPath);
+  setupSnapOnDrop();
   preloadModel();
   initCopilot();
   startCliExitMonitor();
-
-  // Snap-on-drop: debounce move events so snap only fires after drag ends
-  let snapDebounce: ReturnType<typeof setTimeout> | null = null;
-  mainWindow.on('move', () => {
-    if (snapDebounce) clearTimeout(snapDebounce);
-    snapDebounce = setTimeout(handleWindowMoved, 500);
-  });
 
   // Dev mode: watch renderer files and auto-reload windows
   if (!app.isPackaged) {
@@ -378,147 +161,6 @@ app.whenReady().then(async () => {
   if (!registered) {
     console.warn('Failed to register Ctrl+Shift+Space — another process may be holding it');
   }
-
-  ipcMain.on('window:hide', () => {
-    mainWindow?.hide();
-  });
-
-  ipcMain.on('window:expand', () => {
-    if (!mainWindow || isExpanded) return;
-    isExpanded = true;
-
-    const cursorPoint = screen.getCursorScreenPoint();
-    const display = screen.getDisplayNearestPoint(cursorPoint);
-    const { x, y, width, height } = display.workArea;
-
-    const newX = Math.round(x + (width - EXPANDED_WIDTH) / 2);
-    const newY = Math.round(y + (height - EXPANDED_HEIGHT) / 2);
-
-    mainWindow.setAlwaysOnTop(false);
-    mainWindow.setSkipTaskbar(false);
-    mainWindow.setResizable(true);
-    mainWindow.setBounds({ x: newX, y: newY, width: EXPANDED_WIDTH, height: EXPANDED_HEIGHT }, true);
-  });
-
-  ipcMain.on('window:collapse', () => {
-    if (!mainWindow || !isExpanded) return;
-    isExpanded = false;
-
-    mainWindow.setAlwaysOnTop(true);
-    mainWindow.setSkipTaskbar(true);
-
-    isSnapping = true;
-    const cursorPoint = screen.getCursorScreenPoint();
-    const display = screen.getDisplayNearestPoint(cursorPoint);
-    const { x, y, width, height } = display.workArea;
-
-    const snap = getConfigValue('snapPosition') || 'bottom-right';
-    const isLeft = snap.includes('left');
-    const winX = isLeft ? x + SNAP_MARGIN : x + width - WINDOW_WIDTH - SNAP_MARGIN;
-    const winY = y + SNAP_MARGIN;
-    const winHeight = height - SNAP_MARGIN * 2;
-
-    mainWindow.setBounds({ x: winX, y: winY, width: WINDOW_WIDTH, height: winHeight }, true);
-    mainWindow.setResizable(!!getConfigValue('pinned'));
-    setTimeout(() => { isSnapping = false; }, 300);
-  });
-
-  // ── Pin toggle ──────────────────────────────────────────
-  ipcMain.handle('window:get-pinned', () => {
-    return getConfigValue('pinned');
-  });
-
-  ipcMain.on('window:set-pinned', (_event, pinned: boolean) => {
-    setConfigValue('pinned', pinned);
-    if (mainWindow && !isExpanded) {
-      mainWindow.setResizable(pinned);
-
-      // When unpinning, snap back to full-height edge position
-      if (!pinned) {
-        const bounds = mainWindow.getBounds();
-        const centerX = bounds.x + bounds.width / 2;
-        const centerY = bounds.y + bounds.height / 2;
-        const display = screen.getDisplayNearestPoint({ x: centerX, y: centerY });
-        const area = display.workArea;
-
-        const isLeft = centerX < area.x + area.width / 2;
-        const snap: SnapPosition = isLeft ? 'top-left' : 'top-right';
-        const winX = isLeft ? area.x + SNAP_MARGIN : area.x + area.width - WINDOW_WIDTH - SNAP_MARGIN;
-        const winY = area.y + SNAP_MARGIN;
-        const winHeight = area.height - SNAP_MARGIN * 2;
-
-        setConfigValue('snapPosition', snap);
-        mainWindow.setBounds({ x: winX, y: winY, width: WINDOW_WIDTH, height: winHeight }, false);
-      }
-    }
-    // Notify all windows so UI can update
-    for (const win of BrowserWindow.getAllWindows()) {
-      win.webContents.send('window:pinned-changed', pinned);
-    }
-
-    // Close canvas popout when unpinning
-    if (!pinned && canvasWindow && !canvasWindow.isDestroyed()) {
-      canvasWindow.close();
-    }
-  });
-
-  // ── Canvas popout window ────────────────────────────────
-  const CANVAS_WIDTH = 780;
-  const CANVAS_HEIGHT = 700;
-
-  function createCanvasWindow(): BrowserWindow {
-    const cursorPoint = screen.getCursorScreenPoint();
-    const display = screen.getDisplayNearestPoint(cursorPoint);
-    const { x, y, width, height } = display.workArea;
-
-    const win = new BrowserWindow({
-      width: CANVAS_WIDTH,
-      height: CANVAS_HEIGHT,
-      x: Math.round(x + (width - CANVAS_WIDTH) / 2),
-      y: Math.round(y + (height - CANVAS_HEIGHT) / 2),
-      show: false,
-      titleBarStyle: 'hiddenInset',
-      trafficLightPosition: { x: 16, y: 16 },
-      vibrancy: 'under-window',
-      visualEffectState: 'active',
-      webPreferences: {
-        preload: path.join(__dirname, 'preload.js'),
-        contextIsolation: true,
-        nodeIntegration: false,
-      },
-    });
-
-    win.loadURL('copilot-intent://app/renderer/index.html?mode=canvas');
-
-    win.on('closed', () => {
-      canvasWindow = null;
-      mainWindow?.webContents.send('canvas-window:closed');
-    });
-
-    return win;
-  }
-
-  ipcMain.on('canvas-window:open', (_event, intentId: string, description: string) => {
-    if (canvasWindow && !canvasWindow.isDestroyed()) {
-      // Reuse existing canvas window — switch intent
-      canvasWindow.webContents.send('canvas-window:load-intent', intentId, description);
-      canvasWindow.focus();
-    } else {
-      // Create new canvas window
-      canvasWindow = createCanvasWindow();
-      canvasWindow.webContents.once('did-finish-load', () => {
-        canvasWindow?.webContents.send('canvas-window:load-intent', intentId, description);
-        canvasWindow?.show();
-      });
-    }
-  });
-
-  // Forward theme changes to canvas window
-  ipcMain.on('canvas-window:theme-changed', (_event, theme: string) => {
-    if (canvasWindow && !canvasWindow.isDestroyed()) {
-      canvasWindow.webContents.send('canvas-window:theme-changed', theme);
-    }
-  });
 });
 
 app.on('will-quit', async () => {

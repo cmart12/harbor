@@ -81,14 +81,3 @@ export interface RecallMatch {
   completed_at: string | null;
   confidence: number;
 }
-
-export type IpcChannels =
-  | 'intent:create'
-  | 'intent:list'
-  | 'intent:update'
-  | 'intent:delete'
-  | 'intent:dismiss-recurrence'
-  | 'settings:get'
-  | 'settings:set'
-  | 'models:list'
-  | 'window:hide';

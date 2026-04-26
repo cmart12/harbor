@@ -1,4 +1,4 @@
-import { spawn, execSync } from 'child_process';
+import { execSync } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
@@ -6,6 +6,7 @@ import { getIntent, assignIntentFolder, createCanvasAgent } from './database';
 import { checkCopilotCli } from './session';
 import { createIntentFolder } from './workspace';
 import { CanvasAgent } from '../shared/types';
+import { launchInTerminal as platformLaunchInTerminal, shellEscapeDouble } from './platform/terminal';
 
 export interface AgentLaunchResult {
   success: boolean;
@@ -63,7 +64,7 @@ export async function launchCanvasAgent(
   const prompt = `Read canvas.md for full context, then address this: ${selectedText}`;
 
   // Launch copilot -i in terminal
-  const pid = launchInteractive(cli, cwd, agentId, prompt);
+  const pid = await launchInteractive(cli, cwd, agentId, prompt);
   agent.pid = pid;
 
   // Record in database
@@ -73,85 +74,29 @@ export async function launchCanvasAgent(
   return { success: true, agent };
 }
 
-function launchInteractive(cli: string, cwd: string, agentId: string, prompt: string): number | null {
-  try {
-    if (process.platform === 'darwin') {
-      return launchMac(cli, cwd, agentId, prompt);
-    } else if (process.platform === 'win32') {
-      return launchWindows(cli, cwd, prompt);
-    } else {
-      return launchLinux(cli, cwd, prompt);
-    }
-  } catch (err) {
-    console.error('[canvas-agent] Terminal launch failed:', err);
-    return null;
-  }
-}
+async function launchInteractive(cli: string, cwd: string, agentId: string, prompt: string): Promise<number | null> {
+  const escapedPrompt = shellEscapeDouble(prompt);
+  const result = await platformLaunchInTerminal({
+    command: cli,
+    args: ['-i', `\\"${escapedPrompt}\\"`],
+    cwd,
+  });
 
-function launchMac(cli: string, cwd: string, agentId: string, prompt: string): number | null {
-  const escapedCwd = cwd.replace(/'/g, "'\\''");
-  const escapedCli = cli.replace(/'/g, "'\\''");
-  // Escape prompt for shell double-quote context
-  const escapedPrompt = prompt.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/`/g, '\\`').replace(/\$/g, '\\$');
-  const script = `tell application "Terminal"
-    do script "cd '${escapedCwd}' && '${escapedCli}' -i \\"${escapedPrompt}\\""
-    activate
-  end tell`;
+  const pid = result.pid ?? null;
 
-  try {
-    execSync(`osascript -e '${script}'`, { timeout: 10000 });
-  } catch (err) {
-    console.error('[canvas-agent] macOS launch failed:', err);
-    return null;
+  // On macOS, resolve the real PID asynchronously
+  if (process.platform === 'darwin' && pid === 0) {
+    setTimeout(() => {
+      try {
+        const output = execSync(`pgrep -nf "copilot.*-i"`, { timeout: 3000, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+        const realPid = parseInt(output);
+        if (realPid && !isNaN(realPid)) {
+          const db = require('./database').getDatabase();
+          db.prepare('UPDATE canvas_agents SET pid = ? WHERE id = ?').run(realPid, agentId);
+        }
+      } catch { /* process may not have started yet */ }
+    }, 2000);
   }
 
-  // Try to find the PID async
-  setTimeout(() => {
-    try {
-      const result = execSync(`pgrep -nf "copilot.*-i"`, { timeout: 3000, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
-      const pid = parseInt(result);
-      if (pid && !isNaN(pid)) {
-        const db = require('./database').getDatabase();
-        db.prepare('UPDATE canvas_agents SET pid = ? WHERE id = ?').run(pid, agentId);
-      }
-    } catch { /* process may not have started yet */ }
-  }, 2000);
-
-  return 0;
-}
-
-function launchWindows(cli: string, cwd: string, prompt: string): number | null {
-  const safePrompt = prompt.replace(/"/g, '\\"');
-  const copilotCmd = `"${cli}" -i "${safePrompt}"`;
-  try {
-    const output = execSync(
-      `powershell -NoProfile -Command "$p = Start-Process cmd.exe -ArgumentList '/k ${copilotCmd.replace(/'/g, "''")}' -WorkingDirectory '${cwd.replace(/'/g, "''")}' -PassThru; $p.Id"`,
-      { windowsHide: true, timeout: 10000 }
-    ).toString().trim();
-    const pid = parseInt(output);
-    return pid && !isNaN(pid) ? pid : null;
-  } catch {
-    return null;
-  }
-}
-
-function launchLinux(cli: string, cwd: string, prompt: string): number | null {
-  const escapedCwd = cwd.replace(/'/g, "'\\''");
-  const escapedCli = cli.replace(/'/g, "'\\''");
-  const escapedPrompt = prompt.replace(/'/g, "'\\''");
-  const command = `cd '${escapedCwd}' && '${escapedCli}' -i '${escapedPrompt}'`;
-  const launchers = [
-    { cmd: 'gnome-terminal', args: ['--', 'bash', '-c', command] },
-    { cmd: 'xterm', args: ['-e', `bash -c "${command}"`] },
-  ];
-
-  for (const launcher of launchers) {
-    try {
-      execSync(`which ${launcher.cmd}`, { timeout: 2000, stdio: 'ignore' });
-      const proc = spawn(launcher.cmd, launcher.args, { detached: true, stdio: 'ignore' });
-      proc.unref();
-      return proc.pid || null;
-    } catch { continue; }
-  }
-  return null;
+  return pid;
 }

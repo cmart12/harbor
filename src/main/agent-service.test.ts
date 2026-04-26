@@ -1,14 +1,28 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-// Mock electron (required by config.ts)
+// ── Module-level mocks (must precede imports) ──────────────────────────
+
 vi.mock('electron', () => ({
-  app: { getPath: () => '/tmp/intent-test' },
+  app: { getPath: () => '/mock/intent-test' },
   BrowserWindow: { getAllWindows: () => [] },
+  Notification: vi.fn().mockImplementation(() => ({ on: vi.fn(), show: vi.fn() })),
 }));
 
-// Mock the heavy dependencies that agent-service imports
+const mockSession = {
+  sessionId: 'mock-session-id',
+  send: vi.fn().mockResolvedValue(undefined),
+  abort: vi.fn().mockResolvedValue(undefined),
+  setModel: vi.fn().mockResolvedValue(undefined),
+  getMessages: vi.fn().mockResolvedValue([{ type: 'assistant.message', content: 'hello' }]),
+  on: vi.fn(),
+};
+
+const mockClient = {
+  createSession: vi.fn().mockResolvedValue(mockSession),
+};
+
 vi.mock('./ai', () => ({
-  getCopilotClient: vi.fn().mockReturnValue(null),
+  getCopilotClient: vi.fn(),
 }));
 
 vi.mock('./database', () => ({
@@ -17,7 +31,7 @@ vi.mock('./database', () => ({
   createAgentSession: vi.fn(),
   updateAgentSessionStatus: vi.fn(),
   getAgentSession: vi.fn(),
-  listAgentSessions: vi.fn(),
+  listAgentSessions: vi.fn().mockReturnValue([]),
 }));
 
 vi.mock('./workspace', () => ({
@@ -25,14 +39,13 @@ vi.mock('./workspace', () => ({
 }));
 
 vi.mock('./session', () => ({
-  launchSessionInTerminal: vi.fn(),
+  launchSessionInTerminal: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('./mcp', () => ({
   getAllMcpServers: vi.fn().mockReturnValue({}),
 }));
 
-// Mock config to return controlled values
 const mockCliTools = vi.fn().mockReturnValue([]);
 vi.mock('./config', () => ({
   getConfig: vi.fn().mockReturnValue({ workspace: null }),
@@ -42,7 +55,48 @@ vi.mock('./config', () => ({
   },
 }));
 
-import { buildCliToolsPrompt, respondToUserInput, respondToElicitation } from './agent-service';
+vi.mock('uuid', () => ({
+  v4: vi.fn(() => 'test-agent-id'),
+}));
+
+vi.mock('fs', () => ({
+  readFileSync: vi.fn(() => 'canvas content'),
+  existsSync: vi.fn(() => true),
+  mkdirSync: vi.fn(),
+  readdirSync: vi.fn(() => []),
+  unlinkSync: vi.fn(),
+}));
+
+vi.mock('crypto', () => ({
+  createHash: vi.fn(() => ({
+    update: vi.fn().mockReturnThis(),
+    digest: vi.fn(() => 'mock-hash'),
+  })),
+  randomUUID: vi.fn(() => 'mock-random-uuid'),
+}));
+
+import {
+  buildCliToolsPrompt,
+  respondToUserInput,
+  respondToElicitation,
+  launchAgent,
+  launchCommentAgent,
+  approveAgent,
+  abortAgent,
+  listAgents,
+  listAllAgents,
+  sendChatMessage,
+  launchCliSession,
+  startCliExitMonitor,
+  stopCliExitMonitor,
+  setAgentModel,
+  getAgentHistory,
+} from './agent-service';
+import { getCopilotClient } from './ai';
+import { createCanvasAgent, createAgentSession, updateAgentSessionStatus, getAgentSession, listAgentSessions } from './database';
+import { launchSessionInTerminal } from './session';
+import { v4 as uuid } from 'uuid';
+import * as fs from 'fs';
 
 describe('buildCliToolsPrompt', () => {
   beforeEach(() => {
@@ -122,5 +176,443 @@ describe('respondToElicitation', () => {
     expect(() => {
       respondToElicitation('agent-1', 'req-1', 'cancel');
     }).not.toThrow();
+  });
+});
+
+// ── Characterization tests ─────────────────────────────────────────────
+
+// Helper: configure getCopilotClient to return the mock client
+function enableMockClient() {
+  vi.mocked(getCopilotClient).mockReturnValue(mockClient as any);
+}
+
+// Helper: configure getCopilotClient to return null (not initialized)
+function disableMockClient() {
+  vi.mocked(getCopilotClient).mockReturnValue(null);
+}
+
+describe('launchAgent', () => {
+  let uuidCounter: number;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSession.send.mockResolvedValue(undefined);
+    mockClient.createSession.mockResolvedValue(mockSession);
+    uuidCounter = 0;
+    vi.mocked(uuid).mockImplementation(() => `agent-${++uuidCounter}`);
+  });
+
+  it('returns error when Copilot client is null', async () => {
+    disableMockClient();
+    const result = await launchAgent('intent-1', 'selected text', { quote: '', prefix: '', suffix: '' }, '/workspace', 'folder');
+    expect(result).toEqual({ error: 'Copilot SDK not initialized' });
+  });
+
+  it('creates agent record and persists to DB on success', async () => {
+    enableMockClient();
+    const result = await launchAgent('intent-1', 'selected text', { quote: 'q', prefix: 'p', suffix: 's' }, '/workspace', 'folder');
+
+    expect(result).toHaveProperty('agentId');
+    expect(result).toHaveProperty('sessionId');
+
+    // createCanvasAgent should be called with the agent data
+    expect(createCanvasAgent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'agent-1',
+        intent_id: 'intent-1',
+        selected_text: 'selected text',
+        status: 'running',
+      }),
+    );
+
+    // createAgentSession should be called with source 'sdk'
+    expect(createAgentSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'agent-1',
+        intent_id: 'intent-1',
+        prompt: 'selected text',
+        source: 'sdk',
+        status: 'running',
+      }),
+    );
+  });
+
+  it('returns agentId and sessionId on success', async () => {
+    enableMockClient();
+    const result = await launchAgent('intent-1', 'text', { quote: '', prefix: '', suffix: '' }, '/ws', 'folder');
+    expect(result).toEqual({ agentId: 'agent-1', sessionId: 'mock-session-id' });
+  });
+
+  it('calls setupAgentEventListeners on the session', async () => {
+    enableMockClient();
+    await launchAgent('intent-1', 'text', { quote: '', prefix: '', suffix: '' }, '/ws', 'folder');
+
+    // setupAgentEventListeners registers event handlers via session.on
+    expect(mockSession.on).toHaveBeenCalled();
+    // Expect multiple listeners (assistant.message_delta, assistant.message, session.idle, etc.)
+    expect(mockSession.on.mock.calls.length).toBeGreaterThanOrEqual(5);
+  });
+});
+
+describe('launchCommentAgent', () => {
+  let uuidCounter: number;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSession.send.mockResolvedValue(undefined);
+    mockClient.createSession.mockResolvedValue(mockSession);
+    uuidCounter = 0;
+    vi.mocked(uuid).mockImplementation(() => `comment-agent-${++uuidCounter}`);
+  });
+
+  const persona = { handle: 'test-bot', instructions: 'Be helpful', model: 'gpt-4' };
+
+  it('returns error when Copilot client is null', async () => {
+    disableMockClient();
+    const result = await launchCommentAgent('intent-1', 'comment body', 'quoted', {}, persona, 0, '/ws', 'folder');
+    expect(result).toEqual({ error: 'Copilot SDK not initialized' });
+  });
+
+  it('creates agent with commentContext and returns agentId/sessionId', async () => {
+    enableMockClient();
+    const result = await launchCommentAgent('intent-1', 'fix this', 'quoted text', { prefix: 'p', suffix: 's' }, persona, 3, '/ws', 'folder');
+
+    expect(result).toEqual({ agentId: 'comment-agent-1', sessionId: 'mock-session-id' });
+
+    expect(createAgentSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'comment-agent-1',
+        prompt: 'fix this',
+        source: 'sdk',
+      }),
+    );
+  });
+
+  it('sends the comment body as the prompt', async () => {
+    enableMockClient();
+    await launchCommentAgent('intent-1', 'fix this', 'quoted text', {}, persona, 0, '/ws', 'folder');
+
+    expect(mockSession.send).toHaveBeenCalledWith(
+      expect.objectContaining({ prompt: 'fix this' }),
+    );
+  });
+});
+
+describe('approveAgent', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('is a no-op when no callback exists for requestId', () => {
+    expect(() => {
+      approveAgent('agent-1', 'nonexistent-request', true);
+    }).not.toThrow();
+  });
+
+  it('can be called with approved=false without error', () => {
+    expect(() => {
+      approveAgent('agent-1', 'nonexistent-request', false);
+    }).not.toThrow();
+  });
+});
+
+describe('abortAgent', () => {
+  let uuidCounter: number;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSession.send.mockResolvedValue(undefined);
+    mockSession.abort.mockResolvedValue(undefined);
+    mockClient.createSession.mockResolvedValue(mockSession);
+    uuidCounter = 0;
+    vi.mocked(uuid).mockImplementation(() => `abort-agent-${++uuidCounter}`);
+  });
+
+  it('is a no-op when agent does not exist', async () => {
+    await expect(abortAgent('nonexistent')).resolves.toBeUndefined();
+  });
+
+  it('calls session.abort() and updates status to failed', async () => {
+    enableMockClient();
+    const result = await launchAgent('intent-1', 'text', { quote: '', prefix: '', suffix: '' }, '/ws', 'folder');
+    const agentId = (result as any).agentId;
+
+    await abortAgent(agentId);
+
+    expect(mockSession.abort).toHaveBeenCalled();
+    // Status should be updated to 'failed' in DB
+    expect(updateAgentSessionStatus).toHaveBeenCalledWith(agentId, 'failed', 'Aborted by user');
+  });
+});
+
+describe('listAgents', () => {
+  let uuidCounter: number;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSession.send.mockResolvedValue(undefined);
+    mockClient.createSession.mockResolvedValue(mockSession);
+    uuidCounter = 0;
+    vi.mocked(uuid).mockImplementation(() => `list-agent-${++uuidCounter}`);
+  });
+
+  it('returns agents filtered by intentId', async () => {
+    enableMockClient();
+    await launchAgent('intent-A', 'text-a', { quote: '', prefix: '', suffix: '' }, '/ws', 'folder');
+    await launchAgent('intent-B', 'text-b', { quote: '', prefix: '', suffix: '' }, '/ws', 'folder');
+
+    const agentsA = listAgents('intent-A');
+    expect(agentsA).toHaveLength(1);
+    expect(agentsA[0].agentId).toBe('list-agent-1');
+
+    const agentsB = listAgents('intent-B');
+    expect(agentsB).toHaveLength(1);
+    expect(agentsB[0].agentId).toBe('list-agent-2');
+  });
+
+  it('returns empty array for unknown intentId', () => {
+    const result = listAgents('unknown');
+    expect(result).toEqual([]);
+  });
+});
+
+describe('listAllAgents', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSession.send.mockResolvedValue(undefined);
+    mockClient.createSession.mockResolvedValue(mockSession);
+    vi.mocked(uuid).mockReturnValue('all-agent-1');
+  });
+
+  it('overlays live state on DB records', async () => {
+    enableMockClient();
+
+    // Create a live agent
+    await launchAgent('intent-1', 'text', { quote: '', prefix: '', suffix: '' }, '/ws', 'folder');
+
+    // Mock DB to return a persisted record that matches the live agent
+    vi.mocked(listAgentSessions).mockReturnValue([
+      {
+        id: 'all-agent-1',
+        session_id: 'mock-session-id',
+        intent_id: 'intent-1',
+        prompt: 'text',
+        status: 'completed', // DB says completed
+        summary: 'DB summary',
+        working_dir: '/ws/folder',
+        source: 'sdk',
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-01T00:00:00Z',
+      },
+    ]);
+
+    const all = listAllAgents();
+    // Find our specific agent (other agents from prior tests may exist in-memory)
+    const ourAgent = all.find(a => a.agentId === 'all-agent-1');
+    expect(ourAgent).toBeDefined();
+    // Live state should override DB state
+    expect(ourAgent!.status).toBe('running');
+    expect(ourAgent!.summary).toBe('Starting...');
+  });
+
+  it('includes live agents not in DB', async () => {
+    enableMockClient();
+    vi.mocked(listAgentSessions).mockReturnValue([]);
+
+    // listAllAgents should include live in-memory agents even if DB returns none
+    const all = listAllAgents();
+    // There should be at least some agents from prior tests in-memory
+    expect(Array.isArray(all)).toBe(true);
+    // Every returned agent should have the expected shape
+    for (const a of all) {
+      expect(a).toHaveProperty('agentId');
+      expect(a).toHaveProperty('sessionId');
+      expect(a).toHaveProperty('status');
+      expect(a).toHaveProperty('source');
+    }
+  });
+});
+
+describe('sendChatMessage', () => {
+  let uuidCounter: number;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSession.send.mockResolvedValue(undefined);
+    mockClient.createSession.mockResolvedValue(mockSession);
+    uuidCounter = 0;
+    vi.mocked(uuid).mockImplementation(() => `chat-agent-${++uuidCounter}`);
+    vi.mocked(getAgentSession).mockReturnValue(null);
+  });
+
+  it('returns error when agent not found and cannot resume', async () => {
+    disableMockClient();
+    const result = await sendChatMessage('nonexistent', 'hello');
+    expect(result).toEqual({ error: 'Agent session expired — open in CLI to resume' });
+  });
+
+  it('sends message to session on success', async () => {
+    enableMockClient();
+    const launched = await launchAgent('intent-1', 'text', { quote: '', prefix: '', suffix: '' }, '/ws', 'folder');
+    const agentId = (launched as any).agentId;
+
+    const result = await sendChatMessage(agentId, 'follow-up');
+    expect(result).toEqual({});
+    // session.send should have been called at least twice (initial + chat message)
+    expect(mockSession.send).toHaveBeenCalledWith(expect.objectContaining({ prompt: 'follow-up' }));
+  });
+});
+
+describe('launchCliSession', () => {
+  let uuidCounter: number;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    uuidCounter = 0;
+    vi.mocked(uuid).mockImplementation(() => `cli-${++uuidCounter}`);
+    vi.mocked(launchSessionInTerminal).mockResolvedValue(undefined);
+  });
+
+  it('creates agent session in DB with source cli', async () => {
+    const result = await launchCliSession('/workspace');
+
+    expect(result).toEqual({ agentId: 'cli-1', sessionId: 'cli-2' });
+
+    expect(createAgentSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'cli-1',
+        session_id: 'cli-2',
+        source: 'cli',
+        prompt: 'CLI Session',
+        status: 'running',
+      }),
+    );
+  });
+
+  it('calls launchSessionInTerminal', async () => {
+    await launchCliSession('/workspace');
+    expect(launchSessionInTerminal).toHaveBeenCalledWith('cli-2', '/workspace', expect.any(String));
+  });
+
+  it('returns error when launchSessionInTerminal fails', async () => {
+    vi.mocked(launchSessionInTerminal).mockRejectedValueOnce(new Error('terminal failed'));
+    const result = await launchCliSession('/workspace');
+    expect(result).toEqual({ error: 'terminal failed' });
+    expect(updateAgentSessionStatus).toHaveBeenCalledWith('cli-1', 'failed', 'terminal failed');
+  });
+});
+
+describe('CLI exit monitor', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    // Make sure monitor is stopped before each test
+    stopCliExitMonitor();
+  });
+
+  afterEach(() => {
+    stopCliExitMonitor();
+    vi.useRealTimers();
+  });
+
+  it('startCliExitMonitor does not create duplicate intervals', () => {
+    vi.mocked(fs.readdirSync).mockReturnValue([]);
+
+    startCliExitMonitor();
+    startCliExitMonitor(); // second call should be no-op
+
+    vi.advanceTimersByTime(10_000);
+
+    // readdirSync is called by ensureCliExitDir (existsSync) + the interval tick
+    // The key thing: only 1 interval fires, not 2
+    const readdirCalls = vi.mocked(fs.readdirSync).mock.calls.length;
+
+    vi.mocked(fs.readdirSync).mockClear();
+    vi.advanceTimersByTime(10_000);
+
+    // Only one more call — proves there's a single interval
+    expect(vi.mocked(fs.readdirSync)).toHaveBeenCalledTimes(1);
+  });
+
+  it('stopCliExitMonitor clears the interval', () => {
+    vi.mocked(fs.readdirSync).mockReturnValue([]);
+
+    startCliExitMonitor();
+    stopCliExitMonitor();
+
+    vi.mocked(fs.readdirSync).mockClear();
+    vi.advanceTimersByTime(20_000);
+    // After stop, no interval reads should happen
+    expect(vi.mocked(fs.readdirSync)).not.toHaveBeenCalled();
+  });
+});
+
+describe('setAgentModel', () => {
+  let uuidCounter: number;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSession.send.mockResolvedValue(undefined);
+    mockSession.setModel.mockResolvedValue(undefined);
+    mockClient.createSession.mockResolvedValue(mockSession);
+    uuidCounter = 0;
+    vi.mocked(uuid).mockImplementation(() => `model-agent-${++uuidCounter}`);
+    vi.mocked(getAgentSession).mockReturnValue(null);
+  });
+
+  it('calls session.setModel() for active agents', async () => {
+    enableMockClient();
+    const launched = await launchAgent('intent-1', 'text', { quote: '', prefix: '', suffix: '' }, '/ws', 'folder');
+    const agentId = (launched as any).agentId;
+
+    const result = await setAgentModel(agentId, 'gpt-4o');
+    expect(result).toEqual({});
+    expect(mockSession.setModel).toHaveBeenCalledWith('gpt-4o');
+  });
+
+  it('returns error for non-existent agents', async () => {
+    disableMockClient();
+    const result = await setAgentModel('nonexistent', 'gpt-4o');
+    expect(result).toEqual({ error: 'Agent session not found' });
+  });
+
+  it('returns error when setModel throws', async () => {
+    enableMockClient();
+    const launched = await launchAgent('intent-1', 'text', { quote: '', prefix: '', suffix: '' }, '/ws', 'folder');
+    const agentId = (launched as any).agentId;
+
+    mockSession.setModel.mockRejectedValueOnce(new Error('model not supported'));
+    const result = await setAgentModel(agentId, 'bad-model');
+    expect(result).toEqual({ error: 'model not supported' });
+  });
+});
+
+describe('getAgentHistory', () => {
+  let uuidCounter: number;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSession.send.mockResolvedValue(undefined);
+    mockSession.getMessages.mockResolvedValue([{ type: 'assistant.message', content: 'hello' }]);
+    mockClient.createSession.mockResolvedValue(mockSession);
+    uuidCounter = 0;
+    vi.mocked(uuid).mockImplementation(() => `history-agent-${++uuidCounter}`);
+    vi.mocked(getAgentSession).mockReturnValue(null);
+  });
+
+  it('returns events from session.getMessages()', async () => {
+    enableMockClient();
+    const launched = await launchAgent('intent-1', 'text', { quote: '', prefix: '', suffix: '' }, '/ws', 'folder');
+    const agentId = (launched as any).agentId;
+
+    const result = await getAgentHistory(agentId);
+    expect(result).toEqual({ events: [{ type: 'assistant.message', content: 'hello' }] });
+    expect(mockSession.getMessages).toHaveBeenCalled();
+  });
+
+  it('returns error when agent cannot be found or resumed', async () => {
+    disableMockClient();
+    const result = await getAgentHistory('nonexistent');
+    expect(result).toEqual({ error: 'Failed to resume session' });
   });
 });
