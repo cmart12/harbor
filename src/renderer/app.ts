@@ -199,7 +199,7 @@ const pinBtn = document.getElementById('pin-btn') as HTMLButtonElement;
 // ── Welcome view refs ───────────────────────────────────
 const welcomeView = document.getElementById('welcome-view') as HTMLDivElement;
 const welcomeWorkspaceBtn = document.getElementById('welcome-workspace-btn') as HTMLButtonElement;
-const welcomeWorkspacePath = document.getElementById('welcome-workspace-path') as HTMLSpanElement;
+const welcomeWorkspaceHint = document.getElementById('welcome-workspace-hint') as HTMLDivElement;
 const welcomeWorkspaceCheck = document.getElementById('welcome-workspace-check') as HTMLSpanElement;
 const welcomeStepWorkspace = document.getElementById('welcome-step-workspace') as HTMLDivElement;
 const welcomeCliStatus = document.getElementById('welcome-cli-status') as HTMLDivElement;
@@ -3653,7 +3653,8 @@ async function showWelcomeView(): Promise<void> {
   welcomeWorkspaceSelected = false;
 
   // Reset step states
-  welcomeWorkspacePath.textContent = '';
+  welcomeWorkspaceHint.textContent = 'A folder where your intents, skills, and agent data will live.';
+  welcomeWorkspaceBtn.textContent = 'Choose Folder…';
   welcomeWorkspaceCheck.classList.add('hidden');
   welcomeStepWorkspace.classList.remove('done');
   welcomeCliCheck.classList.add('hidden');
@@ -3717,10 +3718,9 @@ welcomeWorkspaceBtn.addEventListener('click', async () => {
   const result = await intentAPI.selectWorkspace();
   if (result.selected && result.path) {
     welcomeWorkspaceSelected = true;
-    const parts = result.path.replace(/\\/g, '/').split('/');
-    const short = parts.length > 2 ? '…/' + parts.slice(-2).join('/') : result.path;
-    welcomeWorkspacePath.textContent = short;
-    welcomeWorkspacePath.title = result.path;
+    welcomeWorkspaceHint.textContent = result.path;
+    welcomeWorkspaceHint.title = result.path;
+    welcomeWorkspaceBtn.textContent = 'Change…';
     welcomeWorkspaceCheck.classList.remove('hidden');
     welcomeStepWorkspace.classList.add('done');
     updateWelcomeStartBtn();
