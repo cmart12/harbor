@@ -81,3 +81,29 @@ export interface RecallMatch {
   completed_at: string | null;
   confidence: number;
 }
+
+// ── Skills ──────────────────────────────────────────────
+
+export interface SkillFrontmatter {
+  name: string;
+  description: string;
+  [key: string]: unknown;
+}
+
+export interface Skill {
+  /** Folder name inside .agents/skills/ (e.g. "pdf-processing") — used as primary key */
+  id: string;
+  name: string;
+  description: string;
+  /** Relative folder path from workspace root (e.g. ".agents/skills/pdf-processing") */
+  folder: string;
+  /** Absolute path to the SKILL.md file */
+  filePath: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SkillContent {
+  frontmatter: SkillFrontmatter;
+  body: string;
+}

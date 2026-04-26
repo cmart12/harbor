@@ -6,6 +6,7 @@ import { transcribeAudio } from '../voice';
 import { getConfigValue, setConfigValue, getConfig } from '../config';
 import { initWorkspace, getDbPath, getLogPath } from '../workspace';
 import { initDatabase, mergeSessionIds, syncCanvasContent } from '../database';
+import { startSkillWatcher } from '../skill-watcher';
 
 export function registerWorkspaceHandlers(): void {
   // Workspace directory picker — initializes workspace + DB on selection
@@ -33,6 +34,7 @@ export function registerWorkspaceHandlers(): void {
         initDatabase(getDbPath(dir), getLogPath(dir));
         mergeSessionIds(getConfig().sessions);
         syncCanvasContent(dir);
+        startSkillWatcher(dir);
 
         return { selected: true, path: dir };
       }

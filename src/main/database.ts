@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import Database from 'better-sqlite3';
 import { v4 as uuidv4 } from 'uuid';
-import { Intent, Attachment, CanvasAgent, AgentSession, CreateIntentInput } from '../shared/types';
+import { Intent, Attachment, CanvasAgent, AgentSession, CreateIntentInput, Skill, SkillFrontmatter } from '../shared/types';
 import { appendEvent, replayLog } from './eventlog';
 import { readCanvas } from './workspace';
 
@@ -91,6 +91,18 @@ export function initDatabase(dbPath: string, eventLogPath: string): void {
       recurrence_json TEXT,
       created_at TEXT NOT NULL,
       FOREIGN KEY (intent_id) REFERENCES intents(id) ON DELETE CASCADE
+    )
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS skills (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      folder_path TEXT NOT NULL,
+      file_path TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
     )
   `);
 
@@ -414,4 +426,56 @@ export function listAgentSessions(): AgentSession[] {
 export function deleteAgentSession(id: string): void {
   appendEvent(logPath, 'agent_session.deleted', { id });
   db.prepare('DELETE FROM agent_sessions WHERE id = ?').run(id);
+}
+
+// ── Skills ────────────────────────────────────────────────
+
+export function upsertSkill(skill: Skill): void {
+  db.prepare(
+    `INSERT INTO skills (id, name, description, folder_path, file_path, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       name = excluded.name,
+       description = excluded.description,
+       folder_path = excluded.folder_path,
+       file_path = excluded.file_path,
+       updated_at = excluded.updated_at`
+  ).run(skill.id, skill.name, skill.description, skill.folder, skill.filePath, skill.created_at, skill.updated_at);
+}
+
+export function removeSkill(id: string): void {
+  db.prepare('DELETE FROM skills WHERE id = ?').run(id);
+}
+
+export function listSkills(): Skill[] {
+  return (db.prepare(
+    `SELECT id, name, description, folder_path, file_path, created_at, updated_at
+     FROM skills ORDER BY name ASC`
+  ).all() as Array<{ id: string; name: string; description: string; folder_path: string; file_path: string; created_at: string; updated_at: string }>)
+    .map(row => ({
+      id: row.id,
+      name: row.name,
+      description: row.description,
+      folder: row.folder_path,
+      filePath: row.file_path,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    }));
+}
+
+export function getSkill(id: string): Skill | null {
+  const row = db.prepare(
+    `SELECT id, name, description, folder_path, file_path, created_at, updated_at
+     FROM skills WHERE id = ?`
+  ).get(id) as { id: string; name: string; description: string; folder_path: string; file_path: string; created_at: string; updated_at: string } | undefined;
+  if (!row) return null;
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    folder: row.folder_path,
+    filePath: row.file_path,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
 }

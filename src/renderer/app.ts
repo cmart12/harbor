@@ -132,6 +132,15 @@ interface IntentAPI {
   onAgentPresenceEnded(callback: (data: { agentId: string; intentId: string }) => void): void;
   onAgentReplyReady(callback: (data: { agentId: string; intentId: string; threadIndex: number; body: string }) => void): void;
   openPath(folderPath: string): Promise<void>;
+  // ── Skills ──────────────────────────────────────────────
+  listSkills(): Promise<any[]>;
+  readSkill(skillId: string): Promise<{ frontmatter: Record<string, unknown>; body: string } | { error: string }>;
+  writeSkill(skillId: string, frontmatter: Record<string, unknown>, body: string): Promise<{ success: boolean } | { error: string }>;
+  createSkill(name: string): Promise<any>;
+  deleteSkill(skillId: string): Promise<boolean>;
+  openSkillFolder(skillId: string): Promise<void>;
+  createIntentFromSkill(skillId: string): Promise<any>;
+  onSkillsChanged(callback: () => void): void;
 }
 
 interface Attachment {
@@ -193,8 +202,8 @@ let activeSessionIntents = new Set<string>();
 // Track agents per intent for Spaces view
 let agentsByIntent = new Map<string, Array<{ agentId: string; status: string; summary: string; selectedText: string; source?: string }>>();
 // Current filter
-let currentFilter: 'open' | 'agents' | 'closed' = 'open';
-const filterOrder: Array<'open' | 'agents' | 'closed'> = ['open', 'agents', 'closed'];
+let currentFilter: 'open' | 'agents' | 'skills' | 'closed' = 'open';
+const filterOrder: Array<'open' | 'agents' | 'skills' | 'closed'> = ['open', 'agents', 'skills', 'closed'];
 let renderGeneration = 0;
 const filterBar = document.getElementById('filter-bar') as HTMLDivElement;
 const newAgentBtn = document.getElementById('new-agent-btn') as HTMLButtonElement;
@@ -242,12 +251,17 @@ function setFilter(filter: typeof currentFilter): void {
   const btn = filterBar.querySelector(`[data-filter="${filter}"]`) as HTMLElement;
   if (btn) btn.classList.add('active');
 
-  // Toggle capture form vs new-agent button vs past
+  // Toggle capture form vs new-agent button vs past vs skills
   if (filter === 'agents') {
     form.style.display = 'none';
     newAgentBtn.classList.remove('hidden');
     launchCliBtn.classList.add('hidden');
     agentSummaryEl.classList.remove('hidden');
+  } else if (filter === 'skills') {
+    form.style.display = 'none';
+    newAgentBtn.classList.add('hidden');
+    launchCliBtn.classList.add('hidden');
+    agentSummaryEl.classList.add('hidden');
   } else if (filter === 'closed') {
     form.style.display = 'none';
     newAgentBtn.classList.add('hidden');
@@ -1432,6 +1446,10 @@ function render(): void {
     // Agents mode — render agent list instead of intents
     renderAgentsList();
     return;
+  } else if (currentFilter === 'skills') {
+    // Skills mode — render skills list
+    renderSkillsList();
+    return;
   } else if (currentFilter === 'closed') {
     // Past mode — render card-based combined view
     renderPastView();
@@ -1846,6 +1864,223 @@ function updateAgentCardApproval(agentId: string): void {
     });
   });
 }
+
+// ── Skills rendering ────────────────────────────────────
+
+interface SkillData {
+  id: string;
+  name: string;
+  description: string;
+  folder: string;
+  filePath: string;
+  created_at: string;
+  updated_at: string;
+}
+
+let cachedSkills: SkillData[] = [];
+
+async function loadSkills(): Promise<SkillData[]> {
+  try {
+    cachedSkills = await intentAPI.listSkills();
+    return cachedSkills;
+  } catch {
+    return cachedSkills;
+  }
+}
+
+async function renderSkillsList(): Promise<void> {
+  const gen = ++renderGeneration;
+  displayedIntents = [];
+  countEl.textContent = String(intents.filter(i => i.status !== 'done').length);
+
+  const skills = await loadSkills();
+
+  if (gen !== renderGeneration) return;
+
+  if (skills.length === 0) {
+    listEl.innerHTML = `
+      <div class="empty-state">
+        <span class="icon">🧩</span>
+        <span>No skills found. Create a SKILL.md in .agents/skills/</span>
+      </div>
+      <div style="text-align: center; margin-top: 8px;">
+        <button class="new-agent-btn" onclick="createNewSkill()">+ New Skill</button>
+      </div>
+    `;
+    return;
+  }
+
+  listEl.innerHTML = `
+    <div style="text-align: right; margin-bottom: 8px; padding: 0 8px;">
+      <button class="new-agent-btn" onclick="createNewSkill()" style="display: inline-block; width: auto; padding: 4px 12px; font-size: 12px;">+ New Skill</button>
+    </div>
+  ` + skills.map(skill => `
+    <div class="intent-item skill-card" data-skill-id="${skill.id}">
+      <div class="skill-icon">🧩</div>
+      <div class="intent-content">
+        <div class="intent-desc">${escapeHtml(skill.name)}</div>
+        <div class="intent-meta">
+          <span>${escapeHtml(skill.description.length > 100 ? skill.description.slice(0, 97) + '...' : skill.description)}</span>
+        </div>
+      </div>
+      <button class="intent-launch" onclick="event.stopPropagation(); openSkillFolder('${skill.id}')" title="Open folder">📁</button>
+      <button class="intent-launch" onclick="event.stopPropagation(); createIntentFromSkill('${skill.id}')" title="Create intent from skill">🎯</button>
+      <button class="intent-delete" onclick="event.stopPropagation(); deleteSkill('${skill.id}')">✕</button>
+    </div>
+  `).join('');
+
+  // Click handler for skill cards → open skill editor
+  listEl.querySelectorAll('.skill-card[data-skill-id]').forEach(el => {
+    el.addEventListener('click', () => {
+      const skillId = (el as HTMLElement).dataset.skillId!;
+      openSkillEditor(skillId);
+    });
+  });
+}
+
+async function createNewSkill(): Promise<void> {
+  const name = prompt('Skill name:');
+  if (!name || !name.trim()) return;
+
+  const result = await intentAPI.createSkill(name.trim());
+  if ('error' in result) {
+    showStatus(`Failed: ${result.error}`, true);
+    return;
+  }
+  showStatus(`✓ Created skill: ${result.name}`);
+  setTimeout(hideStatus, 2000);
+  render();
+}
+
+async function openSkillEditor(skillId: string): Promise<void> {
+  const result = await intentAPI.readSkill(skillId);
+  if ('error' in result) {
+    showStatus(`Failed to read skill: ${result.error}`, true);
+    return;
+  }
+
+  const skill = cachedSkills.find(s => s.id === skillId);
+  if (!skill) return;
+
+  // Open the skill in the canvas editor
+  // For now, create a temporary intent-like view for the skill editor
+  canvasIntentId = null;
+
+  // Use the canvas view to edit the skill
+  canvasTitle.textContent = skill.name;
+  canvasTitle.contentEditable = 'false';
+  canvasTitle.classList.remove('editing');
+  canvasTitleAI.classList.add('hidden');
+  canvasSaveStatus.textContent = '';
+  canvasDirty = false;
+  canvasSaveBtn.classList.add('hidden');
+
+  const expanded = !isCanvasMode;
+  canvasExpanded = expanded;
+  if (canvasExpanded) {
+    intentAPI.expandWindow();
+  }
+
+  if (!isCanvasMode) {
+    mainView.classList.add('hidden');
+    hideSettings();
+    timelineView.classList.add('hidden');
+  }
+  canvasView.classList.remove('hidden');
+
+  const myGen = ++canvasMountGen;
+  const currentTheme = await intentAPI.getSetting('theme').then(t => (t || 'light') as 'light' | 'dark');
+  const canvasPersonas = await intentAPI.listPersonas().then(p => p || []);
+
+  if (canvasMountGen !== myGen) return;
+
+  // Combine frontmatter + body for display
+  let editContent = result.body;
+  const fmKeys = Object.keys(result.frontmatter);
+  if (fmKeys.length > 0) {
+    const fmLines = fmKeys.map(k => `${k}: ${result.frontmatter[k]}`);
+    editContent = `---\n${fmLines.join('\n')}\n---\n${result.body}`;
+  }
+
+  // Tag the canvas with the skill ID for save routing
+  (canvasView as any).__skillId = skillId;
+
+  mountCanvas(canvasRoot, {
+    intentId: '__skill__' + skillId,
+    content: editContent,
+    theme: currentTheme,
+    personas: canvasPersonas,
+    onDirtyChange: (dirty: boolean) => {
+      canvasDirty = dirty;
+      canvasSaveBtn.classList.toggle('hidden', !dirty);
+    },
+    onSaveStatus: (status: string) => {
+      canvasSaveStatus.textContent = status;
+    },
+    onAgentMentioned: () => {},
+  });
+}
+
+async function saveSkillFromCanvas(skillId: string, content: string): Promise<void> {
+  // Parse frontmatter from the content
+  const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
+  let frontmatter: Record<string, unknown> = {};
+  let body = content;
+
+  if (fmMatch) {
+    const lines = fmMatch[1].split('\n');
+    for (const line of lines) {
+      const colonIdx = line.indexOf(':');
+      if (colonIdx > 0) {
+        const key = line.slice(0, colonIdx).trim();
+        const value = line.slice(colonIdx + 1).trim();
+        frontmatter[key] = value;
+      }
+    }
+    body = fmMatch[2];
+  }
+
+  await intentAPI.writeSkill(skillId, frontmatter, body);
+}
+
+async function openSkillFolder(skillId: string): Promise<void> {
+  await intentAPI.openSkillFolder(skillId);
+}
+
+async function createIntentFromSkill(skillId: string): Promise<void> {
+  const result = await intentAPI.createIntentFromSkill(skillId);
+  if ('error' in result) {
+    showStatus(`Failed: ${result.error}`, true);
+    return;
+  }
+  showStatus(`✓ Created intent from skill`);
+  setTimeout(hideStatus, 2000);
+  // Refresh and switch to Spaces
+  await refreshIntents();
+  setFilter('open');
+  openCanvas(result.id, true);
+}
+
+async function deleteSkill(skillId: string): Promise<void> {
+  const skill = cachedSkills.find(s => s.id === skillId);
+  if (!confirm(`Delete skill "${skill?.name || skillId}"?`)) return;
+
+  await intentAPI.deleteSkill(skillId);
+  render();
+}
+
+// Wire up skills changed event
+intentAPI.onSkillsChanged(() => {
+  if (currentFilter === 'skills') {
+    renderSkillsList();
+  }
+});
+
+// Expose skill functions to onclick handlers
+(window as any).createNewSkill = createNewSkill;
+(window as any).openSkillFolder = openSkillFolder;
+(window as any).createIntentFromSkill = createIntentFromSkill;
+(window as any).deleteSkill = deleteSkill;
 
 async function renderAgentsList(): Promise<void> {
   const gen = ++renderGeneration;
@@ -2901,15 +3136,20 @@ async function closeCanvas(): Promise<void> {
   closeAgentsPanel();
   const intentId = canvasIntentId;
   const wasNewIntent = canvasIsNewIntent;
+  const skillId = (canvasView as any).__skillId as string | undefined;
   canvasIntentId = null;
   canvasIsNewIntent = false;
+  (canvasView as any).__skillId = undefined;
   canvasClosing = true;
 
   // Get content BEFORE unmounting (unmount destroys the React ref)
   const finalContent = getCanvasContent();
   await unmountCanvas();
 
-  if (intentId) {
+  if (skillId) {
+    // Save skill content
+    await saveSkillFromCanvas(skillId, finalContent);
+  } else if (intentId) {
     await intentAPI.closeCanvas(intentId, finalContent);
 
     // If this was a new intent created from Enter on empty input,

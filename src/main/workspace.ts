@@ -32,6 +32,12 @@ export function initWorkspace(rootPath: string): void {
     fs.mkdirSync(intentDir, { recursive: true });
   }
 
+  // Ensure .agents/skills/ directory exists
+  const skillsDir = path.join(rootPath, '.agents', 'skills');
+  if (!fs.existsSync(skillsDir)) {
+    fs.mkdirSync(skillsDir, { recursive: true });
+  }
+
   const gitignorePath = path.join(rootPath, '.gitignore');
   const requiredEntries = [
     '.intent/*.db',

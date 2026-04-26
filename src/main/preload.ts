@@ -7,7 +7,7 @@ import type {
   CustomMcpServer,
 } from '../shared/ipc-contract';
 import type { ChatEvent } from '../shared/chat-types';
-import type { AgentAnchor, RecurrenceResult, RecallMatch } from '../shared/types';
+import type { AgentAnchor, RecurrenceResult, RecallMatch, Skill, SkillContent } from '../shared/types';
 
 const { contextBridge, ipcRenderer } = require('electron');
 
@@ -137,6 +137,16 @@ export interface IntentAPI {
   onRecurrenceResult(callback: (intentId: string, result: RecurrenceResult) => void): void;
   onRecurrenceApplied(callback: (intentId: string) => void): void;
   onRecallHint(callback: (intentId: string, match: RecallMatch) => void): void;
+
+  // ── Skills ──────────────────────────────────────────────
+  listSkills(): Promise<IpcCommandResult<'skill:list'>>;
+  readSkill(skillId: string): Promise<IpcCommandResult<'skill:read'>>;
+  writeSkill(skillId: string, frontmatter: Record<string, unknown>, body: string): Promise<IpcCommandResult<'skill:write'>>;
+  createSkill(name: string): Promise<IpcCommandResult<'skill:create'>>;
+  deleteSkill(skillId: string): Promise<IpcCommandResult<'skill:delete'>>;
+  openSkillFolder(skillId: string): Promise<IpcCommandResult<'skill:open-folder'>>;
+  createIntentFromSkill(skillId: string): Promise<IpcCommandResult<'skill:create-intent'>>;
+  onSkillsChanged(callback: () => void): void;
 }
 
 // ---------------------------------------------------------------------------
@@ -332,6 +342,18 @@ const api: IntentAPI = {
   },
   onRecallHint: (callback) => {
     ipcRenderer.on('intent:recall', (_event: unknown, intentId: string, match: RecallMatch) => callback(intentId, match));
+  },
+
+  // ── Skills ──────────────────────────────────────────────
+  listSkills: () => ipcRenderer.invoke('skill:list'),
+  readSkill: (skillId) => ipcRenderer.invoke('skill:read', skillId),
+  writeSkill: (skillId, frontmatter, body) => ipcRenderer.invoke('skill:write', skillId, frontmatter, body),
+  createSkill: (name) => ipcRenderer.invoke('skill:create', name),
+  deleteSkill: (skillId) => ipcRenderer.invoke('skill:delete', skillId),
+  openSkillFolder: (skillId) => ipcRenderer.invoke('skill:open-folder', skillId),
+  createIntentFromSkill: (skillId) => ipcRenderer.invoke('skill:create-intent', skillId),
+  onSkillsChanged: (callback) => {
+    ipcRenderer.on('skills:changed', callback);
   },
 };
 

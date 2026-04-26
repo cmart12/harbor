@@ -5,7 +5,7 @@
  * This file is **types only** — no runtime code.
  */
 
-import type { Intent, CreateIntentInput, Attachment, AgentAnchor, AgentSession, LinkPreviewMeta, RecurrenceResult, RecallMatch } from './types';
+import type { Intent, CreateIntentInput, Attachment, AgentAnchor, AgentSession, LinkPreviewMeta, RecurrenceResult, RecallMatch, Skill, SkillContent } from './types';
 import type { ChatEvent, ElicitationSchema, ElicitationFieldValue } from './chat-types';
 import type { SubagentSummary, SubagentInfo } from './subagent-types';
 
@@ -216,6 +216,15 @@ export interface IpcCommands {
 
   // ── Window ───────────────────────────────────────────────
   'window:get-pinned': { args: []; result: boolean };
+
+  // ── Skills ──────────────────────────────────────────────
+  'skill:list': { args: []; result: Skill[] };
+  'skill:read': { args: [skillId: string]; result: SkillContent | { error: string } };
+  'skill:write': { args: [skillId: string, frontmatter: Record<string, unknown>, body: string]; result: { success: boolean } | { error: string } };
+  'skill:create': { args: [name: string]; result: Skill | { error: string } };
+  'skill:delete': { args: [skillId: string]; result: boolean };
+  'skill:open-folder': { args: [skillId: string]; result: void };
+  'skill:create-intent': { args: [skillId: string]; result: Intent | { error: string } };
 }
 
 // ---------------------------------------------------------------------------
@@ -256,6 +265,7 @@ export interface IpcEvents {
   'intent:recurrence': { intentId: string; result: RecurrenceResult };
   'intent:recurrence-applied': { intentId: string };
   'intent:recall': { intentId: string; match: RecallMatch };
+  'skills:changed': void;
 }
 
 // ---------------------------------------------------------------------------

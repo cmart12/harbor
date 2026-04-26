@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import { loadConfig, getConfigValue, setConfigValue } from './config';
 import { initDatabase, mergeSessionIds, syncCanvasContent } from './database';
 import { initWorkspace, getDbPath, getLogPath } from './workspace';
+import { startSkillWatcher } from './skill-watcher';
 import { migrateOldDatabase } from './migration';
 import { registerIpcHandlers } from './ipc';
 import { preloadModel } from './voice';
@@ -126,6 +127,7 @@ app.whenReady().then(async () => {
     initDatabase(getDbPath(workspace), getLogPath(workspace));
     mergeSessionIds(config.sessions);
     syncCanvasContent(workspace);
+    startSkillWatcher(workspace);
   } else if (workspace) {
     // Workspace path configured but directory missing — clear it
     console.warn(`[main] Workspace directory not found: ${workspace}`);

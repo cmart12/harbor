@@ -4,6 +4,7 @@ import { registerCanvasHandlers } from './canvas-handlers';
 import { registerSettingsHandlers } from './settings-handlers';
 import { registerChatHandlers } from './chat-handlers';
 import { registerWorkspaceHandlers } from './workspace-handlers';
+import { registerSkillHandlers } from './skill-handlers';
 
 export function registerIpcHandlers(): void {
   registerIntentHandlers();
@@ -12,6 +13,7 @@ export function registerIpcHandlers(): void {
   registerSettingsHandlers();
   registerChatHandlers();
   registerWorkspaceHandlers();
+  registerSkillHandlers();
 }
 
 // Re-export typed handler utilities
