@@ -43,6 +43,8 @@ export class InteractionBroker {
         : typeof request.fileName === 'string' ? request.fileName
         : undefined;
 
+      console.log(`[InteractionBroker] Permission requested: kind=${request.kind} requestId=${requestId} agent=${record.agentId}`);
+
       record.status = 'waiting-approval';
       record.pendingApprovalId = requestId;
       record.pendingPermissionKind = request.kind || null;
@@ -82,10 +84,11 @@ export class InteractionBroker {
             record.pendingPermissionKind = next.permissionKind;
           }
           this.persistence.updateStatus(record);
-          resolve(approved
+          const result = approved
             ? { kind: 'approved' as const }
-            : { kind: 'denied-interactively-by-user' as const }
-          );
+            : { kind: 'denied-interactively-by-user' as const };
+          console.log(`[InteractionBroker] Permission resolved: requestId=${requestId} result=${result.kind}`);
+          resolve(result);
         });
       });
     };
@@ -145,6 +148,8 @@ export class InteractionBroker {
     if (cb) {
       this.approvalCallbacks.delete(requestId);
       cb(approved);
+    } else {
+      console.warn(`[InteractionBroker] No approval callback for requestId=${requestId} (agentId=${agentId}, approved=${approved})`);
     }
     // Notify chat channel so both workers list and chat view stay in sync
     this.notifier.notifyRenderer(`chat:event:${agentId}`, {

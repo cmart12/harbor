@@ -6,6 +6,7 @@ interface ToolTileProps {
   result?: string;
   completed: boolean;
   success?: boolean;
+  error?: string;
 }
 
 function friendlyPath(p: string): { name: string; dir: string } {
@@ -45,7 +46,7 @@ function countDiffStats(result: string): { added: number; removed: number } | nu
   return (added || removed) ? { added, removed } : null;
 }
 
-export function ToolTile({ toolName, args, result, completed, success }: ToolTileProps) {
+export function ToolTile({ toolName, args, result, completed, success, error }: ToolTileProps) {
   const [expanded, setExpanded] = useState(false);
   const category = getToolCategory(toolName);
 
@@ -184,6 +185,9 @@ export function ToolTile({ toolName, args, result, completed, success }: ToolTil
         {hasExpandContent && <span className={`chat-tool-chevron ${expanded ? 'expanded' : ''}`}>▸</span>}
       </div>
       {expanded && expandContent}
+      {isError && error && (
+        <div className="chat-tool-error">{error}</div>
+      )}
     </div>
   );
 }

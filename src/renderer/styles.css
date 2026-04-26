@@ -3348,6 +3348,13 @@ body.dark .chat-loading-history {
   text-decoration: underline;
 }
 
+.chat-tool-error {
+  padding: 4px 10px 6px;
+  font-size: 11px;
+  color: #dc2626;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+
 /* Reasoning tile */
 .chat-reasoning-tile {
   background: rgba(168, 85, 247, 0.06);
@@ -3644,6 +3651,7 @@ body.dark .chat-tool-diff pre { color: rgba(255, 255, 255, 0.5); }
 body.dark .chat-tool-expand { color: #a594e8; }
 body.dark .diff-add { background: rgba(63, 185, 80, 0.12); color: #4ade80; }
 body.dark .diff-remove { background: rgba(248, 81, 73, 0.12); color: #f87171; }
+body.dark .chat-tool-error { color: #f87171; border-top-color: rgba(255, 255, 255, 0.06); }
 
 body.dark .chat-reasoning-tile { background: rgba(168, 85, 247, 0.08); }
 body.dark .chat-reasoning-header:hover { background: rgba(168, 85, 247, 0.12); }

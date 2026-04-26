@@ -422,14 +422,16 @@ export function setupAgentEventListeners(session: CopilotSession, record: AgentR
       ? rawResult
       : rawResult?.detailedContent ?? rawResult?.content ?? '';
     const success = d.success !== false;
+    const errorMessage = d.error?.message ?? undefined;
     if (!success) {
-      console.warn(`[agent-service] Tool ${d.toolCallId} completed with success=false (raw: ${d.success})`);
+      console.warn(`[agent-service] Tool ${d.toolCallId} completed with success=false (raw: ${d.success})${errorMessage ? `: ${errorMessage}` : ''}`);
     }
     notifier.notifyRenderer(chatChannel, {
       type: 'tool.complete',
       toolCallId: d.toolCallId ?? '',
       result,
       success,
+      ...(errorMessage ? { error: errorMessage } : {}),
     });
   });
 

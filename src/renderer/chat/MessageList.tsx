@@ -86,6 +86,7 @@ export function MessageList({ messages, onApprovalRespond, onUserInputRespond, o
                 result={msg.result}
                 completed={msg.completed}
                 success={msg.success}
+                error={msg.error}
               />
             );
           }

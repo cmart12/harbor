@@ -41,6 +41,8 @@ function parseHistoryEvents(events: any[]): ChatMessage[] {
   const messages: ChatMessage[] = [];
   // Track tool calls by ID so we can update them with completion data
   const toolMsgMap = new Map<string, number>();
+  // Track approval messages by requestId for permission.completed matching
+  const approvalMsgMap = new Map<string, number>();
 
   for (const event of events) {
     const type = event.type || event.kind;
@@ -115,6 +117,42 @@ function parseHistoryEvents(events: any[]): ChatMessage[] {
         msg.action = data.action;
         msg.content = data.content;
       }
+    } else if (type === 'permission.requested') {
+      // SDK persists permission requests — map to ApprovalMessage
+      const pr = data.permissionRequest || data;
+      const reqId = pr.toolCallId || data.requestId || '';
+      const approvalMsg: ApprovalMessage = {
+        id: genId(), type: 'approval',
+        requestId: reqId,
+        agentId: '',
+        permissionKind: pr.kind || 'permission',
+        intention: pr.intention,
+        path: pr.path || pr.fileName,
+        responded: false,
+        timestamp: ts,
+      };
+      approvalMsgMap.set(reqId, messages.length);
+      messages.push(approvalMsg);
+    } else if (type === 'permission.completed') {
+      const reqId = data.requestId || '';
+      const approved = data.result?.kind === 'approved';
+      // Try to match by SDK requestId — approvalMsgMap stores by toolCallId,
+      // but permission.completed uses SDK requestId. Scan for unresolved approvals.
+      const idx = approvalMsgMap.get(reqId);
+      if (idx !== undefined && messages[idx]?.type === 'approval') {
+        const msg = messages[idx] as ApprovalMessage;
+        msg.responded = true;
+        msg.approved = approved;
+      } else {
+        // Fallback: find most recent unresolved approval
+        for (let i = messages.length - 1; i >= 0; i--) {
+          if (messages[i].type === 'approval' && !(messages[i] as ApprovalMessage).responded) {
+            (messages[i] as ApprovalMessage).responded = true;
+            (messages[i] as ApprovalMessage).approved = approved;
+            break;
+          }
+        }
+      }
     }
   }
   return messages;
@@ -129,7 +167,7 @@ function applyCompletionEvent(msgs: ChatMessage[], event: ChatEvent): ChatMessag
     case 'tool.complete':
       return msgs.map(m =>
         m.type === 'tool_call' && m.toolCallId === event.toolCallId
-          ? { ...m, completed: true, success: event.success, result: event.result }
+          ? { ...m, completed: true, success: event.success, result: event.result, error: event.error }
           : m
       );
     case 'approval.resolved':
@@ -153,6 +191,139 @@ function applyCompletionEvent(msgs: ChatMessage[], event: ChatEvent): ChatMessag
     default:
       return msgs;
   }
+}
+
+/**
+ * Replay buffered events that arrived during history loading.
+ * Uses ID-based dedup to avoid duplicating messages already present from history.
+ * Skips assistant deltas (unsafe to dedup) and tool.progress (not idempotent).
+ */
+function replayBufferedEvents(msgs: ChatMessage[], events: ChatEvent[]): ChatMessage[] {
+  let result = [...msgs];
+
+  // Build dedup sets from existing messages
+  const existingToolCallIds = new Set<string>();
+  const existingApprovalIds = new Set<string>();
+  const existingUserInputIds = new Set<string>();
+  const existingElicitationIds = new Set<string>();
+
+  for (const m of result) {
+    if (m.type === 'tool_call') existingToolCallIds.add((m as ToolCallMessage).toolCallId);
+    else if (m.type === 'approval') existingApprovalIds.add((m as ApprovalMessage).requestId);
+    else if (m.type === 'user_input') existingUserInputIds.add((m as UserInputMessage).requestId);
+    else if (m.type === 'elicitation') existingElicitationIds.add((m as ElicitationMessage).requestId);
+  }
+
+  for (const event of events) {
+    switch (event.type) {
+      // Completion events — idempotent
+      case 'tool.complete':
+      case 'approval.resolved':
+      case 'user_input.resolved':
+      case 'elicitation.resolved':
+        result = applyCompletionEvent(result, event);
+        break;
+
+      case 'tool.start':
+        if (!existingToolCallIds.has(event.toolCallId)) {
+          result.push({
+            id: genId(), type: 'tool_call',
+            toolCallId: event.toolCallId, toolName: event.toolName,
+            args: event.args, completed: false,
+            timestamp: new Date().toISOString(),
+          } as ToolCallMessage);
+          existingToolCallIds.add(event.toolCallId);
+        }
+        break;
+
+      case 'approval.needed':
+        if (!existingApprovalIds.has(event.requestId)) {
+          result.push({
+            id: genId(), type: 'approval',
+            requestId: event.requestId, agentId: event.agentId,
+            permissionKind: event.permissionKind,
+            intention: event.intention, path: event.path,
+            responded: false,
+            timestamp: new Date().toISOString(),
+          } as ApprovalMessage);
+          existingApprovalIds.add(event.requestId);
+        }
+        break;
+
+      case 'user_input.requested':
+        if (!existingUserInputIds.has(event.requestId)) {
+          result.push({
+            id: genId(), type: 'user_input',
+            requestId: event.requestId, agentId: event.agentId,
+            question: event.question, choices: event.choices,
+            allowFreeform: event.allowFreeform, responded: false,
+            timestamp: new Date().toISOString(),
+          } as UserInputMessage);
+          existingUserInputIds.add(event.requestId);
+        }
+        break;
+
+      case 'elicitation.requested':
+        if (!existingElicitationIds.has(event.requestId)) {
+          result.push({
+            id: genId(), type: 'elicitation',
+            requestId: event.requestId, agentId: event.agentId,
+            message: event.message, requestedSchema: event.requestedSchema,
+            mode: event.mode, elicitationSource: event.elicitationSource,
+            responded: false,
+            timestamp: new Date().toISOString(),
+          } as ElicitationMessage);
+          existingElicitationIds.add(event.requestId);
+        }
+        break;
+
+      case 'session.error':
+        result.push({
+          id: genId(), type: 'session_event', eventType: 'error',
+          message: event.message, timestamp: new Date().toISOString(),
+        } as SessionEventMessage);
+        break;
+
+      case 'subagent.started':
+        if (!existingToolCallIds.has(event.toolCallId)) {
+          result.push({
+            id: genId(), type: 'tool_call',
+            toolCallId: event.toolCallId, toolName: '__subagent__',
+            args: {
+              name: event.name, displayName: event.displayName,
+              description: event.description, agentType: event.name,
+              agentId: event.agentId, completed: false,
+            },
+            completed: false, timestamp: new Date().toISOString(),
+          } as ToolCallMessage);
+          existingToolCallIds.add(event.toolCallId);
+        }
+        break;
+
+      case 'subagent.completed':
+        result = result.map(m =>
+          m.type === 'tool_call' && m.toolCallId === event.toolCallId
+            ? { ...m, completed: true, success: true, args: { ...m.args, completed: true, success: true, agentId: event.agentId ?? m.args.agentId, durationMs: event.durationMs, model: event.model, totalTokens: event.totalTokens, totalToolCalls: event.totalToolCalls } }
+            : m
+        );
+        break;
+
+      case 'subagent.failed':
+        result = result.map(m =>
+          m.type === 'tool_call' && m.toolCallId === event.toolCallId
+            ? { ...m, completed: true, success: false, args: { ...m.args, completed: true, success: false, error: event.error, agentId: event.agentId ?? m.args.agentId } }
+            : m
+        );
+        break;
+
+      // Skip: assistant.message_delta, assistant.message, assistant.reasoning_delta,
+      // assistant.reasoning, tool.progress, session.idle
+      // Deltas are unsafe to dedup; progress is not idempotent;
+      // session.idle is handled by the live handler after loading.
+    }
+  }
+
+  return result;
 }
 
 export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: initialStatus, agentSource, pendingApprovalId, pendingPermissionKind, onClose, onOpenCli }: ChatViewProps) {
@@ -198,8 +369,8 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
   const currentReasoningId = useRef<string | null>(null);
   // Track whether history has been applied so buffered events can be merged
   const historyLoadedRef = useRef(!initialAgentId);
-  // Buffer idempotent completion events that arrive before history loads
-  const pendingCompletionEvents = useRef<ChatEvent[]>([]);
+  // Buffer ALL events that arrive before history loads for replay with dedup
+  const pendingEvents = useRef<ChatEvent[]>([]);
 
   // Load available models
   useEffect(() => {
@@ -224,26 +395,44 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
           const historyMessages = parseHistoryEvents(result.events);
           if (historyMessages.length > 0) {
             setMessages(prev => {
-              // Preserve any pending approval message seeded on mount (even if already responded)
-              const pendingApproval = prev.find(
-                m => m.type === 'approval'
-              );
-              const msgs = pendingApproval
-                ? [...historyMessages, pendingApproval]
-                : historyMessages;
-
-              // Apply any buffered completion events that arrived while history was loading
-              let merged = msgs;
-              for (const buffered of pendingCompletionEvents.current) {
-                merged = applyCompletionEvent(merged, buffered);
+              // Preserve seeded pending approval only if not already in history
+              const pendingApproval = prev.find(m => m.type === 'approval');
+              let msgs = historyMessages;
+              if (pendingApproval && !msgs.some(
+                m => m.type === 'approval' && m.requestId === (pendingApproval as ApprovalMessage).requestId
+              )) {
+                msgs = [...msgs, pendingApproval];
               }
-              pendingCompletionEvents.current = [];
+
+              // Replay ALL buffered events with dedup against history
+              const merged = replayBufferedEvents(msgs, pendingEvents.current);
+              pendingEvents.current = [];
+              return merged;
+            });
+          } else {
+            // History returned events but none were parseable — still replay buffered events
+            setMessages(prev => {
+              const merged = replayBufferedEvents(prev, pendingEvents.current);
+              pendingEvents.current = [];
               return merged;
             });
           }
+        } else {
+          // No history events — replay buffered events against seeded messages
+          setMessages(prev => {
+            const merged = replayBufferedEvents(prev, pendingEvents.current);
+            pendingEvents.current = [];
+            return merged;
+          });
         }
       } catch (err) {
         console.error('[ChatView] Failed to load history:', err);
+        // Even on error, replay any buffered events so they aren't lost
+        setMessages(prev => {
+          const merged = replayBufferedEvents(prev, pendingEvents.current);
+          pendingEvents.current = [];
+          return merged;
+        });
       } finally {
         historyLoadedRef.current = true;
         setIsLoadingHistory(false);
@@ -252,17 +441,13 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
     })();
   }, [initialAgentId]);
 
-  // Subscribe to chat events immediately — buffer completion events until history loads
+  // Subscribe to chat events immediately — buffer all events until history loads
   useEffect(() => {
     if (!currentAgentId) return;
     const unsubscribe = intentAPI.onChatEvent(currentAgentId, (event: ChatEvent) => {
-      // Buffer idempotent completion events that arrive before history loads
+      // Buffer ALL events that arrive before history loads for deduped replay
       if (!historyLoadedRef.current) {
-        if (event.type === 'tool.complete' || event.type === 'approval.resolved' || event.type === 'user_input.resolved' || event.type === 'elicitation.resolved') {
-          pendingCompletionEvents.current.push(event);
-        }
-        // Other events (streaming deltas, tool.start) are non-idempotent
-        // and will be replayed from history — drop them to avoid duplicates
+        pendingEvents.current.push(event);
         return;
       }
 
@@ -368,7 +553,7 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
         case 'tool.complete': {
           setMessages(prev => prev.map(m =>
             m.type === 'tool_call' && m.toolCallId === event.toolCallId
-              ? { ...m, completed: true, success: event.success, result: event.result }
+              ? { ...m, completed: true, success: event.success, result: event.result, error: event.error }
               : m
           ));
           break;

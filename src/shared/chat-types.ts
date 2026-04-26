@@ -36,6 +36,7 @@ export interface ToolCallMessage {
   result?: string;
   completed: boolean;
   success?: boolean;
+  error?: string;
   timestamp: string;
 }
 
@@ -118,7 +119,7 @@ export type ChatEvent =
   | { type: 'assistant.reasoning'; reasoningId: string; content: string }
   | { type: 'tool.start'; toolCallId: string; toolName: string; args: Record<string, unknown> }
   | { type: 'tool.progress'; toolCallId: string; message: string }
-  | { type: 'tool.complete'; toolCallId: string; result: string; success: boolean }
+  | { type: 'tool.complete'; toolCallId: string; result: string; success: boolean; error?: string }
   | { type: 'session.idle' }
   | { type: 'session.error'; message: string }
   | { type: 'approval.needed'; requestId: string; agentId: string; permissionKind: string; intention?: string; path?: string }

@@ -59,6 +59,24 @@ describe('InteractionBroker', () => {
       expect(result).toEqual({ kind: 'approved' });
     });
 
+    it('logs permission request and resolution', async () => {
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const record = makeRecord();
+      const handler = broker.createPermissionHandler((sid) => sid === 'session-1' ? record : undefined);
+
+      const promise = handler({ kind: 'read', toolCallId: 'req-2' }, { sessionId: 'session-1' });
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Permission requested: kind=read requestId=req-2')
+      );
+
+      broker.approveAgent('agent-1', 'req-2', true);
+      await promise;
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Permission resolved: requestId=req-2 result=approved')
+      );
+      logSpy.mockRestore();
+    });
+
     it('resolves pending approval callback with denial', async () => {
       const record = makeRecord();
       const handler = broker.createPermissionHandler((sid) => sid === 'session-1' ? record : undefined);
@@ -71,9 +89,13 @@ describe('InteractionBroker', () => {
       expect(result).toEqual({ kind: 'denied-interactively-by-user' });
     });
 
-    it('is a no-op for unknown requestId', () => {
-      // Should not throw
+    it('logs warning for unknown requestId', () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
       broker.approveAgent('agent-1', 'unknown-req', true);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('No approval callback for requestId=unknown-req')
+      );
+      warnSpy.mockRestore();
     });
 
     it('notifies renderer on approval resolution', () => {
