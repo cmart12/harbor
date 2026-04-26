@@ -1,6 +1,6 @@
 # Intent
 
-A lightweight Electron system-tray app for capturing intents — quick thoughts, tasks, and to-dos — with voice input, AI-powered refinement, and an integrated markdown canvas with agent deployment.
+A powerful Electron system-tray app for capturing intents — ideas, tasks, and goals — with voice input, AI-powered refinement, a rich markdown canvas, and an integrated AI agent system that can work locally or in the cloud.
 
 ## Overview
 
@@ -8,71 +8,113 @@ Intent lives in your system tray and pops up with `Ctrl+Shift+Space`. Type or sp
 
 Each intent has a **canvas** — a full markdown editor (powered by [Documint](https://github.com/lostintangent/documint)) where you can flesh out notes, paste files, and deploy AI agents to work on specific sections of your document.
 
-### Key Features
+Agents can run **locally** via the Copilot SDK, or in the **cloud** via GitHub's Copilot Coding Agent (CCA) infrastructure. Create personas like `@cca` to route work to the cloud, or `@reviewer` to run tasks locally — all from the same interface.
 
-- **Quick capture** — global hotkey (`Ctrl+Shift+Space`) summons a floating window; press Enter to save
-- **Voice input** — press spacebar when the input is empty to start recording; press spacebar again to stop. Transcription runs locally via Whisper (no cloud dependency)
-- **Passive AI refinement** — every captured intent is sent to GitHub Copilot's LLM in the background. The refined text animates in with a letter-glow effect
-- **Markdown canvas** — click any intent to open its canvas in the tray window; press `Cmd+Enter` to expand to a larger floating editor. Canvas content is stored as `canvas.md` in workspace folders and auto-committed to git
-- **Agent deployment** — highlight text in the canvas, create a comment with instructions, and click "Run Agent" to deploy a Copilot SDK agent. The agent works autonomously; double-click the highlighted text to attach a CLI for live steering
-- **Agents tab** — see all running agents across all intents from the main view
-- **File attachments** — paste or drag-drop files into the canvas; images and documents are stored in `attachments/` subfolders
-- **Smart recurrence** — dated intents are re-evaluated on completion; recurring tasks automatically spawn the next occurrence
+## Key Features
+
+### 🎯 Intent Capture
+- **Global hotkey** (`Ctrl+Shift+Space`) summons a floating window; press Enter to save
+- **Voice input** — press Spacebar when the input is empty to start recording; press again to stop. Transcription runs locally via Whisper (no cloud dependency)
+- **AI refinement** — every captured intent is sent to GitHub Copilot's LLM in the background. The refined text animates in with a letter-glow effect
+- **Smart classification** — input is classified as intent vs. query; queries are answered inline
+
+### 📝 Canvas Editor
+- Click any intent to open its **markdown canvas** — a rich editor with headings, lists, code blocks, images, and more
+- **File attachments** — paste or drag-drop files, images, and documents
+- **Version history** — all canvas changes are auto-committed to git; browse and restore previous versions
+- **Canvas popout** — when pinned, canvases open in separate windows for multi-tasking
+- **AI title generation** — click ✨ to generate a title from canvas content
+
+### ⚡ AI Agent System
+- **Local agents** — highlight text in the canvas, @mention a persona, and an agent works on it using the Copilot SDK
+- **Cloud agents** — personas configured with "Cloud" run location trigger GitHub's Copilot Coding Agent (CCA) to work on your repo in the cloud
+- **Agent personas** — define custom personas with instructions, model preferences, and local/cloud execution
+- **Live status** — see agent progress with real-time step indicators, tool execution tracking, and approval workflows
+- **Sub-agent tracking** — agents that spawn sub-agents are tracked independently
+- **In-app chat** — click any agent to open a full chat view for interactive conversation
+- **MCP integration** — configure Model Context Protocol servers to extend agent capabilities
+
+### 🗂 Spaces & Workers
+- **Spaces tab** — your active intents with agent status indicators (shimmer animation when agents are working, attention badges when paused)
+- **Workers tab** — all agents across all intents, with real-time status, step tracking, and approval controls
+- **Mini-agent cards** — each intent card shows its running agents; click one to open its chat directly
+- **Delete sessions** — remove completed or failed agent sessions
+- **Open canvas** — jump from a worker back to its source canvas
+
+### 🎨 UI/UX
+- **Light/dark themes** with translucent, blurred backgrounds
+- **Edge snapping** — drag the window to any screen edge; it snaps to position
+- **Pin mode** — pin the window to prevent auto-hide; enables free positioning and resizing
+- **Keyboard-first** — arrow keys navigate intents, Enter opens canvas, Escape goes back, Tab switches tabs
+- **Focus management** — hotkey always returns to Spaces tab with cursor in capture field
+
+### 🔧 Settings
+- **AI model selection** — choose from available Copilot models
+- **Workspace directory** — select where intent data is stored
+- **Copilot CLI path** — auto-detected or manual override
+- **Agent personas** — define @mentionable personas with custom instructions and local/cloud execution
+- **MCP servers** — auto-discovered from `~/.copilot/` + user-added custom servers
+- **CLI tools** — define CLI tools available in the environment so agents know when to use them
+
+### 📊 Additional Features
+- **Smart recurrence** — dated intents are re-evaluated on completion; recurring tasks auto-spawn
 - **Recall** — new intents are matched against past intents for semantic similarity hints
-- **System tray** — the app runs in the tray and stays out of your way
+- **Past view** — browse completed intents with activity timelines
+- **Timeline** — event activity log across all intents
 
 ## Architecture
 
 ```
 src/
-├── main/                  # Electron main process
-│   ├── main.ts            # App lifecycle, tray, window, expand/collapse
-│   ├── database.ts        # SQLite (intents, canvas_agents, events)
-│   ├── ai.ts              # Copilot SDK client (parse, recurrence, recall sessions)
-│   ├── agent-service.ts   # SDK-based canvas agent lifecycle management
-│   ├── ipc.ts             # IPC handlers bridging renderer ↔ main
-│   ├── workspace.ts       # Workspace folders, canvas I/O, git auto-commit
-│   ├── eventlog.ts        # Append-only event log (.intent/events.jsonl)
-│   ├── session.ts         # Copilot CLI discovery, terminal launch
-│   ├── voice.ts           # Local Whisper model (speech-to-text)
-│   ├── config.ts          # User config (theme, model, sessions)
-│   └── preload.ts         # Context bridge exposing intentAPI
-├── renderer/              # Electron renderer process
-│   ├── index.html         # App shell (main, settings, timeline, canvas views)
-│   ├── styles.css         # Light/dark theme styles
-│   ├── app.ts             # UI logic, filters, navigation, canvas mounting
-│   └── canvas/            # React island for the markdown editor
-│       ├── DocumintCanvas.tsx  # Documint wrapper with save, agents, attachments
-│       └── mount.tsx          # React root lifecycle (mount/unmount)
+├── main/                      # Electron main process
+│   ├── main.ts                # App lifecycle, tray, window, hotkeys
+│   ├── database.ts            # SQLite (intents, agents, events)
+│   ├── ai.ts                  # Copilot SDK client (parse, recurrence, recall)
+│   ├── agent-service.ts       # Local agent lifecycle management
+│   ├── cloud-agent.ts         # Cloud agent API (Copilot CCA)
+│   ├── cloud-agent-poller.ts  # Cloud job status polling
+│   ├── subagent-service.ts    # Sub-agent state tracking
+│   ├── ipc.ts                 # IPC handlers bridging renderer ↔ main
+│   ├── workspace.ts           # Workspace folders, canvas I/O, git auto-commit
+│   ├── eventlog.ts            # Append-only event log (.intent/events.jsonl)
+│   ├── session.ts             # Copilot CLI discovery, terminal launch
+│   ├── voice.ts               # Local Whisper model (speech-to-text)
+│   ├── config.ts              # User config (theme, model, personas)
+│   ├── mcp.ts                 # MCP server discovery & management
+│   ├── migration.ts           # Database migrations
+│   └── preload.ts             # Context bridge exposing intentAPI
+├── renderer/                  # Electron renderer process
+│   ├── index.html             # App shell (main, settings, canvas, chat views)
+│   ├── styles.css             # Light/dark theme styles
+│   ├── app.ts                 # UI logic, filters, navigation
+│   ├── canvas/                # React island for markdown editor
+│   │   ├── DocumintCanvas.tsx # Documint wrapper with agents, attachments
+│   │   └── mount.tsx          # React root lifecycle
+│   └── chat/                  # React chat UI for agent conversations
+│       ├── ChatView.tsx       # Main chat interface
+│       ├── PromptBar.tsx      # Message input bar
+│       ├── MessageList.tsx    # Message history
+│       └── tiles/             # Message type renderers
 ├── shared/
-│   └── types.ts           # Shared TypeScript types
+│   └── types.ts               # Shared TypeScript types
 └── assets/
-    └── tray-icon.png      # System tray icon
+    └── tray-icon.png          # System tray icon
 ```
 
-**Build system:**
-- Main process: `tsc` via `tsconfig.main.json`
-- Renderer: `esbuild` bundles React + Documint + app code into a single IIFE
-- Assets: HTML and CSS copied to `dist/renderer/`
-
-See [architecture.md](./architecture.md) for detailed component descriptions.
+See [docs/architecture.md](./docs/architecture.md) for detailed component descriptions and [docs/user-guide.md](./docs/user-guide.md) for usage instructions.
 
 ## Getting Started
 
 ### Prerequisites
 
 - Node.js 20+
-- [Bun](https://bun.sh) (to build the Documint editor from `../documint`)
 - GitHub Copilot CLI — `npm install -g @github/copilot`
 - A GitHub account with Copilot access
+- For cloud agents: `gh` CLI authenticated (`gh auth login`)
 
 ### Install & Run
 
 ```bash
-# Build the Documint editor (one-time, from sibling directory)
-cd ../documint && bun install && bun run package && cd -
-
-# Install and start
 npm install
 npm run start
 ```
@@ -83,9 +125,11 @@ The app will build, launch, and appear in your system tray. Press `Ctrl+Shift+Sp
 
 ```bash
 npm run dev    # Builds then launches with tsc watch + esbuild watch + Electron
+npm test       # Run all tests (vitest)
+npm run lint   # Lint with oxlint
 ```
 
-## Usage
+## Quick Reference
 
 | Action | How |
 |---|---|
@@ -94,18 +138,19 @@ npm run dev    # Builds then launches with tsc watch + esbuild watch + Electron
 | Voice input | Press `Space` when input is empty → speak → press `Space` to stop |
 | Save | Press `Enter` |
 | Search intents | Press `Shift+Tab` to toggle search mode |
-| Open canvas (small) | Click an intent |
-| Open canvas (expanded) | `Cmd+Enter` from the intent list |
+| Open canvas | Click an intent or press `Enter` on selected |
+| Expand canvas | `Cmd+Enter` from the intent list |
 | Save canvas | `Cmd+S` in the editor |
-| Deploy an agent | Select text → click comment button → write instructions → click "Run Agent" |
-| Watch agent in CLI | Double-click the agent-underlined text |
-| View all agents | Click the "⚡ Agents" filter tab |
+| Deploy agent | Select text → @mention a persona in a comment → agent starts |
+| Refresh title | Hover intent → click ✨ |
+| View workers | Click the "Workers" filter tab |
+| Open chat | Click any agent card |
 | Toggle done | Click the circle next to an intent |
-| Delete | Hover an intent and click ✕ |
-| Change model | Click ⚙ in the header |
+| Delete intent | Hover → click ✕ |
+| Settings | Click ⚙ in the header |
 | Dismiss window | `Escape` or click outside |
 
-## Workspace
+## Workspace Structure
 
 Intent stores data in a user-selected workspace directory:
 
@@ -122,15 +167,14 @@ Intent stores data in a user-selected workspace directory:
 
 All workspace changes are auto-committed to git with `intent: auto-save` messages.
 
-## Database
+## Testing
 
-SQLite database at `<workspace>/.intent/intents.db`:
+```bash
+npm test              # Run all 202 tests
+npm run test:watch    # Watch mode
+```
 
-- **intents** — `id`, `description`, `raw_text`, `body`, `client`, `due_at`, `due_at_utc`, `recurrence`, `completed_at`, `folder`, `session_id`, `attachments`, `status`, `created_at`, `updated_at`
-- **canvas_agents** — `id`, `intent_id`, `selected_text`, `session_id`, `pid`, `status`, `created_at`, `updated_at`
-- **intent_events** — event sourcing log cache
-
-User config (theme, model, session IDs) stored separately at `<userData>/config.json`.
+Tests cover: database operations, validators, config, MCP servers, agent service, workspace, event log, session management, cloud agent parsing, and integration tests.
 
 ## License
 
