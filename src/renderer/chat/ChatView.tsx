@@ -95,6 +95,29 @@ function parseHistoryEvents(events: any[]): ChatMessage[] {
   return messages;
 }
 
+/**
+ * Apply a buffered completion event (tool.complete, approval.resolved, session.idle/error)
+ * to the message list using ID-based matching. This is idempotent.
+ */
+function applyCompletionEvent(msgs: ChatMessage[], event: ChatEvent): ChatMessage[] {
+  switch (event.type) {
+    case 'tool.complete':
+      return msgs.map(m =>
+        m.type === 'tool_call' && m.toolCallId === event.toolCallId
+          ? { ...m, completed: true, success: event.success, result: event.result }
+          : m
+      );
+    case 'approval.resolved':
+      return msgs.map(m =>
+        m.type === 'approval' && m.requestId === event.requestId
+          ? { ...m, responded: true, approved: event.approved }
+          : m
+      );
+    default:
+      return msgs;
+  }
+}
+
 export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: initialStatus, agentSource, pendingApprovalId, pendingPermissionKind, onClose, onOpenCli }: ChatViewProps) {
   const [currentAgentId, setCurrentAgentId] = useState<string | null>(initialAgentId || null);
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
@@ -136,6 +159,10 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
   const currentAssistantId = useRef<string | null>(null);
   // Track the current reasoning message ID
   const currentReasoningId = useRef<string | null>(null);
+  // Track whether history has been applied so buffered events can be merged
+  const historyLoadedRef = useRef(!initialAgentId);
+  // Buffer idempotent completion events that arrive before history loads
+  const pendingCompletionEvents = useRef<ChatEvent[]>([]);
 
   // Load available models
   useEffect(() => {
@@ -160,29 +187,48 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
           const historyMessages = parseHistoryEvents(result.events);
           if (historyMessages.length > 0) {
             setMessages(prev => {
-              // Preserve any pending approval message seeded on mount
+              // Preserve any pending approval message seeded on mount (even if already responded)
               const pendingApproval = prev.find(
-                m => m.type === 'approval' && !m.responded
+                m => m.type === 'approval'
               );
-              return pendingApproval
+              const msgs = pendingApproval
                 ? [...historyMessages, pendingApproval]
                 : historyMessages;
+
+              // Apply any buffered completion events that arrived while history was loading
+              let merged = msgs;
+              for (const buffered of pendingCompletionEvents.current) {
+                merged = applyCompletionEvent(merged, buffered);
+              }
+              pendingCompletionEvents.current = [];
+              return merged;
             });
           }
         }
       } catch (err) {
         console.error('[ChatView] Failed to load history:', err);
       } finally {
+        historyLoadedRef.current = true;
         setIsLoadingHistory(false);
         setHistoryLoaded(true);
       }
     })();
   }, [initialAgentId]);
 
-  // Subscribe to chat events — wait for history to load first to avoid race
+  // Subscribe to chat events immediately — buffer completion events until history loads
   useEffect(() => {
-    if (!currentAgentId || !historyLoaded) return;
+    if (!currentAgentId) return;
     const unsubscribe = intentAPI.onChatEvent(currentAgentId, (event: ChatEvent) => {
+      // Buffer idempotent completion events that arrive before history loads
+      if (!historyLoadedRef.current) {
+        if (event.type === 'tool.complete' || event.type === 'approval.resolved') {
+          pendingCompletionEvents.current.push(event);
+        }
+        // Other events (streaming deltas, tool.start) are non-idempotent
+        // and will be replayed from history — drop them to avoid duplicates
+        return;
+      }
+
       switch (event.type) {
         case 'assistant.message_delta': {
           setMessages(prev => {
@@ -402,7 +448,7 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
     });
 
     return () => unsubscribe();
-  }, [currentAgentId, historyLoaded]);
+  }, [currentAgentId]);
 
   const handleSend = useCallback(async (message: string, attachments?: Array<{ type: 'file'; name: string; path: string }>) => {
     const chatAttachments: ChatAttachment[] | undefined = attachments?.map(a => ({

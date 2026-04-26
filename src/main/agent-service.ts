@@ -667,11 +667,15 @@ function setupAgentEventListeners(session: CopilotSession, record: AgentRecord):
     const result = typeof rawResult === 'string'
       ? rawResult
       : rawResult?.detailedContent ?? rawResult?.content ?? '';
+    const success = d.success !== false;
+    if (!success) {
+      console.warn(`[agent-service] Tool ${d.toolCallId} completed with success=false (raw: ${d.success})`);
+    }
     notifyRenderer(chatChannel, {
       type: 'tool.complete',
       toolCallId: d.toolCallId ?? '',
       result,
-      success: d.success !== false,
+      success,
     });
   });
 

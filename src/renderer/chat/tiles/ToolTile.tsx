@@ -19,7 +19,7 @@ function getToolCategory(name: string): 'bash' | 'file_edit' | 'file_read' | 'ge
   const n = name.toLowerCase();
   if (n === 'bash' || n === 'execute_command' || n === 'shell' || n === 'run_command') return 'bash';
   if (n === 'file_edit' || n === 'edit_file' || n === 'write_file' || n === 'create_file' || n === 'str_replace_editor' || n.includes('write') || n.includes('edit') || n.includes('create')) return 'file_edit';
-  if (n === 'file_read' || n === 'read_file' || n === 'view_file' || n.includes('read')) return 'file_read';
+  if (n === 'file_read' || n === 'read_file' || n === 'view_file' || n === 'view' || n === 'glob' || n === 'grep' || n === 'search' || n.includes('read')) return 'file_read';
   return 'generic';
 }
 
@@ -120,7 +120,7 @@ export function ToolTile({ toolName, args, result, completed, success }: ToolTil
   } else if (category === 'file_read') {
     const rawPath = extractPath(args);
     const { name, dir } = rawPath ? friendlyPath(rawPath) : { name: formatToolLabel(toolName), dir: '' };
-    icon = isRunning ? '●' : '👁';
+    icon = isRunning ? '●' : (isError ? '✗' : '👁');
     title = (
       <>
         <span className="chat-tool-filename">{name}</span>
