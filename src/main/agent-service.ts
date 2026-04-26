@@ -42,7 +42,7 @@ interface AgentRecord {
   status: AgentStatus;
   pendingApprovalId: string | null;
   pendingPermissionKind: string | null;
-  pendingApprovals: Map<string, { permissionKind: string | null }>;
+  pendingApprovals: Map<string, { permissionKind: string | null; intention?: string; path?: string }>;
   summary: string;
   commentContext?: CommentAgentContext;
 }
@@ -326,17 +326,24 @@ function createPermissionHandler(findRecord: (sessionId: string) => AgentRecord 
     if (!record) return { kind: 'denied-interactively-by-user' as const };
 
     const requestId = request.toolCallId ?? crypto.randomUUID();
+    // Extract rich context from the SDK permission request
+    const intention = typeof request.intention === 'string' ? request.intention : undefined;
+    const path = typeof request.path === 'string' ? request.path
+      : typeof request.fileName === 'string' ? request.fileName
+      : undefined;
 
     record.status = 'waiting-approval';
     record.pendingApprovalId = requestId;
     record.pendingPermissionKind = request.kind || null;
-    record.pendingApprovals.set(requestId, { permissionKind: request.kind || null });
+    record.pendingApprovals.set(requestId, { permissionKind: request.kind || null, intention, path });
     updateAgentStatus(record);
 
     notifyRenderer('agent:approval-needed', {
       agentId: record.agentId,
       requestId,
       permissionKind: request.kind,
+      intention,
+      path,
     });
 
     notifyRenderer(`chat:event:${record.agentId}`, {
@@ -344,6 +351,8 @@ function createPermissionHandler(findRecord: (sessionId: string) => AgentRecord 
       requestId,
       agentId: record.agentId,
       permissionKind: request.kind,
+      intention,
+      path,
     });
 
     showApprovalNotification(record.agentId, request.kind || 'permission');
@@ -541,7 +550,7 @@ export async function launchQuickAgent(
   }
 }
 
-export function listAllAgents(): Array<{ agentId: string; sessionId: string; status: AgentStatus; summary: string; selectedText: string; intentId: string; createdAt: string; pendingApprovalId: string | null; pendingPermissionKind: string | null; source: 'sdk' | 'cli' | 'cloud' }> {
+export function listAllAgents(): Array<{ agentId: string; sessionId: string; status: AgentStatus; summary: string; selectedText: string; intentId: string; createdAt: string; pendingApprovalId: string | null; pendingPermissionKind: string | null; pendingIntention: string | null; pendingPath: string | null; source: 'sdk' | 'cli' | 'cloud' }> {
   // Read persisted sessions from DB (sorted newest first)
   let persisted: AgentSession[] = [];
   try {
@@ -550,11 +559,12 @@ export function listAllAgents(): Array<{ agentId: string; sessionId: string; sta
 
   // Build result: overlay live in-memory state on top of DB records
   const seen = new Set<string>();
-  const result: Array<{ agentId: string; sessionId: string; status: AgentStatus; summary: string; selectedText: string; intentId: string; createdAt: string; pendingApprovalId: string | null; pendingPermissionKind: string | null; source: 'sdk' | 'cli' | 'cloud' }> = [];
+  const result: Array<{ agentId: string; sessionId: string; status: AgentStatus; summary: string; selectedText: string; intentId: string; createdAt: string; pendingApprovalId: string | null; pendingPermissionKind: string | null; pendingIntention: string | null; pendingPath: string | null; source: 'sdk' | 'cli' | 'cloud' }> = [];
 
   for (const row of persisted) {
     seen.add(row.id);
     const live = agents.get(row.id);
+    const pendingApproval = live?.pendingApprovalId ? live.pendingApprovals.get(live.pendingApprovalId) : undefined;
     result.push({
       agentId: row.id,
       sessionId: row.session_id,
@@ -565,6 +575,8 @@ export function listAllAgents(): Array<{ agentId: string; sessionId: string; sta
       createdAt: row.created_at,
       pendingApprovalId: live?.pendingApprovalId ?? null,
       pendingPermissionKind: live?.pendingPermissionKind ?? null,
+      pendingIntention: pendingApproval?.intention ?? null,
+      pendingPath: pendingApproval?.path ?? null,
       source: row.source ?? 'sdk',
     });
   }
@@ -572,6 +584,7 @@ export function listAllAgents(): Array<{ agentId: string; sessionId: string; sta
   // Add any live agents not yet in DB (shouldn't happen, but defensive)
   for (const [id, a] of agents) {
     if (!seen.has(id)) {
+      const pendingApproval = a.pendingApprovalId ? a.pendingApprovals.get(a.pendingApprovalId) : undefined;
       result.push({
         agentId: a.agentId,
         sessionId: a.sessionId,
@@ -582,6 +595,8 @@ export function listAllAgents(): Array<{ agentId: string; sessionId: string; sta
         createdAt: '',
         pendingApprovalId: a.pendingApprovalId,
         pendingPermissionKind: a.pendingPermissionKind ?? null,
+        pendingIntention: pendingApproval?.intention ?? null,
+        pendingPath: pendingApproval?.path ?? null,
         source: 'sdk',
       });
     }

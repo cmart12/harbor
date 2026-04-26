@@ -93,6 +93,8 @@ export function MessageList({ messages, onApprovalRespond, parentAgentId, onOpen
                 key={msg.id}
                 requestId={msg.requestId}
                 permissionKind={msg.permissionKind}
+                intention={msg.intention}
+                path={msg.path}
                 responded={msg.responded}
                 approved={msg.approved}
                 onRespond={onApprovalRespond}

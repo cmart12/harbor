@@ -367,6 +367,8 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
             requestId: event.requestId,
             agentId: event.agentId,
             permissionKind: event.permissionKind,
+            intention: event.intention,
+            path: event.path,
             responded: false,
             timestamp: new Date().toISOString(),
           } as ApprovalMessage]);

@@ -1699,7 +1699,7 @@ interface AgentStep {
   status: 'running' | 'done' | 'failed';
 }
 const agentSteps = new Map<string, AgentStep[]>();
-const agentApprovals = new Map<string, { requestId: string; permissionKind: string }>();
+const agentApprovals = new Map<string, { requestId: string; permissionKind: string; intention?: string; path?: string }>();
 const agentChatUnsubs = new Map<string, () => void>();
 
 function humanizeToolName(toolName: string): string {
@@ -1744,7 +1744,7 @@ function subscribeAgentChat(agentId: string): void {
         updateAgentCardSteps(agentId);
       }
     } else if (event.type === 'approval.needed') {
-      agentApprovals.set(agentId, { requestId: event.requestId, permissionKind: event.permissionKind });
+      agentApprovals.set(agentId, { requestId: event.requestId, permissionKind: event.permissionKind, intention: event.intention, path: event.path });
       updateAgentCardApproval(agentId);
     }
   });
@@ -1771,6 +1771,30 @@ function updateAgentCardSteps(agentId: string): void {
   }).join('');
 }
 
+function describeApproval(approval: { permissionKind: string; intention?: string; path?: string }): { label: string; detail: string } {
+  // Use the SDK's intention if available (e.g. "Read file: /path/to/file")
+  let label: string;
+  const kind = approval.permissionKind;
+  if (kind.includes('file') || kind.includes('write')) label = 'Write to files';
+  else if (kind.includes('bash') || kind.includes('exec') || kind.includes('command')) label = 'Execute a command';
+  else if (kind.includes('read')) label = 'Read files';
+  else label = kind.replace(/_/g, ' ');
+
+  // Build a detail string with the specific path/intention
+  let detail = '';
+  if (approval.path) {
+    const parts = approval.path.replace(/\\/g, '/').split('/').filter(Boolean);
+    const shortPath = parts.length > 3
+      ? '…/' + parts.slice(-3).join('/')
+      : approval.path;
+    detail = shortPath;
+  } else if (approval.intention) {
+    detail = approval.intention;
+  }
+
+  return { label, detail };
+}
+
 function updateAgentCardApproval(agentId: string): void {
   const card = document.querySelector(`.agent-card[data-agent-id="${agentId}"]`);
   if (!card) return;
@@ -1785,8 +1809,16 @@ function updateAgentCardApproval(agentId: string): void {
     approvalEl.className = 'agent-card-approval';
     card.appendChild(approvalEl);
   }
+  const { label, detail } = describeApproval(approval);
   approvalEl.innerHTML = `
-    <span class="approval-label">⏳ Approval needed: ${escapeHtml(approval.permissionKind)}</span>
+    <div class="approval-header">
+      <span class="approval-icon">⚠️</span>
+      <div class="approval-info">
+        <span class="approval-label">Permission requested</span>
+        <span class="approval-kind">${escapeHtml(label)}</span>
+        ${detail ? `<span class="approval-detail">${escapeHtml(detail)}</span>` : ''}
+      </div>
+    </div>
     <div class="approval-actions">
       <button class="approval-btn approve" data-agent-id="${agentId}" data-request-id="${approval.requestId}">Approve</button>
       <button class="approval-btn deny" data-agent-id="${agentId}" data-request-id="${approval.requestId}">Deny</button>
@@ -1860,6 +1892,8 @@ async function renderAgentsList(): Promise<void> {
       agentApprovals.set(agent.agentId, {
         requestId: agent.pendingApprovalId,
         permissionKind: agent.pendingPermissionKind || 'permission',
+        intention: (agent as any).pendingIntention || undefined,
+        path: (agent as any).pendingPath || undefined,
       });
     }
   }
@@ -1903,15 +1937,26 @@ async function renderAgentsList(): Promise<void> {
 
     // Build approval HTML
     const approval = agentApprovals.get(agent.agentId);
-    const approvalHtml = approval ? `
+    let approvalHtml = '';
+    if (approval) {
+      const { label, detail } = describeApproval(approval);
+      approvalHtml = `
       <div class="agent-card-approval">
-        <span class="approval-label">⏳ Approval needed: ${escapeHtml(approval.permissionKind)}</span>
+        <div class="approval-header">
+          <span class="approval-icon">⚠️</span>
+          <div class="approval-info">
+            <span class="approval-label">Permission requested</span>
+            <span class="approval-kind">${escapeHtml(label)}</span>
+            ${detail ? `<span class="approval-detail">${escapeHtml(detail)}</span>` : ''}
+          </div>
+        </div>
         <div class="approval-actions">
           <button class="approval-btn approve" data-agent-id="${agent.agentId}" data-request-id="${approval.requestId}">Approve</button>
           <button class="approval-btn deny" data-agent-id="${agent.agentId}" data-request-id="${approval.requestId}">Deny</button>
         </div>
       </div>
-    ` : '';
+    `;
+    }
 
     const canvasBtn = agent.intentId && agent.intentId !== '__workspace__' && agent.source !== 'cli'
       ? `<button class="agent-card-canvas-btn" data-intent-id="${agent.intentId}" title="Open canvas">📄</button>`
@@ -3183,6 +3228,8 @@ intentAPI.onAgentApprovalNeeded((data: any) => {
   agentApprovals.set(data.agentId, {
     requestId: data.requestId,
     permissionKind: data.permissionKind || 'permission',
+    intention: data.intention,
+    path: data.path,
   });
   if (currentFilter === 'agents') {
     updateAgentCardApproval(data.agentId);

@@ -52,6 +52,8 @@ export interface ApprovalMessage {
   requestId: string;
   agentId: string;
   permissionKind: string;
+  intention?: string;
+  path?: string;
   responded: boolean;
   approved?: boolean;
   timestamp: string;
@@ -83,7 +85,7 @@ export type ChatEvent =
   | { type: 'tool.complete'; toolCallId: string; result: string; success: boolean }
   | { type: 'session.idle' }
   | { type: 'session.error'; message: string }
-  | { type: 'approval.needed'; requestId: string; agentId: string; permissionKind: string }
+  | { type: 'approval.needed'; requestId: string; agentId: string; permissionKind: string; intention?: string; path?: string }
   | { type: 'approval.resolved'; requestId: string; approved: boolean }
   | { type: 'subagent.started'; toolCallId: string; name: string; displayName: string; description: string; agentId?: string }
   | { type: 'subagent.completed'; toolCallId: string; name: string; agentId?: string; durationMs?: number; model?: string; totalTokens?: number; totalToolCalls?: number }
