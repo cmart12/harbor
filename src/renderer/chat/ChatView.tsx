@@ -135,7 +135,7 @@ function parseHistoryEvents(events: any[]): ChatMessage[] {
       messages.push(approvalMsg);
     } else if (type === 'permission.completed') {
       const reqId = data.requestId || '';
-      const approved = data.result?.kind === 'approved';
+      const approved = data.result?.kind === 'approved' || data.result?.kind === 'approve-once' || data.result?.kind === 'approve-for-session' || data.result?.kind === 'approve-for-location';
       // Try to match by SDK requestId — approvalMsgMap stores by toolCallId,
       // but permission.completed uses SDK requestId. Scan for unresolved approvals.
       const idx = approvalMsgMap.get(reqId);

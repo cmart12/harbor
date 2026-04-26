@@ -34,7 +34,7 @@ export class InteractionBroker {
   createPermissionHandler(findRecord: (sessionId: string) => AgentRecord | undefined) {
     return async (request: { kind?: string; toolCallId?: string; [key: string]: unknown }, invocation: { sessionId: string }) => {
       const record = findRecord(invocation.sessionId);
-      if (!record) return { kind: 'denied-interactively-by-user' as const };
+      if (!record) return { kind: 'reject' as const };
 
       const requestId = request.toolCallId ?? crypto.randomUUID();
       // Extract rich context from the SDK permission request
@@ -70,7 +70,7 @@ export class InteractionBroker {
 
       this.notifier.showApprovalNotification(record.agentId, request.kind || 'permission');
 
-      return new Promise<{ kind: 'approved' } | { kind: 'denied-interactively-by-user' }>((resolve) => {
+      return new Promise<{ kind: 'approve-once' } | { kind: 'reject' }>((resolve) => {
         this.approvalCallbacks.set(requestId, (approved: boolean) => {
           record.pendingApprovals.delete(requestId);
           if (record.pendingApprovals.size === 0) {
@@ -85,8 +85,8 @@ export class InteractionBroker {
           }
           this.persistence.updateStatus(record);
           const result = approved
-            ? { kind: 'approved' as const }
-            : { kind: 'denied-interactively-by-user' as const };
+            ? { kind: 'approve-once' as const }
+            : { kind: 'reject' as const };
           console.log(`[InteractionBroker] Permission resolved: requestId=${requestId} result=${result.kind}`);
           resolve(result);
         });

@@ -56,7 +56,7 @@ describe('InteractionBroker', () => {
       broker.approveAgent('agent-1', 'req-1', true);
 
       const result = await promise;
-      expect(result).toEqual({ kind: 'approved' });
+      expect(result).toEqual({ kind: 'approve-once' });
     });
 
     it('logs permission request and resolution', async () => {
@@ -72,7 +72,7 @@ describe('InteractionBroker', () => {
       broker.approveAgent('agent-1', 'req-2', true);
       await promise;
       expect(logSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Permission resolved: requestId=req-2 result=approved')
+        expect.stringContaining('Permission resolved: requestId=req-2 result=approve-once')
       );
       logSpy.mockRestore();
     });
@@ -86,7 +86,7 @@ describe('InteractionBroker', () => {
       broker.approveAgent('agent-1', 'req-1', false);
 
       const result = await promise;
-      expect(result).toEqual({ kind: 'denied-interactively-by-user' });
+      expect(result).toEqual({ kind: 'reject' });
     });
 
     it('logs warning for unknown requestId', () => {
@@ -221,7 +221,7 @@ describe('InteractionBroker', () => {
       broker.clearPendingInteractions(record);
 
       const result = await promise;
-      expect(result).toEqual({ kind: 'denied-interactively-by-user' });
+      expect(result).toEqual({ kind: 'reject' });
     });
 
     it('cancels all pending user input callbacks', async () => {
@@ -272,7 +272,7 @@ describe('InteractionBroker', () => {
     it('returns denied when record is not found', async () => {
       const handler = broker.createPermissionHandler(() => undefined);
       const result = await handler({ kind: 'file_edit' }, { sessionId: 'unknown' });
-      expect(result).toEqual({ kind: 'denied-interactively-by-user' });
+      expect(result).toEqual({ kind: 'reject' });
     });
 
     it('updates record status to waiting-approval', async () => {

@@ -74,7 +74,7 @@ async function createSession(systemMessage: string): Promise<CopilotSession | nu
     return await client.createSession({
       systemMessage: { content: systemMessage },
       model,
-      onPermissionRequest: async () => ({ kind: 'denied-interactively-by-user' as const }),
+      onPermissionRequest: async () => ({ kind: 'reject' as const }),
     });
   } catch (err) {
     console.error('[copilot-sdk] Failed to create session:', err);
