@@ -170,6 +170,12 @@ function applyEvent(db: Database.Database, event: LogEvent): void {
       break;
     }
 
+    case 'agent_session.deleted': {
+      const d = event.data;
+      db.prepare('DELETE FROM agent_sessions WHERE id = ?').run(d.id);
+      break;
+    }
+
     case 'snapshot': {
       const d = event.data;
       if (d.intents) {
