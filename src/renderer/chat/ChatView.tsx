@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import type { ChatMessage, ChatEvent, ChatAttachment, AssistantMessage as AssistantMsgType, ToolCallMessage, ReasoningMessage, ApprovalMessage, SessionEventMessage } from '../../shared/chat-types';
+import type { ChatMessage, ChatEvent, ChatAttachment, AssistantMessage as AssistantMsgType, ToolCallMessage, ReasoningMessage, ApprovalMessage, UserInputMessage, ElicitationMessage, SessionEventMessage } from '../../shared/chat-types';
 import { MessageList } from './MessageList';
 import { PromptBar } from './PromptBar';
 import { SubagentDetailOverlay } from './SubagentDetailOverlay';
@@ -8,6 +8,8 @@ declare const intentAPI: {
   sendChatMessage: (agentId: string, prompt: string, attachments?: any[]) => Promise<{ error?: string }>;
   onChatEvent: (agentId: string, callback: (event: ChatEvent) => void) => () => void;
   approveAgent: (agentId: string, requestId: string, approved: boolean) => Promise<void>;
+  respondToUserInput: (agentId: string, requestId: string, answer: string, wasFreeform: boolean) => Promise<void>;
+  respondToElicitation: (agentId: string, requestId: string, action: string, content?: Record<string, unknown>) => Promise<void>;
   openAgentCli: (agentId: string) => Promise<any>;
   abortAgent: (agentId: string) => Promise<void>;
   listModels: () => Promise<{ id: string; name?: string }[]>;
@@ -90,6 +92,29 @@ function parseHistoryEvents(events: any[]): ChatMessage[] {
         id: genId(), type: 'session_event', eventType: 'error',
         message: data.message || 'Unknown error', timestamp: ts,
       } as SessionEventMessage);
+    } else if (type === 'elicitation.requested') {
+      messages.push({
+        id: genId(), type: 'elicitation',
+        requestId: data.requestId || '',
+        agentId: data.agentId || '',
+        message: data.message || '',
+        requestedSchema: data.requestedSchema,
+        mode: data.mode,
+        elicitationSource: data.elicitationSource,
+        responded: false,
+        timestamp: ts,
+      } as ElicitationMessage);
+    } else if (type === 'elicitation.completed') {
+      // Find the matching elicitation message and mark it resolved
+      const elicitIdx = messages.findIndex(
+        m => m.type === 'elicitation' && m.requestId === (data.requestId || '') && !m.responded
+      );
+      if (elicitIdx !== -1) {
+        const msg = messages[elicitIdx] as ElicitationMessage;
+        msg.responded = true;
+        msg.action = data.action;
+        msg.content = data.content;
+      }
     }
   }
   return messages;
@@ -111,6 +136,18 @@ function applyCompletionEvent(msgs: ChatMessage[], event: ChatEvent): ChatMessag
       return msgs.map(m =>
         m.type === 'approval' && m.requestId === event.requestId
           ? { ...m, responded: true, approved: event.approved }
+          : m
+      );
+    case 'user_input.resolved':
+      return msgs.map(m =>
+        m.type === 'user_input' && m.requestId === event.requestId
+          ? { ...m, responded: true, answer: event.answer, wasFreeform: event.wasFreeform }
+          : m
+      );
+    case 'elicitation.resolved':
+      return msgs.map(m =>
+        m.type === 'elicitation' && m.requestId === event.requestId
+          ? { ...m, responded: true, action: event.action, content: event.content }
           : m
       );
     default:
@@ -221,7 +258,7 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
     const unsubscribe = intentAPI.onChatEvent(currentAgentId, (event: ChatEvent) => {
       // Buffer idempotent completion events that arrive before history loads
       if (!historyLoadedRef.current) {
-        if (event.type === 'tool.complete' || event.type === 'approval.resolved') {
+        if (event.type === 'tool.complete' || event.type === 'approval.resolved' || event.type === 'user_input.resolved' || event.type === 'elicitation.resolved') {
           pendingCompletionEvents.current.push(event);
         }
         // Other events (streaming deltas, tool.start) are non-idempotent
@@ -384,6 +421,55 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
           break;
         }
 
+        case 'user_input.requested': {
+          setMessages(prev => [...prev, {
+            id: genId(),
+            type: 'user_input',
+            requestId: event.requestId,
+            agentId: event.agentId,
+            question: event.question,
+            choices: event.choices,
+            allowFreeform: event.allowFreeform,
+            responded: false,
+            timestamp: new Date().toISOString(),
+          } as UserInputMessage]);
+          break;
+        }
+
+        case 'user_input.resolved': {
+          setMessages(prev => prev.map(m =>
+            m.type === 'user_input' && m.requestId === event.requestId
+              ? { ...m, responded: true, answer: event.answer, wasFreeform: event.wasFreeform }
+              : m
+          ));
+          break;
+        }
+
+        case 'elicitation.requested': {
+          setMessages(prev => [...prev, {
+            id: genId(),
+            type: 'elicitation',
+            requestId: event.requestId,
+            agentId: event.agentId,
+            message: event.message,
+            requestedSchema: event.requestedSchema,
+            mode: event.mode,
+            elicitationSource: event.elicitationSource,
+            responded: false,
+            timestamp: new Date().toISOString(),
+          } as ElicitationMessage]);
+          break;
+        }
+
+        case 'elicitation.resolved': {
+          setMessages(prev => prev.map(m =>
+            m.type === 'elicitation' && m.requestId === event.requestId
+              ? { ...m, responded: true, action: event.action, content: event.content }
+              : m
+          ));
+          break;
+        }
+
         case 'subagent.started': {
           setMessages(prev => [...prev, {
             id: genId(),
@@ -513,6 +599,26 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
     ));
   }, [currentAgentId]);
 
+  const handleUserInputRespond = useCallback((requestId: string, answer: string, wasFreeform: boolean) => {
+    if (!currentAgentId) return;
+    intentAPI.respondToUserInput(currentAgentId, requestId, answer, wasFreeform);
+    setMessages(prev => prev.map(m =>
+      m.type === 'user_input' && m.requestId === requestId
+        ? { ...m, responded: true, answer, wasFreeform }
+        : m
+    ));
+  }, [currentAgentId]);
+
+  const handleElicitationRespond = useCallback((requestId: string, action: 'accept' | 'decline' | 'cancel', content?: Record<string, unknown>) => {
+    if (!currentAgentId) return;
+    intentAPI.respondToElicitation(currentAgentId, requestId, action, content);
+    setMessages(prev => prev.map(m =>
+      m.type === 'elicitation' && m.requestId === requestId
+        ? { ...m, responded: true, action, content }
+        : m
+    ));
+  }, [currentAgentId]);
+
   const handleModelChange = useCallback(async (e: React.ChangeEvent<HTMLSelectElement>) => {
     const model = e.target.value;
     setSelectedModel(model);
@@ -571,7 +677,14 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
         <div className="chat-loading-history">Loading conversation history...</div>
       )}
 
-      <MessageList messages={messages} onApprovalRespond={handleApprovalRespond} parentAgentId={currentAgentId || ''} onOpenSubagentDetail={setOverlayAgentId} />
+      <MessageList
+        messages={messages}
+        onApprovalRespond={handleApprovalRespond}
+        onUserInputRespond={handleUserInputRespond}
+        onElicitationRespond={handleElicitationRespond}
+        parentAgentId={currentAgentId || ''}
+        onOpenSubagentDetail={setOverlayAgentId}
+      />
 
       <PromptBar
         onSend={handleSend}

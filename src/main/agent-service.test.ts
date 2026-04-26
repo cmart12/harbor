@@ -42,7 +42,7 @@ vi.mock('./config', () => ({
   },
 }));
 
-import { buildCliToolsPrompt } from './agent-service';
+import { buildCliToolsPrompt, respondToUserInput, respondToElicitation } from './agent-service';
 
 describe('buildCliToolsPrompt', () => {
   beforeEach(() => {
@@ -88,5 +88,39 @@ describe('buildCliToolsPrompt', () => {
 
     const result = buildCliToolsPrompt();
     expect(result).toContain('verify before use');
+  });
+});
+
+describe('respondToUserInput', () => {
+  it('does not throw when no matching callback exists', () => {
+    expect(() => {
+      respondToUserInput('agent-1', 'nonexistent-request', 'hello', true);
+    }).not.toThrow();
+  });
+
+  it('can be called multiple times with same requestId without error', () => {
+    respondToUserInput('agent-1', 'req-1', 'answer1', false);
+    respondToUserInput('agent-1', 'req-1', 'answer2', true);
+    // Second call is a no-op since callback was already removed
+  });
+});
+
+describe('respondToElicitation', () => {
+  it('does not throw when no matching callback exists', () => {
+    expect(() => {
+      respondToElicitation('agent-1', 'nonexistent-request', 'accept', { key: 'val' });
+    }).not.toThrow();
+  });
+
+  it('handles decline action without content', () => {
+    expect(() => {
+      respondToElicitation('agent-1', 'req-1', 'decline');
+    }).not.toThrow();
+  });
+
+  it('handles cancel action without content', () => {
+    expect(() => {
+      respondToElicitation('agent-1', 'req-1', 'cancel');
+    }).not.toThrow();
   });
 });

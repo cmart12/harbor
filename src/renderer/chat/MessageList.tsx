@@ -6,15 +6,19 @@ import { ToolTile } from './tiles/ToolTile';
 import { SubagentTile } from './tiles/SubagentTile';
 import { ReasoningTile } from './tiles/ReasoningTile';
 import { ApprovalTile } from './tiles/ApprovalTile';
+import { UserInputTile } from './tiles/UserInputTile';
+import { ElicitationTile } from './tiles/ElicitationTile';
 
 interface MessageListProps {
   messages: ChatMessage[];
   onApprovalRespond: (requestId: string, approved: boolean) => void;
+  onUserInputRespond: (requestId: string, answer: string, wasFreeform: boolean) => void;
+  onElicitationRespond: (requestId: string, action: 'accept' | 'decline' | 'cancel', content?: Record<string, unknown>) => void;
   parentAgentId?: string;
   onOpenSubagentDetail?: (agentId: string) => void;
 }
 
-export function MessageList({ messages, onApprovalRespond, parentAgentId, onOpenSubagentDetail }: MessageListProps) {
+export function MessageList({ messages, onApprovalRespond, onUserInputRespond, onElicitationRespond, parentAgentId, onOpenSubagentDetail }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const userScrolledUp = useRef(false);
@@ -106,6 +110,35 @@ export function MessageList({ messages, onApprovalRespond, parentAgentId, onOpen
                 {msg.eventType === 'error' ? '⚠️' : msg.eventType === 'completed' ? '✓' : '•'}{' '}
                 {msg.message || msg.eventType}
               </div>
+            );
+          case 'user_input':
+            return (
+              <UserInputTile
+                key={msg.id}
+                requestId={msg.requestId}
+                question={msg.question}
+                choices={msg.choices}
+                allowFreeform={msg.allowFreeform}
+                responded={msg.responded}
+                answer={msg.answer}
+                wasFreeform={msg.wasFreeform}
+                onRespond={onUserInputRespond}
+              />
+            );
+          case 'elicitation':
+            return (
+              <ElicitationTile
+                key={msg.id}
+                requestId={msg.requestId}
+                message={msg.message}
+                requestedSchema={msg.requestedSchema}
+                mode={msg.mode}
+                elicitationSource={msg.elicitationSource}
+                responded={msg.responded}
+                action={msg.action}
+                content={msg.content}
+                onRespond={onElicitationRespond}
+              />
             );
           default:
             return null;

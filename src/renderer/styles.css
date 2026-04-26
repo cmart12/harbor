@@ -3656,6 +3656,229 @@ body.dark .chat-approval-label { color: #fbbf24; }
 body.dark .chat-approval-kind { color: #e0e0e0; }
 body.dark .chat-approval-detail { color: #9ca3af; }
 
+/* ── User Input Tile ─────────────────────────────────────── */
+.chat-user-input-tile {
+  display: flex;
+  gap: 8px;
+  padding: 8px 10px;
+  background: rgba(59, 130, 246, 0.08);
+  border-radius: 2px;
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  font-size: 12px;
+}
+
+.chat-user-input-tile.responded { opacity: 0.7; }
+.chat-user-input-icon { font-size: 14px; flex-shrink: 0; }
+.chat-user-input-body { flex: 1; }
+
+.chat-user-input-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #2563eb;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 2px;
+}
+
+.chat-user-input-question {
+  font-size: 12px;
+  color: #2c2c3a;
+  margin-bottom: 6px;
+}
+
+.chat-user-input-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.chat-user-input-choice {
+  padding: 4px 12px;
+  border-radius: 1.5px;
+  font-size: 12px;
+  cursor: pointer;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  background: transparent;
+  color: #2563eb;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.chat-user-input-choice:hover { background: rgba(59, 130, 246, 0.1); }
+.chat-user-input-choice.selected {
+  background: rgba(59, 130, 246, 0.15);
+  border-color: #2563eb;
+  font-weight: 500;
+}
+
+.chat-user-input-freeform { margin-bottom: 6px; }
+
+.chat-user-input-text {
+  width: 100%;
+  padding: 4px 8px;
+  border-radius: 1.5px;
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  background: rgba(255, 255, 255, 0.5);
+  font-size: 12px;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.chat-user-input-text:focus { outline: none; border-color: #2563eb; }
+
+.chat-user-input-actions { display: flex; gap: 8px; }
+
+.chat-user-input-btn {
+  padding: 4px 14px;
+  border-radius: 1.5px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+}
+
+.chat-user-input-btn.submit { background: #2563eb; color: white; }
+.chat-user-input-btn.submit:hover { background: #1d4ed8; }
+.chat-user-input-btn.submit:disabled { opacity: 0.4; cursor: default; }
+.chat-user-input-btn.dismiss { background: rgba(107, 114, 128, 0.1); color: #6b7280; }
+.chat-user-input-btn.dismiss:hover { background: rgba(107, 114, 128, 0.2); }
+
+.chat-user-input-result { font-size: 12px; font-weight: 500; color: #2563eb; }
+.chat-user-input-freeform-tag { font-weight: 400; color: #6b7280; font-size: 11px; }
+
+/* ── Elicitation Tile ────────────────────────────────────── */
+.chat-elicitation-tile {
+  display: flex;
+  gap: 8px;
+  padding: 8px 10px;
+  background: rgba(124, 102, 220, 0.08);
+  border-radius: 2px;
+  border: 1px solid rgba(124, 102, 220, 0.2);
+  font-size: 12px;
+}
+
+.chat-elicitation-tile.responded { opacity: 0.7; }
+.chat-elicitation-icon { font-size: 14px; flex-shrink: 0; }
+.chat-elicitation-body { flex: 1; }
+
+.chat-elicitation-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.chat-elicitation-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: #2c2c3a;
+}
+
+.chat-elicitation-source {
+  font-size: 10px;
+  background: rgba(124, 102, 220, 0.15);
+  color: #7c66dc;
+  padding: 1px 6px;
+  border-radius: 1.5px;
+  font-weight: 500;
+}
+
+.chat-elicitation-form { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
+
+.chat-elicitation-field-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: #4b5563;
+  margin-bottom: 2px;
+}
+
+.chat-elicitation-required { color: #ef4444; margin-left: 2px; }
+
+.chat-elicitation-select,
+.chat-elicitation-input {
+  width: 100%;
+  padding: 4px 8px;
+  border-radius: 1.5px;
+  border: 1px solid rgba(124, 102, 220, 0.25);
+  background: rgba(255, 255, 255, 0.5);
+  font-size: 12px;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.chat-elicitation-select:focus,
+.chat-elicitation-input:focus { outline: none; border-color: #7c66dc; }
+
+.chat-elicitation-checkboxes {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.chat-elicitation-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.chat-elicitation-help {
+  font-size: 11px;
+  color: #9ca3af;
+  margin-top: 1px;
+}
+
+.chat-elicitation-actions { display: flex; gap: 8px; }
+
+.chat-elicitation-btn {
+  padding: 4px 14px;
+  border-radius: 1.5px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+}
+
+.chat-elicitation-btn.accept { background: #7c66dc; color: white; }
+.chat-elicitation-btn.accept:hover { background: #6a52c9; }
+.chat-elicitation-btn.accept:disabled { opacity: 0.4; cursor: default; }
+.chat-elicitation-btn.decline { background: rgba(107, 114, 128, 0.1); color: #6b7280; }
+.chat-elicitation-btn.decline:hover { background: rgba(107, 114, 128, 0.2); }
+.chat-elicitation-btn.cancel { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
+.chat-elicitation-btn.cancel:hover { background: rgba(239, 68, 68, 0.2); }
+
+.chat-elicitation-result { font-size: 12px; font-weight: 500; }
+.chat-elicitation-result.declined { color: #6b7280; }
+.chat-elicitation-result.cancelled { color: #ef4444; }
+
+.chat-elicitation-submitted { font-size: 12px; }
+.chat-elicitation-submitted-field { margin-bottom: 2px; }
+.chat-elicitation-submitted-label { font-weight: 500; color: #4b5563; }
+.chat-elicitation-submitted-value { color: #7c66dc; }
+
+/* Dark mode – user input */
+body.dark .chat-user-input-tile { background: rgba(59, 130, 246, 0.1); border-color: rgba(59, 130, 246, 0.25); }
+body.dark .chat-user-input-label { color: #60a5fa; }
+body.dark .chat-user-input-question { color: #e0e0e0; }
+body.dark .chat-user-input-choice { border-color: rgba(59, 130, 246, 0.3); color: #60a5fa; }
+body.dark .chat-user-input-choice:hover { background: rgba(59, 130, 246, 0.15); }
+body.dark .chat-user-input-choice.selected { background: rgba(59, 130, 246, 0.2); border-color: #60a5fa; }
+body.dark .chat-user-input-text { background: rgba(255, 255, 255, 0.04); border-color: rgba(59, 130, 246, 0.25); color: #e0e0e0; }
+body.dark .chat-user-input-result { color: #60a5fa; }
+
+/* Dark mode – elicitation */
+body.dark .chat-elicitation-tile { background: rgba(124, 102, 220, 0.1); border-color: rgba(124, 102, 220, 0.25); }
+body.dark .chat-elicitation-label { color: #e0e0e0; }
+body.dark .chat-elicitation-source { background: rgba(124, 102, 220, 0.2); color: #a594e8; }
+body.dark .chat-elicitation-field-label { color: #9ca3af; }
+body.dark .chat-elicitation-select,
+body.dark .chat-elicitation-input { background: rgba(255, 255, 255, 0.04); border-color: rgba(124, 102, 220, 0.25); color: #e0e0e0; }
+body.dark .chat-elicitation-help { color: rgba(255, 255, 255, 0.35); }
+body.dark .chat-elicitation-submitted-label { color: #9ca3af; }
+body.dark .chat-elicitation-submitted-value { color: #a594e8; }
+
 body.dark .chat-session-event { color: rgba(255, 255, 255, 0.25); }
 body.dark .chat-session-event.error { color: #f87171; }
 body.dark .chat-session-event.completed { color: #4ade80; }

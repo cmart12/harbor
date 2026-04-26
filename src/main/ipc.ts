@@ -579,6 +579,16 @@ export function registerIpcHandlers(): void {
     approveAgent(agentId, requestId, approved);
   });
 
+  ipcMain.handle('agent:respond-user-input', async (_event, agentId: string, requestId: string, answer: string, wasFreeform: boolean) => {
+    const { respondToUserInput } = await import('./agent-service');
+    respondToUserInput(agentId, requestId, answer, wasFreeform);
+  });
+
+  ipcMain.handle('agent:respond-elicitation', async (_event, agentId: string, requestId: string, action: string, content?: Record<string, unknown>) => {
+    const { respondToElicitation } = await import('./agent-service');
+    respondToElicitation(agentId, requestId, action as 'accept' | 'decline' | 'cancel', content);
+  });
+
   ipcMain.handle('agent:abort', async (_event, agentId: string) => {
     const { abortAgent } = await import('./agent-service');
     await abortAgent(agentId);

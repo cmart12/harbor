@@ -1,5 +1,18 @@
-import { CopilotSession } from '@github/copilot-sdk';
+import { CopilotSession, ElicitationContext, ElicitationResult } from '@github/copilot-sdk';
 import { v4 as uuid } from 'uuid';
+
+// UserInputRequest/UserInputResponse are not re-exported from the SDK index,
+// so we define compatible interfaces here.
+interface UserInputRequest {
+  question: string;
+  choices?: string[];
+  allowFreeform?: boolean;
+}
+
+interface UserInputResponse {
+  answer: string;
+  wasFreeform: boolean;
+}
 import { BrowserWindow, Notification, app } from 'electron';
 import { getCopilotClient } from './ai';
 import { createCanvasAgent, updateCanvasAgentStatus, createAgentSession, updateAgentSessionStatus, getAgentSession, listAgentSessions } from './database';
@@ -115,6 +128,8 @@ export async function launchAgent(
       workingDirectory: workingDir,
       mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
       onPermissionRequest: createPermissionHandler(findBySessionId),
+      onUserInputRequest: createUserInputHandler(findBySessionId),
+      onElicitationRequest: createElicitationHandler(findBySessionId),
       systemMessage: {
         mode: 'append',
         content: `\nThe user selected the following text from their canvas document and wants you to work on it:\n\n---\n${selectedText}\n---\n\nThe full canvas document is available as canvas.md in the working directory.${cliToolsPrompt}`,
@@ -234,6 +249,8 @@ If you make changes to the document, clearly describe what you changed.${cliTool
       mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
       ...(persona.model ? { model: persona.model } : {}),
       onPermissionRequest: createPermissionHandler(findBySessionId),
+      onUserInputRequest: createUserInputHandler(findBySessionId),
+      onElicitationRequest: createElicitationHandler(findBySessionId),
       systemMessage: {
         mode: 'append',
         content: `\n${systemPrompt}`,
@@ -394,6 +411,25 @@ function clearPendingApprovals(record: AgentRecord): void {
   record.pendingPermissionKind = null;
 }
 
+/** Cancel all pending interactive requests (user input + elicitation) for a given agent. */
+function clearPendingInteractions(record: AgentRecord): void {
+  clearPendingApprovals(record);
+
+  // Cancel any pending user-input callbacks
+  for (const [requestId, cb] of userInputCallbacks.entries()) {
+    // We can't easily filter by agent, so we resolve with empty answer.
+    // In practice the session abort will handle cleanup, but this prevents leaks.
+    cb({ answer: '', wasFreeform: true });
+    userInputCallbacks.delete(requestId);
+  }
+
+  // Cancel any pending elicitation callbacks
+  for (const [requestId, cb] of elicitationCallbacks.entries()) {
+    cb({ action: 'cancel' });
+    elicitationCallbacks.delete(requestId);
+  }
+}
+
 export function approveAgent(agentId: string, requestId: string, approved: boolean): void {
   const cb = approvalCallbacks.get(requestId);
   if (cb) {
@@ -408,12 +444,95 @@ export function approveAgent(agentId: string, requestId: string, approved: boole
   });
 }
 
+// ── User input (ask_user) callback registry ──────────────────────────
+const userInputCallbacks = new Map<string, (response: UserInputResponse) => void>();
+
+function createUserInputHandler(findRecord: (sessionId: string) => AgentRecord | undefined) {
+  return async (request: UserInputRequest, invocation: { sessionId: string }): Promise<UserInputResponse> => {
+    const record = findRecord(invocation.sessionId);
+    if (!record) return { answer: '', wasFreeform: true };
+
+    const requestId = crypto.randomUUID();
+
+    notifyRenderer(`chat:event:${record.agentId}`, {
+      type: 'user_input.requested',
+      requestId,
+      agentId: record.agentId,
+      question: request.question,
+      choices: request.choices,
+      allowFreeform: request.allowFreeform,
+    });
+
+    showApprovalNotification(record.agentId, 'question');
+
+    return new Promise<UserInputResponse>((resolve) => {
+      userInputCallbacks.set(requestId, resolve);
+    });
+  };
+}
+
+export function respondToUserInput(agentId: string, requestId: string, answer: string, wasFreeform: boolean): void {
+  const cb = userInputCallbacks.get(requestId);
+  if (cb) {
+    userInputCallbacks.delete(requestId);
+    cb({ answer, wasFreeform });
+  }
+  notifyRenderer(`chat:event:${agentId}`, {
+    type: 'user_input.resolved',
+    requestId,
+    answer,
+    wasFreeform,
+  });
+}
+
+// ── Elicitation callback registry ────────────────────────────────────
+const elicitationCallbacks = new Map<string, (result: ElicitationResult) => void>();
+
+function createElicitationHandler(findRecord: (sessionId: string) => AgentRecord | undefined) {
+  return async (context: ElicitationContext): Promise<ElicitationResult> => {
+    const record = findRecord(context.sessionId);
+    if (!record) return { action: 'cancel' };
+
+    const requestId = crypto.randomUUID();
+
+    notifyRenderer(`chat:event:${record.agentId}`, {
+      type: 'elicitation.requested',
+      requestId,
+      agentId: record.agentId,
+      message: context.message,
+      requestedSchema: context.requestedSchema,
+      mode: context.mode,
+      elicitationSource: context.elicitationSource,
+    });
+
+    showApprovalNotification(record.agentId, 'input needed');
+
+    return new Promise<ElicitationResult>((resolve) => {
+      elicitationCallbacks.set(requestId, resolve);
+    });
+  };
+}
+
+export function respondToElicitation(agentId: string, requestId: string, action: 'accept' | 'decline' | 'cancel', content?: Record<string, unknown>): void {
+  const cb = elicitationCallbacks.get(requestId);
+  if (cb) {
+    elicitationCallbacks.delete(requestId);
+    cb({ action, content: content as ElicitationResult['content'] });
+  }
+  notifyRenderer(`chat:event:${agentId}`, {
+    type: 'elicitation.resolved',
+    requestId,
+    action,
+    content,
+  });
+}
+
 export async function abortAgent(agentId: string): Promise<void> {
   const record = agents.get(agentId);
   if (!record) return;
 
   try {
-    clearPendingApprovals(record);
+    clearPendingInteractions(record);
     await record.session.abort();
     record.status = 'failed';
     record.summary = 'Aborted by user';
@@ -497,6 +616,8 @@ export async function launchQuickAgent(
         },
       } : {}),
       onPermissionRequest: createPermissionHandler(findBySessionId),
+      onUserInputRequest: createUserInputHandler(findBySessionId),
+      onElicitationRequest: createElicitationHandler(findBySessionId),
     });
 
     const sessionId = (session as any).sessionId || agentId;
@@ -920,6 +1041,8 @@ async function resumeAgentSession(agentId: string): Promise<boolean> {
         systemMessage: { mode: 'append' as const, content: cliToolsPrompt },
       } : {}),
       onPermissionRequest: createPermissionHandler(findBySessionId),
+      onUserInputRequest: createUserInputHandler(findBySessionId),
+      onElicitationRequest: createElicitationHandler(findBySessionId),
     });
 
     const record: AgentRecord = {

@@ -53,6 +53,10 @@ contextBridge.exposeInMainWorld('intentAPI', {
     ipcRenderer.invoke('agent:list', intentId),
   approveAgent: (agentId: string, requestId: string, approved: boolean) =>
     ipcRenderer.invoke('agent:approve', agentId, requestId, approved),
+  respondToUserInput: (agentId: string, requestId: string, answer: string, wasFreeform: boolean) =>
+    ipcRenderer.invoke('agent:respond-user-input', agentId, requestId, answer, wasFreeform),
+  respondToElicitation: (agentId: string, requestId: string, action: string, content?: Record<string, unknown>) =>
+    ipcRenderer.invoke('agent:respond-elicitation', agentId, requestId, action, content),
   abortAgent: (agentId: string) =>
     ipcRenderer.invoke('agent:abort', agentId),
   openAgentCli: (agentId: string) =>
