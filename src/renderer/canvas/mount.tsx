@@ -9,6 +9,7 @@ let canvasRef: React.RefObject<DocumintCanvasHandle | null> = React.createRef();
 export interface MountCanvasOptions {
   intentId: string;
   content: string;
+  frontmatter?: Record<string, unknown>;
   theme: 'light' | 'dark';
   personas?: AgentPersona[];
   agentPresence?: Presence[];
@@ -29,6 +30,7 @@ export function mountCanvas(container: HTMLElement, options: MountCanvasOptions)
       ref={canvasRef}
       intentId={options.intentId}
       initialContent={options.content}
+      initialFrontmatter={options.frontmatter}
       theme={options.theme}
       personas={options.personas}
       agentPresence={options.agentPresence}

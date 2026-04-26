@@ -12,6 +12,14 @@ export function isInitialized(): boolean {
   return db !== undefined;
 }
 
+export function closeDatabase(): void {
+  if (db) {
+    db.close();
+    db = undefined as any;
+    logPath = '';
+  }
+}
+
 export function getDatabase(): Database.Database {
   return db;
 }

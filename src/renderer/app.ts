@@ -84,6 +84,8 @@ interface IntentAPI {
   launchSession(intentId: string): Promise<{ success: boolean; error?: string; sessionId?: string }>;
   getActiveSessions(): Promise<string[]>;
   selectWorkspace(): Promise<{ selected: boolean; path: string | null }>;
+  clearWorkspace(): Promise<{ ok: boolean }>;
+  onWorkspaceChanged(callback: (path: string | null) => void): void;
   readCanvas(intentId: string): Promise<{ content: string; error?: string }>;
   writeCanvas(intentId: string, content: string): Promise<{ success?: boolean; error?: string }>;
   closeCanvas(intentId: string, content: string): Promise<void>;
@@ -112,8 +114,8 @@ interface IntentAPI {
   getPinned(): Promise<boolean>;
   setPinned(pinned: boolean): void;
   onPinnedChanged(callback: (pinned: boolean) => void): void;
-  openCanvasWindow(intentId: string, description: string): void;
-  onLoadCanvasIntent(callback: (intentId: string, description: string) => void): void;
+  openCanvasWindow(target: { kind: string; id: string; title: string }): void;
+  onLoadCanvasTarget(callback: (target: { kind: string; id: string; title: string }) => void): void;
   onCanvasWindowClosed(callback: () => void): void;
   notifyCanvasThemeChanged(theme: string): void;
   onCanvasThemeChanged(callback: (theme: string) => void): void;
@@ -193,6 +195,20 @@ const timelineView = document.getElementById('timeline-view') as HTMLDivElement;
 const timelineBack = document.getElementById('timeline-back') as HTMLButtonElement;
 const timelineContent = document.getElementById('timeline-content') as HTMLDivElement;
 const pinBtn = document.getElementById('pin-btn') as HTMLButtonElement;
+
+// ── Welcome view refs ───────────────────────────────────
+const welcomeView = document.getElementById('welcome-view') as HTMLDivElement;
+const welcomeWorkspaceBtn = document.getElementById('welcome-workspace-btn') as HTMLButtonElement;
+const welcomeWorkspacePath = document.getElementById('welcome-workspace-path') as HTMLSpanElement;
+const welcomeWorkspaceCheck = document.getElementById('welcome-workspace-check') as HTMLSpanElement;
+const welcomeStepWorkspace = document.getElementById('welcome-step-workspace') as HTMLDivElement;
+const welcomeCliStatus = document.getElementById('welcome-cli-status') as HTMLDivElement;
+const welcomeCliCheck = document.getElementById('welcome-cli-check') as HTMLSpanElement;
+const welcomeStepCli = document.getElementById('welcome-step-cli') as HTMLDivElement;
+const welcomeModelSelect = document.getElementById('welcome-model-select') as HTMLSelectElement;
+const welcomeModelCheck = document.getElementById('welcome-model-check') as HTMLSpanElement;
+const welcomeStepModel = document.getElementById('welcome-step-model') as HTMLDivElement;
+const welcomeStartBtn = document.getElementById('welcome-start-btn') as HTMLButtonElement;
 
 let intents: Intent[] = [];
 // Track intents being processed by LLM
@@ -1953,20 +1969,24 @@ async function createNewSkill(): Promise<void> {
 }
 
 async function openSkillEditor(skillId: string): Promise<void> {
-  const result = await intentAPI.readSkill(skillId);
-  if ('error' in result) {
-    showStatus(`Failed to read skill: ${result.error}`, true);
-    return;
-  }
-
   const skill = cachedSkills.find(s => s.id === skillId);
   if (!skill) return;
 
-  // Open the skill in the canvas editor
-  // For now, create a temporary intent-like view for the skill editor
-  canvasIntentId = null;
+  // In main window, always pop out to separate canvas window
+  if (!isCanvasMode) {
+    intentAPI.openCanvasWindow({ kind: 'skill', id: skillId, title: skill.name });
+    return;
+  }
 
-  // Use the canvas view to edit the skill
+  // ── Below runs only inside the canvas popout window ──
+  const result = await intentAPI.readSkill(skillId);
+  if ('error' in result) {
+    return;
+  }
+
+  canvasIntentId = null;
+  canvasSkillId = skillId;
+
   canvasTitle.textContent = skill.name;
   canvasTitle.contentEditable = 'false';
   canvasTitle.classList.remove('editing');
@@ -1975,41 +1995,25 @@ async function openSkillEditor(skillId: string): Promise<void> {
   canvasDirty = false;
   canvasSaveBtn.classList.add('hidden');
 
-  const expanded = !isCanvasMode;
-  canvasExpanded = expanded;
-  if (canvasExpanded) {
-    intentAPI.expandWindow();
-  }
+  // Hide intent-specific controls for skills
+  canvasLaunchBtn.classList.add('hidden');
+  canvasAgentsBtn.classList.add('hidden');
+  canvasHistoryBtn.classList.add('hidden');
 
-  if (!isCanvasMode) {
-    mainView.classList.add('hidden');
-    hideSettings();
-    timelineView.classList.add('hidden');
-  }
   canvasView.classList.remove('hidden');
 
   const myGen = ++canvasMountGen;
   const currentTheme = await intentAPI.getSetting('theme').then(t => (t || 'light') as 'light' | 'dark');
-  const canvasPersonas = await intentAPI.listPersonas().then(p => p || []);
 
   if (canvasMountGen !== myGen) return;
 
-  // Combine frontmatter + body for display
-  let editContent = result.body;
-  const fmKeys = Object.keys(result.frontmatter);
-  if (fmKeys.length > 0) {
-    const fmLines = fmKeys.map(k => `${k}: ${result.frontmatter[k]}`);
-    editContent = `---\n${fmLines.join('\n')}\n---\n${result.body}`;
-  }
-
-  // Tag the canvas with the skill ID for save routing
-  (canvasView as any).__skillId = skillId;
-
+  // Pass frontmatter and body separately — canvas renders them independently
   mountCanvas(canvasRoot, {
     intentId: '__skill__' + skillId,
-    content: editContent,
+    content: result.body,
+    frontmatter: result.frontmatter,
     theme: currentTheme,
-    personas: canvasPersonas,
+    personas: [],
     onDirtyChange: (dirty: boolean) => {
       canvasDirty = dirty;
       canvasSaveBtn.classList.toggle('hidden', !dirty);
@@ -2022,19 +2026,24 @@ async function openSkillEditor(skillId: string): Promise<void> {
 }
 
 async function saveSkillFromCanvas(skillId: string, content: string): Promise<void> {
-  // Parse frontmatter from the content
+  // Parse frontmatter using the same regex the main process uses
   const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
   let frontmatter: Record<string, unknown> = {};
   let body = content;
 
   if (fmMatch) {
-    const lines = fmMatch[1].split('\n');
-    for (const line of lines) {
+    // Parse YAML key-value pairs, preserving non-string values
+    for (const line of fmMatch[1].split('\n')) {
       const colonIdx = line.indexOf(':');
       if (colonIdx > 0) {
         const key = line.slice(0, colonIdx).trim();
         const value = line.slice(colonIdx + 1).trim();
-        frontmatter[key] = value;
+        // Try to parse as JSON for arrays, booleans, numbers
+        try {
+          frontmatter[key] = JSON.parse(value);
+        } catch {
+          frontmatter[key] = value;
+        }
       }
     }
     body = fmMatch[2];
@@ -2466,6 +2475,7 @@ async function launchSession(intentId: string): Promise<void> {
 // ── Workspace setting ───────────────────────────────────
 const workspacePathEl = document.getElementById('workspace-path') as HTMLSpanElement;
 const workspaceBtn = document.getElementById('workspace-btn') as HTMLButtonElement;
+const workspaceClearBtn = document.getElementById('workspace-clear-btn') as HTMLButtonElement;
 
 function updateWorkspaceDisplay(path: string | null): void {
   if (path) {
@@ -2475,10 +2485,12 @@ function updateWorkspaceDisplay(path: string | null): void {
     workspacePathEl.textContent = short;
     workspacePathEl.title = path;
     workspacePathEl.classList.add('clickable');
+    workspaceClearBtn.classList.remove('hidden');
   } else {
     workspacePathEl.textContent = 'Not set';
     workspacePathEl.title = '';
     workspacePathEl.classList.remove('clickable');
+    workspaceClearBtn.classList.add('hidden');
   }
 }
 
@@ -2487,6 +2499,11 @@ workspaceBtn.addEventListener('click', async () => {
   if (result.selected) {
     updateWorkspaceDisplay(result.path);
   }
+});
+
+workspaceClearBtn.addEventListener('click', async () => {
+  await intentAPI.clearWorkspace();
+  updateWorkspaceDisplay(null);
 });
 
 workspacePathEl.addEventListener('click', () => {
@@ -2949,8 +2966,8 @@ const canvasAgentsPanel = document.getElementById('canvas-agents-panel') as HTML
 const canvasAgentsClose = document.getElementById('canvas-agents-close') as HTMLButtonElement;
 const canvasAgentsList = document.getElementById('canvas-agents-list') as HTMLDivElement;
 let canvasIntentId: string | null = null;
+let canvasSkillId: string | null = null;
 let canvasDirty = false;
-let canvasExpanded = false;
 let canvasIsNewIntent = false;
 let canvasMountGen = 0;
 let titleBeforeEdit = '';
@@ -3046,16 +3063,15 @@ async function openCanvas(intentId: string, expanded = false): Promise<void> {
   const intent = intents.find(i => i.id === intentId);
   if (!intent) return;
 
-  // When pinned (and not already in canvas mode), pop out to separate window
-  if (!isCanvasMode && expanded) {
-    const pinned = await intentAPI.getPinned();
-    if (pinned) {
-      intentAPI.openCanvasWindow(intentId, intent.description);
-      return;
-    }
+  // In main window, always pop out to separate canvas window
+  if (!isCanvasMode) {
+    intentAPI.openCanvasWindow({ kind: 'intent', id: intentId, title: intent.description });
+    return;
   }
 
+  // ── Below runs only inside the canvas popout window ──
   canvasIntentId = intentId;
+  canvasSkillId = null;
   canvasTitle.textContent = intent.description;
   canvasTitle.contentEditable = 'false';
   canvasTitle.classList.remove('editing');
@@ -3064,18 +3080,11 @@ async function openCanvas(intentId: string, expanded = false): Promise<void> {
   canvasDirty = false;
   canvasSaveBtn.classList.add('hidden');
 
-  // Expand window if requested (only in main window mode)
-  canvasExpanded = expanded && !isCanvasMode;
-  if (canvasExpanded) {
-    intentAPI.expandWindow();
-  }
+  // Show intent-specific controls
+  canvasLaunchBtn.classList.remove('hidden');
+  canvasAgentsBtn.classList.remove('hidden');
+  canvasHistoryBtn.classList.remove('hidden');
 
-  // Show canvas view immediately while data loads
-  if (!isCanvasMode) {
-    mainView.classList.add('hidden');
-    hideSettings();
-    timelineView.classList.add('hidden');
-  }
   canvasView.classList.remove('hidden');
 
   const myGen = ++canvasMountGen;
@@ -3091,11 +3100,6 @@ async function openCanvas(intentId: string, expanded = false): Promise<void> {
   if (canvasMountGen !== myGen) return;
 
   if (result.error === 'no_workspace') {
-    if (!isCanvasMode) {
-      canvasView.classList.add('hidden');
-      mainView.classList.remove('hidden');
-      showStatus('Select a workspace first');
-    }
     return;
   }
 
@@ -3136,10 +3140,10 @@ async function closeCanvas(): Promise<void> {
   closeAgentsPanel();
   const intentId = canvasIntentId;
   const wasNewIntent = canvasIsNewIntent;
-  const skillId = (canvasView as any).__skillId as string | undefined;
+  const skillId = canvasSkillId;
   canvasIntentId = null;
+  canvasSkillId = null;
   canvasIsNewIntent = false;
-  (canvasView as any).__skillId = undefined;
   canvasClosing = true;
 
   // Get content BEFORE unmounting (unmount destroys the React ref)
@@ -3165,22 +3169,9 @@ async function closeCanvas(): Promise<void> {
 
   canvasDirty = false;
 
-  if (isCanvasMode) {
-    // In canvas popout window, close the window itself.
-    // Keep canvasClosing=true so beforeunload doesn't double-save.
-    window.close();
-  } else {
-    // In main window, collapse and navigate back
-    if (canvasExpanded) {
-      canvasExpanded = false;
-      intentAPI.collapseWindow();
-    }
-    canvasView.classList.add('hidden');
-    mainView.classList.remove('hidden');
-    descInput.focus();
-    canvasClosing = false;
-    loadIntents();
-  }
+  // Canvas always runs in the popout window now — close it.
+  // Keep canvasClosing=true so beforeunload doesn't double-save.
+  window.close();
 }
 
 // Guard against double-save in beforeunload
@@ -3268,14 +3259,14 @@ function createHistoryItem(commit: FolderCommit): HTMLElement {
 
     const result = await intentAPI.canvasRestore(canvasIntentId, commit.sha);
     if (result.success) {
-      // Reload the canvas with restored content
+      // Reload the canvas with restored content — re-mount in place
       const readResult = await intentAPI.readCanvas(canvasIntentId!);
       if (!readResult.error) {
-        // Re-open the canvas to refresh the editor
         const intentId = canvasIntentId!;
-        const expanded = canvasExpanded;
-        await closeCanvas();
-        await openCanvas(intentId, expanded);
+        // Unmount and re-open without closing the window
+        await unmountCanvas();
+        canvasIntentId = null;
+        await openCanvas(intentId);
       }
       closeHistoryPanel();
     } else {
@@ -3504,8 +3495,11 @@ loadPinState();
 
 // Flush canvas saves when the window is about to close (app quit, reload)
 window.addEventListener('beforeunload', () => {
-  if (canvasIntentId && !canvasClosing) {
-    const content = getCanvasContent();
+  if (canvasClosing) return;
+  const content = getCanvasContent();
+  if (canvasSkillId) {
+    saveSkillFromCanvas(canvasSkillId, content);
+  } else if (canvasIntentId) {
     intentAPI.closeCanvas(canvasIntentId, content);
   }
 });
@@ -3646,11 +3640,152 @@ intentAPI.onWindowToggle(() => {
   intentAPI.hideWindow();
 });
 
-loadIntents();
+// ── Welcome / Onboarding ────────────────────────────────
+let welcomeWorkspaceSelected = false;
+
+function updateWelcomeStartBtn(): void {
+  welcomeStartBtn.disabled = !welcomeWorkspaceSelected;
+}
+
+async function showWelcomeView(): Promise<void> {
+  mainView.classList.add('hidden');
+  welcomeView.classList.remove('hidden');
+  welcomeWorkspaceSelected = false;
+
+  // Reset step states
+  welcomeWorkspacePath.textContent = '';
+  welcomeWorkspaceCheck.classList.add('hidden');
+  welcomeStepWorkspace.classList.remove('done');
+  welcomeCliCheck.classList.add('hidden');
+  welcomeStepCli.classList.remove('done');
+  welcomeCliStatus.textContent = 'Checking…';
+  welcomeModelCheck.classList.add('hidden');
+  welcomeStepModel.classList.remove('done');
+  welcomeModelSelect.innerHTML = '<option value="">Loading models…</option>';
+  updateWelcomeStartBtn();
+
+  // Auto-detect CLI
+  intentAPI.resolveCliPath().then((cliPath: string | null) => {
+    if (cliPath) {
+      const short = cliPath.length > 40 ? '…' + cliPath.slice(-38) : cliPath;
+      welcomeCliStatus.textContent = `Detected: ${short}`;
+      welcomeCliCheck.classList.remove('hidden');
+      welcomeStepCli.classList.add('done');
+    } else {
+      welcomeCliStatus.textContent = 'Not found — install the Copilot CLI to launch agent sessions.';
+    }
+  });
+
+  // Load models (retry since SDK may still be starting)
+  async function loadWelcomeModels(retries = 5): Promise<void> {
+    const models = await intentAPI.listModels();
+    if (models.length === 0 && retries > 0) {
+      welcomeModelSelect.innerHTML = '<option value="">Loading models…</option>';
+      setTimeout(() => loadWelcomeModels(retries - 1), 2000);
+      return;
+    }
+    welcomeModelSelect.innerHTML = '';
+    if (models.length === 0) {
+      welcomeModelSelect.innerHTML = '<option value="">No models available</option>';
+      return;
+    }
+    const saved = await intentAPI.getSetting('model');
+    for (const m of models) {
+      const opt = document.createElement('option');
+      opt.value = m.id;
+      opt.textContent = m.name || m.id;
+      welcomeModelSelect.appendChild(opt);
+    }
+    if (saved && models.some(m => m.id === saved)) {
+      welcomeModelSelect.value = saved;
+    } else {
+      welcomeModelSelect.value = models[0].id;
+    }
+    welcomeModelCheck.classList.remove('hidden');
+    welcomeStepModel.classList.add('done');
+  }
+  loadWelcomeModels();
+}
+
+function hideWelcomeView(): void {
+  welcomeView.classList.add('hidden');
+  mainView.classList.remove('hidden');
+  descInput.focus();
+}
+
+welcomeWorkspaceBtn.addEventListener('click', async () => {
+  const result = await intentAPI.selectWorkspace();
+  if (result.selected && result.path) {
+    welcomeWorkspaceSelected = true;
+    const parts = result.path.replace(/\\/g, '/').split('/');
+    const short = parts.length > 2 ? '…/' + parts.slice(-2).join('/') : result.path;
+    welcomeWorkspacePath.textContent = short;
+    welcomeWorkspacePath.title = result.path;
+    welcomeWorkspaceCheck.classList.remove('hidden');
+    welcomeStepWorkspace.classList.add('done');
+    updateWelcomeStartBtn();
+  }
+});
+
+welcomeModelSelect.addEventListener('change', () => {
+  const model = welcomeModelSelect.value;
+  if (model) {
+    welcomeModelCheck.classList.remove('hidden');
+    welcomeStepModel.classList.add('done');
+  } else {
+    welcomeModelCheck.classList.add('hidden');
+    welcomeStepModel.classList.remove('done');
+  }
+});
+
+welcomeStartBtn.addEventListener('click', async () => {
+  if (!welcomeWorkspaceSelected) return;
+
+  // Save model selection
+  const model = welcomeModelSelect.value;
+  if (model) {
+    await intentAPI.setSetting('model', model);
+  }
+
+  hideWelcomeView();
+  loadIntents();
+  loadSkills();
+});
+
+// ── Init ────────────────────────────────────────────────
+// Check if workspace is set — show welcome or main view
+intentAPI.getSetting('workspace_root').then(ws => {
+  if (!ws && !isCanvasMode) {
+    showWelcomeView();
+  } else {
+    loadIntents();
+  }
+});
 
 // Refresh the intent list when the canvas popout window is closed
 intentAPI.onCanvasWindowClosed(() => {
   if (!isCanvasMode) loadIntents();
+});
+
+// Reload all data when workspace changes (select or clear)
+intentAPI.onWorkspaceChanged((path: string | null) => {
+  if (isCanvasMode) {
+    // In canvas window, close it — the workspace changed underneath
+    window.close();
+    return;
+  }
+  updateWorkspaceDisplay(path);
+  hideSettings();
+  if (path) {
+    loadIntents();
+    loadSkills();
+  } else {
+    // Workspace cleared — show welcome view
+    intents = [];
+    cachedSkills = [];
+    render();
+    showWelcomeView();
+  }
 });
 
 // ── Canvas popout window mode ───────────────────────────
@@ -3670,39 +3805,55 @@ if (isCanvasMode) {
     document.body.classList.toggle('dark', theme === 'dark');
   });
 
-  // Listen for intent to load (from main process)
-  intentAPI.onLoadCanvasIntent(async (intentId: string, description: string) => {
-    // If a canvas is already open, save and close it first
-    if (canvasIntentId) {
-      const finalContent = getCanvasContent();
-      await unmountCanvas();
+  // Save and unmount the current canvas target (intent or skill)
+  async function saveAndUnmountCurrent(): Promise<void> {
+    const finalContent = getCanvasContent();
+    await unmountCanvas();
+    if (canvasSkillId) {
+      await saveSkillFromCanvas(canvasSkillId, finalContent);
+      canvasSkillId = null;
+    } else if (canvasIntentId) {
       await intentAPI.closeCanvas(canvasIntentId, finalContent);
       canvasIntentId = null;
-      canvasAgentPresence.clear();
+    }
+    canvasAgentPresence.clear();
+  }
+
+  // Listen for target to load (from main process)
+  intentAPI.onLoadCanvasTarget(async (target: { kind: string; id: string; title: string }) => {
+    // If a canvas is already open, save and close it first
+    if (canvasIntentId || canvasSkillId) {
+      await saveAndUnmountCurrent();
     }
 
-    // Populate intent data so openCanvas() can find it
-    if (!intents.find(i => i.id === intentId)) {
-      intents.push({
-        id: intentId,
-        description,
-        body: null, raw_text: null, client: null,
-        due_at: null, due_at_utc: null, recurrence: null,
-        completed_at: null, folder: null, session_id: null,
-        attachments: [],
-        status: 'captured',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      });
+    if (target.kind === 'skill') {
+      // Load skills list so openSkillEditor can find the skill
+      cachedSkills = await intentAPI.listSkills();
+      await openSkillEditor(target.id);
     } else {
-      // Update description in case it changed
-      const existing = intents.find(i => i.id === intentId)!;
-      existing.description = description;
-    }
+      // Populate intent data so openCanvas() can find it
+      if (!intents.find(i => i.id === target.id)) {
+        intents.push({
+          id: target.id,
+          description: target.title,
+          body: null, raw_text: null, client: null,
+          due_at: null, due_at_utc: null, recurrence: null,
+          completed_at: null, folder: null, session_id: null,
+          attachments: [],
+          status: 'captured',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+      } else {
+        const existing = intents.find(i => i.id === target.id)!;
+        existing.description = target.title;
+      }
 
-    await openCanvas(intentId);
+      await openCanvas(target.id);
+    }
   });
 
-  // Also load full intents in background for metadata
+  // Also load full intents and skills in background for metadata
   intentAPI.list().then(list => { intents = list; });
+  intentAPI.listSkills().then(list => { cachedSkills = list; });
 }

@@ -172,21 +172,18 @@ export function registerWindowIpcHandlers(preloadPath: string): void {
       win.webContents.send('window:pinned-changed', pinned);
     }
 
-    // Close canvas popout when unpinning
-    if (!pinned && canvasWindow && !canvasWindow.isDestroyed()) {
-      canvasWindow.close();
-    }
+    // (Canvas popout is independent of pin state)
   });
 
   // ── Canvas popout window ────────────────────────────────
-  ipcMain.on('canvas-window:open', (_event, intentId: string, description: string) => {
+  ipcMain.on('canvas-window:open', (_event, target: { kind: string; id: string; title: string }) => {
     if (canvasWindow && !canvasWindow.isDestroyed()) {
-      canvasWindow.webContents.send('canvas-window:load-intent', intentId, description);
+      canvasWindow.webContents.send('canvas-window:load-target', target);
       canvasWindow.focus();
     } else {
       canvasWindow = createCanvasWindow(preloadPath);
       canvasWindow.webContents.once('did-finish-load', () => {
-        canvasWindow?.webContents.send('canvas-window:load-intent', intentId, description);
+        canvasWindow?.webContents.send('canvas-window:load-target', target);
         canvasWindow?.show();
       });
     }

@@ -1,12 +1,12 @@
 import { ipcMain, BrowserWindow, dialog, shell } from 'electron';
 import * as fs from 'fs';
-import { isInitialized } from '../database';
+import { isInitialized, closeDatabase } from '../database';
 import { launchSession, getActiveSessionIntentIds } from '../session';
 import { transcribeAudio } from '../voice';
 import { getConfigValue, setConfigValue, getConfig } from '../config';
 import { initWorkspace, getDbPath, getLogPath } from '../workspace';
 import { initDatabase, mergeSessionIds, syncCanvasContent } from '../database';
-import { startSkillWatcher } from '../skill-watcher';
+import { startSkillWatcher, stopSkillWatcher } from '../skill-watcher';
 
 export function registerWorkspaceHandlers(): void {
   // Workspace directory picker — initializes workspace + DB on selection
@@ -27,6 +27,11 @@ export function registerWorkspaceHandlers(): void {
 
       if (!result.canceled && result.filePaths.length > 0) {
         const dir = result.filePaths[0];
+
+        // Close previous workspace cleanly
+        stopSkillWatcher();
+        closeDatabase();
+
         setConfigValue('workspace', dir);
 
         // Initialize workspace structure and DB
@@ -35,6 +40,11 @@ export function registerWorkspaceHandlers(): void {
         mergeSessionIds(getConfig().sessions);
         syncCanvasContent(dir);
         startSkillWatcher(dir);
+
+        // Notify all windows to reload data
+        for (const w of BrowserWindow.getAllWindows()) {
+          w.webContents.send('workspace:changed', dir);
+        }
 
         return { selected: true, path: dir };
       }
@@ -87,5 +97,19 @@ export function registerWorkspaceHandlers(): void {
   ipcMain.handle('voice:transcribe', async (_event, audioData: number[]) => {
     const float32 = new Float32Array(audioData);
     return transcribeAudio(float32);
+  });
+
+  // Clear workspace — returns app to fresh start state
+  ipcMain.handle('workspace:clear', () => {
+    stopSkillWatcher();
+    closeDatabase();
+    setConfigValue('workspace', null);
+
+    // Notify all windows to reload into fresh-start state
+    for (const w of BrowserWindow.getAllWindows()) {
+      w.webContents.send('workspace:changed', null);
+    }
+
+    return { ok: true };
   });
 }

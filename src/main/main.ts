@@ -147,6 +147,11 @@ app.whenReady().then(async () => {
   initCopilot();
   startCliExitMonitor();
 
+  // Auto-show window on first launch so new users see the welcome screen
+  if (!workspace) {
+    toggleWindow();
+  }
+
   // Dev mode: watch renderer files and auto-reload windows
   if (!app.isPackaged) {
     const rendererDir = path.join(__dirname, '..', 'renderer');

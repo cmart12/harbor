@@ -5,7 +5,7 @@
  * This file is **types only** — no runtime code.
  */
 
-import type { Intent, CreateIntentInput, Attachment, AgentAnchor, AgentSession, LinkPreviewMeta, RecurrenceResult, RecallMatch, Skill, SkillContent } from './types';
+import type { Intent, CreateIntentInput, Attachment, AgentAnchor, AgentSession, LinkPreviewMeta, RecurrenceResult, RecallMatch, Skill, SkillContent, CanvasTarget } from './types';
 import type { ChatEvent, ElicitationSchema, ElicitationFieldValue } from './chat-types';
 import type { SubagentSummary, SubagentInfo } from './subagent-types';
 
@@ -158,6 +158,7 @@ export interface IpcCommands {
 
   // ── Workspace / Shell ────────────────────────────────────
   'workspace:select': { args: []; result: { selected: boolean; path: string | null } };
+  'workspace:clear': { args: []; result: { ok: true } };
   'shell:openPath': { args: [folderPath: string]; result: string };
 
   // ── Canvas ───────────────────────────────────────────────
@@ -236,7 +237,7 @@ export interface IpcMessages {
   'window:expand': { args: [] };
   'window:collapse': { args: [] };
   'window:set-pinned': { args: [pinned: boolean] };
-  'canvas-window:open': { args: [intentId: string, description: string] };
+  'canvas-window:open': { args: [target: CanvasTarget] };
   'canvas-window:theme-changed': { args: [theme: string] };
 }
 
@@ -248,12 +249,13 @@ export interface IpcEvents {
   'chat:event': { agentId: string } & ChatEvent;
   'subagent:changed': { parentAgentId: string };
   'window:pinned-changed': { pinned: boolean };
-  'canvas-window:load-intent': { intentId: string; description: string };
+  'canvas-window:load-target': CanvasTarget;
   'canvas-window:closed': void;
   'canvas-window:theme-changed': { theme: string };
   'window:shown': void;
   'window:toggle': void;
   'workspace:committed': void;
+  'workspace:changed': { path: string | null };
   'agent:status-changed': { agentId: string; status: string; summary?: string };
   'agent:approval-needed': { agentId: string; requestId: string; permissionKind: string; intention?: string; path?: string };
   'agent:completed': { agentId: string; summary: string };

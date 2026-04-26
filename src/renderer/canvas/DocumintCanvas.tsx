@@ -15,6 +15,7 @@ import {
   type MentionTriggerEvent,
   type Presence,
 } from 'documint';
+import { FrontmatterEditor } from './FrontmatterEditor';
 
 declare const intentAPI: {
   writeCanvas(intentId: string, content: string): Promise<void>;
@@ -40,6 +41,7 @@ export interface MentionEvent {
 export interface DocumintCanvasProps {
   intentId: string;
   initialContent: string;
+  initialFrontmatter?: Record<string, unknown>;
   theme: 'light' | 'dark';
   personas?: AgentPersona[];
   agentPresence?: Presence[];
@@ -58,6 +60,52 @@ export interface DocumintCanvasHandle {
 
 const AUTOSAVE_DELAY_MS = 2000;
 
+const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
+
+type EditorMode = 'rendered' | 'raw';
+
+/** Serialize frontmatter + body into a markdown string with YAML block. */
+function serializeFm(fm: Record<string, unknown>, body: string): string {
+  const keys = Object.keys(fm).filter(k => fm[k] !== undefined && fm[k] !== null);
+  if (keys.length === 0) return body;
+
+  const lines = keys.map(k => {
+    const v = fm[k];
+    if (typeof v === 'string') return `${k}: ${v}`;
+    // Preserve non-string values as YAML-compatible representation
+    return `${k}: ${JSON.stringify(v)}`;
+  });
+  return `---\n${lines.join('\n')}\n---\n${body}`;
+}
+
+/** Try to parse frontmatter from raw markdown. Returns null if YAML is invalid. */
+function tryParseFm(raw: string): { frontmatter: Record<string, unknown>; body: string } | null {
+  const match = raw.match(FRONTMATTER_RE);
+  if (!match) return { frontmatter: {}, body: raw };
+
+  try {
+    // Simple YAML key: value parsing for known scalar fields
+    const fm: Record<string, unknown> = {};
+    const yamlBlock = match[1];
+    for (const line of yamlBlock.split('\n')) {
+      const colonIdx = line.indexOf(':');
+      if (colonIdx > 0) {
+        const key = line.slice(0, colonIdx).trim();
+        const value = line.slice(colonIdx + 1).trim();
+        // Try to parse JSON values (arrays, booleans, numbers)
+        try {
+          fm[key] = JSON.parse(value);
+        } catch {
+          fm[key] = value;
+        }
+      }
+    }
+    return { frontmatter: fm, body: match[2] };
+  } catch {
+    return null;
+  }
+}
+
 function formatAttachmentRef(filename: string, relativePath: string, mimeType: string): string {
   if (mimeType.startsWith('image/')) {
     return `\n![${filename}](${relativePath})\n`;
@@ -68,12 +116,18 @@ function formatAttachmentRef(filename: string, relativePath: string, mimeType: s
 }
 
 export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasProps>(
-  function DocumintCanvas({ intentId, initialContent, theme, personas: initialPersonas, agentPresence: initialPresence, onDirtyChange, onSaveStatus, onAgentMentioned }, ref) {
+  function DocumintCanvas({ intentId, initialContent, initialFrontmatter, theme, personas: initialPersonas, agentPresence: initialPresence, onDirtyChange, onSaveStatus, onAgentMentioned }, ref) {
+    const hasFrontmatter = initialFrontmatter !== undefined;
     const [content, setContent] = useState(initialContent);
-    const lastSavedRef = useRef(initialContent);
+    const [frontmatter, setFrontmatter] = useState<Record<string, unknown>>(initialFrontmatter ?? {});
+    const [editorMode, setEditorMode] = useState<EditorMode>('rendered');
+    const [rawContent, setRawContent] = useState('');
+    const [parseError, setParseError] = useState<string | null>(null);
+    const lastSavedRef = useRef(hasFrontmatter ? serializeFm(initialFrontmatter!, initialContent) : initialContent);
     const pendingSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const savingRef = useRef(false);
     const contentRef = useRef(content);
+    const frontmatterRef = useRef(frontmatter);
     const stateRef = useRef<DocumintState | null>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const [isDragging, setIsDragging] = useState(false);
@@ -81,6 +135,13 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
     const [presence, setPresence] = useState<Presence[]>(initialPresence || []);
 
     contentRef.current = content;
+    frontmatterRef.current = frontmatter;
+
+    /** Build the full document string for saving. */
+    const getFullContent = useCallback(() => {
+      if (!hasFrontmatter) return contentRef.current;
+      return serializeFm(frontmatterRef.current, contentRef.current);
+    }, [hasFrontmatter]);
 
     // Convert personas to mention suggestions
     const mentionSuggestions: MentionSuggestion[] = React.useMemo(
@@ -90,14 +151,14 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
 
     const doSave = useCallback(async () => {
       if (savingRef.current) return;
-      const currentContent = contentRef.current;
-      if (currentContent === lastSavedRef.current) return;
+      const fullContent = getFullContent();
+      if (fullContent === lastSavedRef.current) return;
 
       savingRef.current = true;
       try {
-        await intentAPI.writeCanvas(intentId, currentContent);
-        lastSavedRef.current = currentContent;
-        onDirtyChange(contentRef.current !== lastSavedRef.current);
+        await intentAPI.writeCanvas(intentId, fullContent);
+        lastSavedRef.current = fullContent;
+        onDirtyChange(getFullContent() !== lastSavedRef.current);
         onSaveStatus('✓');
         setTimeout(() => onSaveStatus(''), 1500);
       } catch {
@@ -106,7 +167,7 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
       } finally {
         savingRef.current = false;
       }
-    }, [intentId, onDirtyChange, onSaveStatus]);
+    }, [intentId, onDirtyChange, onSaveStatus, getFullContent]);
 
     const scheduleSave = useCallback(() => {
       if (pendingSaveRef.current) clearTimeout(pendingSaveRef.current);
@@ -127,13 +188,75 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
     const handleContentChange = useCallback((newContent: string) => {
       if (newContent === contentRef.current) return;
       setContent(newContent);
-      const dirty = newContent !== lastSavedRef.current;
+      contentRef.current = newContent;
+      const fullContent = hasFrontmatter ? serializeFm(frontmatterRef.current, newContent) : newContent;
+      const dirty = fullContent !== lastSavedRef.current;
+      onDirtyChange(dirty);
+      if (dirty) {
+        onSaveStatus('');
+        scheduleSave();
+      }
+    }, [onDirtyChange, onSaveStatus, scheduleSave, hasFrontmatter]);
+
+    const handleFrontmatterChange = useCallback((updated: Record<string, unknown>) => {
+      setFrontmatter(updated);
+      frontmatterRef.current = updated;
+      const dirty = serializeFm(updated, contentRef.current) !== lastSavedRef.current;
       onDirtyChange(dirty);
       if (dirty) {
         onSaveStatus('');
         scheduleSave();
       }
     }, [onDirtyChange, onSaveStatus, scheduleSave]);
+
+    const handleToggleMode = useCallback(() => {
+      if (editorMode === 'rendered') {
+        // Switch to raw: serialize current state
+        setRawContent(getFullContent());
+        setParseError(null);
+        setEditorMode('raw');
+      } else {
+        // Switch to rendered: try to parse raw content
+        if (hasFrontmatter) {
+          const parsed = tryParseFm(rawContent);
+          if (!parsed) {
+            setParseError('Invalid YAML frontmatter. Fix the syntax before switching to rendered view.');
+            return;
+          }
+          setFrontmatter(parsed.frontmatter);
+          frontmatterRef.current = parsed.frontmatter;
+          setContent(parsed.body);
+          contentRef.current = parsed.body;
+        } else {
+          setContent(rawContent);
+          contentRef.current = rawContent;
+        }
+        setParseError(null);
+        setEditorMode('rendered');
+      }
+    }, [editorMode, hasFrontmatter, rawContent, getFullContent]);
+
+    const handleRawContentChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      const newRaw = e.target.value;
+      setRawContent(newRaw);
+      setParseError(null);
+      const dirty = newRaw !== lastSavedRef.current;
+      onDirtyChange(dirty);
+      if (dirty) {
+        onSaveStatus('');
+        // For raw mode, update refs so save works correctly
+        if (hasFrontmatter) {
+          const parsed = tryParseFm(newRaw);
+          if (parsed) {
+            contentRef.current = parsed.body;
+            frontmatterRef.current = parsed.frontmatter;
+          }
+        } else {
+          contentRef.current = newRaw;
+        }
+        scheduleSave();
+      }
+    }, [onDirtyChange, onSaveStatus, scheduleSave, hasFrontmatter]);
 
     const handleMentionTriggered = useCallback((event: MentionTriggerEvent) => {
       if (!onAgentMentioned) return;
@@ -155,7 +278,7 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
 
     useImperativeHandle(ref, () => ({
       saveNow,
-      getContent: () => contentRef.current,
+      getContent: () => getFullContent(),
       updatePresence: (nextPresence: Presence[]) => setPresence(nextPresence),
       updatePersonas: (nextPersonas: AgentPersona[]) => setPersonas(nextPersonas),
       addCommentReply: (threadIndex: number, body: string) => {
@@ -313,15 +436,46 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
         ref={containerRef}
         className={`documint-canvas-container${isDragging ? ' drag-over' : ''}`}
       >
-        <Documint
-          content={content}
-          mentionSuggestions={mentionSuggestions}
-          onContentChange={handleContentChange}
-          onMentionTriggered={handleMentionTriggered}
-          onStateChange={handleStateChange}
-          presence={presence}
-          theme={documintTheme}
-        />
+        <div className="canvas-mode-toggle">
+          <button
+            className={`mode-toggle-btn${editorMode === 'rendered' ? ' active' : ''}`}
+            onClick={handleToggleMode}
+            title={editorMode === 'rendered' ? 'Switch to raw markdown' : 'Switch to rendered view'}
+          >
+            {editorMode === 'rendered' ? '</>' : '¶'}
+          </button>
+        </div>
+        {parseError && (
+          <div className="frontmatter-parse-error">{parseError}</div>
+        )}
+        {editorMode === 'rendered' ? (
+          <>
+            {hasFrontmatter && (
+              <FrontmatterEditor
+                frontmatter={frontmatter}
+                onChange={handleFrontmatterChange}
+              />
+            )}
+            <div className="documint-editor-wrap">
+              <Documint
+                content={content}
+                mentionSuggestions={mentionSuggestions}
+                onContentChange={handleContentChange}
+                onMentionTriggered={handleMentionTriggered}
+                onStateChange={handleStateChange}
+                presence={presence}
+                theme={documintTheme}
+              />
+            </div>
+          </>
+        ) : (
+          <textarea
+            className="canvas-raw-editor"
+            value={rawContent}
+            onChange={handleRawContentChange}
+            spellCheck={false}
+          />
+        )}
       </div>
     );
   }

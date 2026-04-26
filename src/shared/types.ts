@@ -82,6 +82,12 @@ export interface RecallMatch {
   confidence: number;
 }
 
+// ── Canvas target (popout window) ───────────────────────
+
+export type CanvasTarget =
+  | { kind: 'intent'; id: string; title: string }
+  | { kind: 'skill'; id: string; title: string };
+
 // ── Skills ──────────────────────────────────────────────
 
 export interface SkillFrontmatter {

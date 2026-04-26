@@ -8,6 +8,60 @@
 </head>
 <body>
   <div id="app">
+    <!-- Welcome / setup view (shown when no workspace) -->
+    <div id="welcome-view" class="welcome-view hidden">
+      <div class="welcome-content">
+        <div class="welcome-header">
+          <span class="welcome-icon">⚡</span>
+          <h1>Welcome to Intent</h1>
+          <p class="welcome-subtitle">Capture ideas, launch agents, and get things done.</p>
+        </div>
+
+        <div class="welcome-steps">
+          <!-- Step 1: Workspace -->
+          <div class="welcome-step" id="welcome-step-workspace">
+            <div class="step-number">1</div>
+            <div class="step-body">
+              <div class="step-label">Select a workspace</div>
+              <div class="step-hint">A folder where your intents, skills, and agent data will live.</div>
+              <div class="step-action">
+                <button id="welcome-workspace-btn" class="welcome-btn">Choose Folder…</button>
+                <span id="welcome-workspace-path" class="welcome-path"></span>
+              </div>
+            </div>
+            <span id="welcome-workspace-check" class="step-check hidden">✓</span>
+          </div>
+
+          <!-- Step 2: CLI -->
+          <div class="welcome-step" id="welcome-step-cli">
+            <div class="step-number">2</div>
+            <div class="step-body">
+              <div class="step-label">Copilot CLI</div>
+              <div id="welcome-cli-status" class="step-hint">Checking…</div>
+            </div>
+            <span id="welcome-cli-check" class="step-check hidden">✓</span>
+          </div>
+
+          <!-- Step 3: Model -->
+          <div class="welcome-step" id="welcome-step-model">
+            <div class="step-number">3</div>
+            <div class="step-body">
+              <div class="step-label">Choose a default model</div>
+              <div class="step-hint">The AI model used for agents and intent processing.</div>
+              <div class="step-action">
+                <select id="welcome-model-select">
+                  <option value="">Loading models…</option>
+                </select>
+              </div>
+            </div>
+            <span id="welcome-model-check" class="step-check hidden">✓</span>
+          </div>
+        </div>
+
+        <button id="welcome-start-btn" class="welcome-start-btn" disabled>Get Started</button>
+      </div>
+    </div>
+
     <!-- Main view -->
     <div id="main-view">
       <header>
@@ -98,6 +152,7 @@
               <div class="workspace-display">
                 <span id="workspace-path" class="workspace-path">Not set</span>
                 <button id="workspace-btn" class="workspace-btn">Change</button>
+                <button id="workspace-clear-btn" class="workspace-btn" title="Clear workspace (fresh start)">Clear</button>
               </div>
             </div>
             <div class="settings-hint">The working directory for Copilot CLI sessions.</div>

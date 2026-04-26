@@ -1,8 +1,11 @@
 import { ipcMain } from 'electron';
-import { isInitialized, getIntent, assignIntentFolder, updateCanvasContent } from '../database';
+import { isInitialized, getIntent, getSkill, assignIntentFolder, updateCanvasContent } from '../database';
 import { getConfigValue } from '../config';
 import { initIntentCanvas, readCanvas, writeCanvas, scheduleAutoCommit, saveAttachment, resolveAttachmentPath, getMimeType, getIntentHistory, restoreIntentVersion } from '../workspace';
+import { parseFrontmatter, serializeFrontmatter } from '../frontmatter';
 import { fetchLinkPreview } from '../services/link-preview';
+import type { SkillFrontmatter } from '../../shared/types';
+import * as fs from 'fs';
 
 export function registerCanvasHandlers(): void {
   ipcMain.handle('canvas:read', (_event, intentId: string) => {
@@ -25,6 +28,21 @@ export function registerCanvasHandlers(): void {
   ipcMain.handle('canvas:write', (_event, intentId: string, content: string) => {
     const workspace = getConfigValue('workspace');
     if (!workspace || !isInitialized()) return { error: 'no_workspace' };
+
+    // Route skill autosaves to the skill file
+    if (intentId.startsWith('__skill__')) {
+      const skillId = intentId.slice('__skill__'.length);
+      const skill = getSkill(skillId);
+      if (!skill) return { error: 'not_found' };
+      try {
+        const { frontmatter, body } = parseFrontmatter<SkillFrontmatter>(content);
+        const fileContent = serializeFrontmatter(frontmatter, body);
+        fs.writeFileSync(skill.filePath, fileContent, 'utf-8');
+        return { success: true };
+      } catch {
+        return { error: 'write_failed' };
+      }
+    }
 
     const intent = getIntent(intentId);
     if (!intent) return { error: 'not_found' };

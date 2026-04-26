@@ -7,7 +7,7 @@ import type {
   CustomMcpServer,
 } from '../shared/ipc-contract';
 import type { ChatEvent } from '../shared/chat-types';
-import type { AgentAnchor, RecurrenceResult, RecallMatch, Skill, SkillContent } from '../shared/types';
+import type { AgentAnchor, RecurrenceResult, RecallMatch, Skill, SkillContent, CanvasTarget } from '../shared/types';
 
 const { contextBridge, ipcRenderer } = require('electron');
 
@@ -66,6 +66,7 @@ export interface IntentAPI {
 
   // ── Workspace / Shell ────────────────────────────────────
   selectWorkspace(): Promise<IpcCommandResult<'workspace:select'>>;
+  clearWorkspace(): Promise<IpcCommandResult<'workspace:clear'>>;
   openPath(folderPath: string): Promise<IpcCommandResult<'shell:openPath'>>;
 
   // ── Canvas ───────────────────────────────────────────────
@@ -112,8 +113,8 @@ export interface IntentAPI {
   onPinnedChanged(callback: (pinned: boolean) => void): void;
 
   // ── Canvas popout window ─────────────────────────────────
-  openCanvasWindow(intentId: string, description: string): void;
-  onLoadCanvasIntent(callback: (intentId: string, description: string) => void): void;
+  openCanvasWindow(target: CanvasTarget): void;
+  onLoadCanvasTarget(callback: (target: CanvasTarget) => void): void;
   onCanvasWindowClosed(callback: () => void): void;
   notifyCanvasThemeChanged(theme: string): void;
   onCanvasThemeChanged(callback: (theme: string) => void): void;
@@ -122,6 +123,7 @@ export interface IntentAPI {
   onWindowShown(callback: () => void): void;
   onWindowToggle(callback: () => void): void;
   onWorkspaceCommitted(callback: () => void): void;
+  onWorkspaceChanged(callback: (path: string | null) => void): void;
 
   // ── Agent events ─────────────────────────────────────────
   onAgentStatusChanged(callback: (data: IpcEventPayload<'agent:status-changed'>) => void): void;
@@ -198,6 +200,7 @@ const api: IntentAPI = {
 
   // ── Workspace / Shell ────────────────────────────────────
   selectWorkspace: () => ipcRenderer.invoke('workspace:select'),
+  clearWorkspace: () => ipcRenderer.invoke('workspace:clear'),
   openPath: (folderPath) => ipcRenderer.invoke('shell:openPath', folderPath),
 
   // ── Canvas ───────────────────────────────────────────────
@@ -284,9 +287,9 @@ const api: IntentAPI = {
   },
 
   // ── Canvas popout window ─────────────────────────────────
-  openCanvasWindow: (intentId, description) => ipcRenderer.send('canvas-window:open', intentId, description),
-  onLoadCanvasIntent: (callback) => {
-    ipcRenderer.on('canvas-window:load-intent', (_event: unknown, intentId: string, description: string) => callback(intentId, description));
+  openCanvasWindow: (target) => ipcRenderer.send('canvas-window:open', target),
+  onLoadCanvasTarget: (callback) => {
+    ipcRenderer.on('canvas-window:load-target', (_event: unknown, target: CanvasTarget) => callback(target));
   },
   onCanvasWindowClosed: (callback) => {
     ipcRenderer.on('canvas-window:closed', callback);
@@ -305,6 +308,9 @@ const api: IntentAPI = {
   },
   onWorkspaceCommitted: (callback) => {
     ipcRenderer.on('workspace:committed', callback);
+  },
+  onWorkspaceChanged: (callback) => {
+    ipcRenderer.on('workspace:changed', (_event: unknown, path: string | null) => callback(path));
   },
 
   // ── Agent events ─────────────────────────────────────────
