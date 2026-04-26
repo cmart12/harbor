@@ -1,3 +1,12 @@
+/**
+ * MIGRATION NOTE: This file is being incrementally migrated to React components.
+ * See src/renderer/MIGRATION.md for the migration plan.
+ * New features should use:
+ *   - src/renderer/ipc-client.ts (typed IPC)
+ *   - src/renderer/state/ (intent-store, agent-store)
+ *   - src/renderer/views/ (React components)
+ */
+
 interface RecurrenceResult {
   should_recur: boolean;
   reasoning: string;
