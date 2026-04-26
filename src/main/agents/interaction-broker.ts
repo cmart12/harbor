@@ -1,4 +1,5 @@
 import { ElicitationContext, ElicitationResult } from '@github/copilot-sdk';
+import type { PermissionRequest } from '@github/copilot-sdk';
 import * as crypto from 'crypto';
 import type { AgentNotifier } from './agent-notifier';
 import type { AgentPersistence } from './agent-persistence';
@@ -32,15 +33,16 @@ export class InteractionBroker {
    * Each concurrent request gets a unique requestId so callbacks never overwrite each other.
    */
   createPermissionHandler(findRecord: (sessionId: string) => AgentRecord | undefined) {
-    return async (request: { kind?: string; toolCallId?: string; [key: string]: unknown }, invocation: { sessionId: string }) => {
+    return async (request: PermissionRequest, invocation: { sessionId: string }) => {
       const record = findRecord(invocation.sessionId);
       if (!record) return { kind: 'reject' as const };
 
       const requestId = request.toolCallId ?? crypto.randomUUID();
       // Extract rich context from the SDK permission request
-      const intention = typeof request.intention === 'string' ? request.intention : undefined;
-      const path = typeof request.path === 'string' ? request.path
-        : typeof request.fileName === 'string' ? request.fileName
+      const req = request as unknown as Record<string, unknown>;
+      const intention = typeof req.intention === 'string' ? req.intention : undefined;
+      const path = typeof req.path === 'string' ? req.path
+        : typeof req.fileName === 'string' ? req.fileName
         : undefined;
 
       console.log(`[InteractionBroker] Permission requested: kind=${request.kind} requestId=${requestId} agent=${record.agentId}`);
