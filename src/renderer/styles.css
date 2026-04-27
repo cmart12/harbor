@@ -711,10 +711,10 @@ header h1 {
 
 #description-input {
   width: 100%;
-  background: rgba(255, 255, 255, 0.7);
-  border: 1px solid rgba(140, 120, 180, 0.12);
-  border-radius: 3px;
-  padding: 10px 60px 10px 14px;
+  background: rgba(255, 255, 255, 0.75);
+  border: 1px solid rgba(140, 120, 180, 0.2);
+  border-radius: 10px;
+  padding: 12px 48px 12px 16px;
   color: #2c2c3a;
   font-size: 14px;
   font-family: inherit;
@@ -722,20 +722,21 @@ header h1 {
   transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
   resize: none;
   overflow: hidden;
-  min-height: 40px;
+  min-height: 42px;
   max-height: 120px;
-  line-height: 1.4;
+  line-height: 1.5;
   backdrop-filter: blur(8px);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), inset 0 1px 2px rgba(0, 0, 0, 0.03);
 }
 
 #description-input:focus {
-  border-color: rgba(124, 102, 220, 0.45);
-  background: rgba(255, 255, 255, 0.9);
-  box-shadow: 0 0 0 3px rgba(124, 102, 220, 0.1);
+  border-color: rgba(124, 102, 220, 0.5);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 0 0 3px rgba(124, 102, 220, 0.1), 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
 #description-input::placeholder {
-  color: rgba(0, 0, 0, 0.3);
+  color: rgba(0, 0, 0, 0.32);
 }
 
 #description-input.recording {
@@ -768,23 +769,23 @@ header h1 {
   position: absolute;
   right: 6px;
   bottom: 6px;
-  background: rgba(124, 102, 220, 0.12);
+  background: rgba(124, 102, 220, 0.1);
   border: none;
-  border-radius: 2px;
+  border-radius: 8px;
   color: #7c66dc;
   font-size: 14px;
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: all 0.15s ease;
-  opacity: 0.6;
+  opacity: 0.5;
 }
 
 .submit-btn:hover {
-  background: rgba(124, 102, 220, 0.22);
+  background: rgba(124, 102, 220, 0.2);
   opacity: 1;
 }
 
@@ -838,17 +839,37 @@ header h1 {
   display: none;
 }
 
-.prompt-hint {
-  font-size: 10px;
-  color: #999;
-  text-align: center;
-  padding: 2px 0 0;
-  letter-spacing: 0.02em;
-  opacity: 0.7;
+/* ── Input hints (keyboard shortcuts below textarea) ──── */
+
+.input-hints {
+  font-size: 11px;
+  color: rgba(0, 0, 0, 0.35);
+  padding: 2px 4px 0;
+  transition: opacity 0.15s ease;
+  user-select: none;
 }
 
-.prompt-hint.hidden {
+.input-hints.hidden {
   display: none;
+}
+
+.input-hints kbd {
+  display: inline-block;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 500;
+  color: rgba(0, 0, 0, 0.45);
+  background: rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+  padding: 1px 5px;
+  line-height: 1.4;
+  vertical-align: baseline;
+}
+
+.input-hints .hint-sep {
+  margin: 0 4px;
+  color: rgba(0, 0, 0, 0.2);
 }
 
 /* ── Filter bar ───────────────────────────────────────── */
@@ -3289,7 +3310,6 @@ body.dark .badge { background: rgba(124, 102, 220, 0.2); color: #a594e8; }
 
 body.dark .status-bar { background: rgba(124, 102, 220, 0.1); color: #a594e8; }
 body.dark .status-bar.error { background: rgba(239, 68, 68, 0.1); color: #f87171; }
-body.dark .prompt-hint { color: #666; }
 
 body.dark .intent-item { background: rgba(255, 255, 255, 0.04); border-color: rgba(255, 255, 255, 0.06); }
 body.dark .intent-item:hover { background: rgba(255, 255, 255, 0.07); }
@@ -3460,17 +3480,21 @@ body.dark #description-input {
   background: rgba(255, 255, 255, 0.06);
   border-color: rgba(255, 255, 255, 0.1);
   color: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15), inset 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 body.dark #description-input:focus {
   border-color: rgba(124, 102, 220, 0.5);
   background: rgba(255, 255, 255, 0.08);
-  box-shadow: 0 0 0 3px rgba(124, 102, 220, 0.1);
+  box-shadow: 0 0 0 3px rgba(124, 102, 220, 0.1), 0 1px 3px rgba(0, 0, 0, 0.15);
 }
 body.dark #description-input::placeholder { color: rgba(255, 255, 255, 0.3); }
 body.dark #description-input.search-mode { border-color: rgba(245, 158, 11, 0.5); background: rgba(245, 158, 11, 0.08); box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.12); }
 body.dark #description-input.search-mode:focus { border-color: rgba(245, 158, 11, 0.6); background: rgba(245, 158, 11, 0.1); box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.18); }
 body.dark .submit-btn { background: rgba(124, 102, 220, 0.15); color: #a594e8; }
 body.dark .submit-btn:hover { background: rgba(124, 102, 220, 0.25); }
+body.dark .input-hints { color: rgba(255, 255, 255, 0.3); }
+body.dark .input-hints kbd { color: rgba(255, 255, 255, 0.45); background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.12); }
+body.dark .input-hints .hint-sep { color: rgba(255, 255, 255, 0.15); }
 
 /* Dark body & attachments */
 body.dark .intent-body { color: rgba(255, 255, 255, 0.5); background: rgba(255, 255, 255, 0.03); }

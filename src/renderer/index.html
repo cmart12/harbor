@@ -93,7 +93,7 @@
         <div class="input-wrapper">
           <textarea
             id="description-input"
-            placeholder="Capture an intent..."
+            placeholder="What needs to get done?"
             autocomplete="off"
             autofocus
             rows="1"
@@ -103,8 +103,11 @@
           </div>
           <button type="submit" id="submit-btn" class="submit-btn" title="Submit (Enter)">↩</button>
         </div>
+        <div id="input-hints" class="input-hints">
+          <kbd>Tab</kbd> search <span class="hint-sep">·</span> <kbd>Space</kbd> record
+        </div>
         <div id="status-bar" class="status-bar hidden"></div>
-        <div id="prompt-hint" class="prompt-hint">⇧Tab search · Space record</div>
+
       </form>
 
       <button id="new-agent-btn" class="new-agent-btn hidden">+ New Agent</button>

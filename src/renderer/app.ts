@@ -192,6 +192,7 @@ const settingsClose = document.getElementById('settings-close') as HTMLButtonEle
 const mainView = document.getElementById('main-view') as HTMLDivElement;
 const modelSelect = document.getElementById('model-select') as HTMLSelectElement;
 const recordingIndicator = document.getElementById('recording-indicator') as HTMLDivElement;
+const inputHints = document.getElementById('input-hints') as HTMLDivElement;
 const themeLightBtn = document.getElementById('theme-light') as HTMLButtonElement;
 const themeDarkBtn = document.getElementById('theme-dark') as HTMLButtonElement;
 const timelineBtn = document.getElementById('timeline-btn') as HTMLButtonElement | null;
@@ -243,7 +244,6 @@ let searchTimeout: ReturnType<typeof setTimeout> | null = null;
 let searchMode = false;
 let activeSearchQuery = '';
 const workersBadge = document.getElementById('workers-badge') as HTMLSpanElement;
-const promptHint = document.getElementById('prompt-hint') as HTMLDivElement;
 
 // ── Status bar helpers ──────────────────────────────────
 function showStatus(msg: string, isError = false): void {
@@ -269,9 +269,9 @@ function updateWorkersBadge(): void {
 
 function getPlaceholderForFilter(filter: typeof currentFilter): string {
   switch (filter) {
-    case 'agents': return 'Describe a task for an agent...';
+    case 'agents': return 'What should an agent work on?';
     case 'skills': return 'Describe a skill to create...';
-    default: return 'Capture an intent...';
+    default: return 'What needs to get done?';
   }
 }
 
@@ -283,21 +283,9 @@ function getSearchPlaceholderForFilter(filter: typeof currentFilter): string {
   }
 }
 
-function getPromptHintForFilter(filter: typeof currentFilter): string {
-  switch (filter) {
-    case 'agents': return '⇧Tab search · Space record';
-    case 'skills': return '⇧Tab search · Space record';
-    default: return '⇧Tab search · Space record';
-  }
-}
 
 function updatePromptHint(): void {
-  if (searchMode || currentFilter === 'closed') {
-    promptHint.classList.add('hidden');
-  } else {
-    promptHint.textContent = getPromptHintForFilter(currentFilter);
-    promptHint.classList.remove('hidden');
-  }
+  // Hint is now shown as placeholder text in the textarea
 }
 
 function setFilter(filter: typeof currentFilter): void {
@@ -1221,13 +1209,16 @@ function setInputState(state: 'idle' | 'recording' | 'transcribing'): void {
       descInput.classList.add('recording');
       descInput.placeholder = 'Listening... press space to stop';
       recordingIndicator.classList.remove('hidden');
+      inputHints.classList.add('hidden');
       break;
     case 'transcribing':
       descInput.classList.add('transcribing');
       descInput.placeholder = 'Transcribing...';
+      inputHints.classList.add('hidden');
       break;
     default:
       descInput.placeholder = searchMode ? getSearchPlaceholderForFilter(currentFilter) : getPlaceholderForFilter(currentFilter);
+      inputHints.classList.toggle('hidden', searchMode || descInput.value.length > 0);
   }
 }
 
@@ -1249,6 +1240,11 @@ function autoResize(): void {
 }
 
 descInput.addEventListener('input', autoResize);
+
+// Show/hide input hints based on whether textarea has content
+descInput.addEventListener('input', () => {
+  inputHints.classList.toggle('hidden', descInput.value.length > 0);
+});
 
 // Live search: filter list when in search mode (supports all tabs)
 descInput.addEventListener('input', () => {
@@ -1297,6 +1293,7 @@ function enterSearchMode(): void {
   searchResults = null;
   activeSearchQuery = '';
   selectedIndex = -1;
+  inputHints.classList.add('hidden');
   updatePromptHint();
   render();
   descInput.focus();
@@ -1311,6 +1308,7 @@ function exitSearchMode(): void {
   searchResults = null;
   activeSearchQuery = '';
   selectedIndex = -1;
+  inputHints.classList.remove('hidden');
   updatePromptHint();
   render();
   descInput.focus();
