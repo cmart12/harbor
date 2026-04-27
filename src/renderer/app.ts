@@ -239,7 +239,9 @@ let displayedIntents: Intent[] = [];
 let searchResults: Intent[] | null = null;
 let searchTimeout: ReturnType<typeof setTimeout> | null = null;
 let searchMode = false;
+let activeSearchQuery = '';
 const workersBadge = document.getElementById('workers-badge') as HTMLSpanElement;
+const promptHint = document.getElementById('prompt-hint') as HTMLDivElement;
 
 // ── Status bar helpers ──────────────────────────────────
 function showStatus(msg: string, isError = false): void {
@@ -271,6 +273,31 @@ function getPlaceholderForFilter(filter: typeof currentFilter): string {
   }
 }
 
+function getSearchPlaceholderForFilter(filter: typeof currentFilter): string {
+  switch (filter) {
+    case 'agents': return '🔍 Search agents...';
+    case 'skills': return '🔍 Search skills...';
+    default: return '🔍 Search intents...';
+  }
+}
+
+function getPromptHintForFilter(filter: typeof currentFilter): string {
+  switch (filter) {
+    case 'agents': return '⇧Tab search · Space record';
+    case 'skills': return '⇧Tab search · Space record';
+    default: return '⇧Tab search · Space record';
+  }
+}
+
+function updatePromptHint(): void {
+  if (searchMode || currentFilter === 'closed') {
+    promptHint.classList.add('hidden');
+  } else {
+    promptHint.textContent = getPromptHintForFilter(currentFilter);
+    promptHint.classList.remove('hidden');
+  }
+}
+
 function setFilter(filter: typeof currentFilter): void {
   if (filter === currentFilter) return;
   currentFilter = filter;
@@ -297,11 +324,12 @@ function setFilter(filter: typeof currentFilter): void {
   newAgentBtn.classList.add('hidden');
   launchCliBtn.classList.add('hidden');
 
-  // Exit search mode when switching away from Spaces
-  if (filter !== 'open' && searchMode) {
+  // Exit search mode when switching tabs
+  if (searchMode) {
     exitSearchMode();
   }
 
+  updatePromptHint();
   updateWorkersBadge();
   render();
 }
@@ -1193,7 +1221,7 @@ function setInputState(state: 'idle' | 'recording' | 'transcribing'): void {
       descInput.placeholder = 'Transcribing...';
       break;
     default:
-      descInput.placeholder = searchMode ? '🔍 Search intents...' : getPlaceholderForFilter(currentFilter);
+      descInput.placeholder = searchMode ? getSearchPlaceholderForFilter(currentFilter) : getPlaceholderForFilter(currentFilter);
   }
 }
 
@@ -1216,7 +1244,7 @@ function autoResize(): void {
 
 descInput.addEventListener('input', autoResize);
 
-// Live search: filter intents when in search mode
+// Live search: filter list when in search mode (supports all tabs)
 descInput.addEventListener('input', () => {
   if (searchTimeout) clearTimeout(searchTimeout);
 
@@ -1230,28 +1258,40 @@ descInput.addEventListener('input', () => {
   }
 
   const query = descInput.value.trim();
+  activeSearchQuery = query;
+
   if (!query) {
     searchResults = null;
     selectedIndex = -1;
-    render();
+    if (currentFilter === 'agents') renderAgentsList();
+    else if (currentFilter === 'skills') renderSkillsList();
+    else render();
     return;
   }
 
   searchTimeout = setTimeout(async () => {
-    searchResults = await intentAPI.searchIntents(query);
-    selectedIndex = -1;
-    render();
-  }, 250);
+    if (currentFilter === 'agents') {
+      renderAgentsList(query);
+    } else if (currentFilter === 'skills') {
+      renderSkillsList(query);
+    } else {
+      searchResults = await intentAPI.searchIntents(query);
+      selectedIndex = -1;
+      render();
+    }
+  }, 150);
 });
 
 function enterSearchMode(): void {
   searchMode = true;
   descInput.classList.add('search-mode');
-  descInput.placeholder = '🔍 Search intents...';
+  descInput.placeholder = getSearchPlaceholderForFilter(currentFilter);
   descInput.value = '';
   descInput.style.height = 'auto';
   searchResults = null;
+  activeSearchQuery = '';
   selectedIndex = -1;
+  updatePromptHint();
   render();
   descInput.focus();
 }
@@ -1263,16 +1303,18 @@ function exitSearchMode(): void {
   descInput.value = '';
   descInput.style.height = 'auto';
   searchResults = null;
+  activeSearchQuery = '';
   selectedIndex = -1;
+  updatePromptHint();
   render();
   descInput.focus();
 }
 
 // Spacebar handling on the textarea
 descInput.addEventListener('keydown', (e) => {
-  // Shift+Tab: only toggle search mode on Spaces tab
+  // Shift+Tab: toggle search mode on Spaces, Workers, and Skills tabs
   if (e.key === 'Tab' && e.shiftKey) {
-    if (currentFilter !== 'open') return; // search mode only on Spaces
+    if (currentFilter === 'closed') return; // no search on Past tab
     e.preventDefault();
     if (searchMode) exitSearchMode();
     else enterSearchMode();
@@ -1315,7 +1357,13 @@ descInput.addEventListener('keydown', (e) => {
   // In search mode, Enter selects the first result instead of creating
   if (e.key === 'Enter' && !e.shiftKey && searchMode) {
     e.preventDefault();
-    if (displayedIntents.length > 0) {
+    if (currentFilter === 'agents' && renderedAgents.length > 0) {
+      openAgentChat(renderedAgents[0].agentId, renderedAgents[0].selectedText, renderedAgents[0].status, (renderedAgents[0] as any).source);
+    } else if (currentFilter === 'skills' && cachedSkills.length > 0) {
+      const q = activeSearchQuery.toLowerCase();
+      const match = q ? cachedSkills.find(s => s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q)) : cachedSkills[0];
+      if (match) openSkillEditor(match.id);
+    } else if (displayedIntents.length > 0) {
       openCanvas(displayedIntents[0].id);
     }
     return;
@@ -1477,15 +1525,15 @@ function render(): void {
   let displayList: Intent[];
 
   if (searchResults !== null) {
-    // Search mode — show search results directly
+    // Search mode on Spaces — show search results directly
     displayList = searchResults;
   } else if (currentFilter === 'agents') {
-    // Agents mode — render agent list instead of intents
-    renderAgentsList();
+    // Agents mode — render agent list (with search filter if active)
+    renderAgentsList(searchMode ? activeSearchQuery || undefined : undefined);
     return;
   } else if (currentFilter === 'skills') {
-    // Skills mode — render skills list
-    renderSkillsList();
+    // Skills mode — render skills list (with search filter if active)
+    renderSkillsList(searchMode ? activeSearchQuery || undefined : undefined);
     return;
   } else if (currentFilter === 'closed') {
     // Past mode — render card-based combined view
@@ -1925,20 +1973,28 @@ async function loadSkills(): Promise<SkillData[]> {
   }
 }
 
-async function renderSkillsList(): Promise<void> {
+async function renderSkillsList(filterQuery?: string): Promise<void> {
   const gen = ++renderGeneration;
   displayedIntents = [];
   countEl.textContent = String(intents.filter(i => i.status !== 'done').length);
 
-  const skills = await loadSkills();
+  let skills = await loadSkills();
 
   if (gen !== renderGeneration) return;
+
+  // Client-side filtering when in search mode
+  if (filterQuery) {
+    const q = filterQuery.toLowerCase();
+    skills = skills.filter(s =>
+      s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q)
+    );
+  }
 
   if (skills.length === 0) {
     listEl.innerHTML = `
       <div class="empty-state">
         <span class="icon">🧩</span>
-        <span>No skills yet. Describe a skill above to create one.</span>
+        <span>${filterQuery ? 'No matching skills.' : 'No skills yet. Describe a skill above to create one.'}</span>
       </div>
     `;
     return;
@@ -2139,7 +2195,7 @@ intentAPI.onSkillsChanged(() => {
 (window as any).launchSkillAsIntent = launchSkillAsIntent;
 (window as any).deleteSkill = deleteSkill;
 
-async function renderAgentsList(): Promise<void> {
+async function renderAgentsList(filterQuery?: string): Promise<void> {
   const gen = ++renderGeneration;
   displayedIntents = [];
   countEl.textContent = String(intents.filter(i => i.status !== 'done').length);
@@ -2164,18 +2220,27 @@ async function renderAgentsList(): Promise<void> {
   // Bail if user switched away from agents while loading
   if (gen !== renderGeneration) return;
 
+  // Client-side filtering when in search mode
+  if (filterQuery) {
+    const q = filterQuery.toLowerCase();
+    allAgents = allAgents.filter(a =>
+      (a.selectedText || '').toLowerCase().includes(q) ||
+      (a.summary || '').toLowerCase().includes(q)
+    );
+  }
+
   // Store for keyboard nav
   renderedAgents = allAgents;
   selectedIndex = -1;
 
-  // Render the summary card
-  renderAgentSummary(allAgents);
+  // Render the summary card (only when not filtering)
+  if (!filterQuery) renderAgentSummary(allAgents);
 
   if (allAgents.length === 0) {
     listEl.innerHTML = `
       <div class="empty-state">
         <span class="icon">⚡</span>
-        <span>No agents yet. Describe a task above to launch one.</span>
+        <span>${filterQuery ? 'No matching agents.' : 'No agents yet. Describe a task above to launch one.'}</span>
       </div>
     `;
     return;

@@ -809,6 +809,19 @@ header h1 {
   display: none;
 }
 
+.prompt-hint {
+  font-size: 10px;
+  color: #999;
+  text-align: center;
+  padding: 2px 0 0;
+  letter-spacing: 0.02em;
+  opacity: 0.7;
+}
+
+.prompt-hint.hidden {
+  display: none;
+}
+
 /* ── Filter bar ───────────────────────────────────────── */
 
 .filter-bar {
@@ -3124,6 +3137,7 @@ body.dark .badge { background: rgba(124, 102, 220, 0.2); color: #a594e8; }
 
 body.dark .status-bar { background: rgba(124, 102, 220, 0.1); color: #a594e8; }
 body.dark .status-bar.error { background: rgba(239, 68, 68, 0.1); color: #f87171; }
+body.dark .prompt-hint { color: #666; }
 
 body.dark .intent-item { background: rgba(255, 255, 255, 0.04); border-color: rgba(255, 255, 255, 0.06); }
 body.dark .intent-item:hover { background: rgba(255, 255, 255, 0.07); }
