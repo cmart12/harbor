@@ -17,6 +17,8 @@ declare const intentAPI: {
   setChatModel: (agentId: string, model: string) => Promise<{ error?: string }>;
   quickLaunchAgent: (prompt: string) => Promise<{ agentId: string; sessionId: string } | { error: string }>;
   getAgentHistory: (agentId: string) => Promise<{ events?: any[]; error?: string }>;
+  selectWorkspace: () => Promise<{ selected: boolean; path: string | null }>;
+  onWorkspaceChanged: (callback: (path: string | null) => void) => void;
   [key: string]: any;
 };
 
@@ -361,7 +363,10 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
   const [historyLoaded, setHistoryLoaded] = useState(!initialAgentId);
   const [models, setModels] = useState<{ id: string; name?: string }[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>('');
+  const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
+  const [cwd, setCwd] = useState<string>('');
   const [overlayAgentId, setOverlayAgentId] = useState<string | null>(null);
+  const modelDropdownRef = useRef<HTMLDivElement>(null);
 
   // Track the current streaming assistant message ID
   const currentAssistantId = useRef<string | null>(null);
@@ -384,6 +389,26 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
       else if (modelList.length > 0) setSelectedModel(modelList[0].id);
     })();
   }, []);
+
+  // Load CWD and listen for changes
+  useEffect(() => {
+    intentAPI.getSetting('workspace_root').then((val) => {
+      if (val) setCwd(val);
+    });
+    intentAPI.onWorkspaceChanged((path) => setCwd(path || ''));
+  }, []);
+
+  // Close model dropdown on outside click
+  useEffect(() => {
+    if (!modelDropdownOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (modelDropdownRef.current && !modelDropdownRef.current.contains(e.target as Node)) {
+        setModelDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [modelDropdownOpen]);
 
   // Load conversation history for existing agents (especially CLI sessions)
   useEffect(() => {
@@ -825,11 +850,15 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
     ));
   }, [currentAgentId]);
 
-  const handleModelChange = useCallback(async (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const model = e.target.value;
-    setSelectedModel(model);
-    if (currentAgentId) await intentAPI.setChatModel(currentAgentId, model);
+  const handleModelSwitch = useCallback(async (modelId: string) => {
+    setSelectedModel(modelId);
+    setModelDropdownOpen(false);
+    if (currentAgentId) await intentAPI.setChatModel(currentAgentId, modelId);
   }, [currentAgentId]);
+
+  const handleBrowseCwd = useCallback(async () => {
+    await intentAPI.selectWorkspace();
+  }, []);
 
   const handleAbort = useCallback(async () => {
     if (currentAgentId) await intentAPI.abortAgent(currentAgentId);
@@ -846,24 +875,15 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
                       status === 'completed' ? 'Completed' :
                       status === 'failed' ? 'Failed' : status;
 
+  const selectedModelInfo = models.find(m => m.id === selectedModel);
+  const cwdFolderName = cwd ? cwd.split('/').pop() || cwd : '';
+
   return (
     <div className="chat-container">
       <header className="chat-header">
         <button className="header-icon-btn" onClick={onClose} title="Back (Esc)">←</button>
         <div className="chat-header-info">
           <span className={`chat-status-badge ${status}`}>{statusIcon} {statusLabel}</span>
-          {models.length > 0 && (
-            <select
-              className="chat-model-select"
-              value={selectedModel}
-              onChange={handleModelChange}
-              title="Model"
-            >
-              {models.map(m => (
-                <option key={m.id} value={m.id}>{m.name || m.id}</option>
-              ))}
-            </select>
-          )}
         </div>
         <div className="header-actions">
           {isBusy && (
@@ -878,6 +898,58 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
           )}
         </div>
       </header>
+
+      {/* Status bar: CWD + Model */}
+      <div className="chat-status-bar">
+        <button
+          className={`chat-status-bar-item ${!cwd ? 'warning' : ''}`}
+          onClick={handleBrowseCwd}
+          title={cwd || 'Click to set working directory'}
+        >
+          <span className="chat-status-bar-icon">{cwd ? '📂' : '⚠️'}</span>
+          <span className="chat-status-bar-text">
+            {cwdFolderName || '(no directory)'}
+          </span>
+          <span className="chat-status-bar-chevron">▾</span>
+        </button>
+
+        <span className="chat-status-bar-divider">|</span>
+
+        <div className="chat-status-bar-dropdown" ref={modelDropdownRef}>
+          <button
+            className="chat-status-bar-item"
+            onClick={() => setModelDropdownOpen(!modelDropdownOpen)}
+          >
+            <span className="chat-status-bar-icon">🧠</span>
+            <span className="chat-status-bar-text">
+              {selectedModelInfo?.name || selectedModel || 'Select model'}
+            </span>
+            <span className={`chat-status-bar-chevron ${modelDropdownOpen ? 'open' : ''}`}>▾</span>
+          </button>
+
+          {modelDropdownOpen && (
+            <div className="chat-model-dropdown">
+              {models.map((m) => {
+                const isSelected = m.id === selectedModel;
+                return (
+                  <button
+                    key={m.id}
+                    className={`chat-model-dropdown-item ${isSelected ? 'selected' : ''}`}
+                    onClick={() => handleModelSwitch(m.id)}
+                  >
+                    <span className="chat-model-dropdown-name">
+                      {isSelected ? '✓ ' : ''}{m.name || m.id}
+                    </span>
+                  </button>
+                );
+              })}
+              {models.length === 0 && (
+                <div className="chat-model-dropdown-empty">Loading…</div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
 
       {isLoadingHistory && (
         <div className="chat-loading-history">Loading conversation history...</div>
