@@ -228,6 +228,7 @@ export interface IpcCommands {
   'skill:delete': { args: [skillId: string]; result: boolean };
   'skill:open-folder': { args: [skillId: string]; result: void };
   'skill:create-intent': { args: [skillId: string]; result: Intent | { error: string } };
+  'skill:launch': { args: [skillId: string]; result: Intent | { error: string } };
 }
 
 // ---------------------------------------------------------------------------

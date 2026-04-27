@@ -172,8 +172,8 @@ export function registerSkillHandlers(): void {
     const skill = getSkill(skillId);
     if (!skill) return { error: 'not_found' };
 
-    // Create a new intent with the skill name as description
-    const intent = createIntent({ body: skill.name });
+    // Create a new intent with the skill name as description, linked to the source skill
+    const intent = createIntent({ body: skill.name }, skillId);
 
     // Create the intent folder
     const folder = createIntentFolder(workspace, intent.id, skill.name);
@@ -198,6 +198,43 @@ export function registerSkillHandlers(): void {
     }
 
     scheduleAutoCommit(workspace);
+    return intent;
+  });
+
+  ipcMain.handle('skill:launch', async (_event, skillId: string) => {
+    const workspace = getConfigValue('workspace');
+    if (!workspace || !isInitialized()) return { error: 'no_workspace' };
+
+    const skill = getSkill(skillId);
+    if (!skill) return { error: 'not_found' };
+
+    // Create the intent from the skill (same as skill:create-intent)
+    const intent = createIntent({ body: skill.name }, skillId);
+
+    const folder = createIntentFolder(workspace, intent.id, skill.name);
+    assignIntentFolder(intent.id, folder);
+    intent.folder = folder;
+
+    const skillFolderPath = path.join(workspace, skill.folder);
+    const intentFolderPath = path.join(workspace, folder);
+
+    copyDirContents(skillFolderPath, intentFolderPath);
+
+    const skillMdPath = path.join(intentFolderPath, SKILL_FILE);
+    const canvasMdPath = path.join(intentFolderPath, 'canvas.md');
+    if (fs.existsSync(skillMdPath)) {
+      const content = fs.readFileSync(skillMdPath, 'utf-8');
+      const { body } = parseFrontmatter(content);
+      fs.writeFileSync(canvasMdPath, body, 'utf-8');
+      fs.unlinkSync(skillMdPath);
+    }
+
+    scheduleAutoCommit(workspace);
+
+    // Also launch a session on the new intent
+    const { launchSession } = await import('../session');
+    launchSession(intent.id, workspace);
+
     return intent;
   });
 }

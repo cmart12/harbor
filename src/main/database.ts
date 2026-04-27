@@ -51,6 +51,7 @@ export function initDatabase(dbPath: string, eventLogPath: string): void {
       completed_at TEXT,
       folder TEXT,
       session_id TEXT,
+      source_skill_id TEXT,
       attachments TEXT DEFAULT '[]',
       canvas_content TEXT DEFAULT '',
       status TEXT NOT NULL DEFAULT 'captured',
@@ -131,7 +132,7 @@ function parseAttachments(raw: string | null | undefined): Attachment[] {
   try { return JSON.parse(raw); } catch { return []; }
 }
 
-export function createIntent(input: CreateIntentInput): Intent {
+export function createIntent(input: CreateIntentInput, sourceSkillId?: string): Intent {
   const now = new Date().toISOString();
   // Placeholder title: first line or first ~80 chars of body
   const firstLine = input.body.split('\n')[0].trim();
@@ -149,6 +150,7 @@ export function createIntent(input: CreateIntentInput): Intent {
     completed_at: null,
     folder: null,
     session_id: null,
+    source_skill_id: sourceSkillId ?? null,
     attachments: [],
     status: 'captured',
     created_at: now,
@@ -167,6 +169,7 @@ export function createIntent(input: CreateIntentInput): Intent {
     recurrence: intent.recurrence,
     completed_at: intent.completed_at,
     folder: intent.folder,
+    source_skill_id: intent.source_skill_id,
     attachments: JSON.stringify(intent.attachments),
     status: intent.status,
     created_at: intent.created_at,
@@ -174,16 +177,16 @@ export function createIntent(input: CreateIntentInput): Intent {
   });
 
   db.prepare(
-    `INSERT INTO intents (id, description, body, raw_text, client, due_at, due_at_utc, recurrence, completed_at, folder, session_id, attachments, status, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(intent.id, intent.description, intent.body, intent.raw_text, intent.client, intent.due_at, intent.due_at_utc, intent.recurrence, intent.completed_at, intent.folder, intent.session_id, JSON.stringify(intent.attachments), intent.status, intent.created_at, intent.updated_at);
+    `INSERT INTO intents (id, description, body, raw_text, client, due_at, due_at_utc, recurrence, completed_at, folder, session_id, source_skill_id, attachments, status, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(intent.id, intent.description, intent.body, intent.raw_text, intent.client, intent.due_at, intent.due_at_utc, intent.recurrence, intent.completed_at, intent.folder, intent.session_id, intent.source_skill_id, JSON.stringify(intent.attachments), intent.status, intent.created_at, intent.updated_at);
 
   return intent;
 }
 
 export function getIntent(id: string): Intent | null {
   const row = db.prepare(
-    `SELECT id, description, body, raw_text, client, due_at, due_at_utc, recurrence, completed_at, folder, session_id, attachments, status, created_at, updated_at
+    `SELECT id, description, body, raw_text, client, due_at, due_at_utc, recurrence, completed_at, folder, session_id, source_skill_id, attachments, status, created_at, updated_at
      FROM intents WHERE id = ?`
   ).get(id) as any | undefined;
   if (!row) return null;
@@ -192,7 +195,7 @@ export function getIntent(id: string): Intent | null {
 
 export function listIntents(): Intent[] {
   const rows = db.prepare(
-    `SELECT id, description, body, raw_text, client, due_at, due_at_utc, recurrence, completed_at, folder, session_id, attachments, status, created_at, updated_at
+    `SELECT id, description, body, raw_text, client, due_at, due_at_utc, recurrence, completed_at, folder, session_id, source_skill_id, attachments, status, created_at, updated_at
      FROM intents
      ORDER BY
        CASE WHEN status = 'done' THEN 1 ELSE 0 END ASC,
@@ -322,7 +325,7 @@ export function updateCanvasContent(intentId: string, content: string): void {
 export function searchIntents(query: string): Intent[] {
   const like = `%${query}%`;
   const rows = db.prepare(
-    `SELECT id, description, body, raw_text, client, due_at, due_at_utc, recurrence, completed_at, folder, session_id, attachments, status, created_at, updated_at
+    `SELECT id, description, body, raw_text, client, due_at, due_at_utc, recurrence, completed_at, folder, session_id, source_skill_id, attachments, status, created_at, updated_at
      FROM intents
      WHERE description LIKE ? OR body LIKE ? OR canvas_content LIKE ?
      ORDER BY updated_at DESC`

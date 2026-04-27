@@ -150,6 +150,7 @@ export interface IntentAPI {
   deleteSkill(skillId: string): Promise<IpcCommandResult<'skill:delete'>>;
   openSkillFolder(skillId: string): Promise<IpcCommandResult<'skill:open-folder'>>;
   createIntentFromSkill(skillId: string): Promise<IpcCommandResult<'skill:create-intent'>>;
+  launchSkill(skillId: string): Promise<IpcCommandResult<'skill:launch'>>;
   onSkillsChanged(callback: () => void): void;
 }
 
@@ -362,6 +363,7 @@ const api: IntentAPI = {
   deleteSkill: (skillId) => ipcRenderer.invoke('skill:delete', skillId),
   openSkillFolder: (skillId) => ipcRenderer.invoke('skill:open-folder', skillId),
   createIntentFromSkill: (skillId) => ipcRenderer.invoke('skill:create-intent', skillId),
+  launchSkill: (skillId) => ipcRenderer.invoke('skill:launch', skillId),
   onSkillsChanged: (callback) => {
     ipcRenderer.on('skills:changed', callback);
   },

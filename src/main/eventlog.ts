@@ -10,7 +10,7 @@ export interface LogEvent {
 const ALLOWED_INTENT_FIELDS = new Set([
   'description', 'body', 'raw_text', 'client', 'due_at', 'due_at_utc',
   'recurrence', 'completed_at', 'folder', 'status', 'created_at', 'updated_at',
-  'attachments',
+  'attachments', 'source_skill_id',
 ]);
 
 export function appendEvent(logPath: string, op: string, data: Record<string, any>): void {
@@ -65,12 +65,12 @@ function applyEvent(db: Database.Database, event: LogEvent): void {
       // Backfill body from raw_text/description for old events
       const body = d.body ?? d.raw_text ?? d.description ?? '';
       db.prepare(
-        `INSERT OR REPLACE INTO intents (id, description, body, raw_text, client, due_at, due_at_utc, recurrence, completed_at, folder, attachments, status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT OR REPLACE INTO intents (id, description, body, raw_text, client, due_at, due_at_utc, recurrence, completed_at, folder, source_skill_id, attachments, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(
         d.id, d.description, body, d.raw_text ?? null, d.client ?? null,
         d.due_at ?? null, d.due_at_utc ?? null, d.recurrence ?? null,
-        d.completed_at ?? null, d.folder ?? null, d.attachments ?? '[]',
+        d.completed_at ?? null, d.folder ?? null, d.source_skill_id ?? null, d.attachments ?? '[]',
         d.status ?? 'captured',
         d.created_at, d.updated_at,
       );
@@ -182,12 +182,12 @@ function applyEvent(db: Database.Database, event: LogEvent): void {
         for (const intent of d.intents) {
           const body = intent.body ?? intent.raw_text ?? intent.description ?? '';
           db.prepare(
-            `INSERT OR REPLACE INTO intents (id, description, body, raw_text, client, due_at, due_at_utc, recurrence, completed_at, folder, attachments, status, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            `INSERT OR REPLACE INTO intents (id, description, body, raw_text, client, due_at, due_at_utc, recurrence, completed_at, folder, source_skill_id, attachments, status, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
           ).run(
             intent.id, intent.description, body, intent.raw_text ?? null, intent.client ?? null,
             intent.due_at ?? null, intent.due_at_utc ?? null, intent.recurrence ?? null,
-            intent.completed_at ?? null, intent.folder ?? null, intent.attachments ?? '[]',
+            intent.completed_at ?? null, intent.folder ?? null, intent.source_skill_id ?? null, intent.attachments ?? '[]',
             intent.status,
             intent.created_at, intent.updated_at,
           );

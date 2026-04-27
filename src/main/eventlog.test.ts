@@ -23,6 +23,7 @@ function createSchema(db: Database.Database): void {
       completed_at TEXT,
       folder TEXT,
       session_id TEXT,
+      source_skill_id TEXT,
       attachments TEXT DEFAULT '[]',
       canvas_content TEXT DEFAULT '',
       status TEXT NOT NULL DEFAULT 'captured',

@@ -143,6 +143,7 @@ interface IntentAPI {
   deleteSkill(skillId: string): Promise<boolean>;
   openSkillFolder(skillId: string): Promise<void>;
   createIntentFromSkill(skillId: string): Promise<any>;
+  launchSkill(skillId: string): Promise<any>;
   onSkillsChanged(callback: () => void): void;
 }
 
@@ -1952,6 +1953,7 @@ async function renderSkillsList(): Promise<void> {
           <span>${escapeHtml(skill.description.length > 100 ? skill.description.slice(0, 97) + '...' : skill.description)}</span>
         </div>
       </div>
+      <button class="intent-launch" onclick="event.stopPropagation(); createIntentFromSkill('${skill.id}')" title="Launch as new space">▶</button>
       <button class="intent-launch" onclick="event.stopPropagation(); openSkillFolder('${skill.id}')" title="Open folder">📁</button>
       <button class="intent-delete" onclick="event.stopPropagation(); deleteSkill('${skill.id}')">✕</button>
     </div>
@@ -2023,8 +2025,9 @@ async function openSkillEditor(skillId: string): Promise<void> {
   canvasSaveBtn.classList.add('hidden');
   updateModeToggleUI('rendered');
 
-  // Hide intent-specific controls for skills
-  canvasLaunchBtn.classList.add('hidden');
+  // Show launch button for skills (creates workspace + launches session)
+  canvasLaunchBtn.classList.remove('hidden');
+  canvasLaunchBtn.title = 'Launch as new space';
   canvasAgentsBtn.classList.add('hidden');
   canvasHistoryBtn.classList.add('hidden');
 
@@ -2106,6 +2109,22 @@ async function deleteSkill(skillId: string): Promise<void> {
   render();
 }
 
+async function launchSkillAsIntent(skillId: string): Promise<void> {
+  const result = await intentAPI.launchSkill(skillId);
+  if ('error' in result) {
+    showStatus(`Failed: ${result.error}`, true);
+    return;
+  }
+  showStatus(`✓ Launched skill as new space`);
+  setTimeout(hideStatus, 2000);
+  await refreshIntents();
+  setFilter('open');
+  // Close the skill editor canvas if open in a popout
+  if (isCanvasMode) {
+    window.close();
+  }
+}
+
 // Wire up skills changed event
 intentAPI.onSkillsChanged(() => {
   if (currentFilter === 'skills') {
@@ -2117,6 +2136,7 @@ intentAPI.onSkillsChanged(() => {
 (window as any).createNewSkill = createNewSkill;
 (window as any).openSkillFolder = openSkillFolder;
 (window as any).createIntentFromSkill = createIntentFromSkill;
+(window as any).launchSkillAsIntent = launchSkillAsIntent;
 (window as any).deleteSkill = deleteSkill;
 
 async function renderAgentsList(): Promise<void> {
@@ -3189,6 +3209,7 @@ async function openCanvas(intentId: string, expanded = false): Promise<void> {
 
   // Show intent-specific controls
   canvasLaunchBtn.classList.remove('hidden');
+  canvasLaunchBtn.title = 'Start session';
   canvasAgentsBtn.classList.remove('hidden');
   canvasHistoryBtn.classList.remove('hidden');
 
@@ -3287,8 +3308,13 @@ let canvasClosing = false;
 canvasSaveBtn.addEventListener('click', saveCanvas);
 canvasBack.addEventListener('click', closeCanvas);
 
-canvasLaunchBtn.addEventListener('click', () => {
-  if (canvasIntentId) launchSession(canvasIntentId);
+canvasLaunchBtn.addEventListener('click', async () => {
+  if (canvasSkillId) {
+    // Skill mode: create intent from skill + launch session
+    await launchSkillAsIntent(canvasSkillId);
+  } else if (canvasIntentId) {
+    launchSession(canvasIntentId);
+  }
 });
 
 // ── Canvas History Panel ────────────────────────────────
