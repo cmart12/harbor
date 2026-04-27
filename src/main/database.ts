@@ -108,6 +108,7 @@ export function initDatabase(dbPath: string, eventLogPath: string): void {
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       description TEXT NOT NULL DEFAULT '',
+      emoji TEXT NOT NULL DEFAULT '🧩',
       folder_path TEXT NOT NULL,
       file_path TEXT NOT NULL,
       created_at TEXT NOT NULL,
@@ -456,15 +457,16 @@ export function deleteAgentSession(id: string): void {
 
 export function upsertSkill(skill: Skill): void {
   db.prepare(
-    `INSERT INTO skills (id, name, description, folder_path, file_path, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO skills (id, name, description, emoji, folder_path, file_path, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        name = excluded.name,
        description = excluded.description,
+       emoji = excluded.emoji,
        folder_path = excluded.folder_path,
        file_path = excluded.file_path,
        updated_at = excluded.updated_at`
-  ).run(skill.id, skill.name, skill.description, skill.folder, skill.filePath, skill.created_at, skill.updated_at);
+  ).run(skill.id, skill.name, skill.description, skill.emoji, skill.folder, skill.filePath, skill.created_at, skill.updated_at);
 }
 
 export function removeSkill(id: string): void {
@@ -473,13 +475,14 @@ export function removeSkill(id: string): void {
 
 export function listSkills(): Skill[] {
   return (db.prepare(
-    `SELECT id, name, description, folder_path, file_path, created_at, updated_at
+    `SELECT id, name, description, emoji, folder_path, file_path, created_at, updated_at
      FROM skills ORDER BY name ASC`
-  ).all() as Array<{ id: string; name: string; description: string; folder_path: string; file_path: string; created_at: string; updated_at: string }>)
+  ).all() as Array<{ id: string; name: string; description: string; emoji: string; folder_path: string; file_path: string; created_at: string; updated_at: string }>)
     .map(row => ({
       id: row.id,
       name: row.name,
       description: row.description,
+      emoji: row.emoji,
       folder: row.folder_path,
       filePath: row.file_path,
       created_at: row.created_at,
@@ -489,14 +492,15 @@ export function listSkills(): Skill[] {
 
 export function getSkill(id: string): Skill | null {
   const row = db.prepare(
-    `SELECT id, name, description, folder_path, file_path, created_at, updated_at
+    `SELECT id, name, description, emoji, folder_path, file_path, created_at, updated_at
      FROM skills WHERE id = ?`
-  ).get(id) as { id: string; name: string; description: string; folder_path: string; file_path: string; created_at: string; updated_at: string } | undefined;
+  ).get(id) as { id: string; name: string; description: string; emoji: string; folder_path: string; file_path: string; created_at: string; updated_at: string } | undefined;
   if (!row) return null;
   return {
     id: row.id,
     name: row.name,
     description: row.description,
+    emoji: row.emoji,
     folder: row.folder_path,
     filePath: row.file_path,
     created_at: row.created_at,

@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { parseFrontmatter } from './frontmatter';
 import { upsertSkill, removeSkill, listSkills } from './database';
+import { pickEmoji } from './emoji-picker';
 import type { Skill, SkillFrontmatter } from '../shared/types';
 import { BrowserWindow } from 'electron';
 
@@ -49,10 +50,17 @@ function parseSkillFolder(wsRoot: string, folderName: string): Skill | null {
 
   const { frontmatter } = parseFrontmatter<SkillFrontmatter>(content);
 
+  const name = frontmatter.name || folderName;
+  const description = frontmatter.description || '';
+  const emoji = typeof frontmatter.emoji === 'string' && frontmatter.emoji
+    ? frontmatter.emoji
+    : pickEmoji(name, description);
+
   return {
     id: folderName,
-    name: frontmatter.name || folderName,
-    description: frontmatter.description || '',
+    name,
+    description,
+    emoji,
     folder: path.join(SKILLS_DIR, folderName),
     filePath,
     created_at: stat.birthtime.toISOString(),

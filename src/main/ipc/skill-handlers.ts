@@ -5,6 +5,7 @@ import { isInitialized, listSkills, getSkill, upsertSkill, removeSkill, createIn
 import { getConfigValue } from '../config';
 import { parseFrontmatter, serializeFrontmatter } from '../frontmatter';
 import { getSkillsDir, syncAllSkills } from '../skill-watcher';
+import { pickEmoji } from '../emoji-picker';
 import { createIntentFolder, scheduleAutoCommit } from '../workspace';
 import type { SkillFrontmatter, Skill } from '../../shared/types';
 
@@ -82,6 +83,7 @@ export function registerSkillHandlers(): void {
       id: slug,
       name,
       description: '',
+      emoji: pickEmoji(name, ''),
       folder: path.join('.agents/skills', slug),
       filePath,
       created_at: now,

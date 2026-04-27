@@ -102,6 +102,8 @@ export interface Skill {
   id: string;
   name: string;
   description: string;
+  /** Auto-generated or user-specified emoji for visual distinction */
+  emoji: string;
   /** Relative folder path from workspace root (e.g. ".agents/skills/pdf-processing") */
   folder: string;
   /** Absolute path to the SKILL.md file */

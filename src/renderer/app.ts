@@ -2009,7 +2009,7 @@ async function renderSkillsList(filterQuery?: string): Promise<void> {
 
   listEl.innerHTML = skills.map((skill, i) => `
     <div class="intent-item skill-card" data-skill-id="${skill.id}" tabindex="0" data-skill-index="${i}">
-      <div class="skill-icon">🧩</div>
+      <div class="skill-icon">${skill.emoji || '🧩'}</div>
       <div class="intent-content">
         <div class="intent-desc">${escapeHtml(skill.name)}</div>
         <div class="intent-meta">

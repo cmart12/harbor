@@ -84,6 +84,15 @@ describe('skill-watcher', () => {
       expect(skills).toHaveLength(2);
       const names = skills.map(s => s.name).sort();
       expect(names).toEqual(['Code Review', 'PDF Processing']);
+
+      // Each skill should have an auto-generated emoji
+      for (const skill of skills) {
+        expect(skill.emoji).toBeDefined();
+        expect(skill.emoji.length).toBeGreaterThan(0);
+      }
+      // PDF skill should get the document emoji
+      const pdf = skills.find(s => s.id === 'pdf-processing')!;
+      expect(pdf.emoji).toBe('📄');
     });
 
     it('uses folder name as fallback when no name in frontmatter', () => {
@@ -147,6 +156,24 @@ describe('skill-watcher', () => {
       fs.writeFileSync(filePath, '---\nname: Updated Name\n---\nBody', 'utf-8');
       syncAllSkills(wsRoot);
       expect(listSkills()[0].name).toBe('Updated Name');
+    });
+
+    it('uses emoji from frontmatter when provided', () => {
+      createSkillOnDisk('custom-emoji', 'name: My Skill\ndescription: Does things\nemoji: "🎸"');
+      syncAllSkills(wsRoot);
+
+      const skills = listSkills();
+      expect(skills).toHaveLength(1);
+      expect(skills[0].emoji).toBe('🎸');
+    });
+
+    it('auto-generates emoji when not specified in frontmatter', () => {
+      createSkillOnDisk('deploy-helper', 'name: Deploy Helper\ndescription: Automate deployments');
+      syncAllSkills(wsRoot);
+
+      const skills = listSkills();
+      expect(skills).toHaveLength(1);
+      expect(skills[0].emoji).toBe('🚀');
     });
   });
 });

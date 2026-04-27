@@ -47,6 +47,7 @@ function makeSkill(overrides: Partial<Skill> = {}): Skill {
     id: 'test-skill',
     name: 'Test Skill',
     description: 'A test skill',
+    emoji: '🧪',
     folder: '.agents/skills/test-skill',
     filePath: '/ws/.agents/skills/test-skill/SKILL.md',
     created_at: now,
