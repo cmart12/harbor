@@ -284,6 +284,18 @@ describe('session', () => {
       expect(version).toBe('1.0.36');
     });
 
+    it('uses process.execPath for .js CLI paths', () => {
+      mockGetConfigValue.mockReturnValue('/project/node_modules/@github/copilot/dist/index.js');
+      mockExistsSync.mockReturnValue(true);
+      mockExecSync.mockReturnValue(Buffer.from('GitHub Copilot CLI 1.0.36.\n'));
+
+      getCopilotCliVersion();
+      expect(mockExecSync).toHaveBeenCalledWith(
+        expect.stringContaining(process.execPath),
+        expect.any(Object),
+      );
+    });
+
     it('returns null when CLI is not found', () => {
       mockGetConfigValue.mockReturnValue(null);
       mockExistsSync.mockReturnValue(false);
