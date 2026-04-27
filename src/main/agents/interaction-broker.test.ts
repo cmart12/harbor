@@ -296,7 +296,11 @@ describe('InteractionBroker', () => {
 
       handler({ kind: 'file_edit', toolCallId: 'req-1' }, { sessionId: 'session-1' });
 
-      expect(notifier.showApprovalNotification).toHaveBeenCalledWith('agent-1', 'file_edit');
+      expect(notifier.showApprovalNotification).toHaveBeenCalledWith(expect.objectContaining({
+        agentId: 'agent-1',
+        requestId: 'req-1',
+        permissionKind: 'file_edit',
+      }));
       expect(notifier.notifyRenderer).toHaveBeenCalledWith('agent:approval-needed', expect.objectContaining({
         agentId: 'agent-1',
         requestId: 'req-1',

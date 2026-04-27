@@ -70,7 +70,15 @@ export class InteractionBroker {
         path,
       });
 
-      this.notifier.showApprovalNotification(record.agentId, request.kind || 'permission');
+      this.notifier.showApprovalNotification({
+        agentId: record.agentId,
+        requestId,
+        permissionKind: request.kind || 'permission',
+        intention,
+        path,
+        onApprove: () => this.approveAgent(record.agentId, requestId, true),
+        onDeny: () => this.approveAgent(record.agentId, requestId, false),
+      });
 
       return new Promise<{ kind: 'approve-once' } | { kind: 'reject' }>((resolve) => {
         this.approvalCallbacks.set(requestId, (approved: boolean) => {
@@ -112,7 +120,11 @@ export class InteractionBroker {
         allowFreeform: request.allowFreeform,
       });
 
-      this.notifier.showApprovalNotification(record.agentId, 'question');
+      this.notifier.showApprovalNotification({
+        agentId: record.agentId,
+        requestId,
+        permissionKind: 'question',
+      });
 
       return new Promise<UserInputResponse>((resolve) => {
         this.userInputCallbacks.set(requestId, resolve);
@@ -137,7 +149,11 @@ export class InteractionBroker {
         elicitationSource: context.elicitationSource,
       });
 
-      this.notifier.showApprovalNotification(record.agentId, 'input needed');
+      this.notifier.showApprovalNotification({
+        agentId: record.agentId,
+        requestId,
+        permissionKind: 'input needed',
+      });
 
       return new Promise<ElicitationResult>((resolve) => {
         this.elicitationCallbacks.set(requestId, resolve);

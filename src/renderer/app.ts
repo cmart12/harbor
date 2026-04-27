@@ -2410,7 +2410,7 @@ form.addEventListener('submit', async (e) => {
     descInput.style.height = 'auto';
     descInput.focus();
     hideStatus();
-    openAgentChat(result.agentId, text, 'running');
+    renderAgentsList();
     return;
   }
 
