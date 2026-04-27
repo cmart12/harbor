@@ -2,7 +2,7 @@ import { v4 as uuid } from 'uuid';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as crypto from 'crypto';
-import { getCopilotClient } from '../ai';
+import { getCopilotClient, getSandboxConfigDir } from '../ai';
 import { type AgentPersona } from '../config';
 import { getAllMcpServers } from '../mcp';
 import { AgentRegistry } from './agent-registry';
@@ -12,6 +12,7 @@ import { AgentPersistence } from './agent-persistence';
 import { InteractionBroker } from './interaction-broker';
 import { buildCliToolsPrompt } from './sdk-runner';
 import { getCustomTools } from '../tools';
+import { IS_WINDOWS, createSandboxPreToolHook, SANDBOX_SYSTEM_PROMPT } from './sandbox-policies';
 
 /** Shared dependencies injected from agent-service at init time. */
 let registry: AgentRegistry;
@@ -68,6 +69,9 @@ export async function launchCommentAgent(
     const cliToolsPrompt = buildCliToolsPrompt();
     const findRecord = (sid: string) => registry.findBySessionId(sid);
 
+    const isSandboxed = persona.sandboxed === true && IS_WINDOWS;
+    const sandboxConfigDir = isSandboxed ? getSandboxConfigDir() : undefined;
+
     const systemPrompt = `${persona.instructions}
 
 You are responding to a comment on a canvas document. The user wrote:
@@ -80,15 +84,21 @@ If you make changes to the document, clearly describe what you changed.${cliTool
 
     const session = await client.createSession({
       workingDirectory: workingDir,
+      ...(sandboxConfigDir ? { configDir: sandboxConfigDir } : {}),
       mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
       tools: getCustomTools(),
       ...(persona.model ? { model: persona.model } : {}),
-      onPermissionRequest: broker.createPermissionHandler(findRecord),
+      ...(isSandboxed ? { hooks: { onPreToolUse: createSandboxPreToolHook() } } : {}),
+      onPermissionRequest: isSandboxed
+        ? broker.createSandboxedPermissionHandler(findRecord)
+        : broker.createPermissionHandler(findRecord),
       onUserInputRequest: broker.createUserInputHandler(findRecord),
       onElicitationRequest: broker.createElicitationHandler(findRecord),
       systemMessage: {
         mode: 'append',
-        content: `\n${systemPrompt}`,
+        content: isSandboxed
+          ? `\n${systemPrompt}${SANDBOX_SYSTEM_PROMPT}`
+          : `\n${systemPrompt}`,
       },
     });
 

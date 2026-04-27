@@ -10,6 +10,7 @@ export interface AgentPersona {
   instructions: string;
   model: string;        // model ID
   runLocation: 'local' | 'cloud';  // where to execute the agent
+  sandboxed?: boolean;  // Windows-only; ignored on other platforms
 }
 
 export interface CliToolDefinition {

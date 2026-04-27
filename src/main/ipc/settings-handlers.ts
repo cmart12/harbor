@@ -73,7 +73,7 @@ export function registerSettingsHandlers(): void {
       if (seen.has(handle)) continue;
       seen.add(handle);
 
-      validated.push({ id, handle, instructions, model, runLocation });
+      validated.push({ id, handle, instructions, model, runLocation, ...(raw.sandboxed === true ? { sandboxed: true } : {}) });
     }
 
     setConfigValue('personas', validated);

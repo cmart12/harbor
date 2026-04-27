@@ -27,6 +27,7 @@ interface AgentPersona {
   instructions: string;
   model: string;
   runLocation: 'local' | 'cloud';
+  sandboxed?: boolean;
 }
 
 interface CliToolDefinition {
@@ -147,6 +148,8 @@ interface IntentAPI {
   createIntentFromSkill(skillId: string): Promise<any>;
   launchSkill(skillId: string): Promise<any>;
   onSkillsChanged(callback: () => void): void;
+  // ── Platform ─────────────────────────────────────────────
+  getPlatform(): string;
 }
 
 interface Attachment {
@@ -562,9 +565,13 @@ function createPersonaCard(persona: AgentPersona): HTMLElement {
   const locationIcon = persona.runLocation === 'cloud' ? '☁️' : '💻';
   const locationLabel = persona.runLocation === 'cloud' ? 'Cloud' : 'Local';
   meta.textContent = (modelName ? (modelName.name || modelName.id) : (persona.model || 'Default model')) + ` · ${locationIcon} ${locationLabel}`;
+  if (persona.sandboxed) {
+    meta.textContent += ' · 🔒 Sandboxed';
+  }
   if (persona.model && !modelName) {
     meta.classList.add('unavailable');
     meta.textContent = persona.model + ` (unavailable) · ${locationIcon} ${locationLabel}`;
+    if (persona.sandboxed) meta.textContent += ' · 🔒 Sandboxed';
   }
 
   info.appendChild(handle);
@@ -677,6 +684,35 @@ function showPersonaForm(existing?: AgentPersona): void {
   locationRow.appendChild(locationLabel);
   locationRow.appendChild(locationSelect);
 
+  // Sandbox checkbox (Windows-only, local-only)
+  const isWindows = intentAPI.getPlatform() === 'win32';
+  const sandboxRow = document.createElement('div');
+  sandboxRow.className = 'persona-form-row persona-sandbox-row';
+  if (!isWindows || (existing?.runLocation === 'cloud')) {
+    sandboxRow.style.display = 'none';
+  }
+  const sandboxLabel = document.createElement('label');
+  sandboxLabel.className = 'persona-form-checkbox-label';
+  const sandboxCheck = document.createElement('input');
+  sandboxCheck.type = 'checkbox';
+  sandboxCheck.checked = existing?.sandboxed === true;
+  sandboxLabel.appendChild(sandboxCheck);
+  sandboxLabel.appendChild(document.createTextNode(' 🔒 Run in sandbox (restrict writes & dangerous commands)'));
+  if (!isWindows) {
+    sandboxLabel.title = 'Sandbox is only available on Windows';
+  }
+  sandboxRow.appendChild(sandboxLabel);
+
+  // Show/hide sandbox when location changes
+  locationSelect.addEventListener('change', () => {
+    if (locationSelect.value === 'cloud' || !isWindows) {
+      sandboxRow.style.display = 'none';
+      sandboxCheck.checked = false;
+    } else {
+      sandboxRow.style.display = '';
+    }
+  });
+
   // Error display
   const errorEl = document.createElement('div');
   errorEl.className = 'persona-form-error hidden';
@@ -693,6 +729,7 @@ function showPersonaForm(existing?: AgentPersona): void {
     const instructions = instrInput.value.trim();
     const model = modelSelect.value;
     const runLocation = locationSelect.value as 'local' | 'cloud';
+    const sandboxed = sandboxCheck.checked && runLocation === 'local';
 
     // Validate
     if (!HANDLE_RE.test(rawHandle)) {
@@ -716,7 +753,7 @@ function showPersonaForm(existing?: AgentPersona): void {
     if (existing) {
       // Update existing
       personas = personas.map(p => p.id === existing.id
-        ? { ...p, handle: rawHandle, instructions, model, runLocation }
+        ? { ...p, handle: rawHandle, instructions, model, runLocation, ...(sandboxed ? { sandboxed: true } : { sandboxed: undefined }) }
         : p
       );
     } else {
@@ -727,6 +764,7 @@ function showPersonaForm(existing?: AgentPersona): void {
         instructions,
         model,
         runLocation,
+        ...(sandboxed ? { sandboxed: true } : {}),
       });
     }
 
@@ -746,6 +784,7 @@ function showPersonaForm(existing?: AgentPersona): void {
   form.appendChild(instrRow);
   form.appendChild(modelRow);
   form.appendChild(locationRow);
+  form.appendChild(sandboxRow);
   form.appendChild(errorEl);
   form.appendChild(btnRow);
 

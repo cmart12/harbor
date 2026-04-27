@@ -332,4 +332,50 @@ describe('InteractionBroker', () => {
       expect(result).toEqual({ action: 'cancel' });
     });
   });
+
+  describe('createSandboxedPermissionHandler', () => {
+    it('auto-approves read requests', async () => {
+      const record = makeRecord();
+      const handler = broker.createSandboxedPermissionHandler(
+        (sid) => sid === 'session-1' ? record : undefined,
+      );
+
+      const result = await handler(
+        { kind: 'read', toolCallId: 'req-r1' },
+        { sessionId: 'session-1' },
+      );
+      expect(result).toEqual({ kind: 'approve-once' });
+    });
+
+    it('auto-denies write requests', async () => {
+      const record = makeRecord();
+      const handler = broker.createSandboxedPermissionHandler(
+        (sid) => sid === 'session-1' ? record : undefined,
+      );
+
+      const result = await handler(
+        { kind: 'write', toolCallId: 'req-w1' },
+        { sessionId: 'session-1' },
+      );
+      expect(result).toEqual({ kind: 'reject' });
+    });
+
+    it('falls through to normal handler for other kinds', async () => {
+      const record = makeRecord();
+      const handler = broker.createSandboxedPermissionHandler(
+        (sid) => sid === 'session-1' ? record : undefined,
+      );
+
+      // shell/mcp/url etc. should trigger the normal interactive flow
+      const promise = handler(
+        { kind: 'shell', toolCallId: 'req-s1' },
+        { sessionId: 'session-1' },
+      );
+
+      // Approve via the normal flow
+      broker.approveAgent('agent-1', 'req-s1', true);
+      const result = await promise;
+      expect(result).toEqual({ kind: 'approve-once' });
+    });
+  });
 });

@@ -500,6 +500,28 @@ describe('IPC handlers', () => {
       const result = invoke('personas:save', 'invalid');
       expect(result).toEqual({ error: 'invalid payload' });
     });
+
+    it('preserves sandboxed flag when true', () => {
+      const personas = [
+        { id: 'p1', handle: 'safe-bot', instructions: 'Read only', model: '', runLocation: 'local', sandboxed: true },
+      ];
+      const result = invoke('personas:save', personas);
+      expect(result).toEqual({ ok: true });
+      expect(setConfigValue).toHaveBeenCalledWith('personas', [
+        { id: 'p1', handle: 'safe-bot', instructions: 'Read only', model: '', runLocation: 'local', sandboxed: true },
+      ]);
+    });
+
+    it('omits sandboxed flag when false or missing', () => {
+      const personas = [
+        { id: 'p1', handle: 'normal-bot', instructions: 'Do things', model: '', runLocation: 'local', sandboxed: false },
+      ];
+      const result = invoke('personas:save', personas);
+      expect(result).toEqual({ ok: true });
+      expect(setConfigValue).toHaveBeenCalledWith('personas', [
+        { id: 'p1', handle: 'normal-bot', instructions: 'Do things', model: '', runLocation: 'local' },
+      ]);
+    });
   });
 
   // ── CLI tools ───────────────────────────────────────────────────

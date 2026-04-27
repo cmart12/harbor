@@ -154,6 +154,9 @@ export interface IntentAPI {
   createIntentFromSkill(skillId: string): Promise<IpcCommandResult<'skill:create-intent'>>;
   launchSkill(skillId: string): Promise<IpcCommandResult<'skill:launch'>>;
   onSkillsChanged(callback: () => void): void;
+
+  // ── Platform ─────────────────────────────────────────────
+  getPlatform(): string;
 }
 
 // ---------------------------------------------------------------------------
@@ -371,6 +374,9 @@ const api: IntentAPI = {
   onSkillsChanged: (callback) => {
     ipcRenderer.on('skills:changed', callback);
   },
+
+  // ── Platform ─────────────────────────────────────────────
+  getPlatform: () => process.platform,
 };
 
 contextBridge.exposeInMainWorld('intentAPI', api);

@@ -1,7 +1,26 @@
+import * as path from 'path';
+import * as fs from 'fs';
 import { CopilotClient, CopilotSession } from '@github/copilot-sdk';
 import { getConfigValue } from './config';
 import { resolveCopilotCliPath } from './session';
 import { RecurrenceResult, RecallMatch, Intent } from '../shared/types';
+
+/**
+ * Returns the path to a sandbox-specific config directory that enables
+ * runtime-level sandboxing (mxc AppContainer isolation).
+ * Windows-only — returns undefined on other platforms.
+ */
+export function getSandboxConfigDir(): string | undefined {
+  if (process.platform !== 'win32') return undefined;
+  const { app } = require('electron');
+  const dir = path.join(app.getPath('userData'), 'sandbox-config');
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  const cfg = path.join(dir, 'config.json');
+  if (!fs.existsSync(cfg)) {
+    fs.writeFileSync(cfg, JSON.stringify({ sandbox: { enabled: true } }, null, 2));
+  }
+  return dir;
+}
 
 export interface ParsedIntent {
   description: string;
