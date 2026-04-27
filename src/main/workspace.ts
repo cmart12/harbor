@@ -136,6 +136,43 @@ export function initIntentCanvas(workspaceRoot: string, intentId: string, descri
   return folder;
 }
 
+const ARCHIVE_DIR = 'archive';
+
+/** Move an intent folder into .intent/archive/ for safekeeping. */
+export function archiveIntentFolder(workspaceRoot: string, folder: string): void {
+  if (!folder) return;
+  const src = path.join(workspaceRoot, folder);
+  if (!fs.existsSync(src)) return;
+
+  const archiveDir = path.join(workspaceRoot, INTENT_DIR, ARCHIVE_DIR);
+  if (!fs.existsSync(archiveDir)) {
+    fs.mkdirSync(archiveDir, { recursive: true });
+  }
+
+  const dest = path.join(archiveDir, folder);
+  // If destination already exists (e.g. re-completing), remove it first
+  if (fs.existsSync(dest)) {
+    fs.rmSync(dest, { recursive: true, force: true });
+  }
+
+  fs.renameSync(src, dest);
+}
+
+/** Remove an intent folder from disk (workspace root and/or archive). */
+export function deleteIntentFolder(workspaceRoot: string, folder: string): void {
+  if (!folder) return;
+
+  const livePath = path.join(workspaceRoot, folder);
+  if (fs.existsSync(livePath)) {
+    fs.rmSync(livePath, { recursive: true, force: true });
+  }
+
+  const archivePath = path.join(workspaceRoot, INTENT_DIR, ARCHIVE_DIR, folder);
+  if (fs.existsSync(archivePath)) {
+    fs.rmSync(archivePath, { recursive: true, force: true });
+  }
+}
+
 // ── Auto-commit ─────────────────────────────────────────
 
 let commitTimer: ReturnType<typeof setTimeout> | null = null;
@@ -210,6 +247,19 @@ export function scheduleAutoCommit(workspaceRoot: string): void {
     commitTimer = null;
     doCommit(workspaceRoot);
   }, COMMIT_DEBOUNCE_MS);
+}
+
+/**
+ * Immediately commit all pending changes (non-debounced).
+ * Cancels any pending debounced commit. Use before archiving a folder
+ * so that all canvas/attachment changes are captured in git history first.
+ */
+export async function commitNow(workspaceRoot: string): Promise<void> {
+  if (commitTimer) {
+    clearTimeout(commitTimer);
+    commitTimer = null;
+  }
+  await doCommit(workspaceRoot);
 }
 
 // ── Git history ─────────────────────────────────────────

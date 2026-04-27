@@ -540,10 +540,13 @@ async function loadPersonas(): Promise<void> {
 }
 
 function renderPersonas(): void {
+  // Preserve any open form so async re-renders don't destroy it
+  const openForm = personasList.querySelector('.persona-form');
   personasList.innerHTML = '';
   for (const persona of personas) {
     personasList.appendChild(createPersonaCard(persona));
   }
+  if (openForm) personasList.appendChild(openForm);
 }
 
 function createPersonaCard(persona: AgentPersona): HTMLElement {
@@ -769,6 +772,7 @@ function showPersonaForm(existing?: AgentPersona): void {
     personasList.appendChild(form);
   }
 
+  form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   handleInput.focus();
 }
 
@@ -2274,9 +2278,10 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
       ? '🖥'
       : agent.source === 'cloud'
         ? '☁️'
-        : agent.status === 'running' ? '⚡' :
-                       agent.status === 'waiting-approval' ? '⏳' :
-                       agent.status === 'completed' ? '✓' : '✗';
+        : agent.status === 'running' ? '<svg class="agent-icon-svg agent-icon-running" width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="8" stroke="#a855f7" stroke-width="2" stroke-dasharray="12 38" stroke-linecap="round"><animateTransform attributeName="transform" type="rotate" from="0 9 9" to="360 9 9" dur="0.8s" repeatCount="indefinite"/></circle><circle cx="9" cy="9" r="4" fill="#a855f7" opacity="0.3"/></svg>' :
+                       agent.status === 'waiting-approval' ? '<svg class="agent-icon-svg" width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="8" fill="#f59e0b" opacity="0.15" stroke="#f59e0b" stroke-width="1.5"/><circle cx="9" cy="9" r="3.5" stroke="#f59e0b" stroke-width="1.5" fill="none"/><path d="M9 7V9.5L10.5 10.5" stroke="#f59e0b" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>' :
+                       agent.status === 'completed' ? '<svg class="agent-icon-svg" width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="9" fill="#22c55e"/><path d="M5.5 9.5L7.8 11.8L12.5 6.5" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' :
+                       '<svg class="agent-icon-svg" width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="9" fill="#ef4444"/><path d="M6 6L12 12M12 6L6 12" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>';
 
     const intentLabel = agent.source === 'cli'
       ? 'CLI Session'
@@ -2294,8 +2299,8 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
     const steps = agentSteps.get(agent.agentId) || [];
     const visible = steps.slice(-6);
     const stepsHtml = visible.length > 0 ? visible.map((step, i) => {
-      const icon = step.status === 'done' ? '<span class="step-icon step-done">✓</span>' :
-                   step.status === 'failed' ? '<span class="step-icon step-failed">✗</span>' :
+      const icon = step.status === 'done' ? '<span class="step-icon step-done"><svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 5.5L4.2 7.5L8 3" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>' :
+                   step.status === 'failed' ? '<span class="step-icon step-failed"><svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2.5 2.5L7.5 7.5M7.5 2.5L2.5 7.5" stroke="white" stroke-width="1.8" stroke-linecap="round"/></svg></span>' :
                    '<span class="step-icon step-running"></span>';
       const connector = i < visible.length - 1 ? '<div class="step-connector"></div>' : '';
       return `<div class="step-item">${icon}<span class="step-label">${escapeHtml(step.label)}</span></div>${connector}`;
@@ -2340,7 +2345,9 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
         </div>
         <div class="agent-card-title">${escapeHtml(title)}</div>
         ${stepsHtml ? `<div class="agent-card-steps">${stepsHtml}</div>` : ''}
-        ${agent.status === 'completed' || agent.status === 'failed' ? `<div class="agent-card-summary">${escapeHtml(agent.summary)}</div>` : ''}
+        ${agent.status === 'completed' ? `<div class="agent-card-status-badge status-completed"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="6" fill="#22c55e"/><path d="M3.5 6.2L5.2 7.9L8.5 4.3" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg> Completed</div>` :
+          agent.status === 'failed' ? `<div class="agent-card-status-badge status-failed"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="6" fill="#ef4444"/><path d="M4 4L8 8M8 4L4 8" stroke="white" stroke-width="1.5" stroke-linecap="round"/></svg> Failed</div>` : ''}
+        ${(agent.status === 'completed' || agent.status === 'failed') && agent.summary ? `<div class="agent-card-summary">${escapeHtml(agent.summary)}</div>` : ''}
         ${approvalHtml}
       </div>
     `;
@@ -3108,6 +3115,7 @@ async function toggleStatus(id: string): Promise<void> {
 
 // @ts-ignore - called from onclick in HTML
 async function deleteIntent(id: string): Promise<void> {
+  if (!confirm('Delete this space? Its folder and files will be permanently removed.')) return;
   await intentAPI.delete(id);
   await loadIntents();
 }

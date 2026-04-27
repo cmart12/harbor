@@ -115,6 +115,9 @@ vi.mock('./workspace', () => ({
   readCanvas: vi.fn(() => 'canvas content'),
   writeCanvas: vi.fn(),
   scheduleAutoCommit: vi.fn(),
+  commitNow: vi.fn(async () => {}),
+  archiveIntentFolder: vi.fn(),
+  deleteIntentFolder: vi.fn(),
   saveAttachment: vi.fn(() => ({ path: 'attachments/test.png' })),
   resolveAttachmentPath: vi.fn(() => '/abs/path/test.png'),
   getMimeType: vi.fn(() => 'image/png'),
@@ -202,7 +205,7 @@ vi.mock('uuid', () => ({
 import { registerIpcHandlers } from './ipc';
 import { isInitialized, createIntent, listIntents, updateIntent, deleteIntent, getIntent, getSkill, searchIntents, logIntentEvent, listIntentEvents, assignIntentFolder, updateCanvasContent } from './database';
 import { classifyInput, setAIModel, evaluateRecurrence } from './ai';
-import { initIntentCanvas, readCanvas, writeCanvas, scheduleAutoCommit } from './workspace';
+import { initIntentCanvas, readCanvas, writeCanvas, scheduleAutoCommit, commitNow, archiveIntentFolder, deleteIntentFolder } from './workspace';
 import { getConfigValue, setConfigValue } from './config';
 import { listDiscoveredMcpServers } from './mcp';
 import { validateMcpServers, validateCliTools } from './validators';
@@ -263,8 +266,8 @@ describe('IPC handlers', () => {
   });
 
   describe('intent:update', () => {
-    it('calls updateIntent with updates', () => {
-      const result = invoke('intent:update', 'intent-1', { description: 'updated' });
+    it('calls updateIntent with updates', async () => {
+      const result = await invoke('intent:update', 'intent-1', { description: 'updated' });
       expect(updateIntent).toHaveBeenCalledWith('intent-1', { description: 'updated' });
       expect(result).toMatchObject({ id: 'intent-1', description: 'updated' });
     });
@@ -284,7 +287,7 @@ describe('IPC handlers', () => {
         updated_at: '2024-01-02',
       } as any);
 
-      const result = invoke('intent:update', 'intent-1', { status: 'done' });
+      const result = await invoke('intent:update', 'intent-1', { status: 'done' });
       expect(result).toMatchObject({ id: 'intent-1', status: 'done' });
       expect(logIntentEvent).toHaveBeenCalledWith(
         'intent-1',
@@ -303,6 +306,7 @@ describe('IPC handlers', () => {
       const result = invoke('intent:delete', 'intent-1');
       expect(deleteIntent).toHaveBeenCalledWith('intent-1');
       expect(result).toBe(true);
+      expect(deleteIntentFolder).toHaveBeenCalledWith('/mock/workspace', 'test-folder');
       expect(scheduleAutoCommit).toHaveBeenCalled();
     });
   });

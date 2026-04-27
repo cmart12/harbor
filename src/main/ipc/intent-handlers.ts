@@ -3,7 +3,7 @@ import { isInitialized, createIntent, listIntents, updateIntent, deleteIntent, g
 import { parseIntentWithAI, resolveDateWithAI, classifyInput } from '../ai';
 import { CreateIntentInput, Intent } from '../../shared/types';
 import { getConfigValue } from '../config';
-import { initIntentCanvas, scheduleAutoCommit } from '../workspace';
+import { initIntentCanvas, scheduleAutoCommit, commitNow, archiveIntentFolder, deleteIntentFolder } from '../workspace';
 import { handleRecurrence, dismissRecurrence, cancelPendingRecurrence } from '../services/recurrence';
 import { processIntentInBackground } from '../services/intent-processing';
 
@@ -30,7 +30,7 @@ export function registerIntentHandlers(): void {
     return listIntents();
   });
 
-  ipcMain.handle('intent:update', (_event, id: string, updates: Partial<Pick<Intent, 'description' | 'body' | 'client' | 'due_at' | 'due_at_utc' | 'status' | 'attachments'>>) => {
+  ipcMain.handle('intent:update', async (_event, id: string, updates: Partial<Pick<Intent, 'description' | 'body' | 'client' | 'due_at' | 'due_at_utc' | 'status' | 'attachments'>>) => {
     // Detect transition to 'done' for recurrence evaluation
     if (updates.status === 'done') {
       const current = getIntent(id);
@@ -48,6 +48,14 @@ export function registerIntentHandlers(): void {
           // If this is a dated intent, evaluate recurrence
           if (updated.due_at_utc || updated.due_at) {
             handleRecurrence(updated, updated.updated_at);
+          }
+
+          // Commit all pending changes, then archive the folder
+          const workspace = getConfigValue('workspace');
+          if (workspace && updated.folder) {
+            await commitNow(workspace);
+            archiveIntentFolder(workspace, updated.folder);
+            scheduleAutoCommit(workspace);
           }
         }
         return updated;
@@ -70,10 +78,16 @@ export function registerIntentHandlers(): void {
   });
 
   ipcMain.handle('intent:delete', (_event, id: string) => {
+    const current = getIntent(id);
     cancelPendingRecurrence(id);
     const result = deleteIntent(id);
     const workspace = getConfigValue('workspace');
-    if (workspace) scheduleAutoCommit(workspace);
+    if (workspace) {
+      if (current?.folder) {
+        deleteIntentFolder(workspace, current.folder);
+      }
+      scheduleAutoCommit(workspace);
+    }
     return result;
   });
 

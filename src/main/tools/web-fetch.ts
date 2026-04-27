@@ -34,6 +34,7 @@ export const webFetchTool = defineTool<WebFetchArgs>('web_fetch', {
     },
     required: ['url'],
   },
+  overridesBuiltInTool: true,
   skipPermission: true,
   handler: webFetchHandler,
 });

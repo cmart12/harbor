@@ -56,13 +56,21 @@ export function ToolTile({ toolName, args, result, completed, success, error }: 
 
   // Prepare display content based on tool type
   let icon: string;
+  let svgIcon: React.ReactNode = null;
   let title: React.ReactNode;
   let preview: React.ReactNode = null;
   let expandContent: React.ReactNode = null;
 
+  const errorSvg = <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="7" fill="#ef4444"/><path d="M4.5 4.5L9.5 9.5M9.5 4.5L4.5 9.5" stroke="white" strokeWidth="1.5" strokeLinecap="round"/></svg>;
+  const successSvg = <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="7" fill="#22c55e"/><path d="M4 7.2L6 9.2L10 5" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>;
+
+  if (!isRunning) {
+    svgIcon = isError ? errorSvg : successSvg;
+  }
+
   if (category === 'bash') {
     const cmd = extractCommand(args);
-    icon = isRunning ? '●' : (isError ? '✗' : '✓');
+    icon = isRunning ? '●' : '';
     title = <span className="chat-tool-label">bash</span>;
     if (cmd) {
       preview = <span className="chat-tool-command">$ {cmd}</span>;
@@ -84,7 +92,7 @@ export function ToolTile({ toolName, args, result, completed, success, error }: 
   } else if (category === 'file_edit') {
     const rawPath = extractPath(args);
     const { name, dir } = rawPath ? friendlyPath(rawPath) : { name: formatToolLabel(toolName), dir: '' };
-    icon = isRunning ? '●' : (isError ? '✗' : '✓');
+    icon = isRunning ? '●' : '';
     title = (
       <>
         <span className="chat-tool-filename">{name}</span>
@@ -121,7 +129,7 @@ export function ToolTile({ toolName, args, result, completed, success, error }: 
   } else if (category === 'file_read') {
     const rawPath = extractPath(args);
     const { name, dir } = rawPath ? friendlyPath(rawPath) : { name: formatToolLabel(toolName), dir: '' };
-    icon = isRunning ? '●' : (isError ? '✗' : '👁');
+    icon = isRunning ? '●' : '';
     title = (
       <>
         <span className="chat-tool-filename">{name}</span>
@@ -144,7 +152,7 @@ export function ToolTile({ toolName, args, result, completed, success, error }: 
     }
   } else {
     // Generic tool
-    icon = isRunning ? '⚙️' : (isError ? '✗' : '✓');
+    icon = isRunning ? '●' : '';
     title = <span className="chat-tool-label">{formatToolLabel(toolName)}</span>;
     const argKeys = Object.keys(args).filter(k => !k.startsWith('_'));
     if (argKeys.length > 0) {
@@ -179,7 +187,7 @@ export function ToolTile({ toolName, args, result, completed, success, error }: 
         role={hasExpandContent ? 'button' : undefined}
         tabIndex={hasExpandContent ? 0 : undefined}
       >
-        <span className={`chat-tool-status ${isRunning ? 'running' : isError ? 'error' : 'success'}`}>{icon}</span>
+        <span className={`chat-tool-status ${isRunning ? 'running' : isError ? 'error' : 'success'}`}>{svgIcon || icon}</span>
         <span className="chat-tool-title">{title}</span>
         {preview && <span className="chat-tool-preview">{preview}</span>}
         {hasExpandContent && <span className={`chat-tool-chevron ${expanded ? 'expanded' : ''}`}>▸</span>}

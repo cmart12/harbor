@@ -22,6 +22,8 @@ import {
   getIntentDir,
   getLogPath,
   getDbPath,
+  archiveIntentFolder,
+  deleteIntentFolder,
 } from './workspace';
 
 let tmpDir: string;
@@ -378,5 +380,105 @@ describe('getMimeType', () => {
   it('is case-insensitive via lowering the extension', () => {
     expect(getMimeType('photo.PNG')).toBe('image/png');
     expect(getMimeType('file.PDF')).toBe('application/pdf');
+  });
+});
+
+// ── archiveIntentFolder ─────────────────────────────────
+
+describe('archiveIntentFolder', () => {
+  const folder = 'my-task-abcd';
+
+  it('moves folder into .intent/archive/', () => {
+    const src = path.join(tmpDir, folder);
+    fs.mkdirSync(src, { recursive: true });
+    fs.writeFileSync(path.join(src, 'canvas.md'), 'hello');
+
+    archiveIntentFolder(tmpDir, folder);
+
+    expect(fs.existsSync(src)).toBe(false);
+    const archived = path.join(tmpDir, '.intent', 'archive', folder, 'canvas.md');
+    expect(fs.existsSync(archived)).toBe(true);
+    expect(fs.readFileSync(archived, 'utf-8')).toBe('hello');
+  });
+
+  it('creates .intent/archive/ directory if it does not exist', () => {
+    const src = path.join(tmpDir, folder);
+    fs.mkdirSync(src, { recursive: true });
+
+    archiveIntentFolder(tmpDir, folder);
+
+    expect(fs.existsSync(path.join(tmpDir, '.intent', 'archive'))).toBe(true);
+  });
+
+  it('replaces existing archive if re-completing', () => {
+    const src = path.join(tmpDir, folder);
+    fs.mkdirSync(src, { recursive: true });
+    fs.writeFileSync(path.join(src, 'canvas.md'), 'v1');
+    archiveIntentFolder(tmpDir, folder);
+
+    // Re-create and re-archive with new content
+    fs.mkdirSync(src, { recursive: true });
+    fs.writeFileSync(path.join(src, 'canvas.md'), 'v2');
+    archiveIntentFolder(tmpDir, folder);
+
+    const archived = path.join(tmpDir, '.intent', 'archive', folder, 'canvas.md');
+    expect(fs.readFileSync(archived, 'utf-8')).toBe('v2');
+  });
+
+  it('does nothing when source folder does not exist', () => {
+    expect(() => archiveIntentFolder(tmpDir, 'nonexistent')).not.toThrow();
+  });
+
+  it('does nothing when folder is empty string', () => {
+    expect(() => archiveIntentFolder(tmpDir, '')).not.toThrow();
+  });
+});
+
+// ── deleteIntentFolder ──────────────────────────────────
+
+describe('deleteIntentFolder', () => {
+  const folder = 'my-task-abcd';
+
+  it('removes the live folder from workspace root', () => {
+    const src = path.join(tmpDir, folder);
+    fs.mkdirSync(src, { recursive: true });
+    fs.writeFileSync(path.join(src, 'canvas.md'), 'data');
+
+    deleteIntentFolder(tmpDir, folder);
+
+    expect(fs.existsSync(src)).toBe(false);
+  });
+
+  it('removes the archived folder too', () => {
+    const archivePath = path.join(tmpDir, '.intent', 'archive', folder);
+    fs.mkdirSync(archivePath, { recursive: true });
+    fs.writeFileSync(path.join(archivePath, 'canvas.md'), 'data');
+
+    deleteIntentFolder(tmpDir, folder);
+
+    expect(fs.existsSync(archivePath)).toBe(false);
+  });
+
+  it('removes both live and archived folders', () => {
+    const livePath = path.join(tmpDir, folder);
+    fs.mkdirSync(livePath, { recursive: true });
+    fs.writeFileSync(path.join(livePath, 'canvas.md'), 'live');
+
+    const archivePath = path.join(tmpDir, '.intent', 'archive', folder);
+    fs.mkdirSync(archivePath, { recursive: true });
+    fs.writeFileSync(path.join(archivePath, 'canvas.md'), 'archived');
+
+    deleteIntentFolder(tmpDir, folder);
+
+    expect(fs.existsSync(livePath)).toBe(false);
+    expect(fs.existsSync(archivePath)).toBe(false);
+  });
+
+  it('does nothing when neither folder exists', () => {
+    expect(() => deleteIntentFolder(tmpDir, 'nonexistent')).not.toThrow();
+  });
+
+  it('does nothing when folder is empty string', () => {
+    expect(() => deleteIntentFolder(tmpDir, '')).not.toThrow();
   });
 });
