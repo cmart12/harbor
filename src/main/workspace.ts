@@ -112,6 +112,19 @@ export function readCanvas(workspaceRoot: string, folder: string): string {
   return fs.readFileSync(canvasPath, 'utf-8');
 }
 
+/** Get the canvas content for an intent at a specific git commit (non-destructive). */
+export async function getIntentVersionContent(workspaceRoot: string, folder: string, sha: string): Promise<{ content: string; error?: string }> {
+  try {
+    if (!/^[0-9a-f]{7,40}$/.test(sha)) {
+      return { content: '', error: 'Invalid commit SHA' };
+    }
+    const content = await runGitOutput(workspaceRoot, ['show', `${sha}:${folder}/${CANVAS_FILE}`]);
+    return { content };
+  } catch (err: any) {
+    return { content: '', error: err?.message || 'Failed to read version' };
+  }
+}
+
 /** Write content to an intent's canvas file. Creates the folder if needed. */
 export function writeCanvas(workspaceRoot: string, folder: string, content: string): void {
   const folderPath = path.join(workspaceRoot, folder);

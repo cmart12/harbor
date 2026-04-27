@@ -91,6 +91,7 @@ interface IntentAPI {
   closeCanvas(intentId: string, content: string): Promise<void>;
   canvasHistory(intentId: string): Promise<{ commits: FolderCommit[]; error?: string }>;
   canvasRestore(intentId: string, sha: string): Promise<{ success: boolean; error?: string }>;
+  canvasPreviewVersion(intentId: string, sha: string): Promise<{ content: string; error?: string }>;
   searchIntents(query: string): Promise<Intent[]>;
   unarchive(id: string): Promise<Intent | null>;
   summarizeTitle(canvasContent: string): Promise<{ title: string | null }>;
@@ -3172,6 +3173,10 @@ const canvasHistoryBtn = document.getElementById('canvas-history-btn') as HTMLBu
 const canvasHistoryPanel = document.getElementById('canvas-history-panel') as HTMLDivElement;
 const canvasHistoryClose = document.getElementById('canvas-history-close') as HTMLButtonElement;
 const canvasHistoryList = document.getElementById('canvas-history-list') as HTMLDivElement;
+const canvasPreviewBanner = document.getElementById('canvas-preview-banner') as HTMLDivElement;
+const canvasPreviewLabel = document.getElementById('canvas-preview-label') as HTMLSpanElement;
+const canvasPreviewRestore = document.getElementById('canvas-preview-restore') as HTMLButtonElement;
+const canvasPreviewBack = document.getElementById('canvas-preview-back') as HTMLButtonElement;
 const canvasAgentsBtn = document.getElementById('canvas-agents-btn') as HTMLButtonElement;
 const modeToggleRendered = document.getElementById('mode-toggle-rendered') as HTMLButtonElement;
 const modeToggleRaw = document.getElementById('mode-toggle-raw') as HTMLButtonElement;
@@ -3351,6 +3356,15 @@ async function saveCanvas(): Promise<void> {
 }
 
 async function closeCanvas(): Promise<void> {
+  // If previewing, use the saved original content instead of the preview editor content
+  const wasPreviewActive = previewActive;
+  const savedContent = previewSavedContent;
+  if (previewActive) {
+    previewActive = false;
+    previewSha = null;
+    previewSavedContent = null;
+    canvasPreviewBanner.classList.add('hidden');
+  }
   closeHistoryPanel();
   closeAgentsPanel();
   const intentId = canvasIntentId;
@@ -3361,8 +3375,8 @@ async function closeCanvas(): Promise<void> {
   canvasIsNewIntent = false;
   canvasClosing = true;
 
-  // Get content BEFORE unmounting (unmount destroys the React ref)
-  const finalContent = getCanvasContent();
+  // Get content BEFORE unmounting — use saved content if we were previewing
+  const finalContent = wasPreviewActive ? (savedContent || '') : getCanvasContent();
   await unmountCanvas();
 
   if (skillId) {
@@ -3407,6 +3421,11 @@ canvasLaunchBtn.addEventListener('click', async () => {
 // ── Canvas History Panel ────────────────────────────────
 let historyPanelOpen = false;
 
+// ── Canvas Preview State ───────────────────────────────
+let previewActive = false;
+let previewSha: string | null = null;
+let previewSavedContent: string | null = null;
+
 function toggleHistoryPanel(): void {
   if (historyPanelOpen) {
     closeHistoryPanel();
@@ -3439,11 +3458,15 @@ function closeHistoryPanel(): void {
   canvasHistoryPanel.classList.add('hidden');
   canvasHistoryBtn.classList.remove('active');
   historyPanelOpen = false;
+  if (previewActive) {
+    exitPreview();
+  }
 }
 
 function createHistoryItem(commit: FolderCommit): HTMLElement {
   const item = document.createElement('div');
   item.className = 'history-item';
+  item.dataset.sha = commit.sha;
 
   const meta = document.createElement('div');
   meta.className = 'history-item-meta';
@@ -3466,6 +3489,15 @@ function createHistoryItem(commit: FolderCommit): HTMLElement {
   const actions = document.createElement('div');
   actions.className = 'history-item-actions';
 
+  const viewBtn = document.createElement('button');
+  viewBtn.className = 'history-view-btn';
+  viewBtn.textContent = 'View';
+  viewBtn.title = `Preview version ${commit.shortSha}`;
+  viewBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    await enterPreview(commit);
+  });
+
   const restoreBtn = document.createElement('button');
   restoreBtn.className = 'history-restore-btn';
   restoreBtn.textContent = 'Restore';
@@ -3479,11 +3511,17 @@ function createHistoryItem(commit: FolderCommit): HTMLElement {
 
     const result = await intentAPI.canvasRestore(canvasIntentId, commit.sha);
     if (result.success) {
+      // Exit preview mode if active (content is now the restored version)
+      if (previewActive) {
+        previewActive = false;
+        previewSha = null;
+        previewSavedContent = null;
+        canvasPreviewBanner.classList.add('hidden');
+      }
       // Reload the canvas with restored content — re-mount in place
       const readResult = await intentAPI.readCanvas(canvasIntentId!);
       if (!readResult.error) {
         const intentId = canvasIntentId!;
-        // Unmount and re-open without closing the window
         await unmountCanvas();
         canvasIntentId = null;
         await openCanvas(intentId);
@@ -3498,6 +3536,7 @@ function createHistoryItem(commit: FolderCommit): HTMLElement {
     }
   });
 
+  actions.appendChild(viewBtn);
   actions.appendChild(restoreBtn);
 
   item.appendChild(meta);
@@ -3505,8 +3544,127 @@ function createHistoryItem(commit: FolderCommit): HTMLElement {
   if (fileNames.length > 0) item.appendChild(files);
   item.appendChild(actions);
 
+  // Clicking the item itself also triggers preview
+  item.addEventListener('click', () => enterPreview(commit));
+
   return item;
 }
+
+async function enterPreview(commit: FolderCommit): Promise<void> {
+  if (!canvasIntentId) return;
+
+  // Save current content before first preview
+  if (!previewActive) {
+    previewSavedContent = getCanvasContent();
+  }
+
+  previewSha = commit.sha;
+  previewActive = true;
+
+  // Update banner
+  canvasPreviewLabel.textContent = `Viewing version from ${commit.relativeDate}`;
+  canvasPreviewBanner.classList.remove('hidden');
+
+  // Highlight the previewed item in the history list
+  canvasHistoryList.querySelectorAll('.history-item').forEach(el => {
+    el.classList.toggle('previewing', (el as HTMLElement).dataset.sha === commit.sha);
+  });
+
+  // Fetch version content and mount read-only
+  const result = await intentAPI.canvasPreviewVersion(canvasIntentId, commit.sha);
+  if (result.error) return;
+
+  const intentId = canvasIntentId!;
+  await unmountCanvas();
+  const currentTheme = await intentAPI.getSetting('theme').then(t => (t || 'light') as 'light' | 'dark');
+  mountCanvas(canvasRoot, {
+    intentId,
+    content: result.content,
+    theme: currentTheme,
+    onDirtyChange: () => {},   // no-op: preview edits are not tracked
+    onSaveStatus: () => {},    // no-op: preview edits are not saved
+  });
+}
+
+async function exitPreview(): Promise<void> {
+  if (!previewActive || !canvasIntentId) return;
+
+  const savedContent = previewSavedContent;
+  previewActive = false;
+  previewSha = null;
+  previewSavedContent = null;
+  canvasPreviewBanner.classList.add('hidden');
+
+  // Remove highlight from history items
+  canvasHistoryList.querySelectorAll('.history-item.previewing').forEach(el => {
+    el.classList.remove('previewing');
+  });
+
+  // Remount with the original content
+  const intentId = canvasIntentId!;
+  await unmountCanvas();
+  const currentTheme = await intentAPI.getSetting('theme').then(t => (t || 'light') as 'light' | 'dark');
+  const canvasPersonas = await intentAPI.listPersonas().then(p => p || []);
+  mountCanvas(canvasRoot, {
+    intentId,
+    content: savedContent || '',
+    theme: currentTheme,
+    personas: canvasPersonas,
+    onDirtyChange: (dirty: boolean) => {
+      canvasDirty = dirty;
+      canvasSaveBtn.classList.toggle('hidden', !dirty);
+    },
+    onSaveStatus: (status: string) => {
+      canvasSaveStatus.textContent = status;
+    },
+    onAgentMentioned: (event) => {
+      for (const handle of event.handles) {
+        intentAPI.launchCommentAgent(
+          intentId,
+          event.commentBody,
+          event.quote,
+          event.anchor,
+          handle,
+          event.threadIndex,
+        );
+      }
+    },
+  });
+}
+
+async function restoreFromPreview(): Promise<void> {
+  if (!previewActive || !previewSha || !canvasIntentId) return;
+
+  const sha = previewSha;
+  canvasPreviewRestore.disabled = true;
+  canvasPreviewRestore.textContent = '…';
+
+  const result = await intentAPI.canvasRestore(canvasIntentId, sha);
+  if (result.success) {
+    previewActive = false;
+    previewSha = null;
+    previewSavedContent = null;
+    canvasPreviewBanner.classList.add('hidden');
+
+    const readResult = await intentAPI.readCanvas(canvasIntentId!);
+    if (!readResult.error) {
+      const intentId = canvasIntentId!;
+      await unmountCanvas();
+      canvasIntentId = null;
+      await openCanvas(intentId);
+    }
+    closeHistoryPanel();
+  } else {
+    canvasPreviewRestore.textContent = 'Failed';
+    setTimeout(() => {
+      canvasPreviewRestore.textContent = 'Restore this version';
+      canvasPreviewRestore.disabled = false;
+    }, 2000);
+  }
+}
+
+canvasPreviewBack.addEventListener('click', exitPreview);
+canvasPreviewRestore.addEventListener('click', restoreFromPreview);
 
 canvasHistoryBtn.addEventListener('click', toggleHistoryPanel);
 canvasHistoryClose.addEventListener('click', closeHistoryPanel);

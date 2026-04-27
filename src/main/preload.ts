@@ -77,6 +77,7 @@ export interface IntentAPI {
   closeCanvas(intentId: string, content: string): Promise<IpcCommandResult<'canvas:close'>>;
   canvasHistory(intentId: string): Promise<IpcCommandResult<'canvas:history'>>;
   canvasRestore(intentId: string, sha: string): Promise<IpcCommandResult<'canvas:restore'>>;
+  canvasPreviewVersion(intentId: string, sha: string): Promise<IpcCommandResult<'canvas:preview-version'>>;
   pasteFile(intentId: string, filename: string, dataArray: number[]): Promise<IpcCommandResult<'canvas:paste-file'>>;
 
   // ── Agent ────────────────────────────────────────────────
@@ -215,6 +216,7 @@ const api: IntentAPI = {
   closeCanvas: (intentId, content) => ipcRenderer.invoke('canvas:close', intentId, content),
   canvasHistory: (intentId) => ipcRenderer.invoke('canvas:history', intentId),
   canvasRestore: (intentId, sha) => ipcRenderer.invoke('canvas:restore', intentId, sha),
+  canvasPreviewVersion: (intentId, sha) => ipcRenderer.invoke('canvas:preview-version', intentId, sha),
   pasteFile: (intentId, filename, dataArray) =>
     ipcRenderer.invoke('canvas:paste-file', intentId, filename, dataArray),
 

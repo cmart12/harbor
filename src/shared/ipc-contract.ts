@@ -172,6 +172,7 @@ export interface IpcCommands {
   'canvas:fetch-link-meta': { args: [url: string]; result: LinkPreviewMeta };
   'canvas:history': { args: [intentId: string]; result: { commits: CanvasCommit[]; error?: string } };
   'canvas:restore': { args: [intentId: string, sha: string]; result: { success: boolean; error?: string } };
+  'canvas:preview-version': { args: [intentId: string, sha: string]; result: { content: string; error?: string } };
 
   // ── Agent ────────────────────────────────────────────────
   'agent:launch': {

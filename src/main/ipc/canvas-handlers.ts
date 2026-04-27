@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron';
 import { isInitialized, getIntent, getSkill, assignIntentFolder, updateCanvasContent } from '../database';
 import { getConfigValue } from '../config';
-import { initIntentCanvas, readCanvas, writeCanvas, scheduleAutoCommit, saveAttachment, resolveAttachmentPath, getMimeType, getIntentHistory, restoreIntentVersion } from '../workspace';
+import { initIntentCanvas, readCanvas, writeCanvas, scheduleAutoCommit, saveAttachment, resolveAttachmentPath, getMimeType, getIntentHistory, restoreIntentVersion, getIntentVersionContent } from '../workspace';
 import { parseFrontmatter, serializeFrontmatter } from '../frontmatter';
 import { fetchLinkPreview } from '../services/link-preview';
 import type { SkillFrontmatter } from '../../shared/types';
@@ -142,5 +142,15 @@ export function registerCanvasHandlers(): void {
       updateCanvasContent(intentId, content);
     }
     return result;
+  });
+
+  ipcMain.handle('canvas:preview-version', async (_event, intentId: string, sha: string) => {
+    const workspace = getConfigValue('workspace');
+    if (!workspace || !isInitialized()) return { content: '', error: 'no_workspace' };
+
+    const intent = getIntent(intentId);
+    if (!intent || !intent.folder) return { content: '', error: 'not_found' };
+
+    return getIntentVersionContent(workspace, intent.folder, sha);
   });
 }
