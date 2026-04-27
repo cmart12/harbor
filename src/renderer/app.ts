@@ -246,6 +246,13 @@ let searchMode = false;
 let activeSearchQuery = '';
 const workersBadge = document.getElementById('workers-badge') as HTMLSpanElement;
 
+// ── Platform detection ──────────────────────────────────
+// Set platform class on body for platform-adaptive styling
+const __platform = (window as any).__platform as string | undefined;
+if (__platform) {
+  document.body.classList.add(`platform-${__platform}`);
+}
+
 // ── Status bar helpers ──────────────────────────────────
 function showStatus(msg: string, isError = false): void {
   statusBar.textContent = msg;

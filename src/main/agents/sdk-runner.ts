@@ -126,7 +126,7 @@ export async function launchAgent(
     // before events start flowing. Errors are handled by the session.error listener.
     session.send({
       prompt: selectedText,
-      attachments: [{ type: 'file' as const, path: path.join(workingDir, 'canvas.md') }],
+      attachments: [{ type: 'file' as const, path: path.join(workingDir, 'canvas.md'), displayName: 'canvas.md' }],
     }).catch((err: any) => {
       record.status = 'failed';
       record.summary = `Error: ${err.message || 'Unknown'}`;
@@ -229,7 +229,7 @@ export async function launchQuickAgent(
 export async function sendChatMessage(
   agentId: string,
   prompt: string,
-  attachments?: Array<{ type: 'file'; path: string }>,
+  attachments?: Array<{ type: 'file'; path: string; displayName?: string }>,
 ): Promise<{ error?: string; restarted?: boolean }> {
   let record = registry.get(agentId);
   let restarted = false;
@@ -261,9 +261,13 @@ export async function sendChatMessage(
   }
 
   try {
+    const normalizedAttachments = attachments?.map(a => ({
+      ...a,
+      displayName: a.displayName ?? path.basename(a.path),
+    }));
     await record.session.send({
       prompt,
-      ...(attachments ? { attachments } : {}),
+      ...(normalizedAttachments ? { attachments: normalizedAttachments } : {}),
     });
     return { ...(restarted ? { restarted: true } : {}) };
   } catch (err: any) {

@@ -145,7 +145,7 @@ If you make changes to the document, clearly describe what you changed.${cliTool
 
     session.send({
       prompt: commentBody,
-      attachments: [{ type: 'file' as const, path: canvasPath }],
+      attachments: [{ type: 'file' as const, path: canvasPath, displayName: 'canvas.md' }],
     }).catch((err: any) => {
       record.status = 'failed';
       record.summary = `Error: ${err.message || 'Unknown'}`;

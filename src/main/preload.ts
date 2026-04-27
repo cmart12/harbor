@@ -374,3 +374,6 @@ const api: IntentAPI = {
 };
 
 contextBridge.exposeInMainWorld('intentAPI', api);
+
+// Expose platform info so the renderer can apply platform-adaptive styling
+contextBridge.exposeInMainWorld('__platform', process.platform);
