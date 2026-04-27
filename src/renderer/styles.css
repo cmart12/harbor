@@ -714,7 +714,7 @@ header h1 {
   background: rgba(255, 255, 255, 0.75);
   border: 1px solid rgba(140, 120, 180, 0.2);
   border-radius: 10px;
-  padding: 12px 48px 12px 16px;
+  padding: 10px 48px 10px 16px;
   color: #2c2c3a;
   font-size: 14px;
   font-family: inherit;
@@ -722,7 +722,7 @@ header h1 {
   transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
   resize: none;
   overflow: hidden;
-  min-height: 42px;
+  min-height: 0;
   max-height: 120px;
   line-height: 1.5;
   backdrop-filter: blur(8px);
@@ -1455,6 +1455,28 @@ body.dark .workers-badge {
 
 .intent-item:hover .intent-launch.has-session {
   color: #6a52c9;
+}
+
+/* ── Skill card overrides ────────────────────────────── */
+
+.skill-card {
+  align-items: center;
+}
+
+.skill-icon {
+  font-size: 20px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.skill-card .intent-launch,
+.skill-card .intent-delete {
+  font-size: 13px;
+  padding: 2px 4px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* ── Session badge ────────────────────────────────────── */
