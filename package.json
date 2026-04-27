@@ -63,6 +63,7 @@
     "@mozilla/readability": "^0.6.0",
     "better-sqlite3": "^12.9.0",
     "documint": "file:../documint",
+    "js-yaml": "^4.1.0",
     "linkedom": "^0.18.12",
     "lucide-react": "^1.8.0",
     "onnxruntime-node": "^1.24.3",

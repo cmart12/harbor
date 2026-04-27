@@ -739,6 +739,10 @@ header h1 {
   color: rgba(0, 0, 0, 0.32);
 }
 
+#description-input.hidden {
+  display: none;
+}
+
 #description-input.recording {
   border-color: rgba(239, 68, 68, 0.5);
   background: rgba(239, 68, 68, 0.03);
@@ -818,6 +822,28 @@ header h1 {
 @keyframes recBlink {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.3; }
+}
+
+/* ── Waveform canvas (voice recording visualization) ──── */
+
+.waveform-canvas {
+  width: 100%;
+  height: 44px;
+  border-radius: 10px;
+  border: 1px solid rgba(239, 68, 68, 0.5);
+  background: rgba(239, 68, 68, 0.03);
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.08);
+  animation: recordingPulse 1.5s ease infinite;
+  box-sizing: border-box;
+}
+
+.waveform-canvas.hidden {
+  display: none;
+}
+
+body.dark .waveform-canvas {
+  background: rgba(239, 68, 68, 0.06);
+  border-color: rgba(239, 68, 68, 0.5);
 }
 
 .status-bar {

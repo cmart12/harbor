@@ -192,6 +192,7 @@ const settingsClose = document.getElementById('settings-close') as HTMLButtonEle
 const mainView = document.getElementById('main-view') as HTMLDivElement;
 const modelSelect = document.getElementById('model-select') as HTMLSelectElement;
 const recordingIndicator = document.getElementById('recording-indicator') as HTMLDivElement;
+const waveformCanvas = document.getElementById('waveform-canvas') as HTMLCanvasElement;
 const inputHints = document.getElementById('input-hints') as HTMLDivElement;
 const themeLightBtn = document.getElementById('theme-light') as HTMLButtonElement;
 const themeDarkBtn = document.getElementById('theme-dark') as HTMLButtonElement;
@@ -1133,9 +1134,87 @@ cliToolAddBtn.addEventListener('click', () => showCliToolForm());
 let mediaRecorder: MediaRecorder | null = null;
 let audioChunks: Blob[] = [];
 let isRecording = false;
+let isStartingRecording = false;
 let audioStream: MediaStream | null = null;
 
+// Waveform visualizer state
+let analyserCtx: AudioContext | null = null;
+let analyserNode: AnalyserNode | null = null;
+let animFrameId: number | null = null;
+
+function startWaveform(stream: MediaStream): void {
+  analyserCtx = new AudioContext();
+  const source = analyserCtx.createMediaStreamSource(stream);
+  analyserNode = analyserCtx.createAnalyser();
+  analyserNode.fftSize = 256;
+  analyserNode.smoothingTimeConstant = 0.7;
+  source.connect(analyserNode);
+
+  // Size canvas to match textarea dimensions
+  const rect = descInput.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  waveformCanvas.width = rect.width * dpr;
+  waveformCanvas.height = rect.height * dpr;
+  waveformCanvas.style.height = `${rect.height}px`;
+
+  const ctx = waveformCanvas.getContext('2d')!;
+  ctx.scale(dpr, dpr);
+  const w = rect.width;
+  const h = rect.height;
+  const bufLen = analyserNode.frequencyBinCount;
+  const dataArray = new Uint8Array(bufLen);
+
+  // Use ~40 bars centered in the canvas
+  const barCount = 40;
+  const barGap = 2;
+  const totalBarWidth = w * 0.7;
+  const barWidth = (totalBarWidth - barGap * (barCount - 1)) / barCount;
+  const startX = (w - totalBarWidth) / 2;
+  const isDark = document.body.classList.contains('dark');
+
+  function draw(): void {
+    analyserNode!.getByteFrequencyData(dataArray);
+    ctx.clearRect(0, 0, w, h);
+
+    for (let i = 0; i < barCount; i++) {
+      // Map bar index to frequency bin (skip very low frequencies)
+      const binIndex = Math.floor((i + 2) * (bufLen * 0.6) / barCount);
+      const val = dataArray[Math.min(binIndex, bufLen - 1)] / 255;
+      const minBar = 3;
+      const barH = Math.max(minBar, val * (h * 0.75));
+      const x = startX + i * (barWidth + barGap);
+      const y = (h - barH) / 2;
+
+      const alpha = 0.4 + val * 0.6;
+      ctx.fillStyle = isDark
+        ? `rgba(248, 113, 113, ${alpha})`
+        : `rgba(239, 68, 68, ${alpha})`;
+      ctx.beginPath();
+      ctx.roundRect(x, y, barWidth, barH, barWidth / 2);
+      ctx.fill();
+    }
+
+    animFrameId = requestAnimationFrame(draw);
+  }
+
+  animFrameId = requestAnimationFrame(draw);
+}
+
+function stopWaveform(): void {
+  if (animFrameId !== null) {
+    cancelAnimationFrame(animFrameId);
+    animFrameId = null;
+  }
+  if (analyserCtx) {
+    analyserCtx.close().catch(() => {});
+    analyserCtx = null;
+    analyserNode = null;
+  }
+}
+
 async function startRecording(): Promise<void> {
+  if (isStartingRecording) return;
+  isStartingRecording = true;
   try {
     audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
     mediaRecorder = new MediaRecorder(audioStream, { mimeType: 'audio/webm' });
@@ -1146,6 +1225,7 @@ async function startRecording(): Promise<void> {
     };
 
     mediaRecorder.onstop = async () => {
+      stopWaveform();
       audioStream?.getTracks().forEach(t => t.stop());
       audioStream = null;
 
@@ -1179,22 +1259,30 @@ async function startRecording(): Promise<void> {
     };
 
     isRecording = true;
-    setInputState('recording');
     descInput.value = '';
+    startWaveform(audioStream);
+    setInputState('recording');
     showStatus('🎤 Listening... press space to stop');
     mediaRecorder.start();
   } catch (err: any) {
     console.error('Microphone error:', err);
+    stopWaveform();
+    audioStream?.getTracks().forEach(t => t.stop());
+    audioStream = null;
+    setInputState('idle');
     if (err.name === 'NotAllowedError') {
       showStatus('Microphone access denied', true);
     } else {
       showStatus(`Mic error: ${err.message}`, true);
     }
+  } finally {
+    isStartingRecording = false;
   }
 }
 
 function stopRecording(): void {
   isRecording = false;
+  stopWaveform();
   if (mediaRecorder && mediaRecorder.state === 'recording') {
     mediaRecorder.stop();
   }
@@ -1203,22 +1291,30 @@ function stopRecording(): void {
 function setInputState(state: 'idle' | 'recording' | 'transcribing'): void {
   descInput.classList.remove('recording', 'transcribing');
   recordingIndicator.classList.add('hidden');
+  const submitBtn = document.getElementById('submit-btn') as HTMLButtonElement | null;
 
   switch (state) {
     case 'recording':
-      descInput.classList.add('recording');
+      descInput.classList.add('hidden');
+      waveformCanvas.classList.remove('hidden');
       descInput.placeholder = 'Listening... press space to stop';
-      recordingIndicator.classList.remove('hidden');
       inputHints.classList.add('hidden');
+      if (submitBtn) submitBtn.style.display = 'none';
       break;
     case 'transcribing':
+      waveformCanvas.classList.add('hidden');
+      descInput.classList.remove('hidden');
       descInput.classList.add('transcribing');
       descInput.placeholder = 'Transcribing...';
       inputHints.classList.add('hidden');
+      if (submitBtn) submitBtn.style.display = 'none';
       break;
     default:
+      waveformCanvas.classList.add('hidden');
+      descInput.classList.remove('hidden');
       descInput.placeholder = searchMode ? getSearchPlaceholderForFilter(currentFilter) : getPlaceholderForFilter(currentFilter);
       inputHints.classList.toggle('hidden', searchMode || descInput.value.length > 0);
+      if (submitBtn) submitBtn.style.display = '';
   }
 }
 
@@ -1385,7 +1481,7 @@ descInput.addEventListener('keydown', (e) => {
     return;
   }
 
-  if (e.key === ' ') {
+  if (e.key === ' ' && !e.repeat) {
     if (isRecording) {
       e.preventDefault();
       stopRecording();
