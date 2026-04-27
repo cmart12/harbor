@@ -36,9 +36,10 @@ export function isReadOnlyCommand(command: string): boolean {
  * Passes through all non-shell tools unchanged.
  */
 export function createSandboxPreToolHook() {
-  return async (input: { toolName: string; toolArgs: Record<string, unknown> }) => {
+  return async (input: { toolName: string; toolArgs: unknown }, _invocation?: { sessionId: string }) => {
     if (input.toolName === 'bash' || input.toolName === 'shell') {
-      const command = input.toolArgs?.command;
+      const args = input.toolArgs as Record<string, unknown> | undefined;
+      const command = args?.command;
       if (typeof command === 'string' && !isReadOnlyCommand(command)) {
         return {
           permissionDecision: 'deny' as const,
