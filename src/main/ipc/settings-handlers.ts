@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron';
 import { setAIModel, listAvailableModels } from '../ai';
-import { resolveCopilotCliPath, invalidateCliPath } from '../session';
+import { resolveCopilotCliPath, invalidateCliPath, checkCliCompatibility } from '../session';
 import { getConfigValue, setConfigValue, getConfig, type AgentPersona } from '../config';
 import { listDiscoveredMcpServers } from '../mcp';
 import { validateMcpServers, validateCliTools } from '../validators';
@@ -34,6 +34,10 @@ export function registerSettingsHandlers(): void {
 
   ipcMain.handle('cli:resolve-path', () => {
     return resolveCopilotCliPath();
+  });
+
+  ipcMain.handle('cli:check-version', () => {
+    return checkCliCompatibility();
   });
 
   ipcMain.handle('models:list', async () => {

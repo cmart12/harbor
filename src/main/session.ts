@@ -21,6 +21,81 @@ const runningProcesses = new Map<string, TrackedSession>();
 let resolvedCliPath: string | null = null;
 let cliResolved = false;
 
+// ── CLI version compatibility ───────────────────────────
+
+export const MIN_CLI_VERSION = '1.0.36';
+
+let resolvedCliVersion: string | null = null;
+let cliVersionResolved = false;
+
+export interface CliVersionInfo {
+  path: string | null;
+  version: string | null;
+  compatible: boolean;
+  minVersion: string;
+}
+
+/** Parse a version string from `copilot --version` output (e.g. "GitHub Copilot CLI 1.0.36.") */
+export function parseCliVersion(output: string): string | null {
+  const match = output.match(/(\d+\.\d+\.\d+)/);
+  return match ? match[1] : null;
+}
+
+/**
+ * Compare two semver-like version strings.
+ * Returns negative if a < b, 0 if equal, positive if a > b.
+ */
+export function compareVersions(a: string, b: string): number {
+  const pa = a.split('.').map(Number);
+  const pb = b.split('.').map(Number);
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i++) {
+    const na = pa[i] || 0;
+    const nb = pb[i] || 0;
+    if (na !== nb) return na - nb;
+  }
+  return 0;
+}
+
+/** Detect the CLI version by running `<cli> --version`. Result is cached. */
+export function getCopilotCliVersion(): string | null {
+  if (cliVersionResolved) return resolvedCliVersion;
+  cliVersionResolved = true;
+
+  const cliPath = resolveCopilotCliPath();
+  if (!cliPath) {
+    resolvedCliVersion = null;
+    return null;
+  }
+
+  try {
+    const output = execSync(`"${cliPath}" --version`, {
+      timeout: 10_000,
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).toString().trim();
+    resolvedCliVersion = parseCliVersion(output);
+    if (resolvedCliVersion) {
+      console.log(`[session] CLI version: ${resolvedCliVersion}`);
+    } else {
+      console.warn(`[session] Could not parse CLI version from: ${output}`);
+    }
+  } catch (err) {
+    console.warn('[session] Failed to get CLI version:', err);
+    resolvedCliVersion = null;
+  }
+
+  return resolvedCliVersion;
+}
+
+/** Full compatibility check — returns path, version, and whether the version meets the minimum. */
+export function checkCliCompatibility(): CliVersionInfo {
+  const cliPath = resolveCopilotCliPath();
+  const version = getCopilotCliVersion();
+  const compatible = version != null && compareVersions(version, MIN_CLI_VERSION) >= 0;
+  return { path: cliPath, version, compatible, minVersion: MIN_CLI_VERSION };
+}
+
 export interface LaunchResult {
   success: boolean;
   error?: string;
@@ -108,10 +183,12 @@ export function resolveCopilotCliPath(): string | null {
   return resolvedCliPath;
 }
 
-/** Clear cached CLI path so the next call to resolveCopilotCliPath() re-resolves. */
+/** Clear cached CLI path and version so the next call re-resolves. */
 export function invalidateCliPath(): void {
   cliResolved = false;
   resolvedCliPath = null;
+  cliVersionResolved = false;
+  resolvedCliVersion = null;
 }
 
 /** @deprecated Use resolveCopilotCliPath() instead */
@@ -175,6 +252,14 @@ export function getActiveSessionIntentIds(): string[] {
 export async function launchSessionInTerminal(sessionId: string, cwd: string, signalPath?: string): Promise<{ pid: number | null }> {
   const cli = await checkCopilotCli();
   if (!cli) throw new Error('Copilot CLI not found');
+
+  const compat = checkCliCompatibility();
+  if (!compat.compatible) {
+    throw new Error(
+      `Copilot CLI ${compat.version || 'unknown'} is not compatible. Please update to ${compat.minVersion} or later (run: copilot update).`
+    );
+  }
+
   const result = await platformLaunchInTerminal({
     command: cli,
     args: [`--resume=${sessionId}`],
@@ -213,6 +298,14 @@ export async function launchSession(intentId: string, workspaceRoot: string): Pr
   const cli = await checkCopilotCli();
   if (!cli) {
     return { success: false, error: 'Copilot CLI not found. Ensure it is installed and in your PATH.' };
+  }
+
+  const compat = checkCliCompatibility();
+  if (!compat.compatible) {
+    return {
+      success: false,
+      error: `Copilot CLI ${compat.version || 'unknown'} is not compatible. Please update to ${compat.minVersion} or later (run: copilot update).`,
+    };
   }
 
   launching.add(intentId);

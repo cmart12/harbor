@@ -45,6 +45,7 @@ export interface IntentAPI {
 
   // ── CLI / Models ─────────────────────────────────────────
   resolveCliPath(): Promise<IpcCommandResult<'cli:resolve-path'>>;
+  checkCliVersion(): Promise<IpcCommandResult<'cli:check-version'>>;
   listModels(): Promise<IpcCommandResult<'models:list'>>;
 
   // ── Personas ─────────────────────────────────────────────
@@ -180,6 +181,7 @@ const api: IntentAPI = {
 
   // ── CLI / Models ─────────────────────────────────────────
   resolveCliPath: () => ipcRenderer.invoke('cli:resolve-path'),
+  checkCliVersion: () => ipcRenderer.invoke('cli:check-version'),
   listModels: () => ipcRenderer.invoke('models:list'),
 
   // ── Personas ─────────────────────────────────────────────

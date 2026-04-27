@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import { getIntent, assignIntentFolder, createCanvasAgent } from './database';
-import { checkCopilotCli } from './session';
+import { checkCopilotCli, checkCliCompatibility } from './session';
 import { createIntentFolder } from './workspace';
 import { CanvasAgent } from '../shared/types';
 import { launchInTerminal as platformLaunchInTerminal, shellEscapeDouble } from './platform/terminal';
@@ -27,6 +27,14 @@ export async function launchCanvasAgent(
   const cli = await checkCopilotCli();
   if (!cli) {
     return { success: false, error: 'Copilot CLI not found' };
+  }
+
+  const compat = checkCliCompatibility();
+  if (!compat.compatible) {
+    return {
+      success: false,
+      error: `Copilot CLI ${compat.version || 'unknown'} is not compatible. Please update to ${compat.minVersion} or later (run: copilot update).`,
+    };
   }
 
   const intent = getIntent(intentId);

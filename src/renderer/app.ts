@@ -2600,12 +2600,40 @@ const cliPathDetected = document.getElementById('cli-path-detected') as HTMLSpan
 
 async function loadCliPathSetting(): Promise<void> {
   const override = await intentAPI.getSetting('cli_path');
-  const detected = await intentAPI.resolveCliPath();
+  const info = await intentAPI.checkCliVersion();
 
   cliPathInput.value = override || '';
   cliPathClear.classList.toggle('hidden', !override);
-  cliPathDetected.textContent = detected || 'Not found';
-  cliPathDetected.title = detected || '';
+
+  if (!info.path) {
+    cliPathDetected.textContent = 'Not found';
+    cliPathDetected.title = '';
+  } else if (!info.compatible) {
+    cliPathDetected.textContent = `${info.path} (v${info.version || '?'} — update to ${info.minVersion}+)`;
+    cliPathDetected.title = info.path;
+    cliPathDetected.style.color = 'var(--color-warning, #d29922)';
+  } else {
+    cliPathDetected.textContent = `${info.path} (v${info.version})`;
+    cliPathDetected.title = info.path;
+    cliPathDetected.style.color = '';
+  }
+}
+
+async function updateCliPathDetected(): Promise<void> {
+  const info = await intentAPI.checkCliVersion();
+  if (!info.path) {
+    cliPathDetected.textContent = 'Not found';
+    cliPathDetected.title = '';
+    cliPathDetected.style.color = '';
+  } else if (!info.compatible) {
+    cliPathDetected.textContent = `${info.path} (v${info.version || '?'} — update to ${info.minVersion}+)`;
+    cliPathDetected.title = info.path;
+    cliPathDetected.style.color = 'var(--color-warning, #d29922)';
+  } else {
+    cliPathDetected.textContent = `${info.path} (v${info.version})`;
+    cliPathDetected.title = info.path;
+    cliPathDetected.style.color = '';
+  }
 }
 
 let cliPathDebounce: ReturnType<typeof setTimeout> | null = null;
@@ -2615,9 +2643,7 @@ cliPathInput.addEventListener('input', () => {
     const val = cliPathInput.value.trim();
     await intentAPI.setSetting('cli_path', val);
     cliPathClear.classList.toggle('hidden', !val);
-    const detected = await intentAPI.resolveCliPath();
-    cliPathDetected.textContent = detected || 'Not found';
-    cliPathDetected.title = detected || '';
+    await updateCliPathDetected();
   }, 500);
 });
 
@@ -2625,9 +2651,7 @@ cliPathClear.addEventListener('click', async () => {
   cliPathInput.value = '';
   await intentAPI.setSetting('cli_path', '');
   cliPathClear.classList.add('hidden');
-  const detected = await intentAPI.resolveCliPath();
-  cliPathDetected.textContent = detected || 'Not found';
-  cliPathDetected.title = detected || '';
+  await updateCliPathDetected();
 });
 
 // ── Inline editing ──────────────────────────────────────
@@ -3765,15 +3789,19 @@ async function showWelcomeView(): Promise<void> {
   welcomeModelSelect.innerHTML = '<option value="">Loading models…</option>';
   updateWelcomeStartBtn();
 
-  // Auto-detect CLI
-  intentAPI.resolveCliPath().then((cliPath: string | null) => {
-    if (cliPath) {
-      const short = cliPath.length > 40 ? '…' + cliPath.slice(-38) : cliPath;
-      welcomeCliStatus.textContent = `Detected: ${short}`;
+  // Auto-detect CLI and check version compatibility
+  intentAPI.checkCliVersion().then((info: { path: string | null; version: string | null; compatible: boolean; minVersion: string }) => {
+    if (!info.path) {
+      welcomeCliStatus.textContent = 'Not found — install the Copilot CLI to launch agent sessions.';
+    } else if (!info.compatible) {
+      const ver = info.version || 'unknown';
+      welcomeCliStatus.textContent = `Version ${ver} found — update to ${info.minVersion}+ required (run: copilot update)`;
+      welcomeCliStatus.style.color = 'var(--color-warning, #d29922)';
+    } else {
+      const short = info.path.length > 40 ? '…' + info.path.slice(-38) : info.path;
+      welcomeCliStatus.textContent = `Detected: ${short} (v${info.version})`;
       welcomeCliCheck.classList.remove('hidden');
       welcomeStepCli.classList.add('done');
-    } else {
-      welcomeCliStatus.textContent = 'Not found — install the Copilot CLI to launch agent sessions.';
     }
   });
 

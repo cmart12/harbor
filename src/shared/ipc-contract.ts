@@ -137,6 +137,7 @@ export interface IpcCommands {
 
   // ── CLI / Models ─────────────────────────────────────────
   'cli:resolve-path': { args: []; result: string | null };
+  'cli:check-version': { args: []; result: { path: string | null; version: string | null; compatible: boolean; minVersion: string } };
   'models:list': { args: []; result: Array<{ id: string; name: string }> };
 
   // ── Personas ─────────────────────────────────────────────

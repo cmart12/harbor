@@ -19,6 +19,7 @@ const mockSession = {
 
 const mockClient = {
   createSession: vi.fn().mockResolvedValue(mockSession),
+  resumeSession: vi.fn().mockResolvedValue(mockSession),
 };
 
 vi.mock('./ai', () => ({
@@ -94,6 +95,7 @@ import {
 } from './agent-service';
 import { getCopilotClient } from './ai';
 import { createCanvasAgent, createAgentSession, updateAgentSessionStatus, getAgentSession, listAgentSessions } from './database';
+import { getConfig } from './config';
 import { launchSessionInTerminal } from './session';
 import { v4 as uuid } from 'uuid';
 import * as fs from 'fs';
@@ -595,6 +597,7 @@ describe('getAgentHistory', () => {
     mockSession.send.mockResolvedValue(undefined);
     mockSession.getMessages.mockResolvedValue([{ type: 'assistant.message', content: 'hello' }]);
     mockClient.createSession.mockResolvedValue(mockSession);
+    mockClient.resumeSession.mockResolvedValue(mockSession);
     uuidCounter = 0;
     vi.mocked(uuid).mockImplementation(() => `history-agent-${++uuidCounter}`);
     vi.mocked(getAgentSession).mockReturnValue(null);
@@ -610,9 +613,154 @@ describe('getAgentHistory', () => {
     expect(mockSession.getMessages).toHaveBeenCalled();
   });
 
-  it('returns error when agent cannot be found or resumed', async () => {
+  it('returns error when agent not found in DB', async () => {
     disableMockClient();
+    vi.mocked(getAgentSession).mockReturnValue(null);
     const result = await getAgentHistory('nonexistent');
-    expect(result).toEqual({ error: 'Failed to resume session' });
+    expect(result).toEqual({ error: 'Agent session not found in database' });
+  });
+
+  it('resumes historical SDK session via client.resumeSession()', async () => {
+    enableMockClient();
+    vi.mocked(getConfig).mockReturnValue({ workspace: '/ws' } as any);
+    const persistedSession = {
+      id: 'old-agent-id',
+      session_id: 'old-session-id',
+      intent_id: 'intent-1',
+      prompt: 'do something',
+      status: 'completed' as const,
+      summary: 'Done',
+      working_dir: '/ws',
+      source: 'sdk' as const,
+      created_at: '2025-01-01',
+      updated_at: '2025-01-01',
+    };
+    vi.mocked(getAgentSession).mockReturnValue(persistedSession);
+
+    const result = await getAgentHistory('old-agent-id');
+
+    expect(mockClient.resumeSession).toHaveBeenCalledWith('old-session-id', expect.objectContaining({
+      workingDirectory: '/ws',
+    }));
+    // Should NOT use createSession for resume
+    expect(mockClient.createSession).not.toHaveBeenCalled();
+    expect(result).toEqual({ events: [{ type: 'assistant.message', content: 'hello' }] });
+  });
+
+  it('restores persisted status on resume (not hardcoded completed)', async () => {
+    enableMockClient();
+    vi.mocked(getConfig).mockReturnValue({ workspace: '/ws' } as any);
+    const persistedSession = {
+      id: 'failed-agent',
+      session_id: 'failed-session-id',
+      intent_id: 'intent-1',
+      prompt: 'do something',
+      status: 'failed' as const,
+      summary: 'Error occurred',
+      working_dir: '/ws',
+      source: 'sdk' as const,
+      created_at: '2025-01-01',
+      updated_at: '2025-01-01',
+    };
+    vi.mocked(getAgentSession).mockReturnValue(persistedSession);
+
+    await getAgentHistory('failed-agent');
+
+    // The resumed record should preserve the failed status
+    expect(mockClient.resumeSession).toHaveBeenCalled();
+  });
+
+  it('resumes CLI sessions via same resumeSession path', async () => {
+    enableMockClient();
+    vi.mocked(getConfig).mockReturnValue({ workspace: '/ws' } as any);
+    const persistedSession = {
+      id: 'cli-agent-id',
+      session_id: 'cli-session-id',
+      intent_id: null,
+      prompt: 'CLI Session',
+      status: 'completed' as const,
+      summary: 'CLI session ended',
+      working_dir: '/ws',
+      source: 'cli' as const,
+      created_at: '2025-01-01',
+      updated_at: '2025-01-01',
+    };
+    vi.mocked(getAgentSession).mockReturnValue(persistedSession);
+
+    const result = await getAgentHistory('cli-agent-id');
+
+    expect(mockClient.resumeSession).toHaveBeenCalledWith('cli-session-id', expect.any(Object));
+    expect(result).toEqual({ events: [{ type: 'assistant.message', content: 'hello' }] });
+  });
+
+  it('returns descriptive error when CLI resume fails', async () => {
+    enableMockClient();
+    vi.mocked(getConfig).mockReturnValue({ workspace: '/ws' } as any);
+    mockClient.resumeSession.mockRejectedValueOnce(new Error('session expired'));
+    const persistedSession = {
+      id: 'cli-fail-agent',
+      session_id: 'cli-fail-session-id',
+      intent_id: null,
+      prompt: 'CLI Session',
+      status: 'completed' as const,
+      summary: 'CLI session ended',
+      working_dir: '/ws',
+      source: 'cli' as const,
+      created_at: '2025-01-01',
+      updated_at: '2025-01-01',
+    };
+    vi.mocked(getAgentSession).mockReturnValue(persistedSession);
+
+    const result = await getAgentHistory('cli-fail-agent');
+    expect(result).toEqual({
+      error: expect.stringContaining('CLI session'),
+    });
+  });
+
+  it('returns descriptive error when SDK resume fails', async () => {
+    enableMockClient();
+    vi.mocked(getConfig).mockReturnValue({ workspace: '/ws' } as any);
+    mockClient.resumeSession.mockRejectedValueOnce(new Error('network error'));
+    const persistedSession = {
+      id: 'sdk-fail-agent',
+      session_id: 'sdk-fail-session-id',
+      intent_id: 'intent-1',
+      prompt: 'do something',
+      status: 'completed' as const,
+      summary: 'Done',
+      working_dir: '/ws',
+      source: 'sdk' as const,
+      created_at: '2025-01-01',
+      updated_at: '2025-01-01',
+    };
+    vi.mocked(getAgentSession).mockReturnValue(persistedSession);
+
+    const result = await getAgentHistory('sdk-fail-agent');
+    expect(result).toEqual({
+      error: expect.stringContaining('SDK session'),
+    });
+  });
+
+  it('does not pass systemMessage on resume (avoids duplicating prompts)', async () => {
+    enableMockClient();
+    vi.mocked(getConfig).mockReturnValue({ workspace: '/ws' } as any);
+    const persistedSession = {
+      id: 'sysmsg-agent-id',
+      session_id: 'sysmsg-session-id',
+      intent_id: 'intent-1',
+      prompt: 'do something',
+      status: 'completed' as const,
+      summary: 'Done',
+      working_dir: '/ws',
+      source: 'sdk' as const,
+      created_at: '2025-01-01',
+      updated_at: '2025-01-01',
+    };
+    vi.mocked(getAgentSession).mockReturnValue(persistedSession);
+
+    await getAgentHistory('sysmsg-agent-id');
+
+    const resumeConfig = mockClient.resumeSession.mock.calls[0][1];
+    expect(resumeConfig).not.toHaveProperty('systemMessage');
   });
 });

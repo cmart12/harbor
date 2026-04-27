@@ -37,7 +37,7 @@ vi.mock('./workspace', () => ({
   createIntentFolder: vi.fn(),
 }));
 
-import { resolveCopilotCliPath, invalidateCliPath, checkCopilotCli, launchSession } from './session';
+import { resolveCopilotCliPath, invalidateCliPath, checkCopilotCli, launchSession, parseCliVersion, compareVersions, getCopilotCliVersion, checkCliCompatibility, MIN_CLI_VERSION } from './session';
 import { getConfigValue } from './config';
 
 const mockGetConfigValue = vi.mocked(getConfigValue);
@@ -170,6 +170,177 @@ describe('session', () => {
       const result = await launchSession('intent-2', '/valid/workspace');
       expect(result.success).toBe(false);
       expect(result.error).toContain('Copilot CLI not found');
+    });
+  });
+
+  // ── parseCliVersion ──────────────────────────────────
+
+  describe('parseCliVersion', () => {
+    it('parses standard version output', () => {
+      expect(parseCliVersion('GitHub Copilot CLI 1.0.36.')).toBe('1.0.36');
+    });
+
+    it('parses version with extra text', () => {
+      expect(parseCliVersion('GitHub Copilot CLI 1.0.36.\nRun \'copilot update\' to check for updates.')).toBe('1.0.36');
+    });
+
+    it('parses just a version number', () => {
+      expect(parseCliVersion('2.1.0')).toBe('2.1.0');
+    });
+
+    it('returns null for unparseable output', () => {
+      expect(parseCliVersion('no version here')).toBeNull();
+    });
+
+    it('returns null for empty string', () => {
+      expect(parseCliVersion('')).toBeNull();
+    });
+  });
+
+  // ── compareVersions ──────────────────────────────────
+
+  describe('compareVersions', () => {
+    it('returns 0 for equal versions', () => {
+      expect(compareVersions('1.0.36', '1.0.36')).toBe(0);
+    });
+
+    it('returns positive when a > b (patch)', () => {
+      expect(compareVersions('1.0.37', '1.0.36')).toBeGreaterThan(0);
+    });
+
+    it('returns negative when a < b (patch)', () => {
+      expect(compareVersions('1.0.35', '1.0.36')).toBeLessThan(0);
+    });
+
+    it('returns positive when a > b (minor)', () => {
+      expect(compareVersions('1.1.0', '1.0.36')).toBeGreaterThan(0);
+    });
+
+    it('returns positive when a > b (major)', () => {
+      expect(compareVersions('2.0.0', '1.0.36')).toBeGreaterThan(0);
+    });
+
+    it('returns negative when a < b (major)', () => {
+      expect(compareVersions('0.9.99', '1.0.0')).toBeLessThan(0);
+    });
+
+    it('handles different length versions', () => {
+      expect(compareVersions('1.0', '1.0.0')).toBe(0);
+    });
+  });
+
+  // ── getCopilotCliVersion ─────────────────────────────
+
+  describe('getCopilotCliVersion', () => {
+    it('returns parsed version when CLI responds', () => {
+      mockGetConfigValue.mockReturnValue('/usr/bin/copilot');
+      mockExistsSync.mockReturnValue(true);
+      mockExecSync.mockReturnValue(Buffer.from('GitHub Copilot CLI 1.0.36.\n'));
+
+      const version = getCopilotCliVersion();
+      expect(version).toBe('1.0.36');
+    });
+
+    it('returns null when CLI is not found', () => {
+      mockGetConfigValue.mockReturnValue(null);
+      mockExistsSync.mockReturnValue(false);
+      mockExecSync.mockImplementation(() => { throw new Error('not found'); });
+
+      const version = getCopilotCliVersion();
+      expect(version).toBeNull();
+    });
+
+    it('returns null when version output is unparseable', () => {
+      mockGetConfigValue.mockReturnValue('/usr/bin/copilot');
+      mockExistsSync.mockReturnValue(true);
+      mockExecSync.mockReturnValue(Buffer.from('some unexpected output'));
+
+      const version = getCopilotCliVersion();
+      expect(version).toBeNull();
+    });
+
+    it('caches result after first call', () => {
+      mockGetConfigValue.mockReturnValue('/usr/bin/copilot');
+      mockExistsSync.mockReturnValue(true);
+      mockExecSync.mockReturnValue(Buffer.from('GitHub Copilot CLI 1.0.36.\n'));
+
+      const first = getCopilotCliVersion();
+      expect(first).toBe('1.0.36');
+
+      // Change mock — should still return cached value
+      mockExecSync.mockReturnValue(Buffer.from('GitHub Copilot CLI 2.0.0.\n'));
+      const second = getCopilotCliVersion();
+      expect(second).toBe('1.0.36');
+    });
+
+    it('re-resolves after invalidateCliPath()', () => {
+      mockGetConfigValue.mockReturnValue('/usr/bin/copilot');
+      mockExistsSync.mockReturnValue(true);
+      mockExecSync.mockReturnValue(Buffer.from('GitHub Copilot CLI 1.0.36.\n'));
+
+      expect(getCopilotCliVersion()).toBe('1.0.36');
+
+      invalidateCliPath();
+      mockExecSync.mockReturnValue(Buffer.from('GitHub Copilot CLI 1.0.40.\n'));
+      expect(getCopilotCliVersion()).toBe('1.0.40');
+    });
+  });
+
+  // ── checkCliCompatibility ────────────────────────────
+
+  describe('checkCliCompatibility', () => {
+    it('returns compatible for version >= minimum', () => {
+      mockGetConfigValue.mockReturnValue('/usr/bin/copilot');
+      mockExistsSync.mockReturnValue(true);
+      mockExecSync.mockReturnValue(Buffer.from('GitHub Copilot CLI 1.0.36.\n'));
+
+      const info = checkCliCompatibility();
+      expect(info.path).toBe('/usr/bin/copilot');
+      expect(info.version).toBe('1.0.36');
+      expect(info.compatible).toBe(true);
+      expect(info.minVersion).toBe(MIN_CLI_VERSION);
+    });
+
+    it('returns compatible for version > minimum', () => {
+      mockGetConfigValue.mockReturnValue('/usr/bin/copilot');
+      mockExistsSync.mockReturnValue(true);
+      mockExecSync.mockReturnValue(Buffer.from('GitHub Copilot CLI 2.0.0.\n'));
+
+      const info = checkCliCompatibility();
+      expect(info.compatible).toBe(true);
+    });
+
+    it('returns incompatible for version < minimum', () => {
+      mockGetConfigValue.mockReturnValue('/usr/bin/copilot');
+      mockExistsSync.mockReturnValue(true);
+      mockExecSync.mockReturnValue(Buffer.from('GitHub Copilot CLI 1.0.35.\n'));
+
+      const info = checkCliCompatibility();
+      expect(info.path).toBe('/usr/bin/copilot');
+      expect(info.version).toBe('1.0.35');
+      expect(info.compatible).toBe(false);
+    });
+
+    it('returns incompatible when CLI not found', () => {
+      mockGetConfigValue.mockReturnValue(null);
+      mockExistsSync.mockReturnValue(false);
+      mockExecSync.mockImplementation(() => { throw new Error('not found'); });
+
+      const info = checkCliCompatibility();
+      expect(info.path).toBeNull();
+      expect(info.version).toBeNull();
+      expect(info.compatible).toBe(false);
+    });
+
+    it('returns incompatible when version cannot be parsed', () => {
+      mockGetConfigValue.mockReturnValue('/usr/bin/copilot');
+      mockExistsSync.mockReturnValue(true);
+      mockExecSync.mockReturnValue(Buffer.from('unexpected output'));
+
+      const info = checkCliCompatibility();
+      expect(info.path).toBe('/usr/bin/copilot');
+      expect(info.version).toBeNull();
+      expect(info.compatible).toBe(false);
     });
   });
 });

@@ -417,6 +417,20 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
               return merged;
             });
           }
+        } else if ('error' in result && result.error) {
+          // Resume failed — show error as session event so user knows why history is missing
+          setMessages(prev => {
+            const errorMsg: ChatMessage = {
+              id: genId(),
+              type: 'session_event',
+              eventType: 'error',
+              message: result.error as string,
+              timestamp: new Date().toISOString(),
+            };
+            const merged = replayBufferedEvents([...prev, errorMsg], pendingEvents.current);
+            pendingEvents.current = [];
+            return merged;
+          });
         } else {
           // No history events — replay buffered events against seeded messages
           setMessages(prev => {
@@ -427,9 +441,16 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
         }
       } catch (err) {
         console.error('[ChatView] Failed to load history:', err);
-        // Even on error, replay any buffered events so they aren't lost
+        // Show error and replay any buffered events so they aren't lost
         setMessages(prev => {
-          const merged = replayBufferedEvents(prev, pendingEvents.current);
+          const errorMsg: ChatMessage = {
+            id: genId(),
+            type: 'session_event',
+            eventType: 'error',
+            message: `Failed to load conversation history: ${err instanceof Error ? err.message : 'Unknown error'}`,
+            timestamp: new Date().toISOString(),
+          };
+          const merged = replayBufferedEvents([...prev, errorMsg], pendingEvents.current);
           pendingEvents.current = [];
           return merged;
         });

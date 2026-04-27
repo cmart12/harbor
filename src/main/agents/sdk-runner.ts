@@ -258,7 +258,7 @@ export async function sendChatMessage(
   }
 }
 
-/** Attempt to resume a historical agent by creating a new SDK session. */
+/** Attempt to resume a historical agent by restoring its SDK session. */
 async function resumeAgentSession(agentId: string): Promise<boolean> {
   const persisted = persistence.getSession(agentId);
   if (!persisted) return false;
@@ -274,20 +274,22 @@ async function resumeAgentSession(agentId: string): Promise<boolean> {
 
   try {
     const mcpServers = getAllMcpServers();
-    const cliToolsPrompt = buildCliToolsPrompt();
     const findRecord = (sid: string) => registry.findBySessionId(sid);
 
-    const session = await client.createSession({
-      sessionId: persisted.session_id,
+    // Use resumeSession to restore full conversation history (not createSession
+    // which would start a fresh session with no history).
+    const session = await client.resumeSession(persisted.session_id, {
       workingDirectory: workingDir,
       mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
-      ...(cliToolsPrompt ? {
-        systemMessage: { mode: 'append' as const, content: cliToolsPrompt },
-      } : {}),
       onPermissionRequest: broker.createPermissionHandler(findRecord),
       onUserInputRequest: broker.createUserInputHandler(findRecord),
       onElicitationRequest: broker.createElicitationHandler(findRecord),
     });
+
+    const validStatuses = new Set(['running', 'waiting-approval', 'completed', 'failed']);
+    const restoredStatus = validStatuses.has(persisted.status)
+      ? persisted.status as import('./agent-registry').AgentStatus
+      : 'completed';
 
     const record: AgentRecord = {
       agentId,
@@ -296,7 +298,7 @@ async function resumeAgentSession(agentId: string): Promise<boolean> {
       intentId: persisted.intent_id || '__workspace__',
       selectedText: persisted.prompt,
       anchor: { quote: '', prefix: '', suffix: '' },
-      status: 'completed',
+      status: restoredStatus,
       pendingApprovalId: null,
       pendingPermissionKind: null,
       pendingApprovals: new Map(),
@@ -334,18 +336,24 @@ export async function getAgentHistory(agentId: string): Promise<{ events: any[] 
   // Resume if not already in memory
   let record = registry.get(agentId);
   if (!record) {
+    const persisted = persistence.getSession(agentId);
+    if (!persisted) return { error: 'Agent session not found in database' };
+
     const resumed = await resumeAgentSession(agentId);
-    if (!resumed) return { error: 'Failed to resume session' };
+    if (!resumed) {
+      const sourceLabel = persisted.source === 'cli' ? 'CLI' : 'SDK';
+      return { error: `Failed to resume ${sourceLabel} session — the session may have expired or been deleted` };
+    }
     record = registry.get(agentId);
   }
-  if (!record) return { error: 'Agent not found' };
+  if (!record) return { error: 'Agent not found after resume' };
 
   try {
     const events = await (record.session as any).getMessages();
     return { events: events || [] };
   } catch (err: any) {
     console.error('[agent-service] Failed to get history:', err);
-    return { error: err.message || 'Failed to load history' };
+    return { error: err.message || 'Failed to load conversation history' };
   }
 }
 
