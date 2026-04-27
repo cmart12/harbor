@@ -37,7 +37,7 @@ vi.mock('./workspace', () => ({
   createIntentFolder: vi.fn(),
 }));
 
-import { resolveCopilotCliPath, invalidateCliPath, checkCopilotCli, launchSession, parseCliVersion, compareVersions, getCopilotCliVersion, checkCliCompatibility, MIN_CLI_VERSION } from './session';
+import { resolveCopilotCliPath, invalidateCliPath, checkCopilotCli, launchSession, parseCliVersion, compareVersions, getCopilotCliVersion, checkCliCompatibility, resolveCmdToJs, MIN_CLI_VERSION } from './session';
 import { getConfigValue } from './config';
 
 const mockGetConfigValue = vi.mocked(getConfigValue);
@@ -120,6 +120,49 @@ describe('session', () => {
 
       const result = resolveCopilotCliPath();
       expect(result).toBe('/home/user/.npm-global/bin/copilot');
+    });
+  });
+
+  // ── resolveCmdToJs ────────────────────────────────────
+
+  describe('resolveCmdToJs', () => {
+    const originalPlatform = process.platform;
+
+    beforeEach(() => {
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+    });
+
+    afterEach(() => {
+      Object.defineProperty(process, 'platform', { value: originalPlatform });
+    });
+
+    it('resolves .cmd to @github/copilot/index.js in the same npm prefix', () => {
+      mockExistsSync.mockImplementation((p: unknown) => {
+        return p === 'C:\\ProgramData\\npm\\node_modules\\@github\\copilot\\index.js';
+      });
+
+      const result = resolveCmdToJs('C:\\ProgramData\\npm\\copilot.cmd');
+      expect(result).toBe('C:\\ProgramData\\npm\\node_modules\\@github\\copilot\\index.js');
+    });
+
+    it('returns original .cmd if index.js does not exist', () => {
+      mockExistsSync.mockReturnValue(false);
+
+      const result = resolveCmdToJs('C:\\ProgramData\\npm\\copilot.cmd');
+      expect(result).toBe('C:\\ProgramData\\npm\\copilot.cmd');
+    });
+
+    it('returns original path for non-.cmd files', () => {
+      const result = resolveCmdToJs('/usr/local/bin/copilot');
+      expect(result).toBe('/usr/local/bin/copilot');
+      expect(mockExistsSync).not.toHaveBeenCalled();
+    });
+
+    it('returns original path on non-win32 platforms', () => {
+      Object.defineProperty(process, 'platform', { value: 'darwin' });
+      const result = resolveCmdToJs('C:\\ProgramData\\npm\\copilot.cmd');
+      expect(result).toBe('C:\\ProgramData\\npm\\copilot.cmd');
+      expect(mockExistsSync).not.toHaveBeenCalled();
     });
   });
 

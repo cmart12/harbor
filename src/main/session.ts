@@ -104,6 +104,32 @@ export interface LaunchResult {
 
 // ── CLI discovery ───────────────────────────────────────
 
+/**
+ * On Windows, .cmd wrappers cannot be spawned directly by the Copilot SDK
+ * (it uses spawn() without shell:true, causing EINVAL). Resolve to the
+ * underlying @github/copilot/index.js entry point in the same npm prefix,
+ * which the SDK can spawn via process.execPath.
+ *
+ * We use index.js (the full CLI bundle) rather than npm-loader.js because
+ * the loader checks for a platform-specific native binary and Node >= 24,
+ * both of which fail under Electron's runtime.
+ */
+export function resolveCmdToJs(cmdPath: string): string {
+  if (process.platform !== 'win32' || !/\.cmd$/i.test(cmdPath)) return cmdPath;
+
+  try {
+    // The .cmd lives in the npm prefix dir (e.g. C:\ProgramData\npm\).
+    // The package is at node_modules/@github/copilot/ under the same prefix.
+    const npmDir = path.dirname(cmdPath);
+    const indexJs = path.join(npmDir, 'node_modules', '@github', 'copilot', 'index.js');
+    if (fs.existsSync(indexJs)) return indexJs;
+  } catch {
+    // Fall through to return original
+  }
+
+  return cmdPath;
+}
+
 function autoDetectCopilotCli(): string | null {
   if (process.platform === 'win32') {
     const candidates = [
@@ -112,7 +138,7 @@ function autoDetectCopilotCli(): string | null {
       path.join(process.env.ProgramData || 'C:\\ProgramData', 'npm', 'copilot.cmd'),
     ];
     for (const p of candidates) {
-      if (fs.existsSync(p)) return p;
+      if (fs.existsSync(p)) return resolveCmdToJs(p);
     }
   }
 
@@ -143,7 +169,7 @@ function autoDetectCopilotCli(): string | null {
       // On Windows, prefer .cmd files — bare "copilot" entries are Unix shell
       // scripts that Node's spawn() cannot execute (ENOENT).
       const cmdLine = lines.find(l => /\.cmd$/i.test(l) && isGlobal(l));
-      if (cmdLine && fs.existsSync(cmdLine)) return cmdLine;
+      if (cmdLine && fs.existsSync(cmdLine)) return resolveCmdToJs(cmdLine);
     }
 
     const globalLine = lines.find(l => isGlobal(l));
@@ -166,7 +192,7 @@ export function resolveCopilotCliPath(): string | null {
 
   const override = getConfigValue('cliPath');
   if (override && fs.existsSync(override)) {
-    resolvedCliPath = override;
+    resolvedCliPath = resolveCmdToJs(override);
     console.log(`[session] Using configured CLI path: ${resolvedCliPath}`);
     return resolvedCliPath;
   }
