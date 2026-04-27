@@ -70,7 +70,7 @@ export async function launchCommentAgent(
     const findRecord = (sid: string) => registry.findBySessionId(sid);
 
     const isSandboxed = persona.sandboxed === true && IS_WINDOWS;
-    const sandboxConfigDir = isSandboxed ? getSandboxConfigDir() : undefined;
+    const sandboxConfigDir = isSandboxed ? getSandboxConfigDir(workingDir, workspaceRoot) : undefined;
 
     const systemPrompt = `${persona.instructions}
 

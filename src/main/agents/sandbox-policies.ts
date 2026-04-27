@@ -51,4 +51,4 @@ export function createSandboxPreToolHook() {
 }
 
 /** System prompt appendix for sandboxed sessions. */
-export const SANDBOX_SYSTEM_PROMPT = `\n\n[SANDBOX MODE] You are running in a sandboxed environment. You may read files and run read-only commands but must NOT write files, run installs, or execute destructive operations.`;
+export const SANDBOX_SYSTEM_PROMPT = `\n\n[SANDBOX MODE] You are running in a sandboxed environment scoped to this intent's folder. You may read files and run read-only commands within this directory but must NOT write files outside it, run installs, or execute destructive operations. Do not attempt to access sibling intent folders or the parent workspace.`;
