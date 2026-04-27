@@ -198,7 +198,7 @@ export interface IpcCommands {
     result: { agentId: string; sessionId: string; jobId: string } | { error: string };
   };
   'agent:cloud-status': { args: [agentId: string]; result: CloudJobPollResult };
-  'agent:get-history': { args: [agentId: string]; result: { events: unknown[] } | { error: string } };
+  'agent:get-history': { args: [agentId: string]; result: { events: unknown[]; restarted?: boolean } | { error: string } };
 
   // ── CLI session ──────────────────────────────────────────
   'cli:launch-session': { args: []; result: { agentId: string; sessionId: string } | { error: string } };
@@ -206,7 +206,7 @@ export interface IpcCommands {
   // ── Chat ─────────────────────────────────────────────────
   'chat:send-message': {
     args: [agentId: string, prompt: string, attachments?: Array<{ type: 'file'; path: string }>];
-    result: { error?: string };
+    result: { error?: string; restarted?: boolean };
   };
   'chat:set-model': { args: [agentId: string, model: string]; result: { error?: string } };
 

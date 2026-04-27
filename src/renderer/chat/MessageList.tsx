@@ -108,7 +108,7 @@ export function MessageList({ messages, onApprovalRespond, onUserInputRespond, o
           case 'session_event':
             return (
               <div key={msg.id} className={`chat-session-event ${msg.eventType}`}>
-                {msg.eventType === 'error' ? '⚠️' : msg.eventType === 'completed' ? '✓' : '•'}{' '}
+                {msg.eventType === 'error' ? '⚠️' : msg.eventType === 'info' ? 'ℹ️' : msg.eventType === 'completed' ? '✓' : '•'}{' '}
                 {msg.message || msg.eventType}
               </div>
             );

@@ -27,6 +27,8 @@ export interface AgentRecord {
   pendingApprovals: Map<string, { permissionKind: string | null; intention?: string; path?: string }>;
   summary: string;
   commentContext?: CommentAgentContext;
+  /** True when session was recreated after the original SDK session expired. */
+  restarted?: boolean;
 }
 
 export class AgentRegistry {

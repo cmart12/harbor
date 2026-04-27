@@ -434,6 +434,19 @@ export function listAgentSessions(): AgentSession[] {
   ).all() as AgentSession[];
 }
 
+/** Update the session_id for an agent across both tables (e.g. after session recreation). */
+export function updateAgentSessionId(id: string, newSessionId: string): void {
+  const now = new Date().toISOString();
+  appendEvent(logPath, 'agent_session.updated', { id, session_id: newSessionId, updated_at: now });
+  db.prepare('UPDATE agent_sessions SET session_id = ?, updated_at = ? WHERE id = ?')
+    .run(newSessionId, now, id);
+  // Also update canvas_agents if present (best-effort)
+  try {
+    db.prepare('UPDATE canvas_agents SET session_id = ?, updated_at = ? WHERE id = ?')
+      .run(newSessionId, now, id);
+  } catch { /* non-fatal — row may not exist for quick agents */ }
+}
+
 export function deleteAgentSession(id: string): void {
   appendEvent(logPath, 'agent_session.deleted', { id });
   db.prepare('DELETE FROM agent_sessions WHERE id = ?').run(id);

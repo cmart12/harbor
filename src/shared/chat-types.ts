@@ -65,7 +65,7 @@ export interface ApprovalMessage {
 export interface SessionEventMessage {
   id: string;
   type: 'session_event';
-  eventType: 'idle' | 'error' | 'completed' | 'started';
+  eventType: 'idle' | 'error' | 'completed' | 'started' | 'info';
   message?: string;
   timestamp: string;
 }

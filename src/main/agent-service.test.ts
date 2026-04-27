@@ -31,6 +31,7 @@ vi.mock('./database', () => ({
   updateCanvasAgentStatus: vi.fn(),
   createAgentSession: vi.fn(),
   updateAgentSessionStatus: vi.fn(),
+  updateAgentSessionId: vi.fn(),
   getAgentSession: vi.fn(),
   listAgentSessions: vi.fn().mockReturnValue([]),
 }));
@@ -94,7 +95,7 @@ import {
   getAgentHistory,
 } from './agent-service';
 import { getCopilotClient } from './ai';
-import { createCanvasAgent, createAgentSession, updateAgentSessionStatus, getAgentSession, listAgentSessions } from './database';
+import { createCanvasAgent, createAgentSession, updateAgentSessionStatus, updateAgentSessionId, getAgentSession, listAgentSessions } from './database';
 import { getConfig } from './config';
 import { launchSessionInTerminal } from './session';
 import { v4 as uuid } from 'uuid';
@@ -717,10 +718,10 @@ describe('getAgentHistory', () => {
     });
   });
 
-  it('returns descriptive error when SDK resume fails', async () => {
+  it('falls back to createSession when SDK resume fails', async () => {
     enableMockClient();
     vi.mocked(getConfig).mockReturnValue({ workspace: '/ws' } as any);
-    mockClient.resumeSession.mockRejectedValueOnce(new Error('network error'));
+    mockClient.resumeSession.mockRejectedValueOnce(new Error('session expired'));
     const persistedSession = {
       id: 'sdk-fail-agent',
       session_id: 'sdk-fail-session-id',
@@ -736,9 +737,91 @@ describe('getAgentHistory', () => {
     vi.mocked(getAgentSession).mockReturnValue(persistedSession);
 
     const result = await getAgentHistory('sdk-fail-agent');
+
+    // Should have fallen back to createSession
+    expect(mockClient.createSession).toHaveBeenCalled();
+    // Should return restarted flag
+    expect(result).toHaveProperty('restarted', true);
+    expect(result).toHaveProperty('events');
+    // Should update the session ID in the database
+    expect(updateAgentSessionId).toHaveBeenCalledWith('sdk-fail-agent', expect.any(String));
+  });
+
+  it('returns error when both resume and fallback createSession fail for SDK', async () => {
+    enableMockClient();
+    vi.mocked(getConfig).mockReturnValue({ workspace: '/ws' } as any);
+    mockClient.resumeSession.mockRejectedValueOnce(new Error('session expired'));
+    mockClient.createSession.mockRejectedValueOnce(new Error('auth failed'));
+    const persistedSession = {
+      id: 'sdk-both-fail-agent',
+      session_id: 'sdk-both-fail-session-id',
+      intent_id: 'intent-1',
+      prompt: 'do something',
+      status: 'completed' as const,
+      summary: 'Done',
+      working_dir: '/ws',
+      source: 'sdk' as const,
+      created_at: '2025-01-01',
+      updated_at: '2025-01-01',
+    };
+    vi.mocked(getAgentSession).mockReturnValue(persistedSession);
+
+    const result = await getAgentHistory('sdk-both-fail-agent');
     expect(result).toEqual({
       error: expect.stringContaining('SDK session'),
     });
+  });
+
+  it('includes canvas system prompt in fallback session for canvas agents', async () => {
+    enableMockClient();
+    vi.mocked(getConfig).mockReturnValue({ workspace: '/ws' } as any);
+    mockClient.resumeSession.mockRejectedValueOnce(new Error('session expired'));
+    const persistedSession = {
+      id: 'canvas-restart-agent',
+      session_id: 'canvas-restart-session-id',
+      intent_id: 'intent-1',
+      prompt: 'fix the bug in section 2',
+      status: 'completed' as const,
+      summary: 'Fixed the bug',
+      working_dir: '/ws',
+      source: 'sdk' as const,
+      created_at: '2025-01-01',
+      updated_at: '2025-01-01',
+    };
+    vi.mocked(getAgentSession).mockReturnValue(persistedSession);
+
+    await getAgentHistory('canvas-restart-agent');
+
+    const createConfig = mockClient.createSession.mock.calls[0][0];
+    expect(createConfig.systemMessage.content).toContain('canvas document');
+    expect(createConfig.systemMessage.content).toContain('fix the bug in section 2');
+    expect(createConfig.systemMessage.content).toContain('continuation of a previous session');
+  });
+
+  it('does not attempt fallback for CLI sessions', async () => {
+    enableMockClient();
+    vi.mocked(getConfig).mockReturnValue({ workspace: '/ws' } as any);
+    mockClient.resumeSession.mockRejectedValueOnce(new Error('session expired'));
+    const persistedSession = {
+      id: 'cli-no-fallback-agent',
+      session_id: 'cli-no-fallback-session-id',
+      intent_id: null,
+      prompt: 'CLI Session',
+      status: 'completed' as const,
+      summary: 'CLI session ended',
+      working_dir: '/ws',
+      source: 'cli' as const,
+      created_at: '2025-01-01',
+      updated_at: '2025-01-01',
+    };
+    vi.mocked(getAgentSession).mockReturnValue(persistedSession);
+
+    const result = await getAgentHistory('cli-no-fallback-agent');
+    expect(result).toEqual({
+      error: expect.stringContaining('CLI session'),
+    });
+    // createSession should NOT have been called
+    expect(mockClient.createSession).not.toHaveBeenCalled();
   });
 
   it('does not pass systemMessage on resume (avoids duplicating prompts)', async () => {

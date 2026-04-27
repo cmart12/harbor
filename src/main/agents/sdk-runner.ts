@@ -230,14 +230,16 @@ export async function sendChatMessage(
   agentId: string,
   prompt: string,
   attachments?: Array<{ type: 'file'; path: string }>,
-): Promise<{ error?: string }> {
-  const record = registry.get(agentId);
+): Promise<{ error?: string; restarted?: boolean }> {
+  let record = registry.get(agentId);
+  let restarted = false;
   if (!record) {
     // Agent not in memory — might be historical (app restarted).
     // Try to re-create a session for it.
-    const resumed = await resumeAgentSession(agentId);
-    if (!resumed) return { error: 'Agent session expired — open in CLI to resume' };
-    return sendChatMessage(agentId, prompt, attachments);
+    const result = await resumeAgentSession(agentId);
+    if (!result) return { error: 'Agent session expired — open in CLI to resume' };
+    restarted = result === 'restarted';
+    record = registry.get(agentId)!;
   }
   if (record.status !== 'completed' && record.status !== 'running') {
     return { error: `Agent is ${record.status}, cannot send message` };
@@ -250,19 +252,29 @@ export async function sendChatMessage(
     agentId, status: 'running', summary: record.summary,
   });
 
+  // Notify renderer if session was restarted
+  if (restarted) {
+    notifier.notifyRenderer(`chat:event:${agentId}`, {
+      type: 'session.restarted',
+      message: 'Previous session expired — started a fresh session with context from the original conversation.',
+    });
+  }
+
   try {
     await record.session.send({
       prompt,
       ...(attachments ? { attachments } : {}),
     });
-    return {};
+    return { ...(restarted ? { restarted: true } : {}) };
   } catch (err: any) {
     return { error: err.message || 'Failed to send message' };
   }
 }
 
-/** Attempt to resume a historical agent by restoring its SDK session. */
-async function resumeAgentSession(agentId: string): Promise<boolean> {
+/** Attempt to resume a historical agent by restoring its SDK session.
+ *  Returns 'resumed' if the original session was restored, 'restarted' if a
+ *  new session was created because the original expired, or false on failure. */
+async function resumeAgentSession(agentId: string): Promise<'resumed' | 'restarted' | false> {
   const persisted = persistence.getSession(agentId);
   if (!persisted) return false;
 
@@ -311,9 +323,91 @@ async function resumeAgentSession(agentId: string): Promise<boolean> {
     registry.set(agentId, record);
 
     setupAgentEventListeners(session, record);
-    return true;
+    return 'resumed';
   } catch (err) {
-    console.error('[agent-service] Failed to resume session:', err);
+    console.warn('[agent-service] resumeSession failed, attempting fresh session fallback:', err);
+
+    // Only attempt fallback for SDK sessions — CLI sessions must be resumed via CLI
+    if (persisted.source !== 'sdk') {
+      return false;
+    }
+
+    return restartExpiredSession(agentId, persisted, workingDir);
+  }
+}
+
+/** Create a fresh SDK session to replace an expired one, preserving context. */
+async function restartExpiredSession(
+  agentId: string,
+  persisted: import('../../shared/types').AgentSession,
+  workingDir: string,
+): Promise<'restarted' | false> {
+  const client = getCopilotClient();
+  if (!client) return false;
+
+  try {
+    const mcpServers = getAllMcpServers();
+    const cliToolsPrompt = buildCliToolsPrompt();
+    const findRecord = (sid: string) => registry.findBySessionId(sid);
+
+    const isCanvasAgent = persisted.intent_id && persisted.intent_id !== '__workspace__';
+
+    // Build system message with previous context
+    let systemContent: string;
+    if (isCanvasAgent) {
+      // Reconstruct canvas-style system prompt with prior context
+      systemContent =
+        `\nThe user selected the following text from their canvas document and wants you to work on it:\n\n` +
+        `---\n${persisted.prompt}\n---\n\n` +
+        `The full canvas document is available as canvas.md in the working directory.${cliToolsPrompt}\n\n` +
+        `Note: This is a continuation of a previous session that expired. ` +
+        `The previous session summary was: "${truncate(persisted.summary || 'No summary', 500)}". ` +
+        `Continue helping from where things left off.`;
+    } else {
+      systemContent =
+        (cliToolsPrompt ? cliToolsPrompt + '\n\n' : '') +
+        `Note: This is a continuation of a previous session that expired. ` +
+        `The original request was: "${truncate(persisted.prompt, 500)}". ` +
+        `The previous session summary was: "${truncate(persisted.summary || 'No summary', 500)}". ` +
+        `Continue helping from where things left off.`;
+    }
+
+    const session = await client.createSession({
+      workingDirectory: workingDir,
+      mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
+      tools: getCustomTools(),
+      onPermissionRequest: broker.createPermissionHandler(findRecord),
+      onUserInputRequest: broker.createUserInputHandler(findRecord),
+      onElicitationRequest: broker.createElicitationHandler(findRecord),
+      systemMessage: { mode: 'append', content: systemContent },
+    });
+
+    const newSessionId = (session as any).sessionId || agentId;
+
+    const record: AgentRecord = {
+      agentId,
+      sessionId: newSessionId,
+      session,
+      intentId: persisted.intent_id || '__workspace__',
+      selectedText: persisted.prompt,
+      anchor: { quote: '', prefix: '', suffix: '' },
+      status: 'completed',
+      pendingApprovalId: null,
+      pendingPermissionKind: null,
+      pendingApprovals: new Map(),
+      summary: persisted.summary || 'Session restarted',
+      restarted: true,
+    };
+    registry.set(agentId, record);
+
+    // Update DB with new session_id
+    persistence.updateSessionId(agentId, newSessionId);
+
+    setupAgentEventListeners(session, record);
+    console.info(`[agent-service] Restarted expired session for agent ${agentId} (new session: ${newSessionId})`);
+    return 'restarted';
+  } catch (err) {
+    console.error('[agent-service] Failed to restart expired session:', err);
     return false;
   }
 }
@@ -336,15 +430,15 @@ export async function setAgentModel(agentId: string, model: string): Promise<{ e
 }
 
 /** Resume an agent session and return its conversation history. */
-export async function getAgentHistory(agentId: string): Promise<{ events: any[] } | { error: string }> {
+export async function getAgentHistory(agentId: string): Promise<{ events: any[]; restarted?: boolean } | { error: string }> {
   // Resume if not already in memory
   let record = registry.get(agentId);
   if (!record) {
     const persisted = persistence.getSession(agentId);
     if (!persisted) return { error: 'Agent session not found in database' };
 
-    const resumed = await resumeAgentSession(agentId);
-    if (!resumed) {
+    const result = await resumeAgentSession(agentId);
+    if (!result) {
       const sourceLabel = persisted.source === 'cli' ? 'CLI' : 'SDK';
       return { error: `Failed to resume ${sourceLabel} session — the session may have expired or been deleted` };
     }
@@ -352,9 +446,11 @@ export async function getAgentHistory(agentId: string): Promise<{ events: any[] 
   }
   if (!record) return { error: 'Agent not found after resume' };
 
+  const restarted = record.restarted === true;
+
   try {
     const events = await (record.session as any).getMessages();
-    return { events: events || [] };
+    return { events: events || [], ...(restarted ? { restarted: true } : {}) };
   } catch (err: any) {
     console.error('[agent-service] Failed to get history:', err);
     return { error: err.message || 'Failed to load conversation history' };

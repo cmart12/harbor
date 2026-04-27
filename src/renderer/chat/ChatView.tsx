@@ -16,7 +16,7 @@ declare const intentAPI: {
   getSetting: (key: string) => Promise<string | null>;
   setChatModel: (agentId: string, model: string) => Promise<{ error?: string }>;
   quickLaunchAgent: (prompt: string) => Promise<{ agentId: string; sessionId: string } | { error: string }>;
-  getAgentHistory: (agentId: string) => Promise<{ events?: any[]; error?: string }>;
+  getAgentHistory: (agentId: string) => Promise<{ events?: any[]; error?: string; restarted?: boolean }>;
   selectWorkspace: () => Promise<{ selected: boolean; path: string | null }>;
   onWorkspaceChanged: (callback: (path: string | null) => void) => void;
   [key: string]: any;
@@ -456,6 +456,20 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
             pendingEvents.current = [];
             return merged;
           });
+        } else if (result.restarted) {
+          // Session was recreated after expiry — show informational notice
+          setMessages(prev => {
+            const restartMsg: ChatMessage = {
+              id: genId(),
+              type: 'session_event',
+              eventType: 'info',
+              message: 'Previous session expired — started a fresh session with context from the original conversation.',
+              timestamp: new Date().toISOString(),
+            };
+            const merged = replayBufferedEvents([...prev, restartMsg], pendingEvents.current);
+            pendingEvents.current = [];
+            return merged;
+          });
         } else {
           // No history events — replay buffered events against seeded messages
           setMessages(prev => {
@@ -623,6 +637,17 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
             type: 'session_event',
             eventType: 'error',
             message: event.message,
+            timestamp: new Date().toISOString(),
+          } as SessionEventMessage]);
+          break;
+        }
+
+        case 'session.restarted': {
+          setMessages(prev => [...prev, {
+            id: genId(),
+            type: 'session_event',
+            eventType: 'info',
+            message: event.message || 'Previous session expired — started a fresh session with context.',
             timestamp: new Date().toISOString(),
           } as SessionEventMessage]);
           break;

@@ -3,6 +3,7 @@ import {
   updateCanvasAgentStatus,
   createAgentSession as dbCreateAgentSession,
   updateAgentSessionStatus,
+  updateAgentSessionId,
   getAgentSession,
   listAgentSessions,
 } from '../database';
@@ -45,5 +46,10 @@ export class AgentPersistence {
 
   updateSessionStatus(agentId: string, status: string, summary: string): void {
     updateAgentSessionStatus(agentId, status, summary);
+  }
+
+  /** Update session_id in both agent_sessions and canvas_agents tables. */
+  updateSessionId(agentId: string, newSessionId: string): void {
+    updateAgentSessionId(agentId, newSessionId);
   }
 }
