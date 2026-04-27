@@ -533,6 +533,39 @@ describe('IPC handlers', () => {
       const result = await invoke('skill:create-from-prompt', 'triage github issues');
       expect(result).toEqual({ error: 'no_workspace' });
     });
+
+    it('returns error when DB not initialized', async () => {
+      vi.mocked(isInitialized).mockReturnValueOnce(false);
+      const result = await invoke('skill:create-from-prompt', 'triage github issues');
+      expect(result).toEqual({ error: 'no_workspace' });
+    });
+
+    it('launches a quick agent with the description', async () => {
+      const { launchQuickAgent } = await import('./agent-service');
+      vi.mocked(launchQuickAgent).mockClear();
+      const result = await invoke('skill:create-from-prompt', 'triage github issues');
+      expect(result).toEqual({ agentId: 'a2', sessionId: 's2' });
+      expect(launchQuickAgent).toHaveBeenCalledOnce();
+      const prompt = vi.mocked(launchQuickAgent).mock.calls[0][0];
+      expect(prompt).toContain('triage github issues');
+      expect(prompt).toContain('SKILL.md');
+      expect(prompt).toContain('/mock/workspace/.agents/skills');
+    });
+
+    it('includes existing skill slugs in the prompt to avoid collisions', async () => {
+      const { listSkills } = await import('./database');
+      vi.mocked(listSkills).mockReturnValueOnce([
+        { id: 'pr-review', name: 'PR Review', description: '', folder: '', filePath: '', created_at: '', updated_at: '' },
+        { id: 'issue-triage', name: 'Issue Triage', description: '', folder: '', filePath: '', created_at: '', updated_at: '' },
+      ] as any);
+      const { launchQuickAgent } = await import('./agent-service');
+      vi.mocked(launchQuickAgent).mockClear();
+      await invoke('skill:create-from-prompt', 'review pull requests');
+      const prompt = vi.mocked(launchQuickAgent).mock.calls[0][0];
+      expect(prompt).toContain('pr-review');
+      expect(prompt).toContain('issue-triage');
+      expect(prompt).toContain('DO NOT overwrite');
+    });
   });
 
   describe('handler registration', () => {
