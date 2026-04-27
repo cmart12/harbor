@@ -5,7 +5,8 @@
   "productName": "Copilot Intent",
   "main": "dist/main/main.js",
   "scripts": {
-    "build": "tsc -p tsconfig.main.json && node scripts/build-renderer.js && node -e \"const fs=require('fs');const p=require('path');['index.html','styles.css'].forEach(f=>fs.copyFileSync(p.join('src','renderer',f),p.join('dist','renderer',f)))\"",
+    "clean": "node -e \"const fs=require('fs');const p=require('path');if(fs.existsSync('dist'))fs.rmSync('dist',{recursive:true,force:true})\"",
+    "build": "npm run clean && tsc -p tsconfig.main.json && node scripts/build-renderer.js && node -e \"const fs=require('fs');const p=require('path');['index.html','styles.css'].forEach(f=>fs.copyFileSync(p.join('src','renderer',f),p.join('dist','renderer',f)))\"",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "oxlint src/",
