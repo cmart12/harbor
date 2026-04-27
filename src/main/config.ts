@@ -34,6 +34,7 @@ export interface AppConfig {
   sessions: Record<string, string>; // intentId → copilot CLI sessionId
   pinned: boolean;
   snapPosition: SnapPosition;
+  windowWidth: number;
   personas: AgentPersona[];
   cliTools: CliToolDefinition[];
   mcpServers: CustomMcpServer[];   // user-added MCP servers
@@ -49,6 +50,7 @@ const DEFAULT_CONFIG: AppConfig = {
   sessions: {},
   pinned: false,
   snapPosition: 'bottom-right',
+  windowWidth: 420,
   personas: [],
   cliTools: [],
   mcpServers: [],

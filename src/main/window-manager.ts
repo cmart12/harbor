@@ -34,7 +34,7 @@ export function createMainWindow(options: WindowManagerOptions): BrowserWindow {
     height: WINDOW_HEIGHT,
     show: false,
     frame: false,
-    resizable: false,
+    resizable: true,
     skipTaskbar: true,
     alwaysOnTop: true,
     transparent: true,
@@ -50,6 +50,7 @@ export function createMainWindow(options: WindowManagerOptions): BrowserWindow {
   // Load via custom protocol so Web Speech API works (needs a real origin, not file://)
   win.loadURL('copilot-intent://app/renderer/index.html');
   attachBlurHide(win);
+  attachResizePersist(win);
 
   mainWindow = win;
   return win;
@@ -69,13 +70,13 @@ export function toggleWindow(): void {
 
     const snap = getConfigValue('snapPosition') || 'bottom-right';
     const isLeft = snap.includes('left');
-    const winX = isLeft ? x + SNAP_MARGIN : x + width - WINDOW_WIDTH - SNAP_MARGIN;
+    const winWidth = getConfigValue('windowWidth') || WINDOW_WIDTH;
+    const winX = isLeft ? x + SNAP_MARGIN : x + width - winWidth - SNAP_MARGIN;
     const winY = y + SNAP_MARGIN;
     const winHeight = height - SNAP_MARGIN * 2;
 
     showTimestamp = Date.now();
-    mainWindow.setBounds({ x: winX, y: winY, width: WINDOW_WIDTH, height: winHeight }, false);
-    mainWindow.setResizable(!!getConfigValue('pinned'));
+    mainWindow.setBounds({ x: winX, y: winY, width: winWidth, height: winHeight }, false);
     mainWindow.show();
     mainWindow.focus();
     mainWindow.webContents.send('window:shown');
@@ -130,12 +131,12 @@ export function registerWindowIpcHandlers(preloadPath: string): void {
 
     const snap = getConfigValue('snapPosition') || 'bottom-right';
     const isLeft = snap.includes('left');
-    const winX = isLeft ? x + SNAP_MARGIN : x + width - WINDOW_WIDTH - SNAP_MARGIN;
+    const winWidth = getConfigValue('windowWidth') || WINDOW_WIDTH;
+    const winX = isLeft ? x + SNAP_MARGIN : x + width - winWidth - SNAP_MARGIN;
     const winY = y + SNAP_MARGIN;
     const winHeight = height - SNAP_MARGIN * 2;
 
-    mainWindow.setBounds({ x: winX, y: winY, width: WINDOW_WIDTH, height: winHeight }, true);
-    mainWindow.setResizable(!!getConfigValue('pinned'));
+    mainWindow.setBounds({ x: winX, y: winY, width: winWidth, height: winHeight }, true);
     setTimeout(() => { isSnapping = false; }, 300);
   });
 
@@ -147,8 +148,6 @@ export function registerWindowIpcHandlers(preloadPath: string): void {
   ipcMain.on('window:set-pinned', (_event, pinned: boolean) => {
     setConfigValue('pinned', pinned);
     if (mainWindow && !isExpanded) {
-      mainWindow.setResizable(pinned);
-
       // When unpinning, snap back to full-height edge position
       if (!pinned) {
         const bounds = mainWindow.getBounds();
@@ -159,12 +158,13 @@ export function registerWindowIpcHandlers(preloadPath: string): void {
 
         const isLeft = centerX < area.x + area.width / 2;
         const snap: SnapPosition = isLeft ? 'top-left' : 'top-right';
-        const winX = isLeft ? area.x + SNAP_MARGIN : area.x + area.width - WINDOW_WIDTH - SNAP_MARGIN;
+        const winWidth = getConfigValue('windowWidth') || WINDOW_WIDTH;
+        const winX = isLeft ? area.x + SNAP_MARGIN : area.x + area.width - winWidth - SNAP_MARGIN;
         const winY = area.y + SNAP_MARGIN;
         const winHeight = area.height - SNAP_MARGIN * 2;
 
         setConfigValue('snapPosition', snap);
-        mainWindow.setBounds({ x: winX, y: winY, width: WINDOW_WIDTH, height: winHeight }, false);
+        mainWindow.setBounds({ x: winX, y: winY, width: winWidth, height: winHeight }, false);
       }
     }
     // Notify all windows so UI can update
@@ -198,6 +198,21 @@ export function registerWindowIpcHandlers(preloadPath: string): void {
 }
 
 // ── Internal helpers ─────────────────────────────────────
+
+/** Persist the user's preferred width when they resize the window. */
+function attachResizePersist(win: BrowserWindow): void {
+  let resizeDebounce: ReturnType<typeof setTimeout> | null = null;
+  win.on('resize', () => {
+    if (isExpanded || isSnapping) return;
+    if (resizeDebounce) clearTimeout(resizeDebounce);
+    resizeDebounce = setTimeout(() => {
+      if (!win.isDestroyed()) {
+        const { width } = win.getBounds();
+        setConfigValue('windowWidth', width);
+      }
+    }, 300);
+  });
+}
 
 /** Attach blur handler that hides the window only when the user isn't actively working. */
 function attachBlurHide(win: BrowserWindow): void {
