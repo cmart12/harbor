@@ -34,6 +34,7 @@ export interface IntentAPI {
   resolveDate(dateText: string): Promise<IpcCommandResult<'intent:resolve-date'>>;
   classifyInput(text: string): Promise<IpcCommandResult<'intent:classify'>>;
   searchIntents(query: string): Promise<IpcCommandResult<'intent:search'>>;
+  unarchive(id: string): Promise<IpcCommandResult<'intent:unarchive'>>;
   summarizeTitle(canvasContent: string): Promise<IpcCommandResult<'intent:summarize-title'>>;
 
   // ── Voice ────────────────────────────────────────────────
@@ -171,6 +172,7 @@ const api: IntentAPI = {
   resolveDate: (dateText) => ipcRenderer.invoke('intent:resolve-date', dateText),
   classifyInput: (text) => ipcRenderer.invoke('intent:classify', text),
   searchIntents: (query) => ipcRenderer.invoke('intent:search', query),
+  unarchive: (id) => ipcRenderer.invoke('intent:unarchive', id),
   summarizeTitle: (canvasContent) => ipcRenderer.invoke('intent:summarize-title', canvasContent),
 
   // ── Voice ────────────────────────────────────────────────

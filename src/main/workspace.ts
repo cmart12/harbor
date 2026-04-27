@@ -158,6 +158,20 @@ export function archiveIntentFolder(workspaceRoot: string, folder: string): void
   fs.renameSync(src, dest);
 }
 
+/** Move an intent folder from .intent/archive/ back to the workspace root. */
+export function unarchiveIntentFolder(workspaceRoot: string, folder: string): void {
+  if (!folder) return;
+  const archivePath = path.join(workspaceRoot, INTENT_DIR, ARCHIVE_DIR, folder);
+  if (!fs.existsSync(archivePath)) return;
+
+  const dest = path.join(workspaceRoot, folder);
+  if (fs.existsSync(dest)) {
+    fs.rmSync(dest, { recursive: true, force: true });
+  }
+
+  fs.renameSync(archivePath, dest);
+}
+
 /** Remove an intent folder from disk (workspace root and/or archive). */
 export function deleteIntentFolder(workspaceRoot: string, folder: string): void {
   if (!folder) return;

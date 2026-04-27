@@ -152,7 +152,7 @@ function applyEvent(db: Database.Database, event: LogEvent): void {
         `INSERT OR REPLACE INTO agent_sessions (id, session_id, intent_id, prompt, status, summary, working_dir, source, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(
-        d.id, d.session_id, d.intent_id ?? null, d.prompt, d.status,
+        d.id, d.session_id, d.intent_id ?? null, d.prompt, d.status ?? 'running',
         d.summary ?? '', d.working_dir ?? null, d.source ?? 'sdk', d.created_at, d.updated_at,
       );
       break;
@@ -162,10 +162,10 @@ function applyEvent(db: Database.Database, event: LogEvent): void {
       const d = event.data;
       if (d.summary !== undefined && d.summary !== null) {
         db.prepare('UPDATE agent_sessions SET status = ?, summary = ?, updated_at = ? WHERE id = ?')
-          .run(d.status, d.summary, d.updated_at, d.id);
+          .run(d.status ?? 'running', d.summary, d.updated_at, d.id);
       } else {
         db.prepare('UPDATE agent_sessions SET status = ?, updated_at = ? WHERE id = ?')
-          .run(d.status, d.updated_at, d.id);
+          .run(d.status ?? 'running', d.updated_at, d.id);
       }
       break;
     }

@@ -580,6 +580,7 @@ header h1 {
 /* ── Past view cards ──────────────────────────────────── */
 
 .past-card {
+  position: relative;
   background: rgba(255, 255, 255, 0.7);
   border: 1px solid rgba(255, 255, 255, 0.6);
   border-radius: 12px;
@@ -592,6 +593,34 @@ header h1 {
 .past-card:hover {
   background: rgba(255, 255, 255, 0.9);
   box-shadow: 0 2px 12px rgba(120, 100, 180, 0.08);
+}
+
+.past-card-restore {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.06);
+  color: rgba(0, 0, 0, 0.5);
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+
+.past-card:hover .past-card-restore {
+  opacity: 1;
+}
+
+.past-card-restore:hover {
+  background: rgba(0, 0, 0, 0.12);
+  color: rgba(0, 0, 0, 0.7);
 }
 
 .past-card-type {
@@ -3237,6 +3266,8 @@ body.dark .agent-summary-body { color: #e0e0e0; }
 /* Dark past cards */
 body.dark .past-card { background: rgba(255, 255, 255, 0.04); border-color: rgba(255, 255, 255, 0.06); }
 body.dark .past-card:hover { background: rgba(255, 255, 255, 0.08); box-shadow: 0 2px 12px rgba(0, 0, 0, 0.2); }
+body.dark .past-card-restore { background: rgba(255, 255, 255, 0.08); color: rgba(255, 255, 255, 0.5); }
+body.dark .past-card-restore:hover { background: rgba(255, 255, 255, 0.15); color: rgba(255, 255, 255, 0.8); }
 body.dark .past-card-type { color: rgba(255, 255, 255, 0.4); }
 body.dark .past-card-title { color: #e0e0e0; }
 body.dark .past-card-client { color: rgba(255, 255, 255, 0.35); }

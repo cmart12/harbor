@@ -127,6 +127,7 @@ export interface IpcCommands {
   'intent:classify': { args: [text: string]; result: { type: 'intent' | 'query'; answer?: string } };
   'intent:summarize-title': { args: [canvasContent: string]; result: { title: string | null } };
   'intent:search': { args: [query: string]; result: Intent[] };
+  'intent:unarchive': { args: [id: string]; result: Intent | null };
 
   // ── Voice ────────────────────────────────────────────────
   'voice:transcribe': { args: [audioData: number[]]; result: string };

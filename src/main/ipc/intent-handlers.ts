@@ -3,7 +3,7 @@ import { isInitialized, createIntent, listIntents, updateIntent, deleteIntent, g
 import { parseIntentWithAI, resolveDateWithAI, classifyInput } from '../ai';
 import { CreateIntentInput, Intent } from '../../shared/types';
 import { getConfigValue } from '../config';
-import { initIntentCanvas, scheduleAutoCommit, commitNow, archiveIntentFolder, deleteIntentFolder } from '../workspace';
+import { initIntentCanvas, scheduleAutoCommit, commitNow, archiveIntentFolder, unarchiveIntentFolder, deleteIntentFolder } from '../workspace';
 import { handleRecurrence, dismissRecurrence, cancelPendingRecurrence } from '../services/recurrence';
 import { processIntentInBackground } from '../services/intent-processing';
 
@@ -133,5 +133,23 @@ export function registerIntentHandlers(): void {
   ipcMain.handle('intent:search', (_event, query: string) => {
     if (!isInitialized()) return [];
     return searchIntents(query);
+  });
+
+  ipcMain.handle('intent:unarchive', async (_event, id: string) => {
+    const current = getIntent(id);
+    if (!current || current.status !== 'done') return null;
+
+    const updated = updateIntent(id, { status: 'captured', completed_at: null });
+    if (updated) {
+      logIntentEvent(id, 'unarchived');
+
+      const workspace = getConfigValue('workspace');
+      if (workspace && updated.folder) {
+        await commitNow(workspace);
+        unarchiveIntentFolder(workspace, updated.folder);
+        scheduleAutoCommit(workspace);
+      }
+    }
+    return updated;
   });
 }

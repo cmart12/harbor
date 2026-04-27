@@ -92,6 +92,7 @@ interface IntentAPI {
   canvasHistory(intentId: string): Promise<{ commits: FolderCommit[]; error?: string }>;
   canvasRestore(intentId: string, sha: string): Promise<{ success: boolean; error?: string }>;
   searchIntents(query: string): Promise<Intent[]>;
+  unarchive(id: string): Promise<Intent | null>;
   summarizeTitle(canvasContent: string): Promise<{ title: string | null }>;
   pasteFile(intentId: string, filename: string, dataArray: number[]): Promise<{ success?: boolean; relativePath?: string; filename?: string; error?: string }>;
   listAgents(intentId: string): Promise<any[]>;
@@ -1725,6 +1726,7 @@ async function renderPastView(): Promise<void> {
 
     html += `
       <div class="past-card" data-id="${intent.id}" onclick="openCanvas('${intent.id}', true)">
+        <button class="past-card-restore" onclick="event.stopPropagation(); unarchiveIntent('${intent.id}')" title="Restore to Spaces">↺</button>
         <div class="past-card-type"><span class="past-type-icon">${typeIcon}</span> ${typeLabel}</div>
         <div class="past-card-title">${escapeHtml(intent.description)}</div>
         ${intent.client ? `<div class="past-card-client">👤 ${escapeHtml(intent.client)}</div>` : ''}
@@ -3122,6 +3124,18 @@ async function deleteIntent(id: string): Promise<void> {
 
 (window as any).toggleStatus = toggleStatus;
 (window as any).deleteIntent = deleteIntent;
+
+// @ts-ignore - called from onclick in HTML
+async function unarchiveIntent(id: string): Promise<void> {
+  const result = await intentAPI.unarchive(id);
+  if (result) {
+    showStatus('✓ Restored to Spaces');
+    setTimeout(hideStatus, 2000);
+    await loadIntents();
+  }
+}
+
+(window as any).unarchiveIntent = unarchiveIntent;
 
 // @ts-ignore - called from onclick in HTML
 async function refreshIntentTitle(id: string): Promise<void> {
