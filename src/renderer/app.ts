@@ -1953,7 +1953,6 @@ async function renderSkillsList(): Promise<void> {
         </div>
       </div>
       <button class="intent-launch" onclick="event.stopPropagation(); openSkillFolder('${skill.id}')" title="Open folder">📁</button>
-      <button class="intent-launch" onclick="event.stopPropagation(); createIntentFromSkill('${skill.id}')" title="Create intent from skill">🎯</button>
       <button class="intent-delete" onclick="event.stopPropagation(); deleteSkill('${skill.id}')">✕</button>
     </div>
   `).join('');
