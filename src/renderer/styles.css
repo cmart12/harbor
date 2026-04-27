@@ -3533,6 +3533,10 @@ body.dark .chat-loading-history {
   scrollbar-color: rgba(0, 0, 0, 0.1) transparent;
 }
 
+.chat-messages > * {
+  flex-shrink: 0;
+}
+
 .chat-empty-state {
   display: flex;
   flex-direction: column;

@@ -11,6 +11,7 @@ import { AgentNotifier } from './agent-notifier';
 import { AgentPersistence } from './agent-persistence';
 import { InteractionBroker } from './interaction-broker';
 import type { SubagentTracker } from '../subagent-service';
+import { getCustomTools } from '../tools';
 
 /** Shared dependencies injected from agent-service at init time. */
 let registry: AgentRegistry;
@@ -65,6 +66,7 @@ export async function launchAgent(
     const session = await client.createSession({
       workingDirectory: workingDir,
       mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
+      tools: getCustomTools(),
       onPermissionRequest: broker.createPermissionHandler(findRecord),
       onUserInputRequest: broker.createUserInputHandler(findRecord),
       onElicitationRequest: broker.createElicitationHandler(findRecord),
@@ -160,6 +162,7 @@ export async function launchQuickAgent(
     const session = await client.createSession({
       workingDirectory: workspaceRoot,
       mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
+      tools: getCustomTools(),
       ...(cliToolsPrompt ? {
         systemMessage: {
           mode: 'append' as const,
@@ -281,6 +284,7 @@ async function resumeAgentSession(agentId: string): Promise<boolean> {
     const session = await client.resumeSession(persisted.session_id, {
       workingDirectory: workingDir,
       mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
+      tools: getCustomTools(),
       onPermissionRequest: broker.createPermissionHandler(findRecord),
       onUserInputRequest: broker.createUserInputHandler(findRecord),
       onElicitationRequest: broker.createElicitationHandler(findRecord),

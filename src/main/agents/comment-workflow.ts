@@ -11,6 +11,7 @@ import { AgentNotifier } from './agent-notifier';
 import { AgentPersistence } from './agent-persistence';
 import { InteractionBroker } from './interaction-broker';
 import { buildCliToolsPrompt } from './sdk-runner';
+import { getCustomTools } from '../tools';
 
 /** Shared dependencies injected from agent-service at init time. */
 let registry: AgentRegistry;
@@ -80,6 +81,7 @@ If you make changes to the document, clearly describe what you changed.${cliTool
     const session = await client.createSession({
       workingDirectory: workingDir,
       mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
+      tools: getCustomTools(),
       ...(persona.model ? { model: persona.model } : {}),
       onPermissionRequest: broker.createPermissionHandler(findRecord),
       onUserInputRequest: broker.createUserInputHandler(findRecord),
