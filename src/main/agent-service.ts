@@ -31,7 +31,7 @@ initCliRunner({ registry, notifier, persistence });
 initCommentWorkflow({ registry, notifier, persistence, broker, setupAgentEventListeners });
 
 // ── Re-exports from SDK runner ─────────────────────────
-export { buildCliToolsPrompt, launchAgent, launchQuickAgent, sendChatMessage, setAgentModel, getAgentHistory } from './agents/sdk-runner';
+export { buildCliToolsPrompt, launchAgent, launchQuickAgent, launchDocumentAgent, sendChatMessage, setAgentModel, getAgentHistory } from './agents/sdk-runner';
 
 // ── Re-exports from CLI runner ─────────────────────────
 export { launchCliSession, startCliExitMonitor, stopCliExitMonitor, openAgentCli } from './agents/cli-runner';

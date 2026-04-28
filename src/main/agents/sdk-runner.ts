@@ -12,6 +12,7 @@ import { AgentPersistence } from './agent-persistence';
 import { InteractionBroker } from './interaction-broker';
 import type { SubagentTracker } from '../subagent-service';
 import { getCustomTools } from '../tools';
+import { appendIntentActivity } from '../intent-eventlog';
 
 /** Shared dependencies injected from agent-service at init time. */
 let registry: AgentRegistry;
@@ -122,6 +123,13 @@ export async function launchAgent(
     // Set up event listeners
     setupAgentEventListeners(session, record);
 
+    // Log to per-intent activity log
+    logIntentActivity(record, 'agent.launched', {
+      sessionId,
+      prompt: truncate(selectedText, 200),
+      cwd: workingDir,
+    });
+
     // Fire-and-forget: return agentId immediately so the renderer can subscribe
     // before events start flowing. Errors are handled by the session.error listener.
     session.send({
@@ -210,6 +218,121 @@ export async function launchQuickAgent(
     // Fire-and-forget: return agentId immediately so the renderer can subscribe
     // before events start flowing. Errors are handled by the session.error listener.
     session.send({ prompt }).catch((err: any) => {
+      record.status = 'failed';
+      record.summary = `Error: ${err.message || 'Unknown'}`;
+      persistence.updateStatus(record);
+      notifier.notifyRenderer(`chat:event:${agentId}`, {
+        type: 'session.error',
+        message: err.message || 'Failed to process message',
+      });
+    });
+
+    return { agentId, sessionId };
+  } catch (err: any) {
+    return { error: err.message || 'Failed to launch agent' };
+  }
+}
+
+/** Launch an SDK agent with the full canvas document as context, using the intent folder as cwd. */
+export async function launchDocumentAgent(
+  intentId: string,
+  workspaceRoot: string,
+  intentFolder: string,
+): Promise<{ agentId: string; sessionId: string } | { error: string }> {
+  const client = getCopilotClient();
+  if (!client) {
+    return { error: 'Copilot SDK not initialized' };
+  }
+
+  const agentId = uuid();
+  const workingDir = path.join(workspaceRoot, intentFolder);
+
+  // Read the full canvas document
+  const fs = require('fs');
+  const canvasPath = path.join(workingDir, 'canvas.md');
+  let documentContent = '';
+  try {
+    if (fs.existsSync(canvasPath)) {
+      documentContent = fs.readFileSync(canvasPath, 'utf-8');
+    }
+  } catch { /* proceed with empty content */ }
+
+  if (!documentContent.trim()) {
+    return { error: 'Canvas document is empty — add content before running' };
+  }
+
+  try {
+    const mcpServers = getAllMcpServers();
+    const cliToolsPrompt = buildCliToolsPrompt();
+    const findRecord = (sid: string) => registry.findBySessionId(sid);
+
+    const session = await client.createSession({
+      workingDirectory: workingDir,
+      mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
+      tools: getCustomTools(),
+      onPermissionRequest: broker.createPermissionHandler(findRecord),
+      onUserInputRequest: broker.createUserInputHandler(findRecord),
+      onElicitationRequest: broker.createElicitationHandler(findRecord),
+      systemMessage: {
+        mode: 'append',
+        content: `\nThe user has pressed "Run" on their intent document. Execute all instructions in the document below. The full document is also available as canvas.md in your working directory.\n\n---\n${documentContent}\n---\n${cliToolsPrompt}`,
+      },
+    });
+
+    const sessionId = (session as any).sessionId || agentId;
+    const now = new Date().toISOString();
+
+    const record: AgentRecord = {
+      agentId,
+      sessionId,
+      session,
+      intentId,
+      selectedText: documentContent,
+      anchor: { quote: '', prefix: '', suffix: '' },
+      status: 'running',
+      pendingApprovalId: null,
+      pendingPermissionKind: null,
+      pendingApprovals: new Map(),
+      summary: 'Executing document...',
+    };
+    registry.set(agentId, record);
+
+    persistence.createCanvasAgentRecord({
+      id: agentId,
+      intent_id: intentId,
+      selected_text: truncate(documentContent, 500),
+      session_id: sessionId,
+      pid: null,
+      status: 'running',
+      created_at: now,
+      updated_at: now,
+    });
+
+    persistence.createAgentSessionRecord({
+      id: agentId,
+      session_id: sessionId,
+      intent_id: intentId,
+      prompt: truncate(documentContent, 500),
+      status: 'running',
+      summary: 'Executing document...',
+      working_dir: workingDir,
+      source: 'sdk',
+      created_at: now,
+      updated_at: now,
+    });
+
+    setupAgentEventListeners(session, record);
+
+    // Log to per-intent activity log
+    logIntentActivity(record, 'document.executed', {
+      sessionId,
+      cwd: workingDir,
+    });
+
+    session.send({
+      prompt: 'Execute the instructions in the document. Ask me if you need any clarification.',
+      attachments: [{ type: 'file' as const, path: canvasPath, displayName: 'canvas.md' }],
+    }).catch((err: any) => {
       record.status = 'failed';
       record.summary = `Error: ${err.message || 'Unknown'}`;
       persistence.updateStatus(record);
@@ -463,6 +586,26 @@ export async function getAgentHistory(agentId: string): Promise<{ events: any[];
 
 // ── Event Listener Setup ──────────────────────────────────────
 
+/** Resolve workspace + intentFolder for activity logging. Returns null if unavailable. */
+function resolveIntentActivityContext(record: AgentRecord): { workspaceRoot: string; intentFolder: string } | null {
+  if (!record.intentId || record.intentId === '__workspace__') return null;
+  const workspace = getConfigValue('workspace');
+  if (!workspace) return null;
+  try {
+    const { getIntent } = require('../database');
+    const intent = getIntent(record.intentId);
+    if (!intent?.folder) return null;
+    return { workspaceRoot: workspace, intentFolder: intent.folder };
+  } catch { return null; }
+}
+
+/** Append to the per-intent activity log (non-fatal on failure). */
+function logIntentActivity(record: AgentRecord, type: string, data: Record<string, any>): void {
+  const ctx = resolveIntentActivityContext(record);
+  if (!ctx) return;
+  appendIntentActivity(ctx.workspaceRoot, ctx.intentFolder, type, { agentId: record.agentId, ...data });
+}
+
 export function setupAgentEventListeners(session: CopilotSession, record: AgentRecord): void {
   const agentId = record.agentId;
   const chatChannel = `chat:event:${agentId}`;
@@ -515,6 +658,10 @@ export function setupAgentEventListeners(session: CopilotSession, record: AgentR
       toolName: d.toolName ?? '',
       args: d.arguments ?? d.toolArgs ?? {},
     });
+    logIntentActivity(record, 'agent.tool_start', {
+      toolName: d.toolName ?? '',
+      toolCallId: d.toolCallId ?? '',
+    });
   });
 
   session.on('tool.execution_progress', (event: any) => {
@@ -545,6 +692,12 @@ export function setupAgentEventListeners(session: CopilotSession, record: AgentR
       success,
       ...(errorMessage ? { error: errorMessage } : {}),
     });
+    logIntentActivity(record, 'agent.tool_complete', {
+      toolName: d.toolName ?? '',
+      toolCallId: d.toolCallId ?? '',
+      success,
+      ...(errorMessage ? { error: errorMessage } : {}),
+    });
   });
 
   session.on('session.idle', () => {
@@ -554,6 +707,7 @@ export function setupAgentEventListeners(session: CopilotSession, record: AgentR
       persistence.updateStatus(record);
       notifier.notifyRenderer('agent:completed', { agentId, summary: record.summary });
       notifier.notifyRenderer(chatChannel, { type: 'session.idle' });
+      logIntentActivity(record, 'agent.completed', { summary: record.summary });
 
       // Clean up sub-agent state
       subagentTracker.clearParent(agentId);
@@ -579,6 +733,7 @@ export function setupAgentEventListeners(session: CopilotSession, record: AgentR
       type: 'session.error',
       message: d.message || 'Unknown error',
     });
+    logIntentActivity(record, 'agent.failed', { error: d.message || 'Unknown error' });
 
     // Clean up presence on failure too
     if (record.commentContext) {
@@ -620,6 +775,11 @@ function installSubagentSubscription(session: CopilotSession, record: AgentRecor
         description: d.description ?? d.agentDescription ?? '',
         agentId: d.agentId,
       });
+      logIntentActivity(record, 'subagent.started', {
+        subagentId: d.agentId,
+        name: d.name ?? d.agentName ?? '',
+        description: d.description ?? d.agentDescription ?? '',
+      });
       return;
     }
 
@@ -644,6 +804,13 @@ function installSubagentSubscription(session: CopilotSession, record: AgentRecor
         totalTokens: d.totalTokens,
         totalToolCalls: d.totalToolCalls,
       });
+      logIntentActivity(record, 'subagent.completed', {
+        subagentId: d.agentId,
+        name: d.name ?? d.agentName ?? '',
+        durationMs: d.durationMs,
+        model: d.model,
+        totalTokens: d.totalTokens,
+      });
       return;
     }
 
@@ -664,6 +831,11 @@ function installSubagentSubscription(session: CopilotSession, record: AgentRecor
         name: d.name ?? d.agentName ?? '',
         error: d.error ?? 'Unknown error',
         agentId: d.agentId,
+      });
+      logIntentActivity(record, 'subagent.failed', {
+        subagentId: d.agentId,
+        name: d.name ?? d.agentName ?? '',
+        error: d.error ?? 'Unknown error',
       });
       return;
     }

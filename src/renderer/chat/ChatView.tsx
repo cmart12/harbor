@@ -390,13 +390,20 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
     })();
   }, []);
 
-  // Load CWD and listen for changes
+  // Load CWD from agent's persisted working_dir, fall back to workspace root
   useEffect(() => {
-    intentAPI.getSetting('workspace_root').then((val) => {
+    (async () => {
+      if (currentAgentId) {
+        try {
+          const workingDir = await (intentAPI as any).getAgentWorkingDir?.(currentAgentId);
+          if (workingDir) { setCwd(workingDir); return; }
+        } catch { /* fall through */ }
+      }
+      const val = await intentAPI.getSetting('workspace_root');
       if (val) setCwd(val);
-    });
+    })();
     intentAPI.onWorkspaceChanged((path) => setCwd(path || ''));
-  }, []);
+  }, [currentAgentId]);
 
   // Close model dropdown on outside click
   useEffect(() => {
@@ -937,6 +944,15 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
           </span>
           <span className="chat-status-bar-chevron">▾</span>
         </button>
+        {cwd && (
+          <button
+            className="chat-status-bar-item"
+            onClick={() => intentAPI.openPath(cwd)}
+            title="Open folder in file manager"
+          >
+            <span className="chat-status-bar-icon">↗</span>
+          </button>
+        )}
 
         <span className="chat-status-bar-divider">|</span>
 

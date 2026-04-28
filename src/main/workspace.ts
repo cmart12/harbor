@@ -46,6 +46,7 @@ export function initWorkspace(rootPath: string): void {
     '.intent/*.db-shm',
     '*/attachments/',
     '*/.workspace/',
+    '*/.intent/',
   ];
 
   let existing = '';

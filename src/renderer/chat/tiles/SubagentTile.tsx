@@ -121,6 +121,26 @@ export function SubagentTile({
     };
   }, [completed, agentId, parentAgentId]);
 
+  // Load persisted data for completed agents (e.g. after app restart)
+  useEffect(() => {
+    if (!completed || !parentAgentId || !agentId) return;
+    // If we already have stats from props, skip
+    if (totalTokens !== undefined && totalToolCalls !== undefined && model) return;
+
+    (async () => {
+      try {
+        const persisted = await intentAPI.subagentAPI?.listPersisted?.(parentAgentId);
+        if (!persisted) return;
+        const match = persisted.find((a: any) => a.agentId === agentId);
+        if (!match) return;
+        if (match.totalTokens !== undefined) setTotalTokens(match.totalTokens);
+        if (match.totalToolCalls !== undefined) setTotalToolCalls(match.totalToolCalls);
+        if (match.model) setModel(match.model);
+        if (match.durationMs !== undefined) setDurationMs(match.durationMs);
+      } catch { /* ignore */ }
+    })();
+  }, [completed, parentAgentId, agentId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Elapsed time ticker
   useEffect(() => {
     if (completed && durationMs !== undefined) {

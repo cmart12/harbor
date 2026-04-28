@@ -3569,7 +3569,19 @@ canvasLaunchBtn.addEventListener('click', async () => {
     // Skill mode: create intent from skill + launch session
     await launchSkillAsIntent(canvasSkillId);
   } else if (canvasIntentId) {
-    launchSession(canvasIntentId);
+    // Save any pending edits before launching
+    await saveCanvasEditor();
+
+    // Launch SDK agent with full document context and open chat
+    const result = await intentAPI.launchDocumentAgent(canvasIntentId);
+    if ('error' in result) {
+      showStatus(result.error || 'Launch failed', true);
+      setTimeout(hideStatus, 3000);
+      return;
+    }
+    // Close the canvas view and open the chat
+    closeCanvas();
+    openAgentChat(result.agentId, 'Executing document...', 'running', 'sdk');
   }
 });
 

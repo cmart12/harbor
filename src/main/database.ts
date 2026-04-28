@@ -116,6 +116,49 @@ export function initDatabase(dbPath: string, eventLogPath: string): void {
     )
   `);
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS subagent_records (
+      id TEXT PRIMARY KEY,
+      parent_agent_id TEXT NOT NULL,
+      tool_call_id TEXT,
+      agent_name TEXT NOT NULL,
+      display_name TEXT,
+      description TEXT,
+      agent_type TEXT,
+      status TEXT NOT NULL DEFAULT 'running',
+      started_at INTEGER NOT NULL,
+      completed_at INTEGER,
+      duration_ms INTEGER,
+      model TEXT,
+      total_tokens INTEGER,
+      total_tool_calls INTEGER,
+      error TEXT,
+      streaming_content TEXT DEFAULT '',
+      turns_json TEXT DEFAULT '[]',
+      progress_json TEXT DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS subagent_tool_calls (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      subagent_id TEXT NOT NULL,
+      parent_agent_id TEXT NOT NULL,
+      tool_call_id TEXT,
+      tool_name TEXT NOT NULL,
+      arguments_json TEXT,
+      result TEXT,
+      success INTEGER DEFAULT 1,
+      error TEXT,
+      started_at INTEGER,
+      completed_at INTEGER,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (subagent_id) REFERENCES subagent_records(id)
+    )
+  `);
+
   // Rebuild state from event log
   replayLog(eventLogPath, db);
 }
@@ -506,4 +549,112 @@ export function getSkill(id: string): Skill | null {
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
+}
+
+// ── Subagent Records ────────────────────────────────────────
+
+export interface SubagentRecordRow {
+  id: string;
+  parent_agent_id: string;
+  tool_call_id: string | null;
+  agent_name: string;
+  display_name: string | null;
+  description: string | null;
+  agent_type: string | null;
+  status: string;
+  started_at: number;
+  completed_at: number | null;
+  duration_ms: number | null;
+  model: string | null;
+  total_tokens: number | null;
+  total_tool_calls: number | null;
+  error: string | null;
+  streaming_content: string;
+  turns_json: string;
+  progress_json: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SubagentToolCallRow {
+  id: number;
+  subagent_id: string;
+  parent_agent_id: string;
+  tool_call_id: string | null;
+  tool_name: string;
+  arguments_json: string | null;
+  result: string | null;
+  success: number;
+  error: string | null;
+  started_at: number | null;
+  completed_at: number | null;
+  created_at: string;
+}
+
+export function createSubagentRecord(record: Omit<SubagentRecordRow, 'created_at' | 'updated_at'>): void {
+  const now = new Date().toISOString();
+  appendEvent(logPath, 'subagent.created', { ...record, created_at: now, updated_at: now });
+  db.prepare(
+    `INSERT OR REPLACE INTO subagent_records (id, parent_agent_id, tool_call_id, agent_name, display_name, description, agent_type, status, started_at, completed_at, duration_ms, model, total_tokens, total_tool_calls, error, streaming_content, turns_json, progress_json, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    record.id, record.parent_agent_id, record.tool_call_id, record.agent_name,
+    record.display_name, record.description, record.agent_type, record.status,
+    record.started_at, record.completed_at ?? null, record.duration_ms ?? null,
+    record.model ?? null, record.total_tokens ?? null, record.total_tool_calls ?? null,
+    record.error ?? null, record.streaming_content ?? '', record.turns_json ?? '[]',
+    record.progress_json ?? '{}', now, now,
+  );
+}
+
+export function updateSubagentRecord(id: string, updates: Partial<Pick<SubagentRecordRow, 'status' | 'completed_at' | 'duration_ms' | 'model' | 'total_tokens' | 'total_tool_calls' | 'error' | 'streaming_content' | 'turns_json' | 'progress_json'>>): void {
+  const now = new Date().toISOString();
+  appendEvent(logPath, 'subagent.updated', { id, ...updates, updated_at: now });
+
+  const sets: string[] = ['updated_at = ?'];
+  const values: any[] = [now];
+  for (const [key, val] of Object.entries(updates)) {
+    sets.push(`${key} = ?`);
+    values.push(val ?? null);
+  }
+  values.push(id);
+  db.prepare(`UPDATE subagent_records SET ${sets.join(', ')} WHERE id = ?`).run(...values);
+}
+
+export function listSubagentRecords(parentAgentId: string): SubagentRecordRow[] {
+  return db.prepare(
+    `SELECT * FROM subagent_records WHERE parent_agent_id = ? ORDER BY started_at ASC`
+  ).all(parentAgentId) as SubagentRecordRow[];
+}
+
+export function createSubagentToolCall(tc: Omit<SubagentToolCallRow, 'id' | 'created_at'>): void {
+  const now = new Date().toISOString();
+  appendEvent(logPath, 'subagent_tool.created', { ...tc, created_at: now });
+  db.prepare(
+    `INSERT INTO subagent_tool_calls (subagent_id, parent_agent_id, tool_call_id, tool_name, arguments_json, result, success, error, started_at, completed_at, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    tc.subagent_id, tc.parent_agent_id, tc.tool_call_id, tc.tool_name,
+    tc.arguments_json, tc.result ?? null, tc.success, tc.error ?? null,
+    tc.started_at ?? null, tc.completed_at ?? null, now,
+  );
+}
+
+export function updateSubagentToolCall(subagentId: string, toolCallId: string, updates: { success: number; result?: string; error?: string; completed_at?: number }): void {
+  const sets: string[] = [];
+  const values: any[] = [];
+  for (const [key, val] of Object.entries(updates)) {
+    sets.push(`${key} = ?`);
+    values.push(val ?? null);
+  }
+  if (sets.length === 0) return;
+  appendEvent(logPath, 'subagent_tool.updated', { subagent_id: subagentId, tool_call_id: toolCallId, ...updates });
+  values.push(subagentId, toolCallId);
+  db.prepare(`UPDATE subagent_tool_calls SET ${sets.join(', ')} WHERE subagent_id = ? AND tool_call_id = ?`).run(...values);
+}
+
+export function listSubagentToolCalls(subagentId: string): SubagentToolCallRow[] {
+  return db.prepare(
+    `SELECT * FROM subagent_tool_calls WHERE subagent_id = ? ORDER BY id ASC`
+  ).all(subagentId) as SubagentToolCallRow[];
 }

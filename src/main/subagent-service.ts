@@ -1,6 +1,7 @@
 /**
  * SubagentTracker — main-process service that tracks all sub-agent state.
  * Single source of truth; renderer fetches summaries/details via IPC.
+ * Persists completed state to database so it survives app restart.
  *
  * Mirrors the github-tokens SubagentTracker but uses parentAgentId
  * (intent's session key) instead of panelId.
@@ -11,6 +12,7 @@ import type {
   SubagentToolCall,
   SubagentTurn,
 } from '../shared/subagent-types';
+import { isInitialized } from './database';
 
 /** Max completed turns to retain per agent (prevents unbounded memory) */
 const MAX_TURNS_PER_AGENT = 50;
@@ -101,6 +103,7 @@ export class SubagentTracker {
 
     parent.set(agentId, info);
     this.toolCallIndex.set(data.toolCallId, { parentAgentId, agentId });
+    this.persistCreated(info);
     this.notifyChange(parentAgentId);
   }
 
@@ -129,6 +132,7 @@ export class SubagentTracker {
     if (data.totalTokens != null) agent.totalTokens = data.totalTokens;
     if (data.totalToolCalls != null) agent.totalToolCalls = data.totalToolCalls;
     if (data.agentDisplayName) agent.displayName = data.agentDisplayName;
+    this.persistCompleted(agent);
     this.notifyChange(parentAgentId);
   }
 
@@ -156,6 +160,7 @@ export class SubagentTracker {
     if (data.model) agent.model = data.model;
     if (data.totalTokens != null) agent.totalTokens = data.totalTokens;
     if (data.totalToolCalls != null) agent.totalToolCalls = data.totalToolCalls;
+    this.persistCompleted(agent);
     this.notifyChange(parentAgentId);
   }
 
@@ -194,6 +199,7 @@ export class SubagentTracker {
       completed: false,
       startedAt: Date.now(),
     });
+    this.persistToolStart(agentId, parentAgentId, data);
   }
 
   trackToolComplete(parentAgentId: string, agentId: string, data: {
@@ -213,6 +219,7 @@ export class SubagentTracker {
       tc.completedAt = Date.now();
     }
     agent.progress.toolCallsCompleted++;
+    this.persistToolComplete(agent.agentId, agent.parentAgentId, data);
   }
 
   trackUsage(parentAgentId: string, agentId: string, inputTokens: number, outputTokens: number): void {
@@ -325,5 +332,128 @@ export class SubagentTracker {
       error: agent.error,
       progress: { ...agent.progress },
     };
+  }
+
+  // --- DB persistence helpers ---
+
+  private persistCreated(agent: SubagentInfo): void {
+    if (!isInitialized()) return;
+    try {
+      const { createSubagentRecord } = require('./database');
+      createSubagentRecord({
+        id: agent.agentId,
+        parent_agent_id: agent.parentAgentId,
+        tool_call_id: agent.toolCallId,
+        agent_name: agent.name,
+        display_name: agent.displayName,
+        description: agent.description,
+        agent_type: agent.agentType,
+        status: agent.status,
+        started_at: agent.startedAt,
+        completed_at: null,
+        duration_ms: null,
+        model: agent.model ?? null,
+        total_tokens: null,
+        total_tool_calls: null,
+        error: null,
+        streaming_content: '',
+        turns_json: '[]',
+        progress_json: JSON.stringify(agent.progress),
+      });
+    } catch { /* non-fatal */ }
+  }
+
+  private persistCompleted(agent: SubagentInfo): void {
+    if (!isInitialized()) return;
+    try {
+      const { updateSubagentRecord } = require('./database');
+      updateSubagentRecord(agent.agentId, {
+        status: agent.status,
+        completed_at: agent.completedAt ?? null,
+        duration_ms: agent.durationMs ?? null,
+        model: agent.model ?? null,
+        total_tokens: agent.totalTokens ?? null,
+        total_tool_calls: agent.totalToolCalls ?? null,
+        error: agent.error ?? null,
+        streaming_content: agent.streamingContent,
+        turns_json: JSON.stringify(agent.turns),
+        progress_json: JSON.stringify(agent.progress),
+      });
+    } catch { /* non-fatal */ }
+  }
+
+  private persistToolStart(subagentId: string, parentAgentId: string, data: { toolCallId: string; toolName: string; args: Record<string, unknown> }): void {
+    if (!isInitialized()) return;
+    try {
+      const { createSubagentToolCall } = require('./database');
+      createSubagentToolCall({
+        subagent_id: subagentId,
+        parent_agent_id: parentAgentId,
+        tool_call_id: data.toolCallId,
+        tool_name: data.toolName,
+        arguments_json: JSON.stringify(data.args),
+        result: null,
+        success: 1,
+        error: null,
+        started_at: Date.now(),
+        completed_at: null,
+      });
+    } catch { /* non-fatal */ }
+  }
+
+  private persistToolComplete(subagentId: string, _parentAgentId: string, data: { toolCallId: string; success: boolean; result?: string; error?: string }): void {
+    if (!isInitialized()) return;
+    try {
+      const { updateSubagentToolCall } = require('./database');
+      updateSubagentToolCall(subagentId, data.toolCallId, {
+        success: data.success ? 1 : 0,
+        result: data.result,
+        error: data.error,
+        completed_at: Date.now(),
+      });
+    } catch { /* non-fatal */ }
+  }
+
+  /** Load persisted subagent data from DB for a historical parent agent. */
+  loadPersistedSubagents(parentAgentId: string): SubagentInfo[] {
+    if (!isInitialized()) return [];
+    try {
+      const { listSubagentRecords, listSubagentToolCalls } = require('./database');
+      const rows = listSubagentRecords(parentAgentId);
+      return rows.map((row: any) => {
+        const toolCalls = listSubagentToolCalls(row.id).map((tc: any) => ({
+          toolCallId: tc.tool_call_id ?? '',
+          toolName: tc.tool_name,
+          args: tc.arguments_json ? JSON.parse(tc.arguments_json) : {},
+          completed: tc.completed_at != null,
+          success: tc.success === 1,
+          result: tc.result ?? undefined,
+          error: tc.error ?? undefined,
+          startedAt: tc.started_at ?? 0,
+          completedAt: tc.completed_at ?? undefined,
+        }));
+        return {
+          agentId: row.id,
+          parentAgentId: row.parent_agent_id,
+          toolCallId: row.tool_call_id ?? '',
+          name: row.agent_name,
+          displayName: row.display_name ?? row.agent_name,
+          description: row.description ?? '',
+          agentType: row.agent_type ?? row.agent_name,
+          status: row.status,
+          startedAt: row.started_at,
+          completedAt: row.completed_at ?? undefined,
+          durationMs: row.duration_ms ?? undefined,
+          model: row.model ?? undefined,
+          totalTokens: row.total_tokens ?? undefined,
+          totalToolCalls: row.total_tool_calls ?? undefined,
+          error: row.error ?? undefined,
+          progress: row.progress_json ? JSON.parse(row.progress_json) : { toolCallsCompleted: 0, totalInputTokens: 0, totalOutputTokens: 0 },
+          streamingContent: row.streaming_content ?? '',
+          turns: row.turns_json ? JSON.parse(row.turns_json) : [],
+          toolCalls,
+        } as SubagentInfo;
+      });
+    } catch { return []; }
   }
 }

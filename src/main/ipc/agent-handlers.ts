@@ -98,6 +98,17 @@ export function registerAgentHandlers(): void {
     return launchQuickAgent(prompt, workspace);
   });
 
+  ipcMain.handle('agent:launch-document', async (_event, intentId: string) => {
+    const workspace = getConfigValue('workspace');
+    if (!workspace || !isInitialized()) return { error: 'no_workspace' };
+
+    const intent = getIntent(intentId);
+    if (!intent || !intent.folder) return { error: 'intent_not_found' };
+
+    const { launchDocumentAgent } = await import('../agent-service');
+    return launchDocumentAgent(intentId, workspace, intent.folder);
+  });
+
   ipcMain.handle('agent:list-all', async () => {
     const { listAllAgents } = await import('../agent-service');
     return listAllAgents();
@@ -171,5 +182,11 @@ export function registerAgentHandlers(): void {
   ipcMain.handle('agent:get-history', async (_event, agentId: string) => {
     const { getAgentHistory } = await import('../agent-service');
     return getAgentHistory(agentId);
+  });
+
+  ipcMain.handle('agent:get-working-dir', async (_event, agentId: string) => {
+    const { getAgentSession } = await import('../database');
+    const session = getAgentSession(agentId);
+    return session?.working_dir ?? null;
   });
 }

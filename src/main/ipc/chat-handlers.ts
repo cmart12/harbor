@@ -19,7 +19,11 @@ export function registerChatHandlers(): void {
 
   ipcMain.handle('subagent:read', async (_event, parentAgentId: string, agentId: string) => {
     const { subagentTracker } = await import('../agent-service');
-    return subagentTracker.getSubagent(parentAgentId, agentId) ?? null;
+    const live = subagentTracker.getSubagent(parentAgentId, agentId);
+    if (live) return live;
+    // Fall back to persisted data after parent completion/restart
+    const persisted = subagentTracker.loadPersistedSubagents(parentAgentId);
+    return persisted.find(a => a.agentId === agentId) ?? null;
   });
 
   ipcMain.handle('subagent:write', async (_event, _parentAgentId: string, _agentId: string, _message: string) => {
@@ -30,5 +34,13 @@ export function registerChatHandlers(): void {
   ipcMain.handle('subagent:cancel', async (_event, _parentAgentId: string, _agentId: string) => {
     // Requires SDK support — stub for now
     return { success: false, error: 'Not yet supported' };
+  });
+
+  ipcMain.handle('subagent:list-persisted', async (_event, parentAgentId: string) => {
+    const { subagentTracker } = await import('../agent-service');
+    // Try live data first, fall back to persisted
+    const live = subagentTracker.listSubagents(parentAgentId);
+    if (live.length > 0) return live;
+    return subagentTracker.loadPersistedSubagents(parentAgentId);
   });
 }

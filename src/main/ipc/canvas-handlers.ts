@@ -153,4 +153,15 @@ export function registerCanvasHandlers(): void {
 
     return getIntentVersionContent(workspace, intent.folder, sha);
   });
+
+  ipcMain.handle('canvas:read-activity-log', async (_event, intentId: string) => {
+    const workspace = getConfigValue('workspace');
+    if (!workspace || !isInitialized()) return { events: [], error: 'no_workspace' };
+
+    const intent = getIntent(intentId);
+    if (!intent || !intent.folder) return { events: [], error: 'not_found' };
+
+    const { readIntentActivityLog } = await import('../intent-eventlog');
+    return { events: readIntentActivityLog(workspace, intent.folder) };
+  });
 }

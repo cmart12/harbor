@@ -17,6 +17,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 export interface SubagentAPI {
   list(parentAgentId: string): Promise<IpcCommandResult<'subagent:list'>>;
+  listPersisted(parentAgentId: string): Promise<any[]>;
   read(parentAgentId: string, agentId: string): Promise<IpcCommandResult<'subagent:read'>>;
   write(parentAgentId: string, agentId: string, message: string): Promise<IpcCommandResult<'subagent:write'>>;
   cancel(parentAgentId: string, agentId: string): Promise<IpcCommandResult<'subagent:cancel'>>;
@@ -78,10 +79,12 @@ export interface IntentAPI {
   canvasHistory(intentId: string): Promise<IpcCommandResult<'canvas:history'>>;
   canvasRestore(intentId: string, sha: string): Promise<IpcCommandResult<'canvas:restore'>>;
   canvasPreviewVersion(intentId: string, sha: string): Promise<IpcCommandResult<'canvas:preview-version'>>;
+  readActivityLog(intentId: string): Promise<{ events: any[]; error?: string }>;
   pasteFile(intentId: string, filename: string, dataArray: number[]): Promise<IpcCommandResult<'canvas:paste-file'>>;
 
   // ── Agent ────────────────────────────────────────────────
   launchAgent(intentId: string, selectedText: string, anchor: AgentAnchor, options?: { repo?: string; model?: string }): Promise<IpcCommandResult<'agent:launch'>>;
+  launchDocumentAgent(intentId: string): Promise<{ agentId: string; sessionId: string } | { error: string }>;
   launchCommentAgent(intentId: string, commentBody: string, quotedText: string, anchor: AgentAnchor, personaHandle: string, threadIndex: number): Promise<IpcCommandResult<'agent:launch-from-comment'>>;
   listAgents(intentId: string): Promise<IpcCommandResult<'agent:list'>>;
   approveAgent(agentId: string, requestId: string, approved: boolean): Promise<IpcCommandResult<'agent:approve'>>;
@@ -95,6 +98,7 @@ export interface IntentAPI {
   launchCloudAgent(intentId: string, prompt: string): Promise<IpcCommandResult<'agent:launch-cloud'>>;
   getCloudJobStatus(agentId: string): Promise<IpcCommandResult<'agent:cloud-status'>>;
   getAgentHistory(agentId: string): Promise<IpcCommandResult<'agent:get-history'>>;
+  getAgentWorkingDir(agentId: string): Promise<string | null>;
 
   // ── CLI session ──────────────────────────────────────────
   launchCliSession(): Promise<IpcCommandResult<'cli:launch-session'>>;
@@ -221,12 +225,15 @@ const api: IntentAPI = {
   canvasHistory: (intentId) => ipcRenderer.invoke('canvas:history', intentId),
   canvasRestore: (intentId, sha) => ipcRenderer.invoke('canvas:restore', intentId, sha),
   canvasPreviewVersion: (intentId, sha) => ipcRenderer.invoke('canvas:preview-version', intentId, sha),
+  readActivityLog: (intentId) => ipcRenderer.invoke('canvas:read-activity-log', intentId),
   pasteFile: (intentId, filename, dataArray) =>
     ipcRenderer.invoke('canvas:paste-file', intentId, filename, dataArray),
 
   // ── Agent ────────────────────────────────────────────────
   launchAgent: (intentId, selectedText, anchor, options?) =>
     ipcRenderer.invoke('agent:launch', intentId, selectedText, anchor, options),
+  launchDocumentAgent: (intentId) =>
+    ipcRenderer.invoke('agent:launch-document', intentId),
   launchCommentAgent: (intentId, commentBody, quotedText, anchor, personaHandle, threadIndex) =>
     ipcRenderer.invoke('agent:launch-from-comment', intentId, commentBody, quotedText, anchor, personaHandle, threadIndex),
   listAgents: (intentId) =>
@@ -253,6 +260,8 @@ const api: IntentAPI = {
     ipcRenderer.invoke('agent:cloud-status', agentId),
   getAgentHistory: (agentId) =>
     ipcRenderer.invoke('agent:get-history', agentId),
+  getAgentWorkingDir: (agentId) =>
+    ipcRenderer.invoke('agent:get-working-dir', agentId),
 
   // ── CLI session ──────────────────────────────────────────
   launchCliSession: () =>
@@ -274,6 +283,8 @@ const api: IntentAPI = {
   subagentAPI: {
     list: (parentAgentId) =>
       ipcRenderer.invoke('subagent:list', parentAgentId),
+    listPersisted: (parentAgentId) =>
+      ipcRenderer.invoke('subagent:list-persisted', parentAgentId),
     read: (parentAgentId, agentId) =>
       ipcRenderer.invoke('subagent:read', parentAgentId, agentId),
     write: (parentAgentId, agentId, message) =>

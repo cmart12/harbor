@@ -176,6 +176,68 @@ function applyEvent(db: Database.Database, event: LogEvent): void {
       break;
     }
 
+    case 'subagent.created': {
+      const d = event.data;
+      db.prepare(
+        `INSERT OR REPLACE INTO subagent_records (id, parent_agent_id, tool_call_id, agent_name, display_name, description, agent_type, status, started_at, completed_at, duration_ms, model, total_tokens, total_tool_calls, error, streaming_content, turns_json, progress_json, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(
+        d.id, d.parent_agent_id, d.tool_call_id ?? null, d.agent_name,
+        d.display_name ?? null, d.description ?? null, d.agent_type ?? null,
+        d.status ?? 'running', d.started_at, d.completed_at ?? null,
+        d.duration_ms ?? null, d.model ?? null, d.total_tokens ?? null,
+        d.total_tool_calls ?? null, d.error ?? null, d.streaming_content ?? '',
+        d.turns_json ?? '[]', d.progress_json ?? '{}',
+        d.created_at, d.updated_at,
+      );
+      break;
+    }
+
+    case 'subagent.updated': {
+      const d = event.data;
+      const sets: string[] = ['updated_at = ?'];
+      const values: any[] = [d.updated_at ?? event.ts];
+      for (const key of ['status', 'completed_at', 'duration_ms', 'model', 'total_tokens', 'total_tool_calls', 'error', 'streaming_content', 'turns_json', 'progress_json']) {
+        if (d[key] !== undefined) {
+          sets.push(`${key} = ?`);
+          values.push(d[key] ?? null);
+        }
+      }
+      values.push(d.id);
+      db.prepare(`UPDATE subagent_records SET ${sets.join(', ')} WHERE id = ?`).run(...values);
+      break;
+    }
+
+    case 'subagent_tool.created': {
+      const d = event.data;
+      db.prepare(
+        `INSERT INTO subagent_tool_calls (subagent_id, parent_agent_id, tool_call_id, tool_name, arguments_json, result, success, error, started_at, completed_at, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(
+        d.subagent_id, d.parent_agent_id, d.tool_call_id ?? null, d.tool_name,
+        d.arguments_json ?? null, d.result ?? null, d.success ?? 1, d.error ?? null,
+        d.started_at ?? null, d.completed_at ?? null, d.created_at,
+      );
+      break;
+    }
+
+    case 'subagent_tool.updated': {
+      const d = event.data;
+      const sets: string[] = [];
+      const values: any[] = [];
+      for (const key of ['success', 'result', 'error', 'completed_at']) {
+        if (d[key] !== undefined) {
+          sets.push(`${key} = ?`);
+          values.push(d[key] ?? null);
+        }
+      }
+      if (sets.length > 0) {
+        values.push(d.subagent_id, d.tool_call_id);
+        db.prepare(`UPDATE subagent_tool_calls SET ${sets.join(', ')} WHERE subagent_id = ? AND tool_call_id = ?`).run(...values);
+      }
+      break;
+    }
+
     case 'snapshot': {
       const d = event.data;
       if (d.intents) {
