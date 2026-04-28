@@ -28,6 +28,14 @@ interface AgentPersona {
   model: string;
   runLocation: 'local' | 'cloud';
   sandboxed?: boolean;
+  emoji?: string;
+  cliRuntime?: string;
+}
+
+interface CliRuntime {
+  id: string;
+  label: string;
+  path: string;
 }
 
 interface CliToolDefinition {
@@ -75,6 +83,8 @@ interface IntentAPI {
   listModels(): Promise<{ id: string; name?: string }[]>;
   listPersonas(): Promise<AgentPersona[]>;
   savePersonas(personas: AgentPersona[]): Promise<{ ok?: boolean; error?: string }>;
+  listRuntimes(): Promise<CliRuntime[]>;
+  saveRuntimes(runtimes: CliRuntime[]): Promise<{ ok?: boolean; error?: string }>;
   listDiscoveredMcp(): Promise<DiscoveredMcpServer[]>;
   listCustomMcp(): Promise<CustomMcpServer[]>;
   saveCustomMcp(servers: CustomMcpServer[]): Promise<{ ok?: boolean; error?: string }>;
@@ -641,7 +651,7 @@ function createPersonaCard(persona: AgentPersona): HTMLElement {
 
   const handle = document.createElement('div');
   handle.className = 'persona-card-handle';
-  handle.textContent = '@' + persona.handle;
+  handle.textContent = (persona.emoji ? persona.emoji + ' ' : '') + '@' + persona.handle;
 
   const instr = document.createElement('div');
   instr.className = 'persona-card-instructions';
@@ -703,9 +713,19 @@ function showPersonaForm(existing?: AgentPersona): void {
   const form = document.createElement('div');
   form.className = 'persona-form';
 
-  // Handle input
+  // Handle input — with emoji prefix
   const handleRow = document.createElement('div');
   handleRow.className = 'persona-form-row';
+  const emojiInput = document.createElement('input');
+  emojiInput.type = 'text';
+  emojiInput.className = 'persona-form-input persona-emoji-input';
+  emojiInput.placeholder = '😀';
+  emojiInput.value = existing?.emoji || '';
+  emojiInput.maxLength = 8;
+  emojiInput.title = 'Emoji avatar (optional)';
+  emojiInput.style.width = '3em';
+  emojiInput.style.textAlign = 'center';
+  emojiInput.style.marginRight = '4px';
   const handleLabel = document.createElement('label');
   handleLabel.textContent = '@';
   handleLabel.className = 'persona-handle-prefix';
@@ -715,6 +735,7 @@ function showPersonaForm(existing?: AgentPersona): void {
   handleInput.placeholder = 'handle';
   handleInput.value = existing?.handle || '';
   handleInput.maxLength = 32;
+  handleRow.appendChild(emojiInput);
   handleRow.appendChild(handleLabel);
   handleRow.appendChild(handleInput);
 
@@ -803,6 +824,31 @@ function showPersonaForm(existing?: AgentPersona): void {
     }
   });
 
+  // CLI Runtime dropdown
+  const runtimeRow = document.createElement('div');
+  runtimeRow.className = 'persona-form-row';
+  const runtimeLabel = document.createElement('label');
+  runtimeLabel.textContent = 'CLI Runtime';
+  runtimeLabel.className = 'persona-form-label';
+  const runtimeSelect = document.createElement('select');
+  runtimeSelect.className = 'persona-form-select';
+  const defaultRtOpt = document.createElement('option');
+  defaultRtOpt.value = '';
+  defaultRtOpt.textContent = 'Default';
+  runtimeSelect.appendChild(defaultRtOpt);
+  // Populate from loaded runtimes
+  intentAPI.listRuntimes().then(runtimes => {
+    for (const rt of runtimes) {
+      const opt = document.createElement('option');
+      opt.value = rt.id;
+      opt.textContent = rt.label;
+      if (rt.id === existing?.cliRuntime) opt.selected = true;
+      runtimeSelect.appendChild(opt);
+    }
+  });
+  runtimeRow.appendChild(runtimeLabel);
+  runtimeRow.appendChild(runtimeSelect);
+
   // Error display
   const errorEl = document.createElement('div');
   errorEl.className = 'persona-form-error hidden';
@@ -820,6 +866,8 @@ function showPersonaForm(existing?: AgentPersona): void {
     const model = modelSelect.value;
     const runLocation = locationSelect.value as 'local' | 'cloud';
     const sandboxed = sandboxCheck.checked && runLocation === 'local';
+    const emoji = emojiInput.value.trim();
+    const cliRuntime = runtimeSelect.value;
 
     // Validate
     if (!HANDLE_RE.test(rawHandle)) {
@@ -843,7 +891,7 @@ function showPersonaForm(existing?: AgentPersona): void {
     if (existing) {
       // Update existing
       personas = personas.map(p => p.id === existing.id
-        ? { ...p, handle: rawHandle, instructions, model, runLocation, ...(sandboxed ? { sandboxed: true } : { sandboxed: undefined }) }
+        ? { ...p, handle: rawHandle, instructions, model, runLocation, emoji: emoji || undefined, cliRuntime: cliRuntime || undefined, ...(sandboxed ? { sandboxed: true } : { sandboxed: undefined }) }
         : p
       );
     } else {
@@ -855,6 +903,8 @@ function showPersonaForm(existing?: AgentPersona): void {
         model,
         runLocation,
         ...(sandboxed ? { sandboxed: true } : {}),
+        ...(emoji ? { emoji } : {}),
+        ...(cliRuntime ? { cliRuntime } : {}),
       });
     }
 
@@ -875,6 +925,7 @@ function showPersonaForm(existing?: AgentPersona): void {
   form.appendChild(modelRow);
   form.appendChild(locationRow);
   form.appendChild(sandboxRow);
+  form.appendChild(runtimeRow);
   form.appendChild(errorEl);
   form.appendChild(btnRow);
 
@@ -896,6 +947,149 @@ function showPersonaForm(existing?: AgentPersona): void {
 }
 
 personaAddBtn.addEventListener('click', () => showPersonaForm());
+
+// ── CLI Runtimes ────────────────────────────────────────
+const runtimesList = document.getElementById('runtimes-list') as HTMLDivElement;
+const runtimeAddBtn = document.getElementById('runtime-add-btn') as HTMLButtonElement;
+let cliRuntimes: CliRuntime[] = [];
+
+async function loadRuntimes(): Promise<void> {
+  cliRuntimes = await intentAPI.listRuntimes() || [];
+  renderRuntimes();
+}
+
+function renderRuntimes(): void {
+  const openForm = runtimesList.querySelector('.persona-form');
+  runtimesList.innerHTML = '';
+  for (const rt of cliRuntimes) {
+    runtimesList.appendChild(createRuntimeCard(rt));
+  }
+  if (openForm) runtimesList.appendChild(openForm);
+}
+
+function createRuntimeCard(rt: CliRuntime): HTMLElement {
+  const card = document.createElement('div');
+  card.className = 'persona-card';
+
+  const info = document.createElement('div');
+  info.className = 'persona-card-info';
+
+  const label = document.createElement('div');
+  label.className = 'persona-card-handle';
+  label.textContent = rt.label;
+
+  const pathEl = document.createElement('div');
+  pathEl.className = 'persona-card-instructions';
+  pathEl.textContent = rt.path;
+
+  info.appendChild(label);
+  info.appendChild(pathEl);
+
+  const actions = document.createElement('div');
+  actions.className = 'persona-card-actions';
+
+  const editBtn = document.createElement('button');
+  editBtn.className = 'persona-action-btn';
+  editBtn.textContent = '✎';
+  editBtn.title = 'Edit';
+  editBtn.addEventListener('click', () => showRuntimeForm(rt));
+
+  const delBtn = document.createElement('button');
+  delBtn.className = 'persona-action-btn danger';
+  delBtn.textContent = '✕';
+  delBtn.title = 'Delete';
+  delBtn.addEventListener('click', async () => {
+    cliRuntimes = cliRuntimes.filter(r => r.id !== rt.id);
+    await intentAPI.saveRuntimes(cliRuntimes);
+    renderRuntimes();
+  });
+
+  actions.appendChild(editBtn);
+  actions.appendChild(delBtn);
+
+  card.appendChild(info);
+  card.appendChild(actions);
+  return card;
+}
+
+function showRuntimeForm(existing?: CliRuntime): void {
+  const prev = runtimesList.querySelector('.persona-form');
+  if (prev) prev.remove();
+
+  const form = document.createElement('div');
+  form.className = 'persona-form';
+
+  const labelRow = document.createElement('div');
+  labelRow.className = 'persona-form-row';
+  const labelInput = document.createElement('input');
+  labelInput.type = 'text';
+  labelInput.className = 'persona-form-input';
+  labelInput.placeholder = 'Label (e.g. Copilot Dev)';
+  labelInput.value = existing?.label || '';
+  labelInput.maxLength = 50;
+  labelRow.appendChild(labelInput);
+
+  const pathRow = document.createElement('div');
+  pathRow.className = 'persona-form-row';
+  const pathInput = document.createElement('input');
+  pathInput.type = 'text';
+  pathInput.className = 'persona-form-input';
+  pathInput.placeholder = 'Path or command (e.g. copilot-dev)';
+  pathInput.value = existing?.path || '';
+  pathInput.spellcheck = false;
+  pathRow.appendChild(pathInput);
+
+  const errorEl = document.createElement('div');
+  errorEl.className = 'persona-form-error hidden';
+
+  const btnRow = document.createElement('div');
+  btnRow.className = 'persona-form-actions';
+
+  const saveBtn = document.createElement('button');
+  saveBtn.className = 'persona-form-save';
+  saveBtn.textContent = existing ? 'Save' : 'Add';
+  saveBtn.addEventListener('click', async () => {
+    const label = labelInput.value.trim();
+    const rPath = pathInput.value.trim();
+    if (!label) {
+      errorEl.textContent = 'Label is required.';
+      errorEl.classList.remove('hidden');
+      return;
+    }
+    if (!rPath) {
+      errorEl.textContent = 'Path is required.';
+      errorEl.classList.remove('hidden');
+      return;
+    }
+
+    if (existing) {
+      cliRuntimes = cliRuntimes.map(r => r.id === existing.id ? { ...r, label, path: rPath } : r);
+    } else {
+      cliRuntimes.push({ id: crypto.randomUUID(), label, path: rPath });
+    }
+
+    await intentAPI.saveRuntimes(cliRuntimes);
+    renderRuntimes();
+  });
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'persona-form-cancel';
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.addEventListener('click', () => form.remove());
+
+  btnRow.appendChild(saveBtn);
+  btnRow.appendChild(cancelBtn);
+
+  form.appendChild(labelRow);
+  form.appendChild(pathRow);
+  form.appendChild(errorEl);
+  form.appendChild(btnRow);
+
+  runtimesList.appendChild(form);
+  labelInput.focus();
+}
+
+runtimeAddBtn.addEventListener('click', () => showRuntimeForm());
 
 // ── MCP Servers ─────────────────────────────────────────
 const mcpDiscoveredList = document.getElementById('mcp-discovered-list') as HTMLDivElement;
@@ -4610,6 +4804,7 @@ if (isSettingsMode) {
   loadWorkspaceSetting();
   loadThemeSetting();
   loadPersonas();
+  loadRuntimes();
   loadCliPathSetting();
   loadMcpServers();
   loadCliTools();

@@ -11,6 +11,14 @@ export interface AgentPersona {
   model: string;        // model ID
   runLocation: 'local' | 'cloud';  // where to execute the agent
   sandboxed?: boolean;  // Windows-only; ignored on other platforms
+  emoji?: string;       // emoji avatar for presence and worker tabs
+  cliRuntime?: string;  // id of a CliRuntime; null/empty = use default cliPath
+}
+
+export interface CliRuntime {
+  id: string;
+  label: string;        // user-friendly name, e.g. "Copilot Dev"
+  path: string;         // bare command or full path, resolved like cliPath
 }
 
 export interface CliToolDefinition {
@@ -37,6 +45,7 @@ export interface AppConfig {
   snapPosition: SnapPosition;
   windowWidth: number;
   personas: AgentPersona[];
+  cliRuntimes: CliRuntime[];
   cliTools: CliToolDefinition[];
   mcpServers: CustomMcpServer[];   // user-added MCP servers
 }
@@ -53,6 +62,7 @@ const DEFAULT_CONFIG: AppConfig = {
   snapPosition: 'bottom-right',
   windowWidth: 420,
   personas: [],
+  cliRuntimes: [],
   cliTools: [],
   mcpServers: [],
 };

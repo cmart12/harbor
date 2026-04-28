@@ -54,6 +54,10 @@ export interface IntentAPI {
   listPersonas(): Promise<IpcCommandResult<'personas:list'>>;
   savePersonas(personas: AgentPersona[]): Promise<IpcCommandResult<'personas:save'>>;
 
+  // ── CLI Runtimes ─────────────────────────────────────────
+  listRuntimes(): Promise<{ id: string; label: string; path: string }[]>;
+  saveRuntimes(runtimes: { id: string; label: string; path: string }[]): Promise<{ ok?: boolean; error?: string }>;
+
   // ── MCP servers ──────────────────────────────────────────
   listDiscoveredMcp(): Promise<IpcCommandResult<'mcp:list-discovered'>>;
   listCustomMcp(): Promise<IpcCommandResult<'mcp:list-custom'>>;
@@ -205,6 +209,10 @@ const api: IntentAPI = {
   // ── Personas ─────────────────────────────────────────────
   listPersonas: () => ipcRenderer.invoke('personas:list'),
   savePersonas: (personas) => ipcRenderer.invoke('personas:save', personas),
+
+  // ── CLI Runtimes ─────────────────────────────────────────
+  listRuntimes: () => ipcRenderer.invoke('runtimes:list'),
+  saveRuntimes: (runtimes) => ipcRenderer.invoke('runtimes:save', runtimes),
 
   // ── MCP servers ──────────────────────────────────────────
   listDiscoveredMcp: () => ipcRenderer.invoke('mcp:list-discovered'),

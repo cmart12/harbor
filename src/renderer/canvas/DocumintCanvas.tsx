@@ -30,6 +30,8 @@ export interface AgentPersona {
   handle: string;
   instructions: string;
   model: string;
+  emoji?: string;
+  cliRuntime?: string;
 }
 
 export interface MentionEvent {

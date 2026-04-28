@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron';
 import { setAIModel, listAvailableModels, reinitCopilot } from '../ai';
 import { resolveCopilotCliPath, invalidateCliPath, checkCliCompatibility } from '../session';
-import { getConfigValue, setConfigValue, getConfig, type AgentPersona } from '../config';
+import { getConfigValue, setConfigValue, getConfig, type AgentPersona, type CliRuntime } from '../config';
 import { listDiscoveredMcpServers } from '../mcp';
 import { validateMcpServers, validateCliTools } from '../validators';
 
@@ -71,14 +71,52 @@ export function registerSettingsHandlers(): void {
       const model = typeof raw.model === 'string' ? raw.model.trim() : '';
       const runLocation = raw.runLocation === 'cloud' ? 'cloud' as const : 'local' as const;
 
+      const emoji = typeof raw.emoji === 'string' ? raw.emoji.trim().slice(0, 8) : '';
+      const cliRuntime = typeof raw.cliRuntime === 'string' ? raw.cliRuntime.trim() : '';
+
       if (!id || !HANDLE_RE.test(handle) || !instructions) continue;
       if (seen.has(handle)) continue;
       seen.add(handle);
 
-      validated.push({ id, handle, instructions, model, runLocation, ...(raw.sandboxed === true ? { sandboxed: true } : {}) });
+      validated.push({
+        id, handle, instructions, model, runLocation,
+        ...(raw.sandboxed === true ? { sandboxed: true } : {}),
+        ...(emoji ? { emoji } : {}),
+        ...(cliRuntime ? { cliRuntime } : {}),
+      });
     }
 
     setConfigValue('personas', validated);
+    return { ok: true };
+  });
+
+  // ── CLI Runtimes ─────────────────────────────────────────
+  ipcMain.handle('runtimes:list', () => {
+    return getConfigValue('cliRuntimes') || [];
+  });
+
+  ipcMain.handle('runtimes:save', (_event, runtimes: unknown) => {
+    if (!Array.isArray(runtimes)) return { error: 'invalid payload' };
+
+    const seen = new Set<string>();
+    const validated: CliRuntime[] = [];
+
+    for (const r of runtimes) {
+      if (!r || typeof r !== 'object') continue;
+      const raw = r as Record<string, unknown>;
+
+      const id = typeof raw.id === 'string' ? raw.id.trim() : '';
+      const label = typeof raw.label === 'string' ? raw.label.trim().slice(0, 50) : '';
+      const rPath = typeof raw.path === 'string' ? raw.path.trim() : '';
+
+      if (!id || !label || !rPath) continue;
+      if (seen.has(id)) continue;
+      seen.add(id);
+
+      validated.push({ id, label, path: rPath });
+    }
+
+    setConfigValue('cliRuntimes', validated);
     return { ok: true };
   });
 
