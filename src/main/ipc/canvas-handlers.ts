@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron';
 import { isInitialized, getIntent, getSkill, assignIntentFolder, updateCanvasContent } from '../database';
 import { getConfigValue } from '../config';
-import { initIntentCanvas, readCanvas, writeCanvas, scheduleAutoCommit, saveAttachment, resolveAttachmentPath, getMimeType, getIntentHistory, restoreIntentVersion, getIntentVersionContent } from '../workspace';
+import { initIntentCanvas, readCanvas, writeCanvas, scheduleAutoCommit, saveAttachment, resolveAttachmentPath, getMimeType, readIntentFile, getIntentHistory, restoreIntentVersion, getIntentVersionContent } from '../workspace';
 import { parseFrontmatter, serializeFrontmatter } from '../frontmatter';
 import { fetchLinkPreview } from '../services/link-preview';
 import type { SkillFrontmatter } from '../../shared/types';
@@ -109,6 +109,21 @@ export function registerCanvasHandlers(): void {
 
     const mimeType = getMimeType(absPath);
     return { path: absPath, mimeType };
+  });
+
+  // ── Read file from intent folder (for documint storage) ──
+  ipcMain.handle('canvas:read-file', (_event, intentId: string, relativePath: string) => {
+    const workspace = getConfigValue('workspace');
+    if (!workspace || !isInitialized()) return { error: 'no_workspace' };
+
+    const intent = getIntent(intentId);
+    if (!intent || !intent.folder) return { error: 'not_found' };
+
+    const result = readIntentFile(workspace, intent.folder, relativePath);
+    if (!result) return { error: 'not_found' };
+
+    // Return as array of bytes + mimeType so it can cross the IPC boundary
+    return { data: Array.from(result.data), mimeType: result.mimeType };
   });
 
   // ── Link preview ──────────────────────────────────────

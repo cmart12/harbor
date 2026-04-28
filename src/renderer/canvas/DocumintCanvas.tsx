@@ -14,12 +14,14 @@ import {
   type DocumentUser,
   type DocumentPresence,
   type CommentChangedEvent,
+  type DocumintStorage,
 } from 'documint';
 import { FrontmatterEditor } from './FrontmatterEditor';
 
 declare const intentAPI: {
   writeCanvas(intentId: string, content: string): Promise<void>;
   pasteFile(intentId: string, filename: string, dataArray: number[]): Promise<{ error?: string; filename?: string; relativePath?: string }>;
+  readFile(intentId: string, relativePath: string): Promise<{ data?: number[]; mimeType?: string; error?: string }>;
   getSetting(key: string): Promise<string | null>;
 };
 
@@ -155,6 +157,27 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
       () => personas.map(p => ({ id: p.handle, username: p.handle })),
       [personas],
     );
+
+    // Documint storage: read/write files from the intent's folder
+    const storage: DocumintStorage = React.useMemo(() => ({
+      async readFile(filePath: string): Promise<Blob | null> {
+        try {
+          const result = await intentAPI.readFile(intentId, filePath);
+          if (result.error || !result.data) return null;
+          const bytes = new Uint8Array(result.data);
+          return new Blob([bytes], { type: result.mimeType || 'application/octet-stream' });
+        } catch {
+          return null;
+        }
+      },
+      async writeFile(file: File): Promise<string> {
+        const buffer = await file.arrayBuffer();
+        const dataArray = Array.from(new Uint8Array(buffer));
+        const result = await intentAPI.pasteFile(intentId, file.name, dataArray);
+        if (result.error) throw new Error(result.error);
+        return result.relativePath!;
+      },
+    }), [intentId]);
 
     const doSave = useCallback(async () => {
       if (savingRef.current) return;
@@ -342,40 +365,10 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
       return () => el.removeEventListener('keydown', handler);
     }, [saveNow]);
 
-    // File paste handler (capture phase)
+    // File drag-and-drop handler
     useEffect(() => {
       const el = containerRef.current;
       if (!el) return;
-
-      const handlePaste = async (e: ClipboardEvent) => {
-        if (!e.clipboardData) return;
-        const files = e.clipboardData.files;
-        if (files.length === 0) return;
-
-        e.preventDefault();
-        e.stopPropagation();
-
-        for (const file of Array.from(files)) {
-          try {
-            const buffer = await file.arrayBuffer();
-            const dataArray = Array.from(new Uint8Array(buffer));
-            onSaveStatus('📎...');
-            const result = await intentAPI.pasteFile(intentId, file.name, dataArray);
-
-            if (result.error) {
-              onSaveStatus('✗ ' + result.error);
-              setTimeout(() => onSaveStatus(''), 3000);
-              continue;
-            }
-
-            const ref = formatAttachmentRef(result.filename!, result.relativePath!, file.type);
-            insertAttachment(ref);
-          } catch {
-            onSaveStatus('✗ paste failed');
-            setTimeout(() => onSaveStatus(''), 3000);
-          }
-        }
-      };
 
       const handleDragOver = (e: DragEvent) => {
         e.preventDefault();
@@ -412,14 +405,11 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
         }
       };
 
-      // Capture phase to intercept before Documint's hidden textarea
-      el.addEventListener('paste', handlePaste, true);
       el.addEventListener('dragover', handleDragOver);
       el.addEventListener('dragleave', handleDragLeave);
       el.addEventListener('drop', handleDrop);
 
       return () => {
-        el.removeEventListener('paste', handlePaste, true);
         el.removeEventListener('dragover', handleDragOver);
         el.removeEventListener('dragleave', handleDragLeave);
         el.removeEventListener('drop', handleDrop);
@@ -488,6 +478,7 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
               <Documint
                 content={content}
                 users={users}
+                storage={storage}
                 onContentChanged={handleContentChange}
                 onCommentChanged={handleCommentChanged}
                 onStateChanged={handleStateChange}

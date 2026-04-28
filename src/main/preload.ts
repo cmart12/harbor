@@ -81,6 +81,7 @@ export interface IntentAPI {
   canvasPreviewVersion(intentId: string, sha: string): Promise<IpcCommandResult<'canvas:preview-version'>>;
   readActivityLog(intentId: string): Promise<{ events: any[]; error?: string }>;
   pasteFile(intentId: string, filename: string, dataArray: number[]): Promise<IpcCommandResult<'canvas:paste-file'>>;
+  readFile(intentId: string, relativePath: string): Promise<{ data?: number[]; mimeType?: string; error?: string }>;
 
   // ── Agent ────────────────────────────────────────────────
   launchAgent(intentId: string, selectedText: string, anchor: AgentAnchor, options?: { repo?: string; model?: string }): Promise<IpcCommandResult<'agent:launch'>>;
@@ -232,6 +233,8 @@ const api: IntentAPI = {
   readActivityLog: (intentId) => ipcRenderer.invoke('canvas:read-activity-log', intentId),
   pasteFile: (intentId, filename, dataArray) =>
     ipcRenderer.invoke('canvas:paste-file', intentId, filename, dataArray),
+  readFile: (intentId, relativePath) =>
+    ipcRenderer.invoke('canvas:read-file', intentId, relativePath),
 
   // ── Agent ────────────────────────────────────────────────
   launchAgent: (intentId, selectedText, anchor, options?) =>

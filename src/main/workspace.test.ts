@@ -151,6 +151,7 @@ describe('initWorkspace', () => {
     expect(content).toContain('.intent/*.db-wal');
     expect(content).toContain('.intent/*.db-shm');
     expect(content).toContain('*/attachments/');
+    expect(content).toContain('*/uploads/');
     expect(content).toContain('*/.workspace/');
   });
 
@@ -163,6 +164,7 @@ describe('initWorkspace', () => {
     // Missing entries should be added
     expect(content).toContain('.intent/*.db-journal');
     expect(content).toContain('*/attachments/');
+    expect(content).toContain('*/uploads/');
   });
 
   it('is idempotent: does not duplicate entries on second call', () => {
@@ -171,6 +173,7 @@ describe('initWorkspace', () => {
     const content = fs.readFileSync(path.join(tmpDir, '.gitignore'), 'utf-8');
     expect(content.match(/\.intent\/\*\.db\n/g)?.length).toBe(1);
     expect(content.match(/\*\/attachments\//g)?.length).toBe(1);
+    expect(content.match(/\*\/uploads\//g)?.length).toBe(1);
   });
 });
 
@@ -242,13 +245,13 @@ describe('saveAttachment', () => {
     fs.mkdirSync(path.join(tmpDir, folder), { recursive: true });
   });
 
-  it('saves file to attachments directory', () => {
+  it('saves file to uploads directory', () => {
     const data = Buffer.from('hello world');
     const result = saveAttachment(tmpDir, folder, 'test.txt', data);
     expect(result.success).toBe(true);
     expect(result.filename).toBe('test.txt');
-    expect(result.relativePath).toBe('attachments/test.txt');
-    const saved = fs.readFileSync(path.join(tmpDir, folder, 'attachments', 'test.txt'));
+    expect(result.relativePath).toBe('uploads/test.txt');
+    const saved = fs.readFileSync(path.join(tmpDir, folder, 'uploads', 'test.txt'));
     expect(saved.toString()).toBe('hello world');
   });
 
@@ -304,7 +307,7 @@ describe('saveAttachment', () => {
     const result = saveAttachment(tmpDir, folder, '../../etc/passwd', data);
     expect(result.success).toBe(true);
     // File should end up inside the intent folder, not outside
-    const filePath = path.join(tmpDir, folder, 'attachments', result.filename!);
+    const filePath = path.join(tmpDir, folder, 'uploads', result.filename!);
     const resolved = path.resolve(filePath);
     expect(resolved.startsWith(path.resolve(path.join(tmpDir, folder)))).toBe(true);
   });

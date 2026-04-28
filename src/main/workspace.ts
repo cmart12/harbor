@@ -45,6 +45,7 @@ export function initWorkspace(rootPath: string): void {
     '.intent/*.db-wal',
     '.intent/*.db-shm',
     '*/attachments/',
+    '*/uploads/',
     '*/.workspace/',
     '*/.intent/',
   ];
@@ -97,7 +98,7 @@ export function createIntentFolder(workspaceRoot: string, intentId: string, desc
 }
 
 const CANVAS_FILE = 'canvas.md';
-const ATTACHMENTS_DIR = 'attachments';
+const ATTACHMENTS_DIR = 'uploads';
 
 const MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024; // 25MB
 
@@ -458,6 +459,19 @@ export function resolveAttachmentPath(
   if (!resolved.startsWith(folderRoot)) return null;
   if (!fs.existsSync(resolved)) return null;
   return resolved;
+}
+
+/** Read a file from an intent folder and return its raw bytes + MIME type. */
+export function readIntentFile(
+  workspaceRoot: string,
+  folder: string,
+  relativePath: string
+): { data: Buffer; mimeType: string } | null {
+  const resolved = resolveAttachmentPath(workspaceRoot, folder, relativePath);
+  if (!resolved) return null;
+  const data = fs.readFileSync(resolved);
+  const mimeType = getMimeType(resolved);
+  return { data, mimeType };
 }
 
 /** Get MIME type from file extension. */
