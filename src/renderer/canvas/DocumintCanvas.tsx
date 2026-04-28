@@ -11,9 +11,9 @@ import {
   lightTheme,
   darkTheme,
   type DocumintState,
-  type MentionSuggestion,
-  type MentionTriggerEvent,
-  type Presence,
+  type DocumentUser,
+  type DocumentPresence,
+  type CommentChangedEvent,
 } from 'documint';
 import { FrontmatterEditor } from './FrontmatterEditor';
 
@@ -44,7 +44,7 @@ export interface DocumintCanvasProps {
   initialFrontmatter?: Record<string, unknown>;
   theme: 'light' | 'dark';
   personas?: AgentPersona[];
-  agentPresence?: Presence[];
+  agentPresence?: DocumentPresence[];
   onDirtyChange: (dirty: boolean) => void;
   onSaveStatus: (status: string) => void;
   onAgentMentioned?: (event: MentionEvent) => void;
@@ -55,7 +55,7 @@ export interface DocumintCanvasHandle {
   getContent(): string;
   getEditorMode(): EditorMode;
   toggleMode(): { mode: EditorMode; error?: string };
-  updatePresence(presence: Presence[]): void;
+  updatePresence(presence: DocumentPresence[]): void;
   updatePersonas(personas: AgentPersona[]): void;
   addCommentReply(threadIndex: number, body: string): void;
   replaceContent(content: string): void;
@@ -137,7 +137,7 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
     const containerRef = useRef<HTMLDivElement>(null);
     const [isDragging, setIsDragging] = useState(false);
     const [personas, setPersonas] = useState<AgentPersona[]>(initialPersonas || []);
-    const [presence, setPresence] = useState<Presence[]>(initialPresence || []);
+    const [presence, setPresence] = useState<DocumentPresence[]>(initialPresence || []);
 
     contentRef.current = content;
     frontmatterRef.current = frontmatter;
@@ -150,9 +150,9 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
       return serializeFm(frontmatterRef.current, contentRef.current);
     }, [hasFrontmatter]);
 
-    // Convert personas to mention suggestions
-    const mentionSuggestions: MentionSuggestion[] = React.useMemo(
-      () => personas.map(p => ({ handle: p.handle, name: p.handle, color: undefined, imageUrl: undefined })),
+    // Convert personas to DocumentUser[] for the mention roster
+    const users: DocumentUser[] = React.useMemo(
+      () => personas.map(p => ({ id: p.id, username: p.handle })),
       [personas],
     );
 
@@ -271,16 +271,22 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
       }
     }, [onDirtyChange, onSaveStatus, scheduleSave, hasFrontmatter]);
 
-    const handleMentionTriggered = useCallback((event: MentionTriggerEvent) => {
+    const handleCommentChanged = useCallback((event: CommentChangedEvent) => {
       if (!onAgentMentioned) return;
-      // Filter to only known persona handles
-      const knownHandles = event.handles.filter(h => personas.some(p => p.handle === h));
-      if (knownHandles.length === 0) return;
+      if (event.kind === 'deleted') return;
+      if (event.mentionedUserIds.length === 0) return;
+
+      // Map mentionedUserIds back to persona handles
+      const handles = event.mentionedUserIds
+        .map(uid => personas.find(p => p.id === uid)?.handle)
+        .filter((h): h is string => h !== undefined);
+      if (handles.length === 0) return;
+
       onAgentMentioned({
-        handles: knownHandles,
-        commentBody: event.commentBody,
-        quote: event.quote,
-        anchor: event.anchor,
+        handles,
+        commentBody: event.comment.body,
+        quote: event.thread.quote,
+        anchor: event.thread.anchor,
         threadIndex: event.threadIndex,
       });
     }, [onAgentMentioned, personas]);
@@ -294,7 +300,7 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
       getContent: () => getFullContent(),
       getEditorMode: () => editorModeRef.current,
       toggleMode: () => handleToggleMode(),
-      updatePresence: (nextPresence: Presence[]) => setPresence(nextPresence),
+      updatePresence: (nextPresence: DocumentPresence[]) => setPresence(nextPresence),
       updatePersonas: (nextPersonas: AgentPersona[]) => setPersonas(nextPersonas),
       addCommentReply: (threadIndex: number, body: string) => {
         const current = contentRef.current;
@@ -482,10 +488,10 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
             <div className="documint-editor-wrap">
               <Documint
                 content={content}
-                mentionSuggestions={mentionSuggestions}
-                onContentChange={handleContentChange}
-                onMentionTriggered={handleMentionTriggered}
-                onStateChange={handleStateChange}
+                users={users}
+                onContentChanged={handleContentChange}
+                onCommentChanged={handleCommentChanged}
+                onStateChanged={handleStateChange}
                 presence={presence}
                 theme={documintTheme}
               />

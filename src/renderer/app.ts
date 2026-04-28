@@ -3314,7 +3314,7 @@ async function refreshIntentTitle(id: string): Promise<void> {
 
 // ── Canvas view ─────────────────────────────────────────
 import { mountCanvas, unmountCanvas, getCanvasContent, saveCanvas as saveCanvasEditor, updateCanvasPresence, addCanvasCommentReply, toggleCanvasMode, getCanvasEditorMode, replaceCanvasContent } from './canvas/mount.tsx';
-import type { Presence } from 'documint';
+import type { DocumentPresence } from 'documint';
 
 const canvasView = document.getElementById('canvas-view') as HTMLDivElement;
 const canvasBack = document.getElementById('canvas-back') as HTMLButtonElement;
@@ -3970,7 +3970,7 @@ function closeAgentChat(): void {
 (window as any).openAgentChat = openAgentChat;
 
 // ── Agent Presence Management ──────────────────────────
-const canvasAgentPresence = new Map<string, Presence>();
+const canvasAgentPresence = new Map<string, DocumentPresence>();
 
 function syncCanvasPresence(): void {
   updateCanvasPresence(Array.from(canvasAgentPresence.values()));
@@ -3978,10 +3978,12 @@ function syncCanvasPresence(): void {
 
 intentAPI.onAgentPresenceStarted((data) => {
   if (data.intentId !== canvasIntentId) return;
+  // Map persona handle to persona ID so presence matches the DocumentUser roster
+  const persona = personas.find(p => p.handle === data.persona.handle);
+  const userId = persona?.id ?? data.agentId;
   canvasAgentPresence.set(data.agentId, {
-    name: data.persona.name,
+    userId,
     color: data.persona.color,
-    imageUrl: data.persona.imageUrl,
     cursor: data.anchor?.prefix || data.anchor?.suffix ? data.anchor : undefined,
   });
   syncCanvasPresence();

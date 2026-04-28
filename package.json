@@ -63,7 +63,7 @@
     "@huggingface/transformers": "^4.1.0",
     "@mozilla/readability": "^0.6.0",
     "better-sqlite3": "^12.9.0",
-    "documint": "file:../documint",
+    "documint": "^0.0.4",
     "js-yaml": "^4.1.0",
     "linkedom": "^0.18.12",
     "lucide-react": "^1.8.0",

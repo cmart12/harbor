@@ -1,7 +1,7 @@
 import React from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { DocumintCanvas, type DocumintCanvasHandle, type DocumintCanvasProps, type AgentPersona, type MentionEvent } from './DocumintCanvas';
-import type { Presence } from 'documint';
+import type { DocumentPresence } from 'documint';
 
 let root: Root | null = null;
 let canvasRef: React.RefObject<DocumintCanvasHandle | null> = React.createRef();
@@ -12,7 +12,7 @@ export interface MountCanvasOptions {
   frontmatter?: Record<string, unknown>;
   theme: 'light' | 'dark';
   personas?: AgentPersona[];
-  agentPresence?: Presence[];
+  agentPresence?: DocumentPresence[];
   onDirtyChange: (dirty: boolean) => void;
   onSaveStatus: (status: string) => void;
   onAgentMentioned?: (event: MentionEvent) => void;
@@ -61,7 +61,7 @@ export async function saveCanvas(): Promise<void> {
   }
 }
 
-export function updateCanvasPresence(presence: Presence[]): void {
+export function updateCanvasPresence(presence: DocumentPresence[]): void {
   canvasRef.current?.updatePresence(presence);
 }
 
