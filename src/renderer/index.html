@@ -37,6 +37,10 @@
             <div class="step-body">
               <div class="step-label">Copilot CLI</div>
               <div id="welcome-cli-status" class="step-hint">Checking…</div>
+              <div class="step-action welcome-cli-actions">
+                <input id="welcome-cli-path" class="welcome-cli-input" type="text" placeholder="Path to copilot binary (leave empty to auto-detect)" spellcheck="false" />
+                <button id="welcome-cli-refresh" class="welcome-btn welcome-btn-small" title="Re-detect CLI version">↻ Refresh</button>
+              </div>
             </div>
             <span id="welcome-cli-check" class="step-check hidden">✓</span>
           </div>

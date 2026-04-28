@@ -263,6 +263,40 @@ body {
   background: rgba(0, 0, 0, 0.04);
 }
 
+.welcome-btn-small {
+  padding: 5px 10px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.welcome-cli-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.welcome-cli-input {
+  flex: 1;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  background: white;
+  font-size: 12px;
+  font-family: monospace;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.welcome-cli-input:focus {
+  border-color: rgba(124, 102, 220, 0.5);
+}
+
+.welcome-cli-input::placeholder {
+  color: rgba(0, 0, 0, 0.35);
+  font-family: inherit;
+}
+
 
 #welcome-model-select {
   padding: 6px 10px;
@@ -332,6 +366,20 @@ body.dark .welcome-btn {
 
 body.dark .welcome-btn:hover {
   background: rgba(255, 255, 255, 0.12);
+}
+
+body.dark .welcome-cli-input {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: inherit;
+}
+
+body.dark .welcome-cli-input:focus {
+  border-color: rgba(124, 102, 220, 0.5);
+}
+
+body.dark .welcome-cli-input::placeholder {
+  color: rgba(255, 255, 255, 0.3);
 }
 
 

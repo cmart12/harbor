@@ -71,6 +71,7 @@ interface IntentAPI {
   getSetting(key: string): Promise<string | null>;
   setSetting(key: string, value: string): Promise<void>;
   resolveCliPath(): Promise<string | null>;
+  checkCliVersion(): Promise<{ path: string | null; version: string | null; compatible: boolean; minVersion: string }>;
   listModels(): Promise<{ id: string; name?: string }[]>;
   listPersonas(): Promise<AgentPersona[]>;
   savePersonas(personas: AgentPersona[]): Promise<{ ok?: boolean; error?: string }>;
@@ -218,6 +219,8 @@ const welcomeStepWorkspace = document.getElementById('welcome-step-workspace') a
 const welcomeCliStatus = document.getElementById('welcome-cli-status') as HTMLDivElement;
 const welcomeCliCheck = document.getElementById('welcome-cli-check') as HTMLSpanElement;
 const welcomeStepCli = document.getElementById('welcome-step-cli') as HTMLDivElement;
+const welcomeCliPath = document.getElementById('welcome-cli-path') as HTMLInputElement;
+const welcomeCliRefresh = document.getElementById('welcome-cli-refresh') as HTMLButtonElement;
 const welcomeModelSelect = document.getElementById('welcome-model-select') as HTMLSelectElement;
 const welcomeModelCheck = document.getElementById('welcome-model-check') as HTMLSpanElement;
 const welcomeStepModel = document.getElementById('welcome-step-model') as HTMLDivElement;
@@ -4326,26 +4329,18 @@ async function showWelcomeView(): Promise<void> {
   welcomeCliCheck.classList.add('hidden');
   welcomeStepCli.classList.remove('done');
   welcomeCliStatus.textContent = 'Checking…';
+  welcomeCliStatus.style.color = '';
   welcomeModelCheck.classList.add('hidden');
   welcomeStepModel.classList.remove('done');
   welcomeModelSelect.innerHTML = '<option value="">Loading models…</option>';
   updateWelcomeStartBtn();
 
+  // Load saved CLI path override into input
+  const savedCliPath = await intentAPI.getSetting('cli_path');
+  welcomeCliPath.value = savedCliPath || '';
+
   // Auto-detect CLI and check version compatibility
-  intentAPI.checkCliVersion().then((info: { path: string | null; version: string | null; compatible: boolean; minVersion: string }) => {
-    if (!info.path) {
-      welcomeCliStatus.textContent = 'Not found — install the Copilot CLI to launch agent sessions.';
-    } else if (!info.compatible) {
-      const ver = info.version || 'unknown';
-      welcomeCliStatus.textContent = `Version ${ver} found — update to ${info.minVersion}+ required (run: copilot update)`;
-      welcomeCliStatus.style.color = 'var(--color-warning, #d29922)';
-    } else {
-      const short = info.path.length > 40 ? '…' + info.path.slice(-38) : info.path;
-      welcomeCliStatus.textContent = `Detected: ${short} (v${info.version})`;
-      welcomeCliCheck.classList.remove('hidden');
-      welcomeStepCli.classList.add('done');
-    }
-  });
+  checkWelcomeCli();
 
   // Load models (retry since SDK may still be starting)
   async function loadWelcomeModels(retries = 5): Promise<void> {
@@ -4383,6 +4378,48 @@ function hideWelcomeView(): void {
   mainView.classList.remove('hidden');
   descInput.focus();
 }
+
+async function checkWelcomeCli(): Promise<void> {
+  welcomeCliStatus.textContent = 'Checking…';
+  welcomeCliStatus.style.color = '';
+  welcomeCliCheck.classList.add('hidden');
+  welcomeStepCli.classList.remove('done');
+
+  const info: { path: string | null; version: string | null; compatible: boolean; minVersion: string } =
+    await intentAPI.checkCliVersion();
+
+  if (!info.path) {
+    welcomeCliStatus.textContent = 'Not found — install the Copilot CLI or provide a path below.';
+  } else if (!info.compatible) {
+    const ver = info.version || 'unknown';
+    welcomeCliStatus.textContent = `Version ${ver} found — update to ${info.minVersion}+ required (run: copilot update)`;
+    welcomeCliStatus.style.color = 'var(--color-warning, #d29922)';
+  } else {
+    const short = info.path.length > 40 ? '…' + info.path.slice(-38) : info.path;
+    welcomeCliStatus.textContent = `Detected: ${short} (v${info.version})`;
+    welcomeCliCheck.classList.remove('hidden');
+    welcomeStepCli.classList.add('done');
+  }
+}
+
+// Save CLI path override from welcome screen input
+let welcomeCliDebounce: ReturnType<typeof setTimeout> | null = null;
+welcomeCliPath.addEventListener('input', () => {
+  if (welcomeCliDebounce) clearTimeout(welcomeCliDebounce);
+  welcomeCliDebounce = setTimeout(async () => {
+    const val = welcomeCliPath.value.trim();
+    await intentAPI.setSetting('cli_path', val);
+    await checkWelcomeCli();
+  }, 500);
+});
+
+// Refresh button re-checks CLI after user upgrades
+welcomeCliRefresh.addEventListener('click', async () => {
+  // Invalidate cache by re-saving the current path (triggers invalidateCliPath on backend)
+  const val = welcomeCliPath.value.trim();
+  await intentAPI.setSetting('cli_path', val);
+  await checkWelcomeCli();
+});
 
 welcomeWorkspaceBtn.addEventListener('click', async () => {
   const result = await intentAPI.selectWorkspace();
