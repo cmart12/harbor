@@ -397,5 +397,15 @@ describe('session', () => {
       expect(info.version).toBeNull();
       expect(info.compatible).toBe(false);
     });
+
+    it('returns compatible for dev version 0.0.1', () => {
+      mockGetConfigValue.mockReturnValue('/usr/bin/copilot');
+      mockExistsSync.mockReturnValue(true);
+      mockExecSync.mockReturnValue(Buffer.from('GitHub Copilot CLI 0.0.1.\n'));
+
+      const info = checkCliCompatibility();
+      expect(info.version).toBe('0.0.1');
+      expect(info.compatible).toBe(true);
+    });
   });
 });

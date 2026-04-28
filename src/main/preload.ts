@@ -126,6 +126,9 @@ export interface IntentAPI {
   notifyCanvasThemeChanged(theme: string): void;
   onCanvasThemeChanged(callback: (theme: string) => void): void;
 
+  // ── Settings popout window ──────────────────────────────
+  openSettingsWindow(): void;
+
   // ── Window / workspace events ────────────────────────────
   onWindowShown(callback: (data: { side: 'left' | 'right'; expanded: boolean }) => void): void;
   onWindowToggle(callback: () => void): void;
@@ -322,6 +325,9 @@ const api: IntentAPI = {
   onCanvasThemeChanged: (callback) => {
     ipcRenderer.on('canvas-window:theme-changed', (_event: unknown, theme: string) => callback(theme));
   },
+
+  // ── Settings popout window ──────────────────────────────
+  openSettingsWindow: () => ipcRenderer.send('settings-window:open'),
 
   // ── Window / workspace events ────────────────────────────
   onWindowShown: (callback) => {

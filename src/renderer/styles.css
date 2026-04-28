@@ -445,11 +445,47 @@ header h1 {
   inset: 0;
   z-index: 100;
   display: flex;
+  align-items: center;
+  justify-content: center;
   animation: modalFadeIn 0.15s ease;
 }
 
 .settings-overlay.hidden {
   display: none;
+}
+
+/* Settings popout window: full-page mode (no overlay/backdrop) */
+.settings-overlay.settings-fullpage {
+  position: relative;
+  inset: unset;
+  z-index: unset;
+  animation: none;
+}
+
+.settings-overlay.settings-fullpage .settings-backdrop {
+  display: none;
+}
+
+.settings-overlay.settings-fullpage .settings-modal {
+  width: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  height: 100vh;
+  border-radius: 0;
+  box-shadow: none;
+  background: #fafafa;
+}
+
+body.dark .settings-overlay.settings-fullpage .settings-modal {
+  background: #1c1c20;
+}
+
+.settings-window .settings-modal header {
+  -webkit-app-region: drag;
+}
+
+.settings-window .settings-modal header button {
+  -webkit-app-region: no-drag;
 }
 
 .settings-backdrop {
@@ -462,10 +498,11 @@ header h1 {
 .settings-modal {
   position: relative;
   background: linear-gradient(180deg, #f3f3f3 0%, #fafafa 100%);
-  border-radius: 0;
-  box-shadow: none;
-  width: 100%;
-  height: 100%;
+  border-radius: 12px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.25), 0 8px 24px rgba(0, 0, 0, 0.12);
+  width: 520px;
+  max-width: 90vw;
+  max-height: 85vh;
   display: flex;
   flex-direction: column;
   animation: modalScaleIn 0.15s ease;
@@ -3595,7 +3632,7 @@ body.dark .past-card-meta { color: rgba(255, 255, 255, 0.25); }
 body.dark .past-date-label { color: rgba(255, 255, 255, 0.3); }
 
 /* Dark settings */
-body.dark .settings-modal { background: #1c1c20; }
+body.dark .settings-modal { background: #1c1c20; box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5), 0 8px 24px rgba(0, 0, 0, 0.3); }
 body.dark .settings-modal header { border-bottom-color: rgba(255, 255, 255, 0.06); }
 body.dark .settings-backdrop { background: rgba(0, 0, 0, 0.6); }
 body.dark .settings-group-title { color: rgba(255, 255, 255, 0.35); }

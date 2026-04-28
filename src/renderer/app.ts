@@ -122,6 +122,7 @@ interface IntentAPI {
   onCanvasWindowClosed(callback: () => void): void;
   notifyCanvasThemeChanged(theme: string): void;
   onCanvasThemeChanged(callback: (theme: string) => void): void;
+  openSettingsWindow(): void;
   onWindowShown(callback: (data: { side: 'left' | 'right'; expanded: boolean }) => void): void;
   onWindowToggle(callback: () => void): void;
   onRequestHide(callback: () => void): void;
@@ -184,6 +185,7 @@ declare const intentAPI: IntentAPI;
 
 // ── Canvas window mode detection ────────────────────────
 const isCanvasMode = new URLSearchParams(window.location.search).get('mode') === 'canvas';
+const isSettingsMode = new URLSearchParams(window.location.search).get('mode') === 'settings';
 
 const descInput = document.getElementById('description-input') as HTMLTextAreaElement;
 const form = document.getElementById('capture-form') as HTMLFormElement;
@@ -495,16 +497,8 @@ launchCliBtn.addEventListener('click', async () => {
 let settingsModalOpen = false;
 
 function showSettings(): void {
-  settingsOverlay.classList.remove('hidden');
-  settingsModalOpen = true;
-  settingsBtn.classList.add('active');
-  loadModels();
-  loadWorkspaceSetting();
-  loadThemeSetting();
-  loadPersonas();
-  loadCliPathSetting();
-  loadMcpServers();
-  loadCliTools();
+  // Open settings in a separate window
+  intentAPI.openSettingsWindow();
 }
 
 function hideSettings(): void {
@@ -4157,7 +4151,11 @@ document.addEventListener('keydown', (e) => {
   // When settings modal is open, only Escape is handled
   if (settingsModalOpen) {
     if (e.key === 'Escape') {
-      hideSettings();
+      if (isSettingsMode) {
+        window.close();
+      } else {
+        hideSettings();
+      }
     }
     return;
   }
@@ -4427,9 +4425,9 @@ welcomeStartBtn.addEventListener('click', async () => {
 // ── Init ────────────────────────────────────────────────
 // Check if workspace is set — show welcome or main view
 intentAPI.getSetting('workspace_root').then(ws => {
-  if (!ws && !isCanvasMode) {
+  if (!ws && !isCanvasMode && !isSettingsMode) {
     showWelcomeView();
-  } else {
+  } else if (!isSettingsMode) {
     loadIntents();
   }
 });
@@ -4441,8 +4439,8 @@ intentAPI.onCanvasWindowClosed(() => {
 
 // Reload all data when workspace changes (select or clear)
 intentAPI.onWorkspaceChanged((path: string | null) => {
-  if (isCanvasMode) {
-    // In canvas window, close it — the workspace changed underneath
+  if (isCanvasMode || isSettingsMode) {
+    // In canvas/settings window, close it — the workspace changed underneath
     window.close();
     return;
   }
@@ -4528,4 +4526,38 @@ if (isCanvasMode) {
   // Also load full intents and skills in background for metadata
   intentAPI.list().then(list => { intents = list; });
   intentAPI.listSkills().then(list => { cachedSkills = list; });
+}
+
+// ── Settings popout window mode ─────────────────────────
+if (isSettingsMode) {
+  // Hide everything except settings overlay
+  mainView.classList.add('hidden');
+  document.body.classList.add('settings-window');
+
+  // Show the settings content as full page (not overlay)
+  settingsOverlay.classList.remove('hidden');
+  settingsOverlay.classList.add('settings-fullpage');
+  settingsModalOpen = true;
+
+  // Apply theme
+  intentAPI.getSetting('theme').then(t => {
+    if (t === 'dark') document.body.classList.add('dark');
+  });
+
+  // Listen for theme changes from main window
+  intentAPI.onCanvasThemeChanged((theme: string) => {
+    document.body.classList.toggle('dark', theme === 'dark');
+  });
+
+  // Load settings data
+  loadModels();
+  loadWorkspaceSetting();
+  loadThemeSetting();
+  loadPersonas();
+  loadCliPathSetting();
+  loadMcpServers();
+  loadCliTools();
+
+  // Close button closes the window
+  settingsClose.addEventListener('click', () => window.close());
 }

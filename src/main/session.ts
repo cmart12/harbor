@@ -97,7 +97,7 @@ export function getCopilotCliVersion(): string | null {
 export function checkCliCompatibility(): CliVersionInfo {
   const cliPath = resolveCopilotCliPath();
   const version = getCopilotCliVersion();
-  const compatible = version != null && compareVersions(version, MIN_CLI_VERSION) >= 0;
+  const compatible = version != null && (version === '0.0.1' || compareVersions(version, MIN_CLI_VERSION) >= 0);
   return { path: cliPath, version, compatible, minVersion: MIN_CLI_VERSION };
 }
 

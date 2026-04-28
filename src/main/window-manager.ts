@@ -10,9 +10,14 @@ const SNAP_MARGIN = 12;
 const CANVAS_WIDTH = 780;
 const CANVAS_HEIGHT = 700;
 
+// ── Geometry constants (settings window) ─────────────────
+const SETTINGS_WIDTH = 600;
+const SETTINGS_HEIGHT = 700;
+
 // ── Module state ─────────────────────────────────────────
 let mainWindow: BrowserWindow | null = null;
 let canvasWindow: BrowserWindow | null = null;
+let settingsWindow: BrowserWindow | null = null;
 let isExpanded = false;
 let isSnapping = false;
 let showTimestamp = 0;
@@ -206,6 +211,21 @@ export function registerWindowIpcHandlers(preloadPath: string): void {
     if (canvasWindow && !canvasWindow.isDestroyed()) {
       canvasWindow.webContents.send('canvas-window:theme-changed', theme);
     }
+    if (settingsWindow && !settingsWindow.isDestroyed()) {
+      settingsWindow.webContents.send('canvas-window:theme-changed', theme);
+    }
+  });
+
+  // ── Settings popout window ─────────────────────────────
+  ipcMain.on('settings-window:open', () => {
+    if (settingsWindow && !settingsWindow.isDestroyed()) {
+      settingsWindow.focus();
+    } else {
+      settingsWindow = createSettingsWindow(preloadPath);
+      settingsWindow.once('ready-to-show', () => {
+        settingsWindow?.show();
+      });
+    }
   });
 }
 
@@ -367,6 +387,38 @@ function createCanvasWindow(preloadPath: string): BrowserWindow {
   win.on('closed', () => {
     canvasWindow = null;
     mainWindow?.webContents.send('canvas-window:closed');
+  });
+
+  return win;
+}
+
+function createSettingsWindow(preloadPath: string): BrowserWindow {
+  const cursorPoint = screen.getCursorScreenPoint();
+  const display = screen.getDisplayNearestPoint(cursorPoint);
+  const { x, y, width, height } = display.workArea;
+
+  const win = new BrowserWindow({
+    width: SETTINGS_WIDTH,
+    height: SETTINGS_HEIGHT,
+    x: Math.round(x + (width - SETTINGS_WIDTH) / 2),
+    y: Math.round(y + (height - SETTINGS_HEIGHT) / 2),
+    show: false,
+    alwaysOnTop: true,
+    titleBarStyle: 'hiddenInset',
+    trafficLightPosition: { x: 16, y: 16 },
+    vibrancy: 'under-window',
+    visualEffectState: 'active',
+    webPreferences: {
+      preload: preloadPath,
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  win.loadURL('copilot-intent://app/renderer/index.html?mode=settings');
+
+  win.on('closed', () => {
+    settingsWindow = null;
   });
 
   return win;
