@@ -29,6 +29,21 @@ export class InteractionBroker {
   ) {}
 
   /**
+   * Permission handler for sandboxed agents.
+   * Auto-approves reads, auto-denies writes. Shell permissions are handled
+   * by the pre-tool hook (read-only classification). MCP and other kinds
+   * fall through to the normal interactive handler.
+   */
+  createSandboxedPermissionHandler(findRecord: (sessionId: string) => AgentRecord | undefined) {
+    return async (request: PermissionRequest, invocation: { sessionId: string }) => {
+      if (request.kind === 'read') return { kind: 'approve-once' as const };
+      if (request.kind === 'write') return { kind: 'reject' as const };
+      // For shell, mcp, url, and other kinds, fall through to normal handler
+      return this.createPermissionHandler(findRecord)(request, invocation);
+    };
+  }
+
+  /**
    * Shared permission request handler for all agent types.
    * Each concurrent request gets a unique requestId so callbacks never overwrite each other.
    */

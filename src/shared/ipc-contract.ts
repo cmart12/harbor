@@ -65,6 +65,7 @@ export interface AgentPersona {
   instructions: string;
   model: string;
   runLocation: 'local' | 'cloud';
+  sandboxed?: boolean;  // Windows-only; ignored on other platforms
 }
 
 export interface CliToolDefinition {

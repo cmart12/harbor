@@ -69,7 +69,12 @@ export function getCopilotCliVersion(): string | null {
   }
 
   try {
-    const output = execSync(`"${cliPath}" --version`, {
+    // On Windows, .js files can't be executed directly (they open in Notepad
+    // or Windows Script Host). Run them via the current Node/Electron binary.
+    const cmd = /\.js$/i.test(cliPath)
+      ? `"${process.execPath}" "${cliPath}" --version`
+      : `"${cliPath}" --version`;
+    const output = execSync(cmd, {
       timeout: 10_000,
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'ignore'],

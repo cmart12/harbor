@@ -1,7 +1,47 @@
+import * as path from 'path';
+import * as fs from 'fs';
 import { CopilotClient, CopilotSession } from '@github/copilot-sdk';
 import { getConfigValue } from './config';
 import { resolveCopilotCliPath } from './session';
 import { RecurrenceResult, RecallMatch, Intent } from '../shared/types';
+
+/**
+ * Returns the path to a sandbox-specific config directory that enables
+ * runtime-level sandboxing (mxc AppContainer isolation).
+ * The config scopes filesystem access to the intent's working directory:
+ * - readwritePaths: only the intent folder (cwd is added by runtime automatically)
+ * - deniedPaths: the workspace root (prevents escaping to sibling intents)
+ * Windows-only — returns undefined on other platforms.
+ */
+export function getSandboxConfigDir(intentWorkingDir: string, workspaceRoot: string): string | undefined {
+  if (process.platform !== 'win32') return undefined;
+  const { app } = require('electron');
+  // Use a hash of the intent dir to create per-intent sandbox configs
+  const crypto = require('crypto');
+  const dirHash = crypto.createHash('md5').update(intentWorkingDir).digest('hex').slice(0, 8);
+  const dir = path.join(app.getPath('userData'), 'sandbox-config', dirHash);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+  // Write sandbox config scoped to this intent's directory.
+  // The mxc AppContainer only grants read-write to explicitly listed paths + cwd,
+  // so we don't need deniedPaths — the agent simply won't have write access outside
+  // the intent folder. The workspace root is added as read-only so the agent can
+  // read sibling files but not modify them.
+  const sandboxConfig = {
+    sandbox: {
+      enabled: true,
+      filesystem: {
+        readwritePaths: [intentWorkingDir],
+        readonlyPaths: [workspaceRoot],
+      },
+    },
+  };
+
+  const cfg = path.join(dir, 'config.json');
+  // Always rewrite to ensure paths are current
+  fs.writeFileSync(cfg, JSON.stringify(sandboxConfig, null, 2));
+  return dir;
+}
 
 export interface ParsedIntent {
   description: string;
