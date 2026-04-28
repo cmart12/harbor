@@ -299,7 +299,7 @@ function slideIn(side: 'left' | 'right'): void {
     if (slideTransitionId === myId && windowVisualState === 'sliding-in') {
       windowVisualState = 'visible';
     }
-  }, 280);
+  }, 150);
 }
 
 function slideOut(callback?: () => void): void {
@@ -337,7 +337,7 @@ function slideOut(callback?: () => void): void {
   const fallback = setTimeout(() => {
     appEl.removeEventListener('transitionend', onEnd);
     finish();
-  }, 280);
+  }, 150);
 }
 
 // ── Status bar helpers ──────────────────────────────────
