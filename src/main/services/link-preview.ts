@@ -57,7 +57,7 @@ function fetchUrl(urlStr: string, timeout: number, maxBytes: number): Promise<st
     const parsed = new URL(urlStr);
     const mod = parsed.protocol === 'https:' ? https : http;
 
-    const req = mod.get(urlStr, { timeout, headers: { 'User-Agent': 'Intent-LinkPreview/1.0' } }, (res) => {
+    const req = mod.get(urlStr, { timeout, headers: { 'User-Agent': 'Whim-LinkPreview/1.0' } }, (res) => {
       // Follow one redirect
       if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         req.destroy();

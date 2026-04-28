@@ -122,7 +122,7 @@ export async function launchCloudAgent(
       body: JSON.stringify({
         problem_statement: prompt,
         pull_request: {
-          body_suffix: 'Created from Intent app.',
+          body_suffix: 'Created from Whim app.',
         },
         event_type: 'intent_app',
       }),

@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const assets = ['index.html', 'styles.css'];
+const assets = ['index.html', 'styles.css', 'copilot.png'];
 const srcDir = path.join(__dirname, '..', 'src', 'renderer');
 const distDir = path.join(__dirname, '..', 'dist', 'renderer');
 

@@ -22,7 +22,7 @@ export function createTray(callbacks: TrayCallbacks): Tray {
   }
 
   const tray = new Tray(icon.resize({ width: 16, height: 16 }));
-  tray.setToolTip('Intent — Quick Capture');
+  tray.setToolTip('Whim — Quick Capture');
 
   const contextMenu = Menu.buildFromTemplate([
     { label: 'Show', click: callbacks.onToggleWindow },
