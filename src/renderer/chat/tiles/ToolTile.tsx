@@ -150,6 +150,10 @@ export function ToolTile({ toolName, args, result, completed, success, error }: 
         </div>
       );
     }
+  } else if (toolName === 'report_intent') {
+    const intentText = typeof args.intent === 'string' ? args.intent : '';
+    icon = isRunning ? '●' : '';
+    title = <span className="chat-tool-label">{intentText || 'Updating…'}</span>;
   } else {
     // Generic tool
     icon = isRunning ? '●' : '';

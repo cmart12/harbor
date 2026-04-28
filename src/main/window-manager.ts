@@ -53,6 +53,13 @@ export function createMainWindow(options: WindowManagerOptions): BrowserWindow {
   attachResizePersist(win);
 
   mainWindow = win;
+
+  // If the app starts while pinned, allow other windows to cover it and show in taskbar
+  if (getConfigValue('pinned')) {
+    win.setAlwaysOnTop(false);
+    win.setSkipTaskbar(false);
+  }
+
   return win;
 }
 
@@ -121,8 +128,9 @@ export function registerWindowIpcHandlers(preloadPath: string): void {
     if (!mainWindow || !isExpanded) return;
     isExpanded = false;
 
-    mainWindow.setAlwaysOnTop(true);
-    mainWindow.setSkipTaskbar(true);
+    const pinned = getConfigValue('pinned');
+    mainWindow.setAlwaysOnTop(!pinned);
+    mainWindow.setSkipTaskbar(!pinned);
 
     isSnapping = true;
     const cursorPoint = screen.getCursorScreenPoint();
@@ -148,6 +156,10 @@ export function registerWindowIpcHandlers(preloadPath: string): void {
   ipcMain.on('window:set-pinned', (_event, pinned: boolean) => {
     setConfigValue('pinned', pinned);
     if (mainWindow && !isExpanded) {
+      // Toggle always-on-top and taskbar visibility based on pin state
+      mainWindow.setAlwaysOnTop(!pinned);
+      mainWindow.setSkipTaskbar(!pinned);
+
       // When unpinning, snap back to full-height edge position
       if (!pinned) {
         const bounds = mainWindow.getBounds();
