@@ -4402,20 +4402,14 @@ async function checkWelcomeCli(): Promise<void> {
   }
 }
 
-// Save CLI path override from welcome screen input
-let welcomeCliDebounce: ReturnType<typeof setTimeout> | null = null;
-welcomeCliPath.addEventListener('input', () => {
-  if (welcomeCliDebounce) clearTimeout(welcomeCliDebounce);
-  welcomeCliDebounce = setTimeout(async () => {
-    const val = welcomeCliPath.value.trim();
-    await intentAPI.setSetting('cli_path', val);
-    await checkWelcomeCli();
-  }, 500);
+// Save CLI path override from welcome screen input (save only, no re-check)
+welcomeCliPath.addEventListener('change', async () => {
+  const val = welcomeCliPath.value.trim();
+  await intentAPI.setSetting('cli_path', val);
 });
 
-// Refresh button re-checks CLI after user upgrades
+// Refresh button re-checks CLI after user upgrades or changes path
 welcomeCliRefresh.addEventListener('click', async () => {
-  // Invalidate cache by re-saving the current path (triggers invalidateCliPath on backend)
   const val = welcomeCliPath.value.trim();
   await intentAPI.setSetting('cli_path', val);
   await checkWelcomeCli();
