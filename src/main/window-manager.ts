@@ -397,6 +397,8 @@ function createSettingsWindow(preloadPath: string): BrowserWindow {
   const display = screen.getDisplayNearestPoint(cursorPoint);
   const { x, y, width, height } = display.workArea;
 
+  const isMac = process.platform === 'darwin';
+
   const win = new BrowserWindow({
     width: SETTINGS_WIDTH,
     height: SETTINGS_HEIGHT,
@@ -404,8 +406,12 @@ function createSettingsWindow(preloadPath: string): BrowserWindow {
     y: Math.round(y + (height - SETTINGS_HEIGHT) / 2),
     show: false,
     alwaysOnTop: true,
-    titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 16, y: 16 },
+    title: 'Settings',
+    // macOS: hidden inset title bar; Windows/Linux: frameless
+    ...(isMac
+      ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 16, y: 16 } }
+      : { frame: false }),
+    autoHideMenuBar: true,
     vibrancy: 'under-window',
     visualEffectState: 'active',
     webPreferences: {
