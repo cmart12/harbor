@@ -164,6 +164,15 @@ describe('session', () => {
       expect(result).toBe('C:\\ProgramData\\npm\\copilot.cmd');
       expect(mockExistsSync).not.toHaveBeenCalled();
     });
+
+    it('resolves .cmd in node_modules/.bin/ to sibling @github/copilot/index.js', () => {
+      mockExistsSync.mockImplementation((p: unknown) => {
+        return p === 'C:\\projects\\my-app\\node_modules\\@github\\copilot\\index.js';
+      });
+
+      const result = resolveCmdToJs('C:\\projects\\my-app\\node_modules\\.bin\\copilot.cmd');
+      expect(result).toBe('C:\\projects\\my-app\\node_modules\\@github\\copilot\\index.js');
+    });
   });
 
   // ── checkCopilotCli (deprecated wrapper) ──────────────

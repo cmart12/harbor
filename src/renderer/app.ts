@@ -98,6 +98,7 @@ interface IntentAPI {
   unarchive(id: string): Promise<Intent | null>;
   summarizeTitle(canvasContent: string): Promise<{ title: string | null }>;
   pasteFile(intentId: string, filename: string, dataArray: number[]): Promise<{ success?: boolean; relativePath?: string; filename?: string; error?: string }>;
+  openIntentFolder(intentId: string): Promise<void>;
   listAgents(intentId: string): Promise<any[]>;
   quickLaunchAgent(prompt: string): Promise<{ agentId?: string; sessionId?: string; error?: string }>;
   listAllAgents(): Promise<any[]>;
@@ -2328,6 +2329,7 @@ async function openSkillEditor(skillId: string): Promise<void> {
   canvasLaunchBtn.title = 'Launch as new space';
   canvasAgentsBtn.classList.add('hidden');
   canvasHistoryBtn.classList.add('hidden');
+  canvasOpenFolder.classList.add('hidden');
 
   canvasView.classList.remove('hidden');
 
@@ -3413,6 +3415,7 @@ const canvasPreviewLabel = document.getElementById('canvas-preview-label') as HT
 const canvasPreviewRestore = document.getElementById('canvas-preview-restore') as HTMLButtonElement;
 const canvasPreviewBack = document.getElementById('canvas-preview-back') as HTMLButtonElement;
 const canvasAgentsBtn = document.getElementById('canvas-agents-btn') as HTMLButtonElement;
+const canvasOpenFolder = document.getElementById('canvas-open-folder') as HTMLButtonElement;
 const modeToggleRendered = document.getElementById('mode-toggle-rendered') as HTMLButtonElement;
 const modeToggleRaw = document.getElementById('mode-toggle-raw') as HTMLButtonElement;
 const canvasAgentsPanel = document.getElementById('canvas-agents-panel') as HTMLDivElement;
@@ -3539,6 +3542,7 @@ async function openCanvas(intentId: string, expanded = false): Promise<void> {
   canvasLaunchBtn.title = 'Start session';
   canvasAgentsBtn.classList.remove('hidden');
   canvasHistoryBtn.classList.remove('hidden');
+  canvasOpenFolder.classList.remove('hidden');
 
   canvasView.classList.remove('hidden');
 
@@ -3643,6 +3647,12 @@ let canvasClosing = false;
 
 canvasSaveBtn.addEventListener('click', saveCanvas);
 canvasBack.addEventListener('click', closeCanvas);
+
+canvasOpenFolder.addEventListener('click', () => {
+  if (canvasIntentId) {
+    intentAPI.openIntentFolder(canvasIntentId);
+  }
+});
 
 canvasLaunchBtn.addEventListener('click', async () => {
   if (canvasSkillId) {
@@ -4339,38 +4349,41 @@ async function showWelcomeView(): Promise<void> {
   const savedCliPath = await intentAPI.getSetting('cli_path');
   welcomeCliPath.value = savedCliPath || '';
 
-  // Auto-detect CLI and check version compatibility
-  checkWelcomeCli();
-
-  // Load models (retry since SDK may still be starting)
-  async function loadWelcomeModels(retries = 5): Promise<void> {
-    const models = await intentAPI.listModels();
-    if (models.length === 0 && retries > 0) {
-      welcomeModelSelect.innerHTML = '<option value="">Loading models…</option>';
-      setTimeout(() => loadWelcomeModels(retries - 1), 2000);
-      return;
-    }
-    welcomeModelSelect.innerHTML = '';
-    if (models.length === 0) {
-      welcomeModelSelect.innerHTML = '<option value="">No models available</option>';
-      return;
-    }
-    const saved = await intentAPI.getSetting('model');
-    for (const m of models) {
-      const opt = document.createElement('option');
-      opt.value = m.id;
-      opt.textContent = m.name || m.id;
-      welcomeModelSelect.appendChild(opt);
-    }
-    if (saved && models.some(m => m.id === saved)) {
-      welcomeModelSelect.value = saved;
-    } else {
-      welcomeModelSelect.value = models[0].id;
-    }
-    welcomeModelCheck.classList.remove('hidden');
-    welcomeStepModel.classList.add('done');
+  // Auto-detect CLI and check version compatibility, then load models
+  const cliOk = await checkWelcomeCli();
+  if (cliOk) {
+    loadWelcomeModels();
+  } else {
+    welcomeModelSelect.innerHTML = '<option value="">Waiting for valid CLI…</option>';
   }
-  loadWelcomeModels();
+}
+
+async function loadWelcomeModels(retries = 5): Promise<void> {
+  const models = await intentAPI.listModels();
+  if (models.length === 0 && retries > 0) {
+    welcomeModelSelect.innerHTML = '<option value="">Loading models…</option>';
+    setTimeout(() => loadWelcomeModels(retries - 1), 2000);
+    return;
+  }
+  welcomeModelSelect.innerHTML = '';
+  if (models.length === 0) {
+    welcomeModelSelect.innerHTML = '<option value="">No models available</option>';
+    return;
+  }
+  const saved = await intentAPI.getSetting('model');
+  for (const m of models) {
+    const opt = document.createElement('option');
+    opt.value = m.id;
+    opt.textContent = m.name || m.id;
+    welcomeModelSelect.appendChild(opt);
+  }
+  if (saved && models.some(m => m.id === saved)) {
+    welcomeModelSelect.value = saved;
+  } else {
+    welcomeModelSelect.value = models[0].id;
+  }
+  welcomeModelCheck.classList.remove('hidden');
+  welcomeStepModel.classList.add('done');
 }
 
 function hideWelcomeView(): void {
@@ -4379,7 +4392,7 @@ function hideWelcomeView(): void {
   descInput.focus();
 }
 
-async function checkWelcomeCli(): Promise<void> {
+async function checkWelcomeCli(): Promise<boolean> {
   welcomeCliStatus.textContent = 'Checking…';
   welcomeCliStatus.style.color = '';
   welcomeCliCheck.classList.add('hidden');
@@ -4390,15 +4403,18 @@ async function checkWelcomeCli(): Promise<void> {
 
   if (!info.path) {
     welcomeCliStatus.textContent = 'Not found — install the Copilot CLI or provide a path below.';
+    return false;
   } else if (!info.compatible) {
     const ver = info.version || 'unknown';
     welcomeCliStatus.textContent = `Version ${ver} found — update to ${info.minVersion}+ required (run: copilot update)`;
     welcomeCliStatus.style.color = 'var(--color-warning, #d29922)';
+    return false;
   } else {
     const short = info.path.length > 40 ? '…' + info.path.slice(-38) : info.path;
     welcomeCliStatus.textContent = `Detected: ${short} (v${info.version})`;
     welcomeCliCheck.classList.remove('hidden');
     welcomeStepCli.classList.add('done');
+    return true;
   }
 }
 
@@ -4412,7 +4428,16 @@ welcomeCliPath.addEventListener('change', async () => {
 welcomeCliRefresh.addEventListener('click', async () => {
   const val = welcomeCliPath.value.trim();
   await intentAPI.setSetting('cli_path', val);
-  await checkWelcomeCli();
+  const cliOk = await checkWelcomeCli();
+  // Reload models since CLI may have changed
+  welcomeModelSelect.innerHTML = '<option value="">Loading models…</option>';
+  welcomeModelCheck.classList.add('hidden');
+  welcomeStepModel.classList.remove('done');
+  if (cliOk) {
+    loadWelcomeModels();
+  } else {
+    welcomeModelSelect.innerHTML = '<option value="">Waiting for valid CLI…</option>';
+  }
 });
 
 welcomeWorkspaceBtn.addEventListener('click', async () => {

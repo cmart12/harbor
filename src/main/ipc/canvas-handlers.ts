@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron';
+import { ipcMain, shell } from 'electron';
 import { isInitialized, getIntent, getSkill, assignIntentFolder, updateCanvasContent } from '../database';
 import { getConfigValue } from '../config';
 import { initIntentCanvas, readCanvas, writeCanvas, scheduleAutoCommit, saveAttachment, resolveAttachmentPath, getMimeType, readIntentFile, getIntentHistory, restoreIntentVersion, getIntentVersionContent } from '../workspace';
@@ -6,6 +6,7 @@ import { parseFrontmatter, serializeFrontmatter } from '../frontmatter';
 import { fetchLinkPreview } from '../services/link-preview';
 import type { SkillFrontmatter } from '../../shared/types';
 import * as fs from 'fs';
+import * as path from 'path';
 
 export function registerCanvasHandlers(): void {
   ipcMain.handle('canvas:read', (_event, intentId: string) => {
@@ -124,6 +125,17 @@ export function registerCanvasHandlers(): void {
 
     // Return as array of bytes + mimeType so it can cross the IPC boundary
     return { data: Array.from(result.data), mimeType: result.mimeType };
+  });
+
+  // ── Open intent folder in OS file manager ─────────────
+  ipcMain.handle('canvas:open-folder', (_event, intentId: string) => {
+    const workspace = getConfigValue('workspace');
+    if (!workspace || !isInitialized()) return;
+
+    const intent = getIntent(intentId);
+    if (!intent || !intent.folder) return;
+
+    shell.openPath(path.join(workspace, intent.folder));
   });
 
   // ── Link preview ──────────────────────────────────────

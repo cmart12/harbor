@@ -1,5 +1,5 @@
 import { ipcMain } from 'electron';
-import { setAIModel, listAvailableModels } from '../ai';
+import { setAIModel, listAvailableModels, reinitCopilot } from '../ai';
 import { resolveCopilotCliPath, invalidateCliPath, checkCliCompatibility } from '../session';
 import { getConfigValue, setConfigValue, getConfig, type AgentPersona } from '../config';
 import { listDiscoveredMcpServers } from '../mcp';
@@ -29,6 +29,8 @@ export function registerSettingsHandlers(): void {
     } else if (key === 'cli_path') {
       setConfigValue('cliPath', value || null);
       invalidateCliPath();
+      // Reinitialize the SDK so it picks up the new CLI
+      await reinitCopilot();
     }
   });
 

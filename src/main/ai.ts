@@ -162,6 +162,12 @@ export function getCopilotClient(): CopilotClient | null {
   return client;
 }
 
+/** Shut down and re-initialize the Copilot SDK client (e.g. after CLI path change). */
+export async function reinitCopilot(): Promise<void> {
+  await shutdownCopilot();
+  await initCopilot();
+}
+
 export async function setAIModel(model: string): Promise<void> {
   // Update all active sessions
   const sessions = [parseSession, recurrenceSession, recallSession];

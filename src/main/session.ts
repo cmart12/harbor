@@ -148,11 +148,19 @@ export function resolveCmdToJs(cmdPath: string): string {
   if (process.platform !== 'win32' || !/\.cmd$/i.test(cmdPath)) return cmdPath;
 
   try {
-    // The .cmd lives in the npm prefix dir (e.g. C:\ProgramData\npm\).
-    // The package is at node_modules/@github/copilot/ under the same prefix.
-    const npmDir = path.dirname(cmdPath);
-    const indexJs = path.join(npmDir, 'node_modules', '@github', 'copilot', 'index.js');
-    if (fs.existsSync(indexJs)) return indexJs;
+    const dir = path.dirname(cmdPath);
+
+    // Case 1: Global npm prefix (e.g. C:\ProgramData\npm\copilot.cmd)
+    // Package is at <prefix>\node_modules\@github\copilot\index.js
+    const globalJs = path.join(dir, 'node_modules', '@github', 'copilot', 'index.js');
+    if (fs.existsSync(globalJs)) return globalJs;
+
+    // Case 2: Local node_modules\.bin\copilot.cmd
+    // Package is at <project>\node_modules\@github\copilot\index.js
+    if (path.basename(dir) === '.bin') {
+      const localJs = path.join(path.dirname(dir), '@github', 'copilot', 'index.js');
+      if (fs.existsSync(localJs)) return localJs;
+    }
   } catch {
     // Fall through to return original
   }
