@@ -59,14 +59,25 @@ describe('InteractionBroker', () => {
       expect(result).toEqual({ kind: 'approve-once' });
     });
 
+    it('auto-approves read requests without interactive prompt', async () => {
+      const record = makeRecord();
+      const handler = broker.createPermissionHandler((sid) => sid === 'session-1' ? record : undefined);
+
+      const result = await handler({ kind: 'read', toolCallId: 'req-r1' }, { sessionId: 'session-1' });
+      expect(result).toEqual({ kind: 'approve-once' });
+      // Should not trigger any renderer notifications (no interactive prompt)
+      expect(notifier.notifyRenderer).not.toHaveBeenCalled();
+      expect(notifier.showApprovalNotification).not.toHaveBeenCalled();
+    });
+
     it('logs permission request and resolution', async () => {
       const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
       const record = makeRecord();
       const handler = broker.createPermissionHandler((sid) => sid === 'session-1' ? record : undefined);
 
-      const promise = handler({ kind: 'read', toolCallId: 'req-2' }, { sessionId: 'session-1' });
+      const promise = handler({ kind: 'file_edit', toolCallId: 'req-2' }, { sessionId: 'session-1' });
       expect(logSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Permission requested: kind=read requestId=req-2')
+        expect.stringContaining('Permission requested: kind=file_edit requestId=req-2')
       );
 
       broker.approveAgent('agent-1', 'req-2', true);

@@ -52,6 +52,9 @@ export class InteractionBroker {
       const record = findRecord(invocation.sessionId);
       if (!record) return { kind: 'reject' as const };
 
+      // Auto-approve read operations (view, grep, glob, etc.)
+      if (request.kind === 'read') return { kind: 'approve-once' as const };
+
       const requestId = request.toolCallId ?? crypto.randomUUID();
       // Extract rich context from the SDK permission request
       const req = request as unknown as Record<string, unknown>;

@@ -1961,7 +1961,21 @@ const agentSteps = new Map<string, AgentStep[]>();
 const agentApprovals = new Map<string, { requestId: string; permissionKind: string; intention?: string; path?: string }>();
 const agentChatUnsubs = new Map<string, () => void>();
 
-function humanizeToolName(toolName: string): string {
+function basename(filePath: string): string {
+  const parts = filePath.replace(/\\/g, '/').split('/').filter(Boolean);
+  return parts.length > 0 ? parts[parts.length - 1] : filePath;
+}
+
+function humanizeToolName(toolName: string, args?: Record<string, any>): string {
+  const fileName = args?.path ? basename(args.path) : '';
+
+  if (toolName === 'report_intent' && args?.intent) {
+    return String(args.intent).slice(0, 80);
+  }
+  if (toolName === 'edit' && fileName) return `Editing ${fileName}`;
+  if (toolName === 'create' && fileName) return `Creating ${fileName}`;
+  if (toolName === 'view' && fileName) return `Reading ${fileName}`;
+
   const map: Record<string, string> = {
     bash: 'Running command',
     edit: 'Editing file',
@@ -1983,7 +1997,7 @@ function subscribeAgentChat(agentId: string): void {
       const steps = agentSteps.get(agentId) || [];
       steps.push({
         toolCallId: event.toolCallId,
-        label: humanizeToolName(event.toolName || 'Working'),
+        label: humanizeToolName(event.toolName || 'Working', event.args),
         status: 'running',
       });
       agentSteps.set(agentId, steps);
