@@ -69,6 +69,10 @@ export function updateCanvasPersonas(personas: AgentPersona[]): void {
   canvasRef.current?.updatePersonas(personas);
 }
 
+export function replaceCanvasContent(content: string): void {
+  canvasRef.current?.replaceContent(content);
+}
+
 export function addCanvasCommentReply(threadIndex: number, body: string): void {
   canvasRef.current?.addCommentReply(threadIndex, body);
 }

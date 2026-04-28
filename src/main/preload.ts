@@ -136,6 +136,7 @@ export interface IntentAPI {
   onAgentPresenceStarted(callback: (data: IpcEventPayload<'agent:presence-started'>) => void): void;
   onAgentPresenceEnded(callback: (data: IpcEventPayload<'agent:presence-ended'>) => void): void;
   onAgentReplyReady(callback: (data: IpcEventPayload<'agent:reply-ready'>) => void): void;
+  onCanvasContentUpdated(callback: (data: IpcEventPayload<'canvas:content-updated'>) => void): () => void;
 
   // ── Intent events ────────────────────────────────────────
   onIntentProcessed(callback: (id: string) => void): void;
@@ -345,6 +346,12 @@ const api: IntentAPI = {
   },
   onAgentReplyReady: (callback) => {
     ipcRenderer.on('agent:reply-ready', (_event: unknown, data: IpcEventPayload<'agent:reply-ready'>) => callback(data));
+  },
+  onCanvasContentUpdated: (callback) => {
+    const channel = 'canvas:content-updated';
+    const handler = (_event: unknown, data: IpcEventPayload<'canvas:content-updated'>) => callback(data);
+    ipcRenderer.on(channel, handler);
+    return () => { ipcRenderer.removeListener(channel, handler); };
   },
 
   // ── Intent events ────────────────────────────────────────

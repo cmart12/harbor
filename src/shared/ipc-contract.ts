@@ -269,6 +269,7 @@ export interface IpcEvents {
   'agent:presence-started': { agentId: string; intentId: string; persona: { name: string; handle: string }; anchor: AgentAnchor };
   'agent:presence-ended': { agentId: string; intentId: string };
   'agent:reply-ready': { agentId: string; intentId: string; threadIndex: number; body: string };
+  'canvas:content-updated': { intentId: string; content: string };
   'intent:processed': { intentId: string };
   'intent:recurrence': { intentId: string; result: RecurrenceResult };
   'intent:recurrence-applied': { intentId: string };

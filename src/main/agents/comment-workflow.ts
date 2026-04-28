@@ -5,6 +5,7 @@ import * as crypto from 'crypto';
 import { getCopilotClient, getSandboxConfigDir } from '../ai';
 import { type AgentPersona } from '../config';
 import { getAllMcpServers } from '../mcp';
+import { updateCanvasContent } from '../database';
 import { AgentRegistry } from './agent-registry';
 import type { AgentRecord } from './agent-registry';
 import { AgentNotifier } from './agent-notifier';
@@ -187,13 +188,23 @@ export function handleCommentAgentCompletion(record: AgentRecord): void {
 
   // Detect if agent modified canvas.md
   let documentChanged = false;
+  let newContent = '';
   try {
-    const currentContent = fs.readFileSync(ctx.canvasPath, 'utf-8');
-    const currentHash = crypto.createHash('md5').update(currentContent).digest('hex');
+    newContent = fs.readFileSync(ctx.canvasPath, 'utf-8');
+    const currentHash = crypto.createHash('md5').update(newContent).digest('hex');
     documentChanged = ctx.canvasHashBefore !== '' && currentHash !== ctx.canvasHashBefore;
   } catch { /* non-fatal */ }
 
-  // Send reply to renderer (renderer is single writer for canvas content)
+  // If the document changed, sync DB and push live update to renderer
+  if (documentChanged) {
+    updateCanvasContent(record.intentId, newContent);
+    notifier.notifyRenderer('canvas:content-updated', {
+      intentId: record.intentId,
+      content: newContent,
+    });
+  }
+
+  // Send reply to renderer
   const replyBody = documentChanged
     ? `[bot] I've made changes to the document. Ready for your review.`
     : `[bot] ${record.summary}`;

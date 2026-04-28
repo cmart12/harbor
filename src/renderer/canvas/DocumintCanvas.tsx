@@ -58,6 +58,7 @@ export interface DocumintCanvasHandle {
   updatePresence(presence: Presence[]): void;
   updatePersonas(personas: AgentPersona[]): void;
   addCommentReply(threadIndex: number, body: string): void;
+  replaceContent(content: string): void;
 }
 
 const AUTOSAVE_DELAY_MS = 2000;
@@ -300,6 +301,23 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
         const updated = insertCommentReply(current, threadIndex, body);
         if (updated !== current) {
           handleContentChange(updated);
+        }
+      },
+      replaceContent: (newContent: string) => {
+        // Cancel any pending autosave — the new content is already on disk
+        if (pendingSaveRef.current) {
+          clearTimeout(pendingSaveRef.current);
+          pendingSaveRef.current = null;
+        }
+        setContent(newContent);
+        contentRef.current = newContent;
+        const fullContent = hasFrontmatter ? serializeFm(frontmatterRef.current, newContent) : newContent;
+        lastSavedRef.current = fullContent;
+        onDirtyChange(false);
+        // Keep raw mode in sync if active
+        if (editorModeRef.current === 'raw') {
+          setRawContent(fullContent);
+          rawContentRef.current = fullContent;
         }
       },
     }), [saveNow, handleContentChange]);

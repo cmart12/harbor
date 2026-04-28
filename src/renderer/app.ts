@@ -136,6 +136,7 @@ interface IntentAPI {
   onAgentPresenceStarted(callback: (data: { agentId: string; intentId: string; persona: { name: string; handle: string; color?: string; imageUrl?: string }; anchor: { prefix?: string; suffix?: string } }) => void): void;
   onAgentPresenceEnded(callback: (data: { agentId: string; intentId: string }) => void): void;
   onAgentReplyReady(callback: (data: { agentId: string; intentId: string; threadIndex: number; body: string }) => void): void;
+  onCanvasContentUpdated(callback: (data: { intentId: string; content: string }) => void): () => void;
   openPath(folderPath: string): Promise<void>;
   // ── Skills ──────────────────────────────────────────────
   listSkills(): Promise<any[]>;
@@ -3312,7 +3313,7 @@ async function refreshIntentTitle(id: string): Promise<void> {
 (window as any).refreshIntentTitle = refreshIntentTitle;
 
 // ── Canvas view ─────────────────────────────────────────
-import { mountCanvas, unmountCanvas, getCanvasContent, saveCanvas as saveCanvasEditor, updateCanvasPresence, addCanvasCommentReply, toggleCanvasMode, getCanvasEditorMode } from './canvas/mount.tsx';
+import { mountCanvas, unmountCanvas, getCanvasContent, saveCanvas as saveCanvasEditor, updateCanvasPresence, addCanvasCommentReply, toggleCanvasMode, getCanvasEditorMode, replaceCanvasContent } from './canvas/mount.tsx';
 import type { Presence } from 'documint';
 
 const canvasView = document.getElementById('canvas-view') as HTMLDivElement;
@@ -3995,6 +3996,11 @@ intentAPI.onAgentPresenceEnded((data) => {
 intentAPI.onAgentReplyReady((data) => {
   if (data.intentId !== canvasIntentId) return;
   addCanvasCommentReply(data.threadIndex, data.body);
+});
+
+intentAPI.onCanvasContentUpdated((data) => {
+  if (data.intentId !== canvasIntentId) return;
+  replaceCanvasContent(data.content);
 });
 
 // ── Global agent status/approval listeners ─────────────
