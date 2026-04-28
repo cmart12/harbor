@@ -270,7 +270,7 @@ let windowVisualState: 'hidden' | 'sliding-in' | 'visible' | 'sliding-out' = 'hi
 let slideTransitionId = 0;
 
 // Start with content off-screen (no transition) so first show() has no flash
-if (!isCanvasMode) {
+if (!isCanvasMode && !isSettingsMode) {
   appEl.classList.add('app-hidden-right', 'app-no-transition');
 }
 
