@@ -110,6 +110,31 @@ export interface LaunchResult {
 // ── CLI discovery ───────────────────────────────────────
 
 /**
+ * Resolve a bare command name (e.g. "copilot", "copilot-dev") to its full
+ * path using the system PATH via `where.exe` (Windows) or `which` (Unix).
+ */
+function resolveCommandOnPath(command: string): string | null {
+  try {
+    const cmd = process.platform === 'win32' ? `where.exe ${command}` : `which ${command}`;
+    const result = execSync(cmd, { windowsHide: true, timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    const lines = result.split(/\r?\n/).filter(Boolean);
+
+    if (process.platform === 'win32') {
+      // Prefer .cmd files on Windows (Node can't spawn bare Unix shell scripts)
+      const cmdLine = lines.find(l => /\.cmd$/i.test(l));
+      if (cmdLine && fs.existsSync(cmdLine)) return cmdLine;
+    }
+
+    // Return first valid result
+    const first = lines[0];
+    if (first && fs.existsSync(first)) return first;
+  } catch {
+    // Command not found on PATH
+  }
+  return null;
+}
+
+/**
  * On Windows, .cmd wrappers cannot be spawned directly by the Copilot SDK
  * (it uses spawn() without shell:true, causing EINVAL). Resolve to the
  * underlying @github/copilot/index.js entry point in the same npm prefix,
@@ -196,12 +221,22 @@ export function resolveCopilotCliPath(): string | null {
   cliResolved = true;
 
   const override = getConfigValue('cliPath');
-  if (override && fs.existsSync(override)) {
-    resolvedCliPath = resolveCmdToJs(override);
-    console.log(`[session] Using configured CLI path: ${resolvedCliPath}`);
-    return resolvedCliPath;
-  }
   if (override) {
+    // If it's a full path that exists, use it directly
+    if (fs.existsSync(override)) {
+      resolvedCliPath = resolveCmdToJs(override);
+      console.log(`[session] Using configured CLI path: ${resolvedCliPath}`);
+      return resolvedCliPath;
+    }
+
+    // Otherwise try to resolve the command name via PATH (where/which)
+    const resolved = resolveCommandOnPath(override);
+    if (resolved) {
+      resolvedCliPath = resolveCmdToJs(resolved);
+      console.log(`[session] Resolved configured CLI "${override}" to: ${resolvedCliPath}`);
+      return resolvedCliPath;
+    }
+
     console.warn(`[session] Configured CLI path not found: ${override}, falling back to auto-detect`);
   }
 
