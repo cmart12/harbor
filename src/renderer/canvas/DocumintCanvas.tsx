@@ -150,9 +150,9 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
       return serializeFm(frontmatterRef.current, contentRef.current);
     }, [hasFrontmatter]);
 
-    // Convert personas to DocumentUser[] for the mention roster
+    // Convert personas to DocumentUser[] for the mention roster (use handle as id)
     const users: DocumentUser[] = React.useMemo(
-      () => personas.map(p => ({ id: p.id, username: p.handle })),
+      () => personas.map(p => ({ id: p.handle, username: p.handle })),
       [personas],
     );
 
@@ -276,10 +276,9 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
       if (event.kind === 'deleted') return;
       if (event.mentionedUserIds.length === 0) return;
 
-      // Map mentionedUserIds back to persona handles
+      // mentionedUserIds are handles (we use handle as DocumentUser.id)
       const handles = event.mentionedUserIds
-        .map(uid => personas.find(p => p.id === uid)?.handle)
-        .filter((h): h is string => h !== undefined);
+        .filter(h => personas.some(p => p.handle === h));
       if (handles.length === 0) return;
 
       onAgentMentioned({

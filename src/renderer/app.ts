@@ -3978,11 +3978,8 @@ function syncCanvasPresence(): void {
 
 intentAPI.onAgentPresenceStarted((data) => {
   if (data.intentId !== canvasIntentId) return;
-  // Map persona handle to persona ID so presence matches the DocumentUser roster
-  const persona = personas.find(p => p.handle === data.persona.handle);
-  const userId = persona?.id ?? data.agentId;
   canvasAgentPresence.set(data.agentId, {
-    userId,
+    userId: data.persona.handle,
     color: data.persona.color,
     cursor: data.anchor?.prefix || data.anchor?.suffix ? data.anchor : undefined,
   });
