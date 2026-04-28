@@ -127,8 +127,9 @@ export interface IntentAPI {
   onCanvasThemeChanged(callback: (theme: string) => void): void;
 
   // ── Window / workspace events ────────────────────────────
-  onWindowShown(callback: () => void): void;
+  onWindowShown(callback: (data: { side: 'left' | 'right'; expanded: boolean }) => void): void;
   onWindowToggle(callback: () => void): void;
+  onRequestHide(callback: () => void): void;
   onWorkspaceCommitted(callback: () => void): void;
   onWorkspaceChanged(callback: (path: string | null) => void): void;
 
@@ -324,10 +325,13 @@ const api: IntentAPI = {
 
   // ── Window / workspace events ────────────────────────────
   onWindowShown: (callback) => {
-    ipcRenderer.on('window:shown', callback);
+    ipcRenderer.on('window:shown', (_event: unknown, data: { side: 'left' | 'right'; expanded: boolean }) => callback(data));
   },
   onWindowToggle: (callback) => {
     ipcRenderer.on('window:toggle', callback);
+  },
+  onRequestHide: (callback) => {
+    ipcRenderer.on('window:request-hide', callback);
   },
   onWorkspaceCommitted: (callback) => {
     ipcRenderer.on('workspace:committed', callback);

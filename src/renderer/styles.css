@@ -96,6 +96,25 @@ body {
   flex-direction: column;
   box-shadow: 0 0 8px rgba(0, 0, 0, 0.06), 0 8px 32px rgba(0, 0, 0, 0.04);
   backdrop-filter: blur(20px);
+  transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1),
+              opacity 150ms ease;
+}
+
+/* ── Window slide animation ───────────────────────────── */
+#app.app-hidden-right {
+  transform: translateX(100%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+#app.app-hidden-left {
+  transform: translateX(-100%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+#app.app-no-transition {
+  transition: none !important;
 }
 
 /* ── Welcome / Onboarding View ─────────────────────────── */
@@ -128,9 +147,13 @@ body {
 }
 
 .welcome-icon {
-  font-size: 36px;
   display: block;
   margin-bottom: 8px;
+  line-height: 0;
+}
+
+.welcome-icon svg {
+  border-radius: 8px;
 }
 
 .welcome-header h1 {
@@ -356,6 +379,14 @@ header h1 {
   font-weight: 600;
   color: #2c2c3a;
   letter-spacing: 0.3px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.header-logo {
+  border-radius: 4px;
+  flex-shrink: 0;
 }
 
 .header-actions {

@@ -16,6 +16,7 @@ let canvasWindow: BrowserWindow | null = null;
 let isExpanded = false;
 let isSnapping = false;
 let showTimestamp = 0;
+let blurHideTimer: ReturnType<typeof setTimeout> | null = null;
 
 // ── Public API ───────────────────────────────────────────
 
@@ -54,9 +55,8 @@ export function createMainWindow(options: WindowManagerOptions): BrowserWindow {
 
   mainWindow = win;
 
-  // If the app starts while pinned, allow other windows to cover it and show in taskbar
+  // If the app starts while pinned, show in taskbar
   if (getConfigValue('pinned')) {
-    win.setAlwaysOnTop(false);
     win.setSkipTaskbar(false);
   }
 
@@ -83,10 +83,11 @@ export function toggleWindow(): void {
     const winHeight = height - SNAP_MARGIN * 2;
 
     showTimestamp = Date.now();
+    if (blurHideTimer) { clearTimeout(blurHideTimer); blurHideTimer = null; }
     mainWindow.setBounds({ x: winX, y: winY, width: winWidth, height: winHeight }, false);
     mainWindow.show();
     mainWindow.focus();
-    mainWindow.webContents.send('window:shown');
+    mainWindow.webContents.send('window:shown', { side: isLeft ? 'left' : 'right', expanded: false });
   }
 }
 
@@ -104,6 +105,7 @@ export function setupSnapOnDrop(): void {
 /** Register all window-related IPC handlers. Call after createMainWindow(). */
 export function registerWindowIpcHandlers(preloadPath: string): void {
   ipcMain.on('window:hide', () => {
+    if (blurHideTimer) { clearTimeout(blurHideTimer); blurHideTimer = null; }
     mainWindow?.hide();
   });
 
@@ -128,8 +130,8 @@ export function registerWindowIpcHandlers(preloadPath: string): void {
     if (!mainWindow || !isExpanded) return;
     isExpanded = false;
 
+    mainWindow.setAlwaysOnTop(true);
     const pinned = getConfigValue('pinned');
-    mainWindow.setAlwaysOnTop(!pinned);
     mainWindow.setSkipTaskbar(!pinned);
 
     isSnapping = true;
@@ -156,8 +158,6 @@ export function registerWindowIpcHandlers(preloadPath: string): void {
   ipcMain.on('window:set-pinned', (_event, pinned: boolean) => {
     setConfigValue('pinned', pinned);
     if (mainWindow && !isExpanded) {
-      // Toggle always-on-top and taskbar visibility based on pin state
-      mainWindow.setAlwaysOnTop(!pinned);
       mainWindow.setSkipTaskbar(!pinned);
 
       // When unpinning, snap back to full-height edge position
@@ -226,31 +226,24 @@ function attachResizePersist(win: BrowserWindow): void {
   });
 }
 
-/** Attach blur handler that hides the window only when the user isn't actively working. */
+/** Attach blur handler that lets the renderer animate out before hiding. */
 function attachBlurHide(win: BrowserWindow): void {
-  win.on('blur', async () => {
+  win.on('blur', () => {
     // Ignore blur if window was just shown (e.g. from tray menu click)
     if (Date.now() - showTimestamp < 300) return;
 
     // Never hide when pinned
     if (getConfigValue('pinned')) return;
 
-    // Don't auto-hide if the user has content in the input or is on a sub-view
-    try {
-      const shouldStay = await win.webContents.executeJavaScript(
-        `(function() {
-          var input = document.getElementById('description-input');
-          var hasInput = input && input.value.trim().length > 0;
-          var canvasOpen = !document.getElementById('canvas-view').classList.contains('hidden');
-          return hasInput || canvasOpen;
-        })()`
-      );
-      if (shouldStay) return;
-    } catch {
-      // If check fails, hide anyway
-    }
+    // Let renderer decide whether to stay and animate out if hiding
+    win.webContents.send('window:request-hide');
 
-    win.hide();
+    // Safety: hide even if renderer doesn't respond in time
+    if (blurHideTimer) clearTimeout(blurHideTimer);
+    blurHideTimer = setTimeout(() => {
+      if (!win.isDestroyed() && win.isVisible()) win.hide();
+      blurHideTimer = null;
+    }, 400);
   });
 }
 
@@ -357,6 +350,7 @@ function createCanvasWindow(preloadPath: string): BrowserWindow {
     x: Math.round(x + (width - CANVAS_WIDTH) / 2),
     y: Math.round(y + (height - CANVAS_HEIGHT) / 2),
     show: false,
+    alwaysOnTop: true,
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 16 },
     vibrancy: 'under-window',

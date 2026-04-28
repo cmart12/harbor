@@ -122,8 +122,9 @@ interface IntentAPI {
   onCanvasWindowClosed(callback: () => void): void;
   notifyCanvasThemeChanged(theme: string): void;
   onCanvasThemeChanged(callback: (theme: string) => void): void;
-  onWindowShown(callback: () => void): void;
+  onWindowShown(callback: (data: { side: 'left' | 'right'; expanded: boolean }) => void): void;
   onWindowToggle(callback: () => void): void;
+  onRequestHide(callback: () => void): void;
   onWorkspaceCommitted(callback: () => void): void;
   onIntentProcessed(callback: (id: string) => void): void;
   onRecurrenceResult(callback: (intentId: string, result: RecurrenceResult) => void): void;
@@ -255,6 +256,88 @@ const workersBadge = document.getElementById('workers-badge') as HTMLSpanElement
 const __platform = (window as any).__platform as string | undefined;
 if (__platform) {
   document.body.classList.add(`platform-${__platform}`);
+}
+
+// ── Window slide animation ──────────────────────────────
+const appEl = document.getElementById('app')!;
+let windowSide: 'left' | 'right' = 'right';
+let windowVisualState: 'hidden' | 'sliding-in' | 'visible' | 'sliding-out' = 'hidden';
+let slideTransitionId = 0;
+
+// Start with content off-screen (no transition) so first show() has no flash
+if (!isCanvasMode) {
+  appEl.classList.add('app-hidden-right', 'app-no-transition');
+}
+
+function slideIn(side: 'left' | 'right'): void {
+  slideTransitionId++;
+  const myId = slideTransitionId;
+  windowSide = side;
+  windowVisualState = 'sliding-in';
+
+  // Ensure the hidden class matches the desired side (no transition yet)
+  appEl.classList.remove('app-hidden-left', 'app-hidden-right');
+  appEl.classList.add(side === 'left' ? 'app-hidden-left' : 'app-hidden-right');
+  appEl.classList.add('app-no-transition');
+  void appEl.offsetHeight; // force reflow
+
+  // Enable transitions, then remove hidden → content slides in
+  appEl.classList.remove('app-no-transition');
+  void appEl.offsetHeight; // force reflow
+  appEl.classList.remove('app-hidden-left', 'app-hidden-right');
+
+  const onEnd = (e: TransitionEvent): void => {
+    if (e.target !== appEl || e.propertyName !== 'transform') return;
+    if (slideTransitionId !== myId) return;
+    appEl.removeEventListener('transitionend', onEnd);
+    windowVisualState = 'visible';
+  };
+  appEl.addEventListener('transitionend', onEnd);
+
+  // Fallback: mark visible after duration even if transitionend doesn't fire
+  setTimeout(() => {
+    if (slideTransitionId === myId && windowVisualState === 'sliding-in') {
+      windowVisualState = 'visible';
+    }
+  }, 280);
+}
+
+function slideOut(callback?: () => void): void {
+  // If already hidden or the window is in canvas/expanded mode, hide immediately
+  if (windowVisualState === 'hidden') {
+    intentAPI.hideWindow();
+    callback?.();
+    return;
+  }
+
+  slideTransitionId++;
+  const myId = slideTransitionId;
+  windowVisualState = 'sliding-out';
+
+  // Add hidden class → transition fires, content slides out
+  appEl.classList.add(windowSide === 'left' ? 'app-hidden-left' : 'app-hidden-right');
+
+  const finish = (): void => {
+    if (slideTransitionId !== myId) return;
+    windowVisualState = 'hidden';
+    intentAPI.hideWindow();
+    callback?.();
+  };
+
+  const onEnd = (e: TransitionEvent): void => {
+    if (e.target !== appEl || e.propertyName !== 'transform') return;
+    if (slideTransitionId !== myId) return;
+    appEl.removeEventListener('transitionend', onEnd);
+    clearTimeout(fallback);
+    finish();
+  };
+  appEl.addEventListener('transitionend', onEnd);
+
+  // Fallback timer in case transitionend doesn't fire
+  const fallback = setTimeout(() => {
+    appEl.removeEventListener('transitionend', onEnd);
+    finish();
+  }, 280);
 }
 
 // ── Status bar helpers ──────────────────────────────────
@@ -4167,11 +4250,11 @@ document.addEventListener('keydown', (e) => {
       hideTimeline();
       return;
     }
-    intentAPI.hideWindow();
+    slideOut();
   }
 });
 
-intentAPI.onWindowShown(() => {
+intentAPI.onWindowShown((data) => {
   selectedIndex = -1;
   searchResults = null;
   if (searchMode) exitSearchMode();
@@ -4182,6 +4265,15 @@ intentAPI.onWindowShown(() => {
   hideStatus();
   // Refresh active session state when window reappears
   loadIntents();
+
+  // Slide in from the appropriate edge
+  if (!data.expanded) {
+    slideIn(data.side);
+  } else {
+    // Expanded mode: no slide, just make visible immediately
+    appEl.classList.remove('app-hidden-left', 'app-hidden-right', 'app-no-transition');
+    windowVisualState = 'visible';
+  }
 });
 
 intentAPI.onWindowToggle(() => {
@@ -4202,8 +4294,18 @@ intentAPI.onWindowToggle(() => {
     hideTimeline();
     return;
   }
-  // Already on the main view — hide the window
-  intentAPI.hideWindow();
+  // Already on the main view — animate out then hide
+  slideOut();
+});
+
+intentAPI.onRequestHide(() => {
+  // Blur-triggered hide: check if we should stay visible
+  const hasInput = descInput && descInput.value.trim().length > 0;
+  const canvasOpen = !canvasView.classList.contains('hidden');
+  const chatOpen = !chatView.classList.contains('hidden');
+  if (hasInput || canvasOpen || chatOpen) return;
+
+  slideOut();
 });
 
 // ── Welcome / Onboarding ────────────────────────────────
