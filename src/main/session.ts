@@ -117,7 +117,15 @@ export function invalidateMxcCapability(): void {
  * Best-effort probe: returns true if the resolved CLI ships with
  * `@microsoft/mxc-sdk` in its node_modules. Used to surface a warning when a
  * sandboxed persona is launched against a CLI that can't enforce MXC.
- * Result is cached; cleared on cliPath change.
+ *
+ * Walks up from `dirname(cliPath)` checking `<dir>/node_modules/@microsoft/mxc-sdk`
+ * at every level (up to a bounded depth). This handles all real layouts:
+ *   - bundled CLI (`<repo>/dist-cli/index.js`, deps in `<repo>/node_modules`),
+ *   - hoisted npm install (`<prefix>/node_modules/@github/copilot/index.js`,
+ *     deps in `<prefix>/node_modules`),
+ *   - nested install (`@github/copilot/node_modules/@microsoft/mxc-sdk`).
+ *
+ * Result is cached; cleared on cliPath change via `invalidateMxcCapability`.
  */
 export function isCliMxcCapable(): boolean {
   if (mxcCapableResolved) return resolvedMxcCapable === true;
@@ -131,25 +139,23 @@ export function isCliMxcCapable(): boolean {
   const cliPath = resolveCopilotCliPath();
   if (!cliPath) return false;
 
-  // Walk up from the CLI path looking for the runtime's package root, then check
-  // for @microsoft/mxc-sdk in its node_modules.  The runtime's package.json is
-  // typically at <cliRoot>/package.json with bin pointing at index.js / npm-loader.js.
+  const MAX_DEPTH = 8;
+  const searched: string[] = [];
   let dir = path.dirname(cliPath);
-  for (let i = 0; i < 6; i++) {
-    const pkgJson = path.join(dir, 'package.json');
-    if (fs.existsSync(pkgJson)) {
-      const mxcSdkDir = path.join(dir, 'node_modules', '@microsoft', 'mxc-sdk');
-      if (fs.existsSync(mxcSdkDir)) {
-        resolvedMxcCapable = true;
-        return true;
-      }
-      // Stop at the first package.json we find — that's the CLI's package root.
-      break;
+  for (let i = 0; i < MAX_DEPTH; i++) {
+    const mxcSdkDir = path.join(dir, 'node_modules', '@microsoft', 'mxc-sdk');
+    searched.push(mxcSdkDir);
+    if (fs.existsSync(mxcSdkDir)) {
+      resolvedMxcCapable = true;
+      return true;
     }
     const parent = path.dirname(dir);
     if (parent === dir) break;
     dir = parent;
   }
+  console.warn(
+    `[session] MXC probe: @microsoft/mxc-sdk not found near ${cliPath}. Searched:\n  ${searched.join('\n  ')}`,
+  );
   return false;
 }
 
