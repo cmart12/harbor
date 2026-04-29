@@ -11,7 +11,7 @@ const CANVAS_WIDTH = 780;
 const CANVAS_HEIGHT = 700;
 
 // ── Geometry constants (settings window) ─────────────────
-const SETTINGS_WIDTH = 600;
+const SETTINGS_WIDTH = 720;
 const SETTINGS_HEIGHT = 700;
 
 // ── Module state ─────────────────────────────────────────

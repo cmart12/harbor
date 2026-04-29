@@ -60,7 +60,24 @@ export function registerSettingsHandlers(): void {
 
   // Agent Personas
   ipcMain.handle('personas:list', () => {
-    return getConfigValue('personas');
+    const personas = getConfigValue('personas') || [];
+    // Ensure @agent always exists
+    const hasDefault = (personas as AgentPersona[]).some((p: AgentPersona) => p.handle === 'agent');
+    if (!hasDefault) {
+      const withDefault: AgentPersona[] = [
+        {
+          id: 'default-agent',
+          handle: 'agent',
+          instructions: 'Follow the users instructions and respond to comments or create comments when you work on canvas.md documents.',
+          model: '',
+          runLocation: 'local',
+        },
+        ...(personas as AgentPersona[]),
+      ];
+      setConfigValue('personas', withDefault);
+      return withDefault;
+    }
+    return personas;
   });
 
   ipcMain.handle('personas:save', (_event, personas: unknown) => {
@@ -102,6 +119,23 @@ export function registerSettingsHandlers(): void {
             })()
           : {}),
       });
+    }
+
+    // Protect @agent: ensure it cannot be removed
+    const hasAgent = validated.some(p => p.handle === 'agent');
+    if (!hasAgent) {
+      const existing = (getConfigValue('personas') as AgentPersona[] || []).find((p: AgentPersona) => p.handle === 'agent');
+      if (existing) {
+        validated.unshift(existing);
+      } else {
+        validated.unshift({
+          id: 'default-agent',
+          handle: 'agent',
+          instructions: 'Follow the users instructions and respond to comments or create comments when you work on canvas.md documents.',
+          model: '',
+          runLocation: 'local',
+        });
+      }
     }
 
     setConfigValue('personas', validated);

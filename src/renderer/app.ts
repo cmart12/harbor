@@ -656,99 +656,103 @@ async function loadWorkspaceSetting(): Promise<void> {
 }
 
 // ── Agent Personas ──────────────────────────────────────
-const personasList = document.getElementById('personas-list') as HTMLDivElement;
+const agentsSelectionList = document.getElementById('agents-selection-list') as HTMLDivElement;
+const agentsEditor = document.getElementById('agents-editor') as HTMLDivElement;
 const personaAddBtn = document.getElementById('persona-add-btn') as HTMLButtonElement;
 let personas: AgentPersona[] = [];
 let personaModels: { id: string; name?: string }[] = [];
+let selectedAgentId: string | null = null;
 
 const HANDLE_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;
+const DEFAULT_AGENT_HANDLE = 'agent';
+const DEFAULT_AGENT_INSTRUCTIONS = 'Follow the users instructions and respond to comments or create comments when you work on canvas.md documents.';
+
+function ensureDefaultAgent(): void {
+  const hasDefault = personas.some(p => p.handle === DEFAULT_AGENT_HANDLE);
+  if (!hasDefault) {
+    personas.unshift({
+      id: 'default-agent',
+      handle: DEFAULT_AGENT_HANDLE,
+      instructions: DEFAULT_AGENT_INSTRUCTIONS,
+      model: '',
+      runLocation: 'local',
+    });
+    // Persist immediately so backend knows about it
+    intentAPI.savePersonas(personas);
+  }
+}
 
 async function loadPersonas(): Promise<void> {
   personas = await intentAPI.listPersonas() || [];
   try { personaModels = await intentAPI.listModels(); } catch { personaModels = []; }
-  renderPersonas();
+  ensureDefaultAgent();
+  renderAgentsSidebar();
+  // Auto-select @agent if nothing selected
+  if (!selectedAgentId) {
+    const defaultAgent = personas.find(p => p.handle === DEFAULT_AGENT_HANDLE);
+    if (defaultAgent) selectAgent(defaultAgent.id);
+  } else {
+    // Re-render editor for currently selected agent
+    const current = personas.find(p => p.id === selectedAgentId);
+    if (current) renderAgentEditor(current);
+    else {
+      selectedAgentId = null;
+      renderAgentEditorPlaceholder();
+    }
+  }
 }
 
-function renderPersonas(): void {
-  // Preserve any open form so async re-renders don't destroy it
-  const openForm = personasList.querySelector('.persona-form');
-  personasList.innerHTML = '';
-  for (const persona of personas) {
-    personasList.appendChild(createPersonaCard(persona));
-  }
-  if (openForm) personasList.appendChild(openForm);
-}
-
-function createPersonaCard(persona: AgentPersona): HTMLElement {
-  const card = document.createElement('div');
-  card.className = 'persona-card';
-
-  const info = document.createElement('div');
-  info.className = 'persona-card-info';
-
-  const handle = document.createElement('div');
-  handle.className = 'persona-card-handle';
-  handle.textContent = (persona.emoji ? persona.emoji + ' ' : '') + '@' + persona.handle;
-
-  const instr = document.createElement('div');
-  instr.className = 'persona-card-instructions';
-  instr.textContent = persona.instructions.length > 80
-    ? persona.instructions.slice(0, 77) + '...'
-    : persona.instructions;
-
-  const modelName = personaModels.find(m => m.id === persona.model);
-  const meta = document.createElement('div');
-  meta.className = 'persona-card-meta';
-  const locationIcon = persona.runLocation === 'cloud' ? '☁️' : '💻';
-  const locationLabel = persona.runLocation === 'cloud' ? 'Cloud' : 'Local';
-  meta.textContent = (modelName ? (modelName.name || modelName.id) : (persona.model || 'Default model')) + ` · ${locationIcon} ${locationLabel}`;
-  if (persona.sandboxed) {
-    meta.textContent += ' · 🔒 Sandboxed';
-  }
-  if (persona.model && !modelName) {
-    meta.classList.add('unavailable');
-    meta.textContent = persona.model + ` (unavailable) · ${locationIcon} ${locationLabel}`;
-    if (persona.sandboxed) meta.textContent += ' · 🔒 Sandboxed';
-  }
-
-  info.appendChild(handle);
-  info.appendChild(instr);
-  info.appendChild(meta);
-
-  const actions = document.createElement('div');
-  actions.className = 'persona-card-actions';
-
-  const editBtn = document.createElement('button');
-  editBtn.className = 'persona-action-btn';
-  editBtn.textContent = '✎';
-  editBtn.title = 'Edit';
-  editBtn.addEventListener('click', () => showPersonaForm(persona));
-
-  const delBtn = document.createElement('button');
-  delBtn.className = 'persona-action-btn danger';
-  delBtn.textContent = '✕';
-  delBtn.title = 'Delete';
-  delBtn.addEventListener('click', async () => {
-    personas = personas.filter(p => p.id !== persona.id);
-    await intentAPI.savePersonas(personas);
-    renderPersonas();
+function renderAgentsSidebar(): void {
+  agentsSelectionList.innerHTML = '';
+  // Sort: @agent always first, then alphabetical
+  const sorted = [...personas].sort((a, b) => {
+    if (a.handle === DEFAULT_AGENT_HANDLE) return -1;
+    if (b.handle === DEFAULT_AGENT_HANDLE) return 1;
+    return a.handle.localeCompare(b.handle);
   });
+  for (const persona of sorted) {
+    const item = document.createElement('div');
+    item.className = 'agent-list-item' + (persona.id === selectedAgentId ? ' active' : '');
+    item.dataset.agentId = persona.id;
 
-  actions.appendChild(editBtn);
-  actions.appendChild(delBtn);
+    const emoji = document.createElement('span');
+    emoji.className = 'agent-list-emoji';
+    emoji.textContent = persona.emoji || '🤖';
 
-  card.appendChild(info);
-  card.appendChild(actions);
-  return card;
+    const handle = document.createElement('span');
+    handle.className = 'agent-list-handle';
+    handle.textContent = '@' + persona.handle;
+
+    item.appendChild(emoji);
+    item.appendChild(handle);
+    item.addEventListener('click', () => selectAgent(persona.id));
+    agentsSelectionList.appendChild(item);
+  }
 }
 
-function showPersonaForm(existing?: AgentPersona): void {
-  // Remove any open form
-  const prev = personasList.querySelector('.persona-form');
-  if (prev) prev.remove();
+function selectAgent(agentId: string): void {
+  selectedAgentId = agentId;
+  // Update active state in list
+  agentsSelectionList.querySelectorAll('.agent-list-item').forEach(el => {
+    el.classList.toggle('active', (el as HTMLElement).dataset.agentId === agentId);
+  });
+  const persona = personas.find(p => p.id === agentId);
+  if (persona) renderAgentEditor(persona);
+}
+
+function renderAgentEditorPlaceholder(): void {
+  agentsEditor.innerHTML = '<div class="agents-editor-placeholder">Select an agent to edit its settings.</div>';
+}
+
+function renderAgentEditor(persona: AgentPersona): void {
+  agentsEditor.innerHTML = '';
+  const isDefault = persona.handle === DEFAULT_AGENT_HANDLE;
 
   const form = document.createElement('div');
   form.className = 'persona-form';
+  form.style.border = 'none';
+  form.style.padding = '0';
+  form.style.background = 'none';
 
   // Handle input — with emoji picker
   const handleRow = document.createElement('div');
@@ -756,9 +760,9 @@ function showPersonaForm(existing?: AgentPersona): void {
   const emojiBtn = document.createElement('button');
   emojiBtn.type = 'button';
   emojiBtn.className = 'emoji-picker-btn';
-  emojiBtn.textContent = existing?.emoji || '😀';
+  emojiBtn.textContent = persona.emoji || '🤖';
   emojiBtn.title = 'Pick emoji avatar';
-  let selectedEmoji = existing?.emoji || '';
+  let selectedEmoji = persona.emoji || '';
 
   const EMOJI_OPTIONS = [
     '😀','😎','🤖','👻','🦊','🐱','🐶','🦁',
@@ -769,7 +773,6 @@ function showPersonaForm(existing?: AgentPersona): void {
 
   emojiBtn.addEventListener('click', (e) => {
     e.stopPropagation();
-    // Close any existing popup
     const existing_popup = document.querySelector('.emoji-picker-popup');
     if (existing_popup) { existing_popup.remove(); return; }
 
@@ -788,7 +791,6 @@ function showPersonaForm(existing?: AgentPersona): void {
       popup.appendChild(btn);
     }
 
-    // Clear option
     const clearBtn = document.createElement('button');
     clearBtn.type = 'button';
     clearBtn.textContent = '✕';
@@ -797,7 +799,7 @@ function showPersonaForm(existing?: AgentPersona): void {
     clearBtn.addEventListener('click', (ev) => {
       ev.stopPropagation();
       selectedEmoji = '';
-      emojiBtn.textContent = '😀';
+      emojiBtn.textContent = '🤖';
       popup.remove();
     });
     popup.appendChild(clearBtn);
@@ -805,7 +807,6 @@ function showPersonaForm(existing?: AgentPersona): void {
     emojiBtn.style.position = 'relative';
     emojiBtn.appendChild(popup);
 
-    // Close on outside click
     const closePopup = () => { popup.remove(); document.removeEventListener('click', closePopup); };
     setTimeout(() => document.addEventListener('click', closePopup), 0);
   });
@@ -817,8 +818,13 @@ function showPersonaForm(existing?: AgentPersona): void {
   handleInput.type = 'text';
   handleInput.className = 'persona-form-input';
   handleInput.placeholder = 'handle';
-  handleInput.value = existing?.handle || '';
+  handleInput.value = persona.handle;
   handleInput.maxLength = 32;
+  if (isDefault) {
+    handleInput.readOnly = true;
+    handleInput.style.opacity = '0.6';
+    handleInput.title = 'The default agent handle cannot be changed';
+  }
   handleRow.appendChild(emojiBtn);
   handleRow.appendChild(handleLabel);
   handleRow.appendChild(handleInput);
@@ -828,9 +834,9 @@ function showPersonaForm(existing?: AgentPersona): void {
   instrRow.className = 'persona-form-row';
   const instrInput = document.createElement('textarea');
   instrInput.className = 'persona-form-textarea';
-  instrInput.placeholder = 'Instructions for this persona...';
-  instrInput.value = existing?.instructions || '';
-  instrInput.rows = 3;
+  instrInput.placeholder = 'Instructions for this agent...';
+  instrInput.value = persona.instructions;
+  instrInput.rows = 4;
   instrInput.maxLength = 2000;
   instrRow.appendChild(instrInput);
 
@@ -852,14 +858,14 @@ function showPersonaForm(existing?: AgentPersona): void {
     const opt = document.createElement('option');
     opt.value = m.id;
     opt.textContent = m.name || m.id;
-    if (m.id === existing?.model) opt.selected = true;
+    if (m.id === persona.model) opt.selected = true;
     modelSelect.appendChild(opt);
   }
 
   modelRow.appendChild(modelLabel);
   modelRow.appendChild(modelSelect);
 
-  // Run location dropdown (local vs cloud)
+  // Run location dropdown
   const locationRow = document.createElement('div');
   locationRow.className = 'persona-form-row';
   const locationLabel = document.createElement('label');
@@ -875,7 +881,7 @@ function showPersonaForm(existing?: AgentPersona): void {
   cloudOpt.textContent = '☁️ Cloud (GitHub CCA)';
   locationSelect.appendChild(localOpt);
   locationSelect.appendChild(cloudOpt);
-  if (existing?.runLocation === 'cloud') cloudOpt.selected = true;
+  if (persona.runLocation === 'cloud') cloudOpt.selected = true;
   locationRow.appendChild(locationLabel);
   locationRow.appendChild(locationSelect);
 
@@ -883,14 +889,14 @@ function showPersonaForm(existing?: AgentPersona): void {
   const isWindows = intentAPI.getPlatform() === 'win32';
   const sandboxRow = document.createElement('div');
   sandboxRow.className = 'persona-form-row persona-sandbox-row';
-  if (!isWindows || (existing?.runLocation === 'cloud')) {
+  if (!isWindows || persona.runLocation === 'cloud') {
     sandboxRow.style.display = 'none';
   }
   const sandboxLabel = document.createElement('label');
   sandboxLabel.className = 'persona-form-checkbox-label';
   const sandboxCheck = document.createElement('input');
   sandboxCheck.type = 'checkbox';
-  sandboxCheck.checked = existing?.sandboxed === true;
+  sandboxCheck.checked = persona.sandboxed === true;
   sandboxLabel.appendChild(sandboxCheck);
   sandboxLabel.appendChild(document.createTextNode(' 🔒 Run in sandbox (restrict writes & dangerous commands)'));
   if (!isWindows) {
@@ -898,7 +904,6 @@ function showPersonaForm(existing?: AgentPersona): void {
   }
   sandboxRow.appendChild(sandboxLabel);
 
-  // Show/hide sandbox when location changes
   locationSelect.addEventListener('change', () => {
     if (locationSelect.value === 'cloud' || !isWindows) {
       sandboxRow.style.display = 'none';
@@ -910,7 +915,7 @@ function showPersonaForm(existing?: AgentPersona): void {
     }
   });
 
-  // ── Sandbox override (visible when 'sandboxed' is checked) ─────────
+  // Sandbox override
   const sandboxOverrideRow = document.createElement('div');
   sandboxOverrideRow.className = 'persona-form-row persona-sandbox-override-row';
   sandboxOverrideRow.style.display = 'none';
@@ -921,14 +926,20 @@ function showPersonaForm(existing?: AgentPersona): void {
   inheritLabel.className = 'persona-form-checkbox-label';
   const inheritCheck = document.createElement('input');
   inheritCheck.type = 'checkbox';
-  inheritCheck.checked = existing?.sandboxPolicyOverride == null;
+  // For @agent, there's no "inherit" — it IS the default
+  if (isDefault) {
+    inheritCheck.checked = false;
+    inheritLabel.style.display = 'none';
+  } else {
+    inheritCheck.checked = persona.sandboxPolicyOverride == null;
+  }
   inheritLabel.appendChild(inheritCheck);
-  inheritLabel.appendChild(document.createTextNode(' Inherit default sandbox policy from settings'));
+  inheritLabel.appendChild(document.createTextNode(' Inherit sandbox policy from @agent'));
   sandboxOverrideRow.appendChild(inheritLabel);
 
   const overrideContainer = document.createElement('div');
   overrideContainer.className = 'sandbox-policy-form';
-  overrideContainer.style.display = inheritCheck.checked ? 'none' : '';
+  overrideContainer.style.display = (isDefault || !inheritCheck.checked) ? '' : 'none';
   sandboxOverrideRow.appendChild(overrideContainer);
 
   let personaPolicyApi: { getPolicy: () => SandboxPolicy; setPolicy: (p: SandboxPolicy) => void } | null = null;
@@ -936,8 +947,15 @@ function showPersonaForm(existing?: AgentPersona): void {
   async function ensurePolicyForm(): Promise<void> {
     if (personaPolicyApi) return;
     let initial: SandboxPolicy;
-    if (existing?.sandboxPolicyOverride) {
-      initial = existing.sandboxPolicyOverride;
+    if (isDefault) {
+      // @agent reads/writes the global default sandbox policy
+      try {
+        initial = await intentAPI.getSandboxDefaultPolicy() ?? DEFAULT_SANDBOX_POLICY;
+      } catch {
+        initial = DEFAULT_SANDBOX_POLICY;
+      }
+    } else if (persona.sandboxPolicyOverride) {
+      initial = persona.sandboxPolicyOverride;
     } else {
       try {
         initial = await intentAPI.getSandboxDefaultPolicy() ?? DEFAULT_SANDBOX_POLICY;
@@ -945,7 +963,7 @@ function showPersonaForm(existing?: AgentPersona): void {
         initial = DEFAULT_SANDBOX_POLICY;
       }
     }
-    personaPolicyApi = renderSandboxPolicyForm(overrideContainer, initial, { idPrefix: `persona-${existing?.id ?? 'new'}` });
+    personaPolicyApi = renderSandboxPolicyForm(overrideContainer, initial, { idPrefix: `persona-${persona.id}` });
   }
 
   inheritCheck.addEventListener('change', async () => {
@@ -960,13 +978,12 @@ function showPersonaForm(existing?: AgentPersona): void {
   function updateSandboxOverrideVisibility(): void {
     if (sandboxCheck.checked && isWindows && locationSelect.value !== 'cloud') {
       sandboxOverrideRow.style.display = '';
-      if (!inheritCheck.checked) ensurePolicyForm();
+      if (isDefault || !inheritCheck.checked) ensurePolicyForm();
     } else {
       sandboxOverrideRow.style.display = 'none';
     }
   }
   sandboxCheck.addEventListener('change', updateSandboxOverrideVisibility);
-  // Initial state: if persona is already sandboxed, render override section.
   if (sandboxCheck.checked) updateSandboxOverrideVisibility();
 
   // CLI Runtime dropdown
@@ -981,13 +998,12 @@ function showPersonaForm(existing?: AgentPersona): void {
   defaultRtOpt.value = '';
   defaultRtOpt.textContent = 'Default';
   runtimeSelect.appendChild(defaultRtOpt);
-  // Populate from loaded runtimes
   intentAPI.listRuntimes().then(runtimes => {
     for (const rt of runtimes) {
       const opt = document.createElement('option');
       opt.value = rt.id;
       opt.textContent = rt.label;
-      if (rt.id === existing?.cliRuntime) opt.selected = true;
+      if (rt.id === persona.cliRuntime) opt.selected = true;
       runtimeSelect.appendChild(opt);
     }
   });
@@ -1004,21 +1020,27 @@ function showPersonaForm(existing?: AgentPersona): void {
 
   const saveBtn = document.createElement('button');
   saveBtn.className = 'persona-form-save';
-  saveBtn.textContent = existing ? 'Save' : 'Add';
+  saveBtn.textContent = 'Save';
   saveBtn.addEventListener('click', async () => {
-    const rawHandle = handleInput.value.trim().replace(/^@/, '').toLowerCase();
+    const rawHandle = isDefault ? DEFAULT_AGENT_HANDLE : handleInput.value.trim().replace(/^@/, '').toLowerCase();
     const instructions = instrInput.value.trim();
     const model = modelSelect.value;
     const runLocation = locationSelect.value as 'local' | 'cloud';
     const sandboxed = sandboxCheck.checked && runLocation === 'local';
     const emoji = selectedEmoji;
     const cliRuntime = runtimeSelect.value;
-    const sandboxOverride: SandboxPolicy | undefined = (sandboxed && !inheritCheck.checked && personaPolicyApi)
-      ? personaPolicyApi.getPolicy()
-      : undefined;
 
-    // Validate
-    if (!HANDLE_RE.test(rawHandle)) {
+    // For @agent, save sandbox policy to global default as well
+    let sandboxOverride: SandboxPolicy | undefined;
+    if (isDefault && sandboxed && personaPolicyApi) {
+      const policy = personaPolicyApi.getPolicy();
+      await intentAPI.saveSandboxDefaultPolicy(policy);
+      sandboxOverride = undefined; // @agent uses the global default
+    } else if (sandboxed && !inheritCheck.checked && personaPolicyApi) {
+      sandboxOverride = personaPolicyApi.getPolicy();
+    }
+
+    if (!isDefault && !HANDLE_RE.test(rawHandle)) {
       errorEl.textContent = 'Handle must be 1-32 lowercase letters, numbers, or dashes.';
       errorEl.classList.remove('hidden');
       return;
@@ -1028,57 +1050,60 @@ function showPersonaForm(existing?: AgentPersona): void {
       errorEl.classList.remove('hidden');
       return;
     }
-    // Check uniqueness (excluding self when editing)
-    const duplicate = personas.find(p => p.handle === rawHandle && p.id !== (existing?.id || ''));
-    if (duplicate) {
-      errorEl.textContent = `Handle @${rawHandle} is already taken.`;
-      errorEl.classList.remove('hidden');
-      return;
+    if (!isDefault) {
+      const duplicate = personas.find(p => p.handle === rawHandle && p.id !== persona.id);
+      if (duplicate) {
+        errorEl.textContent = `Handle @${rawHandle} is already taken.`;
+        errorEl.classList.remove('hidden');
+        return;
+      }
     }
 
-    if (existing) {
-      // Update existing
-      personas = personas.map(p => p.id === existing.id
-        ? {
-            ...p,
-            handle: rawHandle,
-            instructions,
-            model,
-            runLocation,
-            emoji: emoji || undefined,
-            cliRuntime: cliRuntime || undefined,
-            ...(sandboxed ? { sandboxed: true } : { sandboxed: undefined }),
-            ...(sandboxOverride ? { sandboxPolicyOverride: sandboxOverride } : { sandboxPolicyOverride: undefined }),
-          }
-        : p
-      );
-    } else {
-      // Add new
-      personas.push({
-        id: crypto.randomUUID(),
-        handle: rawHandle,
-        instructions,
-        model,
-        runLocation,
-        ...(sandboxed ? { sandboxed: true } : {}),
-        ...(emoji ? { emoji } : {}),
-        ...(cliRuntime ? { cliRuntime } : {}),
-        ...(sandboxOverride ? { sandboxPolicyOverride: sandboxOverride } : {}),
-      });
-    }
+    personas = personas.map(p => p.id === persona.id
+      ? {
+          ...p,
+          handle: rawHandle,
+          instructions,
+          model,
+          runLocation,
+          emoji: emoji || undefined,
+          cliRuntime: cliRuntime || undefined,
+          ...(sandboxed ? { sandboxed: true } : { sandboxed: undefined }),
+          ...(sandboxOverride ? { sandboxPolicyOverride: sandboxOverride } : { sandboxPolicyOverride: undefined }),
+        }
+      : p
+    );
 
     await intentAPI.savePersonas(personas);
-    form.remove();
-    renderPersonas();
+    renderAgentsSidebar();
+    // Show brief save confirmation
+    errorEl.textContent = 'Saved.';
+    errorEl.classList.remove('hidden');
+    errorEl.style.color = '#2d8a3a';
+    setTimeout(() => { errorEl.classList.add('hidden'); errorEl.style.color = ''; }, 1500);
   });
 
-  const cancelBtn = document.createElement('button');
-  cancelBtn.className = 'persona-form-cancel';
-  cancelBtn.textContent = 'Cancel';
-  cancelBtn.addEventListener('click', () => form.remove());
+  const deleteBtn = document.createElement('button');
+  deleteBtn.className = 'persona-form-cancel';
+  deleteBtn.textContent = 'Delete';
+  deleteBtn.style.color = '#b91414';
+  if (isDefault) {
+    deleteBtn.style.display = 'none';
+  }
+  deleteBtn.addEventListener('click', async () => {
+    if (isDefault) return;
+    personas = personas.filter(p => p.id !== persona.id);
+    await intentAPI.savePersonas(personas);
+    selectedAgentId = null;
+    renderAgentsSidebar();
+    // Select @agent after deletion
+    const defaultAgent = personas.find(p => p.handle === DEFAULT_AGENT_HANDLE);
+    if (defaultAgent) selectAgent(defaultAgent.id);
+    else renderAgentEditorPlaceholder();
+  });
 
   btnRow.appendChild(saveBtn);
-  btnRow.appendChild(cancelBtn);
+  btnRow.appendChild(deleteBtn);
 
   form.appendChild(handleRow);
   form.appendChild(instrRow);
@@ -1090,24 +1115,22 @@ function showPersonaForm(existing?: AgentPersona): void {
   form.appendChild(errorEl);
   form.appendChild(btnRow);
 
-  if (existing) {
-    // Insert form after the card being edited
-    const cards = personasList.querySelectorAll('.persona-card');
-    const idx = personas.findIndex(p => p.id === existing.id);
-    if (cards[idx]) {
-      cards[idx].after(form);
-    } else {
-      personasList.appendChild(form);
-    }
-  } else {
-    personasList.appendChild(form);
-  }
-
-  form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  handleInput.focus();
+  agentsEditor.appendChild(form);
 }
 
-personaAddBtn.addEventListener('click', () => showPersonaForm());
+personaAddBtn.addEventListener('click', () => {
+  const newId = crypto.randomUUID();
+  const newPersona: AgentPersona = {
+    id: newId,
+    handle: '',
+    instructions: '',
+    model: '',
+    runLocation: 'local',
+  };
+  personas.push(newPersona);
+  renderAgentsSidebar();
+  selectAgent(newId);
+});
 
 // ── CLI Runtimes ────────────────────────────────────────
 const runtimesList = document.getElementById('runtimes-list') as HTMLDivElement;
@@ -3412,7 +3435,12 @@ function initSettingsTabs(): void {
       if (t.dataset.tab) activate(t.dataset.tab);
     });
   });
-  if (stored) activate(stored);
+  if (stored) {
+    activate(stored);
+  }
+  // Fallback: if no tab is active (e.g. stored tab was removed), activate general
+  const anyActive = Array.from(tabs).some(t => t.classList.contains('active'));
+  if (!anyActive) activate('general');
 }
 initSettingsTabs();
 
@@ -3562,40 +3590,12 @@ function renderSandboxPolicyForm(
   return { getPolicy, setPolicy };
 }
 
-// ── Default sandbox policy form (in Personas tab) ───────
+// ── Default sandbox policy form (now managed through @agent editor) ──
+// Legacy function kept as no-op for any remaining calls
 let sandboxDefaultFormApi: { getPolicy: () => SandboxPolicy; setPolicy: (p: SandboxPolicy) => void } | null = null;
 
 async function renderDefaultSandboxPolicyForm(): Promise<void> {
-  const container = document.getElementById('sandbox-default-form');
-  if (!container) return;
-  let policy: SandboxPolicy;
-  try {
-    policy = await intentAPI.getSandboxDefaultPolicy() ?? DEFAULT_SANDBOX_POLICY;
-  } catch {
-    policy = DEFAULT_SANDBOX_POLICY;
-  }
-  sandboxDefaultFormApi = renderSandboxPolicyForm(container, policy, { idPrefix: 'sandbox-default' });
-
-  const status = document.getElementById('sandbox-default-status');
-  const saveBtn = document.getElementById('sandbox-default-save-btn');
-  if (saveBtn && !saveBtn.dataset.bound) {
-    saveBtn.dataset.bound = '1';
-    saveBtn.addEventListener('click', async () => {
-      if (!sandboxDefaultFormApi) return;
-      const next = sandboxDefaultFormApi.getPolicy();
-      const result = await intentAPI.saveSandboxDefaultPolicy(next);
-      if (status) {
-        if (result?.error) {
-          status.textContent = `Error: ${result.error}`;
-          status.style.color = 'var(--color-warning, #d29922)';
-        } else {
-          status.textContent = 'Saved.';
-          status.style.color = '';
-          setTimeout(() => { if (status.textContent === 'Saved.') status.textContent = ''; }, 2000);
-        }
-      }
-    });
-  }
+  // No-op: sandbox policy is now configured through the @agent editor in the Agents tab
 }
 renderDefaultSandboxPolicyForm();
 
