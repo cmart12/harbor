@@ -136,7 +136,8 @@
 
         <div class="settings-tabs">
           <button class="settings-tab-btn active" data-tab="general">General</button>
-          <button class="settings-tab-btn" data-tab="personas">Personas</button>
+          <button class="settings-tab-btn" data-tab="tools">Tools</button>
+          <button class="settings-tab-btn" data-tab="personas">Agents</button>
         </div>
 
         <div class="settings-content">
@@ -174,7 +175,7 @@
             </div>
 
             <div class="settings-group">
-              <div class="settings-group-title">Copilot CLI</div>
+              <div class="settings-group-title">Default Copilot CLI</div>
               <div class="settings-row">
                 <div class="cli-path-display">
                   <input id="cli-path-input" class="cli-path-input" type="text" placeholder="Auto-detect" spellcheck="false" />
@@ -189,12 +190,14 @@
             </div>
 
             <div class="settings-group">
-              <div class="settings-group-title">CLI Runtimes</div>
-              <div class="settings-hint">Register alternative CLI binaries for use with different personas.</div>
+              <div class="settings-group-title">Additional Runtimes</div>
+              <div class="settings-hint">Register alternative CLI binaries for use with different agents.</div>
               <div id="runtimes-list" class="personas-list"></div>
               <button id="runtime-add-btn" class="persona-add-btn" type="button">+ Add Runtime</button>
             </div>
+          </div>
 
+          <div class="settings-tab-panel" data-tab="tools">
             <div class="settings-group">
               <div class="settings-group-title">MCP Servers</div>
               <div class="settings-hint">Model Context Protocol servers provide additional tools to agents.</div>
@@ -212,22 +215,15 @@
           </div>
 
           <div class="settings-tab-panel" data-tab="personas">
-            <div class="settings-group">
-              <div class="settings-group-title">Default Sandbox Policy</div>
-              <div class="settings-hint">
-                Sandboxed personas inherit this policy by default. Each persona can override it.
-                Sandboxing requires Windows + the mxc-aware Copilot CLI build.
+            <div class="agents-split-pane">
+              <div class="agents-sidebar">
+                <div class="agents-sidebar-title">Agents</div>
+                <div id="agents-selection-list" class="agents-selection-list"></div>
+                <button id="persona-add-btn" class="persona-add-btn" type="button">+ Add Agent</button>
               </div>
-              <div id="sandbox-default-form" class="sandbox-policy-form"></div>
-              <button id="sandbox-default-save-btn" class="persona-add-btn" type="button">Save default policy</button>
-              <div id="sandbox-default-status" class="settings-hint"></div>
-            </div>
-
-            <div class="settings-group">
-              <div class="settings-group-title">Agent Personas</div>
-              <div class="settings-hint">Define personas you can @mention in documents and comments.</div>
-              <div id="personas-list" class="personas-list"></div>
-              <button id="persona-add-btn" class="persona-add-btn" type="button">+ Add Persona</button>
+              <div class="agents-editor" id="agents-editor">
+                <div class="agents-editor-placeholder">Select an agent to edit its settings.</div>
+              </div>
             </div>
           </div>
         </div>
