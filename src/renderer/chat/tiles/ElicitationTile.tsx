@@ -60,7 +60,7 @@ function getSelectOptions(field: any): { value: string; label: string }[] {
     }));
   }
   if (Array.isArray(field.oneOf)) {
-    return field.oneOf.map((o: any) => ({ value: o.const, label: o.title }));
+    return field.oneOf.map((o: any) => ({ value: o.const, label: o.title || o.const }));
   }
   return [];
 }
@@ -72,7 +72,7 @@ function getMultiSelectOptions(field: any): { value: string; label: string }[] {
     return items.enum.map((v: string) => ({ value: v, label: v }));
   }
   if (Array.isArray(items.anyOf)) {
-    return items.anyOf.map((o: any) => ({ value: o.const, label: o.title }));
+    return items.anyOf.map((o: any) => ({ value: o.const, label: o.title || o.const }));
   }
   return [];
 }
@@ -97,6 +97,13 @@ function formatValue(value: FieldValue): string {
   return String(value);
 }
 
+const successSvg = <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="7" fill="#22c55e"/><path d="M4 7.2L6 9.2L10 5" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>;
+const declinedSvg = <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="7" fill="#6b7280"/><path d="M4.5 4.5L9.5 9.5M9.5 4.5L4.5 9.5" stroke="white" strokeWidth="1.5" strokeLinecap="round"/></svg>;
+const cancelledSvg = <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="7" fill="#ef4444"/><path d="M4.5 4.5L9.5 9.5M9.5 4.5L4.5 9.5" stroke="white" strokeWidth="1.5" strokeLinecap="round"/></svg>;
+
+// Show inline option list for enums with ≤ this many options; fall back to <select> for more
+const INLINE_OPTIONS_THRESHOLD = 6;
+
 export function ElicitationTile({
   requestId,
   message,
@@ -114,7 +121,6 @@ export function ElicitationTile({
     getDefaultValues(properties),
   );
 
-  // Re-initialize when schema changes
   useEffect(() => {
     setValues(getDefaultValues(properties));
   }, [requestedSchema]);
@@ -138,171 +144,196 @@ export function ElicitationTile({
   const showSource =
     elicitationSource && elicitationSource !== '__copilot_agent__';
 
-  if (responded) {
-    return (
-      <div className="chat-elicitation-tile responded">
-        <div className="chat-elicitation-icon">📝</div>
-        <div className="chat-elicitation-body">
-          <div className="chat-elicitation-header">
-            <div className="chat-elicitation-label">{message}</div>
-            {showSource && (
-              <span className="chat-elicitation-source">{elicitationSource}</span>
-            )}
-          </div>
-          {action === 'accept' && content ? (
-            <div className="chat-elicitation-submitted">
-              {Object.entries(properties).map(([key, field]) => {
-                const val = content[key];
-                if (val === undefined) return null;
-                return (
-                  <div key={key} className="chat-elicitation-submitted-field">
-                    <span className="chat-elicitation-submitted-label">
-                      {(field as any).title || key}:
-                    </span>{' '}
-                    <span className="chat-elicitation-submitted-value">
-                      {formatValue(val)}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div
-              className={`chat-elicitation-result ${action === 'decline' ? 'declined' : 'cancelled'}`}
-            >
-              {action === 'decline' ? 'Declined' : 'Cancelled'}
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
+  const statusIcon = responded
+    ? (action === 'accept' ? successSvg : action === 'decline' ? declinedSvg : cancelledSvg)
+    : null;
+  const statusClass = responded
+    ? (action === 'accept' ? 'success' : 'error')
+    : 'running';
 
   return (
-    <div className="chat-elicitation-tile pending">
-      <div className="chat-elicitation-icon">📝</div>
-      <div className="chat-elicitation-body">
-        <div className="chat-elicitation-header">
-          <div className="chat-elicitation-label">{message}</div>
-          {showSource && (
-            <span className="chat-elicitation-source">{elicitationSource}</span>
+    <div className="chat-tool-tile border-blue">
+      <div className="chat-tool-header">
+        <span className={`chat-tool-status ${statusClass}`} aria-hidden="true">
+          {statusIcon || '●'}
+        </span>
+        <span className="chat-tool-title">
+          <span className="chat-tool-label">Elicitation</span>
+        </span>
+        <span className="elicitation-message-preview">{message}</span>
+        {showSource && (
+          <span className="elicitation-source-badge">{elicitationSource}</span>
+        )}
+      </div>
+
+      {responded ? (
+        <div className="elicitation-response">
+          {action === 'accept' && content ? (
+            Object.entries(properties).map(([key, field]) => {
+              const val = content[key];
+              if (val === undefined) return null;
+              return (
+                <div key={key} className="elicitation-response-field">
+                  <span className="elicitation-response-label">
+                    {(field as any).title || key}:
+                  </span>{' '}
+                  <span className="elicitation-response-value">
+                    {formatValue(val)}
+                  </span>
+                </div>
+              );
+            })
+          ) : (
+            <span className={`elicitation-response-status ${action}`}>
+              {action === 'decline' ? 'Declined' : 'Cancelled'}
+            </span>
           )}
         </div>
+      ) : (
+        <div className="elicitation-controls">
+          <div className="elicitation-form">
+            {Object.entries(properties).map(([key, field]) => {
+              const f = field as any;
+              const isRequired = required.includes(key);
+              const label = f.title || key;
 
-        <div className="chat-elicitation-form">
-          {Object.entries(properties).map(([key, field]) => {
-            const f = field as any;
-            const isRequired = required.includes(key);
-            const label = f.title || key;
-
-            return (
-              <div key={key} className="chat-elicitation-field">
-                <label className="chat-elicitation-field-label">
-                  {label}
-                  {isRequired && <span className="chat-elicitation-required">*</span>}
-                </label>
-
-                {isSelectField(f) && (
-                  <select
-                    className="chat-elicitation-select"
-                    value={(values[key] as string) ?? ''}
-                    onChange={e => setValue(key, e.target.value)}
-                  >
-                    <option value="">— Select —</option>
-                    {getSelectOptions(f).map(opt => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                )}
-
-                {isMultiSelectField(f) && (
-                  <div className="chat-elicitation-checkboxes">
-                    {getMultiSelectOptions(f).map(opt => (
-                      <label key={opt.value} className="chat-elicitation-checkbox-label">
-                        <input
-                          type="checkbox"
-                          checked={((values[key] as string[]) || []).includes(opt.value)}
-                          onChange={() => toggleArrayValue(key, opt.value)}
-                        />
-                        {opt.label}
-                      </label>
-                    ))}
-                  </div>
-                )}
-
-                {f.type === 'boolean' && (
-                  <label className="chat-elicitation-checkbox-label">
-                    <input
-                      type="checkbox"
-                      checked={!!values[key]}
-                      onChange={e => setValue(key, e.target.checked)}
-                    />
-                    {f.description || label}
+              return (
+                <div key={key} className="elicitation-field">
+                  <label className="elicitation-field-label">
+                    {label}
+                    {isRequired && <span className="elicitation-required">*</span>}
                   </label>
-                )}
 
-                {(f.type === 'number' || f.type === 'integer') && (
-                  <input
-                    type="number"
-                    className="chat-elicitation-input"
-                    value={values[key] === '' ? '' : String(values[key])}
-                    min={f.minimum}
-                    max={f.maximum}
-                    step={f.type === 'integer' ? 1 : undefined}
-                    onChange={e => {
-                      const raw = e.target.value;
-                      if (raw === '') {
-                        setValue(key, '' as any);
-                      } else {
-                        setValue(key, f.type === 'integer' ? parseInt(raw, 10) : parseFloat(raw));
-                      }
-                    }}
-                  />
-                )}
+                  {isSelectField(f) && (() => {
+                    const options = getSelectOptions(f);
+                    if (options.length <= INLINE_OPTIONS_THRESHOLD) {
+                      return (
+                        <div className="elicitation-option-list" role="radiogroup" aria-label={label}>
+                          {options.map(opt => {
+                            const isSelected = (values[key] as string) === opt.value;
+                            return (
+                              <button
+                                key={opt.value}
+                                className={`elicitation-option ${isSelected ? 'selected' : ''}`}
+                                role="radio"
+                                aria-checked={isSelected}
+                                onClick={() => setValue(key, opt.value)}
+                              >
+                                <span className="elicitation-option-indicator" aria-hidden="true">
+                                  {isSelected ? '●' : '○'}
+                                </span>
+                                <span>{opt.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      );
+                    }
+                    // Fall back to native select for large option sets
+                    return (
+                      <select
+                        className="elicitation-select"
+                        value={(values[key] as string) ?? ''}
+                        onChange={e => setValue(key, e.target.value)}
+                      >
+                        <option value="">— Select —</option>
+                        {options.map(opt => (
+                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        ))}
+                      </select>
+                    );
+                  })()}
 
-                {f.type === 'string' && !isSelectField(f) && (
-                  <input
-                    type={getInputType(f.format)}
-                    className="chat-elicitation-input"
-                    value={(values[key] as string) ?? ''}
-                    minLength={f.minLength}
-                    maxLength={f.maxLength}
-                    onChange={e => setValue(key, e.target.value)}
-                  />
-                )}
+                  {isMultiSelectField(f) && (
+                    <div className="elicitation-pill-group" role="group" aria-label={label}>
+                      {getMultiSelectOptions(f).map(opt => {
+                        const isActive = ((values[key] as string[]) || []).includes(opt.value);
+                        return (
+                          <button
+                            key={opt.value}
+                            className={`elicitation-pill ${isActive ? 'active' : ''}`}
+                            aria-pressed={isActive}
+                            onClick={() => toggleArrayValue(key, opt.value)}
+                          >
+                            {opt.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
 
-                {f.description && f.type !== 'boolean' && (
-                  <div className="chat-elicitation-help">{f.description}</div>
-                )}
-              </div>
-            );
-          })}
+                  {f.type === 'boolean' && (
+                    <label className="elicitation-checkbox">
+                      <input
+                        type="checkbox"
+                        checked={!!values[key]}
+                        onChange={e => setValue(key, e.target.checked)}
+                      />
+                      <span>{f.description || label}</span>
+                    </label>
+                  )}
+
+                  {(f.type === 'number' || f.type === 'integer') && (
+                    <input
+                      type="number"
+                      className="elicitation-input"
+                      value={values[key] === '' ? '' : String(values[key])}
+                      min={f.minimum}
+                      max={f.maximum}
+                      step={f.type === 'integer' ? 1 : undefined}
+                      onChange={e => {
+                        const raw = e.target.value;
+                        if (raw === '') {
+                          setValue(key, '' as any);
+                        } else {
+                          setValue(key, f.type === 'integer' ? parseInt(raw, 10) : parseFloat(raw));
+                        }
+                      }}
+                    />
+                  )}
+
+                  {f.type === 'string' && !isSelectField(f) && (
+                    <input
+                      type={getInputType(f.format)}
+                      className="elicitation-input"
+                      value={(values[key] as string) ?? ''}
+                      minLength={f.minLength}
+                      maxLength={f.maxLength}
+                      onChange={e => setValue(key, e.target.value)}
+                    />
+                  )}
+
+                  {f.description && f.type !== 'boolean' && (
+                    <div className="elicitation-help">{f.description}</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="elicitation-actions">
+            <button
+              className="elicitation-btn accept"
+              disabled={!canSubmit}
+              onClick={() => onRespond(requestId, 'accept', values)}
+            >
+              Accept
+            </button>
+            <button
+              className="elicitation-btn decline"
+              onClick={() => onRespond(requestId, 'decline')}
+            >
+              Decline
+            </button>
+            <button
+              className="elicitation-btn cancel"
+              onClick={() => onRespond(requestId, 'cancel')}
+            >
+              Cancel
+            </button>
+          </div>
         </div>
-
-        <div className="chat-elicitation-actions">
-          <button
-            className="chat-elicitation-btn accept"
-            disabled={!canSubmit}
-            onClick={() => onRespond(requestId, 'accept', values)}
-          >
-            Accept
-          </button>
-          <button
-            className="chat-elicitation-btn decline"
-            onClick={() => onRespond(requestId, 'decline')}
-          >
-            Decline
-          </button>
-          <button
-            className="chat-elicitation-btn cancel"
-            onClick={() => onRespond(requestId, 'cancel')}
-          >
-            Cancel
-          </button>
-        </div>
-      </div>
+      )}
     </div>
   );
 }
