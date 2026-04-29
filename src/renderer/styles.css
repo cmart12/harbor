@@ -1735,36 +1735,6 @@ body.dark .workers-badge {
   font-weight: 500;
 }
 
-/* ── Intent desc row (title + refresh) ───────────────── */
-
-.intent-desc-row {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.intent-refresh-title {
-  opacity: 0;
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: 11px;
-  padding: 1px 3px;
-  border-radius: 2px;
-  color: rgba(0, 0, 0, 0.3);
-  transition: opacity 0.15s ease, color 0.15s ease;
-  flex-shrink: 0;
-}
-
-.intent-item:hover .intent-refresh-title {
-  opacity: 1;
-}
-
-.intent-refresh-title:hover {
-  color: #7c66dc;
-  background: rgba(124, 102, 220, 0.08);
-}
-
 /* ── Agent-active shimmer on intent title ────────────── */
 
 .intent-desc.agent-active {
@@ -2336,18 +2306,6 @@ body.dark .emoji-picker-popup {
 
 .due-badge.overdue {
   color: #dc2626;
-}
-
-.intent-desc {
-  cursor: pointer;
-  border-radius: 1px;
-  padding: 1px 2px;
-  margin: -1px -2px;
-  transition: background 0.15s ease;
-}
-
-.intent-desc:hover {
-  background: rgba(0, 0, 0, 0.03);
 }
 
 /* ── Inline editing ──────────────────────────────────── */
@@ -3707,8 +3665,6 @@ body.dark .processing-badge { color: #a594e8; background: rgba(124, 102, 220, 0.
 body.dark .session-badge { color: rgba(255, 255, 255, 0.3); }
 body.dark .session-badge.agent-attention { color: #f59e0b; }
 body.dark .session-badge.agent-failed-badge { color: #f87171; }
-body.dark .intent-refresh-title { color: rgba(255, 255, 255, 0.3); }
-body.dark .intent-refresh-title:hover { color: #a594e8; background: rgba(165, 148, 232, 0.1); }
 body.dark .intent-desc.agent-active { background: linear-gradient(90deg, #e0e0e0 0%, #a594e8 50%, #e0e0e0 100%); background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; animation: titleShimmer 3s ease-in-out infinite; }
 body.dark .mini-agent-running { background: rgba(22, 163, 74, 0.12); color: #4ade80; border-color: rgba(74, 222, 128, 0.2); }
 body.dark .mini-agent-waiting { background: rgba(245, 158, 11, 0.1); color: #fbbf24; border-color: rgba(251, 191, 36, 0.2); }
@@ -3809,7 +3765,6 @@ body.dark .mcp-card-source { color: rgba(255, 255, 255, 0.25); }
 /* Dark inline editing */
 body.dark .inline-edit-input { background: rgba(255, 255, 255, 0.08); border-color: rgba(124, 102, 220, 0.5); color: #e0e0e0; box-shadow: 0 0 0 2px rgba(124, 102, 220, 0.15); }
 body.dark .due-badge:hover { background: rgba(255, 255, 255, 0.06); }
-body.dark .intent-desc:hover { background: rgba(255, 255, 255, 0.04); }
 
 /* Dark timeline */
 body.dark .timeline-date { color: rgba(255, 255, 255, 0.35); border-bottom-color: rgba(255, 255, 255, 0.06); }

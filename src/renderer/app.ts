@@ -2073,10 +2073,7 @@ function render(): void {
       <div class="intent-check ${intent.status === 'done' ? 'checked' : ''}"
            onclick="event.stopPropagation(); toggleStatus('${intent.id}')">${intent.status === 'done' ? '✓' : ''}</div>
       <div class="intent-content">
-        <div class="intent-desc-row">
-          <div class="intent-desc ${hasRunningAgents ? 'agent-active' : ''}">${escapeHtml(intent.description)}</div>
-          <button class="intent-refresh-title" onclick="event.stopPropagation(); refreshIntentTitle('${intent.id}')" title="Generate title from canvas content">✨</button>
-        </div>
+        <div class="intent-desc ${hasRunningAgents ? 'agent-active' : ''}">${escapeHtml(intent.description)}</div>
         <div class="intent-meta">
           ${intent.client ? `<span>👤 ${escapeHtml(intent.client)}</span>` : ''}
           ${hasDue ? `<span class="due-badge ${dueInfo.overdue ? 'overdue' : ''}">📅 ${escapeHtml(dueInfo.text)}</span>` : ''}
@@ -3231,39 +3228,6 @@ cliPathClear.addEventListener('click', async () => {
 
 // ── Inline editing ──────────────────────────────────────
 // @ts-ignore - called from onclick in HTML
-async function editDescription(intentId: string): Promise<void> {
-  const intent = intents.find(i => i.id === intentId);
-  if (!intent) return;
-
-  const descEl = listEl.querySelector(`[data-id="${intentId}"] .intent-desc`) as HTMLElement;
-  if (!descEl || descEl.querySelector('input')) return; // Already editing
-
-  const input = document.createElement('input');
-  input.type = 'text';
-  input.className = 'inline-edit-input';
-  input.value = intent.description;
-
-  descEl.textContent = '';
-  descEl.appendChild(input);
-  input.focus();
-  input.select();
-
-  const save = async () => {
-    const newDesc = input.value.trim();
-    if (newDesc && newDesc !== intent.description) {
-      await intentAPI.update(intentId, { description: newDesc });
-    }
-    await loadIntents();
-  };
-
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); save(); }
-    if (e.key === 'Escape') { loadIntents(); }
-  });
-  input.addEventListener('blur', save);
-}
-
-// @ts-ignore - called from onclick in HTML
 async function editDate(intentId: string): Promise<void> {
   const intent = intents.find(i => i.id === intentId);
   if (!intent) return;
@@ -3303,7 +3267,6 @@ async function editDate(intentId: string): Promise<void> {
   input.addEventListener('blur', save);
 }
 
-(window as any).editDescription = editDescription;
 (window as any).editDate = editDate;
 
 // ── Body toggle & edit ──────────────────────────────────
@@ -3617,25 +3580,6 @@ async function unarchiveIntent(id: string): Promise<void> {
 }
 
 (window as any).unarchiveIntent = unarchiveIntent;
-
-// @ts-ignore - called from onclick in HTML
-async function refreshIntentTitle(id: string): Promise<void> {
-  const btn = document.querySelector(`.intent-item[data-id="${id}"] .intent-refresh-title`) as HTMLButtonElement;
-  if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
-  try {
-    const { content } = await intentAPI.readCanvas(id);
-    if (!content || !content.trim()) return;
-    const result = await intentAPI.summarizeTitle(content);
-    if (result.title) {
-      await intentAPI.update(id, { description: result.title });
-      await loadIntents();
-    }
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '✨'; }
-  }
-}
-
-(window as any).refreshIntentTitle = refreshIntentTitle;
 
 // ── Canvas view ─────────────────────────────────────────
 import { mountCanvas, unmountCanvas, getCanvasContent, saveCanvas as saveCanvasEditor, updateCanvasPresence, addCanvasCommentReply, toggleCanvasMode, getCanvasEditorMode, replaceCanvasContent } from './canvas/mount.tsx';

@@ -41,7 +41,6 @@ export function createMainWindow(options: WindowManagerOptions): BrowserWindow {
     show: false,
     frame: false,
     resizable: true,
-    skipTaskbar: true,
     alwaysOnTop: true,
     transparent: true,
     vibrancy: 'under-window',
@@ -59,11 +58,6 @@ export function createMainWindow(options: WindowManagerOptions): BrowserWindow {
   attachResizePersist(win);
 
   mainWindow = win;
-
-  // If the app starts while pinned, show in taskbar
-  if (getConfigValue('pinned')) {
-    win.setSkipTaskbar(false);
-  }
 
   return win;
 }
@@ -126,7 +120,6 @@ export function registerWindowIpcHandlers(preloadPath: string): void {
     const newY = Math.round(y + (height - EXPANDED_HEIGHT) / 2);
 
     mainWindow.setAlwaysOnTop(false);
-    mainWindow.setSkipTaskbar(false);
     mainWindow.setResizable(true);
     mainWindow.setBounds({ x: newX, y: newY, width: EXPANDED_WIDTH, height: EXPANDED_HEIGHT }, true);
   });
@@ -136,8 +129,6 @@ export function registerWindowIpcHandlers(preloadPath: string): void {
     isExpanded = false;
 
     mainWindow.setAlwaysOnTop(true);
-    const pinned = getConfigValue('pinned');
-    mainWindow.setSkipTaskbar(!pinned);
 
     isSnapping = true;
     const cursorPoint = screen.getCursorScreenPoint();
@@ -163,8 +154,6 @@ export function registerWindowIpcHandlers(preloadPath: string): void {
   ipcMain.on('window:set-pinned', (_event, pinned: boolean) => {
     setConfigValue('pinned', pinned);
     if (mainWindow && !isExpanded) {
-      mainWindow.setSkipTaskbar(!pinned);
-
       // When unpinning, snap back to full-height edge position
       if (!pinned) {
         const bounds = mainWindow.getBounds();

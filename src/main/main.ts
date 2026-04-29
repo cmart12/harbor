@@ -11,10 +11,6 @@ import { preloadModel } from './voice';
 import { initCopilot, shutdownCopilot } from './ai';
 import { startCliExitMonitor, stopCliExitMonitor } from './agent-service';
 import { createMainWindow, toggleWindow, setupSnapOnDrop, registerWindowIpcHandlers } from './window-manager';
-import { createTray } from './tray-controller';
-
-// Prevent tray from being garbage-collected
-let tray: Electron.Tray | null = null;
 
 // Register custom scheme as privileged (must happen before app ready)
 protocol.registerSchemesAsPrivileged([
@@ -139,7 +135,6 @@ app.whenReady().then(async () => {
   const preloadPath = path.join(__dirname, 'preload.js');
 
   registerIpcHandlers();
-  tray = createTray({ onToggleWindow: toggleWindow, onQuit: () => app.quit() });
   createMainWindow({ preloadPath });
   registerWindowIpcHandlers(preloadPath);
   setupSnapOnDrop();
@@ -177,5 +172,5 @@ app.on('will-quit', async () => {
 });
 
 app.on('window-all-closed', () => {
-  // Keep app running in tray — do nothing
+  app.quit();
 });
