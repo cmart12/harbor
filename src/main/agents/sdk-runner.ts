@@ -191,7 +191,11 @@ export async function launchQuickAgent(
     // only handles local sessions (sandboxed or not).
     const personaPreamble = persona ? `${persona.instructions}\n\n` : '';
     const baseSystemContent = `${personaPreamble}${cliToolsPrompt}`.trim();
-    const systemContent = isSandboxed
+    // In mxc-only mode the host-side guards are deliberately suppressed so MXC
+    // is the sole enforcer; the agent must NOT be told it's sandboxed,
+    // otherwise we can't observe MXC's own denials. Only append the
+    // [SANDBOX MODE] fragment when host-side guards are also active.
+    const systemContent = isSandboxed && enforcementMode === 'both'
       ? `${baseSystemContent}${SANDBOX_WORKSPACE_SYSTEM_PROMPT}`
       : baseSystemContent;
 

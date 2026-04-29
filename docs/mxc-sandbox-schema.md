@@ -196,12 +196,18 @@ enforcementMode: 'both' | 'mxc-only';
 ```
 
 - `'both'` (default): host-side guards run on top of MXC. Most denials are
-  caught host-side and never reach MXC.
+  caught host-side and never reach MXC. The agent receives a
+  `[SANDBOX MODE] You are running in a sandboxed environment …` fragment in
+  its system prompt so it self-restricts on top of the host-side guards.
 - `'mxc-only'`: host-side guards are suppressed at launch — `onPreToolUse` is
   not installed and the regular interactive `onPermissionRequest` is used
-  instead of `createPathAwareSandboxPermissionHandler`. MXC's AppContainer +
-  network firewall is the sole enforcer for shell tools. Path-bearing SDK
-  tools (view/edit/create/glob/grep) are **not** seen by MXC and become
+  instead of `createPathAwareSandboxPermissionHandler`. The
+  `[SANDBOX MODE]` system-prompt fragment is **also omitted**, so the agent
+  has no awareness that a sandbox exists — that's necessary to observe MXC's
+  own denials (an agent told it's sandboxed will avoid the very calls we
+  want MXC to deny). MXC's AppContainer + network firewall is the sole
+  enforcer for shell tools. Path-bearing SDK tools
+  (view/edit/create/glob/grep) are **not** seen by MXC and become
   unrestricted in this mode. Intended only for verifying MXC enforcement;
   see [`mxc-sandbox-flow.md`](./mxc-sandbox-flow.md#how-to-verify-mxc-is-actually-doing-the-enforcement).
 

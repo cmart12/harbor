@@ -67,15 +67,25 @@ is the sole enforcer for the shell tool.  This is **only** intended as a way
 to verify that MXC is doing the work — production personas should leave the
 default (`'both'`) on.
 
-| Mode | Read-only shell classifier | Path-policy `onPreToolUse` | Path-aware `onPermissionRequest` | Post-tool MXC denial detector | MXC AppContainer |
-|------|----|----|----|----|----|
-| `both` (default) | ✅ runs | ✅ runs | ✅ runs | ✅ runs | ✅ runs |
-| `mxc-only` | ❌ skipped | ❌ skipped | ❌ skipped (regular interactive handler) | ✅ runs | ✅ runs |
+| Mode | Read-only shell classifier | Path-policy `onPreToolUse` | Path-aware `onPermissionRequest` | `[SANDBOX MODE]` system prompt | Post-tool MXC denial detector | MXC AppContainer |
+|------|----|----|----|----|----|----|
+| `both` (default) | ✅ runs | ✅ runs | ✅ runs | ✅ appended | ✅ runs | ✅ runs |
+| `mxc-only` | ❌ skipped | ❌ skipped | ❌ skipped (regular interactive handler) | ❌ omitted | ✅ runs | ✅ runs |
 
 In both modes the on-/off-config dirs are still pre-materialized; the renderer
 bubble-up still fires; and MCP / `web_fetch` filtering is still tied to the
 existing `allowMcpServers` / `allowWebFetch` policy bits (independent of
 `enforcementMode`).
+
+In `mxc-only` the agent is **not** told it's running sandboxed — the
+`[SANDBOX MODE] You are running in a sandboxed environment …` system-prompt
+fragment that `'both'` mode appends is suppressed. This is deliberate: the
+whole point of `mxc-only` is to verify MXC's OS-level enforcement, and an
+agent that knows it's restricted can sidestep the verification by avoiding
+the very calls we want MXC to deny. See
+`SANDBOX_SYSTEM_PROMPT` / `SANDBOX_WORKSPACE_SYSTEM_PROMPT` in
+`src/main/agents/sandbox-policies.ts` and the gates in
+`src/main/agents/comment-workflow.ts` and `src/main/agents/sdk-runner.ts`.
 
 ### Per-layer denial logging
 

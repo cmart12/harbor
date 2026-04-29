@@ -105,7 +105,11 @@ If you make changes to the document, clearly describe what you changed.${cliTool
       onElicitationRequest: broker.createElicitationHandler(findRecord),
       systemMessage: {
         mode: 'append',
-        content: isSandboxed
+        // In mxc-only mode the host-side guards are deliberately suppressed so
+        // MXC is the sole enforcer; the agent must NOT be told it's sandboxed,
+        // otherwise we can't observe MXC's own denials. Only append the
+        // [SANDBOX MODE] fragment when host-side guards are also active.
+        content: isSandboxed && enforcementMode === 'both'
           ? `\n${systemPrompt}${SANDBOX_SYSTEM_PROMPT}`
           : `\n${systemPrompt}`,
       },
