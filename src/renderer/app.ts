@@ -3068,7 +3068,7 @@ async function createIntentFromSkill(skillId: string): Promise<void> {
   showStatus(`✓ Created intent from skill`);
   setTimeout(hideStatus, 2000);
   // Refresh and switch to Spaces
-  await refreshIntents();
+  await loadIntents();
   setFilter('open');
   openCanvas(result.id, true);
 }
@@ -3089,7 +3089,7 @@ async function launchSkillAsIntent(skillId: string): Promise<void> {
   }
   showStatus(`✓ Launched skill as new space`);
   setTimeout(hideStatus, 2000);
-  await refreshIntents();
+  await loadIntents();
   setFilter('open');
   // Close the skill editor canvas if open in a popout
   if (isCanvasMode) {
