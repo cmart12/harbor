@@ -3,6 +3,7 @@ import { InteractionBroker } from './interaction-broker';
 import type { AgentNotifier } from './agent-notifier';
 import type { AgentPersistence } from './agent-persistence';
 import type { AgentRecord } from './agent-registry';
+import { resolvePathPolicy } from './sandbox-policies';
 
 function makeNotifier(): AgentNotifier {
   return {
@@ -387,6 +388,126 @@ describe('InteractionBroker', () => {
       broker.approveAgent('agent-1', 'req-s1', true);
       const result = await promise;
       expect(result).toEqual({ kind: 'approve-once' });
+    });
+  });
+
+  describe('emitSandboxBlock + resolveSandboxBlock', () => {
+    it('resolves with the chosen decision', async () => {
+      const record = makeRecord();
+      const promise = broker.emitSandboxBlock(record, {
+        source: 'permission',
+        kind: 'write',
+        target: 'C:\\foo\\bar.txt',
+      });
+      const callArgs = (notifier.notifyRenderer as any).mock.calls.find((c: any[]) => c[0] === 'agent:sandbox-blocked');
+      expect(callArgs).toBeDefined();
+      const requestId = callArgs[1].requestId;
+
+      broker.resolveSandboxBlock('agent-1', requestId, 'allow-once');
+      const resolution = await promise;
+      expect(resolution).toEqual({ decision: 'allow-once' });
+    });
+
+    it('clears all pending sandbox-block callbacks on clearPendingInteractions', async () => {
+      const record = makeRecord();
+      const promise = broker.emitSandboxBlock(record, {
+        source: 'permission',
+        kind: 'read',
+        target: 'C:\\secret.txt',
+      });
+
+      broker.clearPendingInteractions(record);
+
+      const resolution = await promise;
+      // Pending callbacks are resolved as 'allow-once' on tear-down to avoid hanging the SDK.
+      expect(resolution).toEqual({ decision: 'allow-once' });
+    });
+
+    it('emits both agent:sandbox-blocked and a chat:event:* with type sandbox.blocked', async () => {
+      const record = makeRecord();
+      // Fire-and-forget: we don't need the resolution.
+      broker.emitSandboxBlock(record, {
+        source: 'pre-tool',
+        kind: 'write',
+        toolName: 'edit',
+        target: 'C:\\foo\\bar.txt',
+      });
+
+      const channels = (notifier.notifyRenderer as any).mock.calls.map((c: any[]) => c[0]);
+      expect(channels).toContain('agent:sandbox-blocked');
+      expect(channels).toContain('chat:event:agent-1');
+    });
+  });
+
+  describe('createPathAwareSandboxPermissionHandler', () => {
+    function makeSandboxedRecord(): AgentRecord {
+      const record = makeRecord();
+      record.sandbox = {
+        policy: resolvePathPolicy('C:\\workspace\\my-intent', {
+          scopeToIntentFolder: true,
+          extraReadwritePaths: [],
+          extraReadonlyPaths: [],
+          extraDeniedPaths: [],
+        }),
+        configs: { onDir: 'C:\\sb-on', offDir: 'C:\\sb-off' },
+        state: 'on',
+        allowMcpServers: false,
+        allowWebFetch: false,
+        allowList: { paths: new Set(), resources: new Set(), webFetch: false },
+      };
+      return record;
+    }
+
+    it('falls through to the normal handler when sandbox state is "off"', async () => {
+      const record = makeSandboxedRecord();
+      record.sandbox!.state = 'off';
+      const handler = broker.createPathAwareSandboxPermissionHandler((sid) => sid === 'session-1' ? record : undefined);
+      const promise = handler({ kind: 'read', toolCallId: 'tc' } as any, { sessionId: 'session-1' });
+      // Read should auto-approve in the fallback handler regardless.
+      const result = await promise;
+      expect(result).toEqual({ kind: 'approve-once' });
+    });
+
+    it('approves a read inside the intent folder', async () => {
+      const record = makeSandboxedRecord();
+      const handler = broker.createPathAwareSandboxPermissionHandler((sid) => sid === 'session-1' ? record : undefined);
+      const r = await handler({
+        kind: 'read',
+        toolCallId: 'tc',
+        path: 'C:\\workspace\\my-intent\\canvas.md',
+      } as any, { sessionId: 'session-1' });
+      expect(r).toEqual({ kind: 'approve-once' });
+    });
+
+    it('emits a sandbox block for a read outside the intent folder', async () => {
+      const record = makeSandboxedRecord();
+      const handler = broker.createPathAwareSandboxPermissionHandler((sid) => sid === 'session-1' ? record : undefined);
+      const promise = handler({
+        kind: 'read',
+        toolCallId: 'tc',
+        path: 'C:\\workspace\\sibling\\secret.txt',
+      } as any, { sessionId: 'session-1' });
+      // Find the requestId from the emitted block, then resolve it.
+      const call = (notifier.notifyRenderer as any).mock.calls.find((c: any[]) => c[0] === 'agent:sandbox-blocked');
+      expect(call).toBeDefined();
+      broker.resolveSandboxBlock('agent-1', call[1].requestId, 'allow-once');
+      const r = await promise;
+      expect(r).toEqual({ kind: 'approve-once' });
+    });
+
+    it('grows the host allow-list on allow-for-session', async () => {
+      const record = makeSandboxedRecord();
+      const handler = broker.createPathAwareSandboxPermissionHandler((sid) => sid === 'session-1' ? record : undefined);
+      const promise = handler({
+        kind: 'write',
+        toolCallId: 'tc',
+        fileName: 'C:\\workspace\\sibling\\out.txt',
+        intention: 'write log',
+      } as any, { sessionId: 'session-1' });
+      const call = (notifier.notifyRenderer as any).mock.calls.find((c: any[]) => c[0] === 'agent:sandbox-blocked');
+      broker.resolveSandboxBlock('agent-1', call[1].requestId, 'allow-for-session');
+      await promise;
+      expect(record.sandbox!.allowList.paths.size).toBeGreaterThan(0);
     });
   });
 });

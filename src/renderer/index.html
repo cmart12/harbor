@@ -133,80 +133,101 @@
           <button id="settings-close" class="header-icon-btn" title="Close (Esc)">✕</button>
         </header>
 
+        <div class="settings-tabs">
+          <button class="settings-tab-btn active" data-tab="general">General</button>
+          <button class="settings-tab-btn" data-tab="personas">Personas</button>
+        </div>
+
         <div class="settings-content">
-          <div class="settings-group">
-            <div class="settings-group-title">Appearance</div>
-            <div class="settings-row">
-              <label>Theme</label>
-              <div class="theme-toggle">
-                <button id="theme-light" class="theme-btn active" title="Light">☀️</button>
-                <button id="theme-dark" class="theme-btn" title="Dark">🌙</button>
+          <div class="settings-tab-panel active" data-tab="general">
+            <div class="settings-group">
+              <div class="settings-group-title">Appearance</div>
+              <div class="settings-row">
+                <label>Theme</label>
+                <div class="theme-toggle">
+                  <button id="theme-light" class="theme-btn active" title="Light">☀️</button>
+                  <button id="theme-dark" class="theme-btn" title="Dark">🌙</button>
+                </div>
               </div>
             </div>
-          </div>
 
-          <div class="settings-group">
-            <div class="settings-group-title">AI Model</div>
-            <div class="settings-row">
-              <select id="model-select">
-                <option value="">Loading models...</option>
-              </select>
-            </div>
-          </div>
-
-          <div class="settings-group">
-            <div class="settings-group-title">Workspace</div>
-            <div class="settings-row">
-              <div class="workspace-display">
-                <span id="workspace-path" class="workspace-path">Not set</span>
-                <button id="workspace-btn" class="workspace-btn">Change</button>
-                <button id="workspace-clear-btn" class="workspace-btn" title="Clear workspace (fresh start)">Clear</button>
+            <div class="settings-group">
+              <div class="settings-group-title">AI Model</div>
+              <div class="settings-row">
+                <select id="model-select">
+                  <option value="">Loading models...</option>
+                </select>
               </div>
             </div>
-            <div class="settings-hint">The working directory for Copilot CLI sessions.</div>
-          </div>
 
-          <div class="settings-group">
-            <div class="settings-group-title">Copilot CLI</div>
-            <div class="settings-row">
-              <div class="cli-path-display">
-                <input id="cli-path-input" class="cli-path-input" type="text" placeholder="Auto-detect" spellcheck="false" />
-                <button id="cli-path-clear" class="workspace-btn cli-path-clear hidden" title="Reset to auto-detect">✕</button>
+            <div class="settings-group">
+              <div class="settings-group-title">Workspace</div>
+              <div class="settings-row">
+                <div class="workspace-display">
+                  <span id="workspace-path" class="workspace-path">Not set</span>
+                  <button id="workspace-btn" class="workspace-btn">Change</button>
+                  <button id="workspace-clear-btn" class="workspace-btn" title="Clear workspace (fresh start)">Clear</button>
+                </div>
               </div>
+              <div class="settings-hint">The working directory for Copilot CLI sessions.</div>
             </div>
-            <div class="settings-hint">
-              Detected: <span id="cli-path-detected" class="cli-path-detected">—</span>
+
+            <div class="settings-group">
+              <div class="settings-group-title">Copilot CLI</div>
+              <div class="settings-row">
+                <div class="cli-path-display">
+                  <input id="cli-path-input" class="cli-path-input" type="text" placeholder="Auto-detect" spellcheck="false" />
+                  <button id="cli-path-clear" class="workspace-btn cli-path-clear hidden" title="Reset to auto-detect">✕</button>
+                </div>
+              </div>
+              <div class="settings-hint">
+                Detected: <span id="cli-path-detected" class="cli-path-detected">—</span>
+              </div>
+              <div class="settings-hint" id="cli-mxc-status">MXC sandbox: <span id="cli-mxc-indicator">checking…</span></div>
+              <div class="settings-hint">Path to the Copilot CLI executable. Leave empty to auto-detect.</div>
             </div>
-            <div class="settings-hint">Path to the Copilot CLI executable. Leave empty to auto-detect.</div>
+
+            <div class="settings-group">
+              <div class="settings-group-title">CLI Runtimes</div>
+              <div class="settings-hint">Register alternative CLI binaries for use with different personas.</div>
+              <div id="runtimes-list" class="personas-list"></div>
+              <button id="runtime-add-btn" class="persona-add-btn" type="button">+ Add Runtime</button>
+            </div>
+
+            <div class="settings-group">
+              <div class="settings-group-title">MCP Servers</div>
+              <div class="settings-hint">Model Context Protocol servers provide additional tools to agents.</div>
+              <div id="mcp-discovered-list" class="mcp-list"></div>
+              <div id="mcp-custom-list" class="mcp-list"></div>
+              <button id="mcp-add-btn" class="persona-add-btn" type="button">+ Add MCP Server</button>
+            </div>
+
+            <div class="settings-group">
+              <div class="settings-group-title">CLI Tools</div>
+              <div class="settings-hint">Define CLI tools available in the environment so agents know when to use them.</div>
+              <div id="cli-tools-list" class="cli-tools-list"></div>
+              <button id="cli-tool-add-btn" class="persona-add-btn" type="button">+ Add CLI Tool</button>
+            </div>
           </div>
 
-          <div class="settings-group">
-            <div class="settings-group-title">CLI Runtimes</div>
-            <div class="settings-hint">Register alternative CLI binaries for use with different personas.</div>
-            <div id="runtimes-list" class="personas-list"></div>
-            <button id="runtime-add-btn" class="persona-add-btn" type="button">+ Add Runtime</button>
-          </div>
+          <div class="settings-tab-panel" data-tab="personas">
+            <div class="settings-group">
+              <div class="settings-group-title">Default Sandbox Policy</div>
+              <div class="settings-hint">
+                Sandboxed personas inherit this policy by default. Each persona can override it.
+                Sandboxing requires Windows + the mxc-aware Copilot CLI build.
+              </div>
+              <div id="sandbox-default-form" class="sandbox-policy-form"></div>
+              <button id="sandbox-default-save-btn" class="persona-add-btn" type="button">Save default policy</button>
+              <div id="sandbox-default-status" class="settings-hint"></div>
+            </div>
 
-          <div class="settings-group">
-            <div class="settings-group-title">MCP Servers</div>
-            <div class="settings-hint">Model Context Protocol servers provide additional tools to agents.</div>
-            <div id="mcp-discovered-list" class="mcp-list"></div>
-            <div id="mcp-custom-list" class="mcp-list"></div>
-            <button id="mcp-add-btn" class="persona-add-btn" type="button">+ Add MCP Server</button>
-          </div>
-
-          <div class="settings-group">
-            <div class="settings-group-title">CLI Tools</div>
-            <div class="settings-hint">Define CLI tools available in the environment so agents know when to use them.</div>
-            <div id="cli-tools-list" class="cli-tools-list"></div>
-            <button id="cli-tool-add-btn" class="persona-add-btn" type="button">+ Add CLI Tool</button>
-          </div>
-
-          <div class="settings-group">
-            <div class="settings-group-title">Agent Personas</div>
-            <div class="settings-hint">Define personas you can @mention in documents and comments.</div>
-            <div id="personas-list" class="personas-list"></div>
-            <button id="persona-add-btn" class="persona-add-btn" type="button">+ Add Persona</button>
+            <div class="settings-group">
+              <div class="settings-group-title">Agent Personas</div>
+              <div class="settings-hint">Define personas you can @mention in documents and comments.</div>
+              <div id="personas-list" class="personas-list"></div>
+              <button id="persona-add-btn" class="persona-add-btn" type="button">+ Add Persona</button>
+            </div>
           </div>
         </div>
       </div>

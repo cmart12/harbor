@@ -4,43 +4,104 @@ import { CopilotClient, CopilotSession } from '@github/copilot-sdk';
 import { getConfigValue } from './config';
 import { resolveCopilotCliPath } from './session';
 import { RecurrenceResult, RecallMatch, Intent } from '../shared/types';
+import type { SandboxPolicy } from '../shared/ipc-contract';
 
 /**
- * Returns the path to a sandbox-specific config directory that enables
- * runtime-level sandboxing (mxc AppContainer isolation).
- * The config scopes filesystem access to the intent's working directory:
- * - readwritePaths: only the intent folder (cwd is added by runtime automatically)
- * - deniedPaths: the workspace root (prevents escaping to sibling intents)
- * Windows-only — returns undefined on other platforms.
+ * Per-agent sandbox config dirs that the SDK can pass to `createSession`/
+ * `resumeSession`.  We pre-materialize both `on` and `off` so the
+ * "Disable sandbox for session" bubble-up flow can `resumeSession` into the
+ * off-dir cleanly without rewriting files mid-flight.
  */
-export function getSandboxConfigDir(intentWorkingDir: string, workspaceRoot: string): string | undefined {
-  if (process.platform !== 'win32') return undefined;
-  const { app } = require('electron');
-  // Use a hash of the intent dir to create per-intent sandbox configs
-  const crypto = require('crypto');
-  const dirHash = crypto.createHash('md5').update(intentWorkingDir).digest('hex').slice(0, 8);
-  const dir = path.join(app.getPath('userData'), 'sandbox-config', dirHash);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+export interface SandboxConfigDirs {
+  onDir: string;
+  offDir: string;
+}
 
-  // Write sandbox config scoped to this intent's directory.
-  // The mxc AppContainer only grants read-write to explicitly listed paths + cwd,
-  // so we don't need deniedPaths — the agent simply won't have write access outside
-  // the intent folder. The workspace root is added as read-only so the agent can
-  // read sibling files but not modify them.
-  const sandboxConfig = {
+/**
+ * Build the runtime-format sandbox config object for a given policy and intent
+ * working directory. Mirrors the shape consumed by `copilot-agent-runtime`'s
+ * `UserSettings.sandbox` (see docs/mxc-sandbox-schema.md).
+ */
+function materializeRuntimeConfig(
+  enabled: boolean,
+  intentWorkingDir: string,
+  policy: SandboxPolicy,
+): Record<string, unknown> {
+  const readwritePaths: string[] = [];
+  if (policy.scopeToIntentFolder) readwritePaths.push(intentWorkingDir);
+  for (const p of policy.extraReadwritePaths) {
+    if (!readwritePaths.includes(p)) readwritePaths.push(p);
+  }
+
+  return {
     sandbox: {
-      enabled: true,
+      enabled,
       filesystem: {
-        readwritePaths: [intentWorkingDir],
-        readonlyPaths: [workspaceRoot],
+        readwritePaths,
+        readonlyPaths: [...policy.extraReadonlyPaths],
+        deniedPaths: [...policy.extraDeniedPaths],
+        clearPolicyOnExit: true,
+      },
+      network: {
+        allowOutbound: policy.allowOutbound,
+        allowLocalNetwork: policy.allowLocalNetwork,
       },
     },
   };
+}
 
-  const cfg = path.join(dir, 'config.json');
-  // Always rewrite to ensure paths are current
-  fs.writeFileSync(cfg, JSON.stringify(sandboxConfig, null, 2));
-  return dir;
+function getSandboxRoot(): string {
+  const { app } = require('electron');
+  return path.join(app.getPath('userData'), 'sandbox-config');
+}
+
+/**
+ * Materialize on/ and off/ sandbox config dirs for a single agent. Both dirs
+ * receive `config.json` files that the runtime reads as its `COPILOT_HOME`.
+ *
+ * Windows-only — returns null on other platforms (mxc is Windows-only today).
+ *
+ * Caller passes `policy` already resolved via `resolveSandboxPolicy(persona)`.
+ */
+export function buildSandboxConfigs(
+  agentId: string,
+  intentWorkingDir: string,
+  policy: SandboxPolicy,
+): SandboxConfigDirs | null {
+  if (process.platform !== 'win32') return null;
+
+  const root = getSandboxRoot();
+  const agentRoot = path.join(root, agentId);
+  const onDir = path.join(agentRoot, 'on');
+  const offDir = path.join(agentRoot, 'off');
+
+  fs.mkdirSync(onDir, { recursive: true });
+  fs.mkdirSync(offDir, { recursive: true });
+
+  fs.writeFileSync(
+    path.join(onDir, 'config.json'),
+    JSON.stringify(materializeRuntimeConfig(true, intentWorkingDir, policy), null, 2),
+  );
+  fs.writeFileSync(
+    path.join(offDir, 'config.json'),
+    JSON.stringify(materializeRuntimeConfig(false, intentWorkingDir, policy), null, 2),
+  );
+
+  return { onDir, offDir };
+}
+
+/**
+ * Remove the per-agent sandbox config directory (both on/ and off/). Safe to
+ * call on a directory that doesn't exist.
+ */
+export function cleanupSandboxConfigs(agentId: string): void {
+  if (!agentId) return;
+  const agentRoot = path.join(getSandboxRoot(), agentId);
+  try {
+    fs.rmSync(agentRoot, { recursive: true, force: true });
+  } catch (err) {
+    console.warn(`[ai] Failed to cleanup sandbox config for agent ${agentId}:`, err);
+  }
 }
 
 export interface ParsedIntent {

@@ -401,6 +401,85 @@ export async function sendChatMessage(
   }
 }
 
+/**
+ * Disable the sandbox for the rest of an agent's session.  Resumes the SDK
+ * session against the per-agent "off" configDir (whose `config.json` has
+ * `sandbox.enabled: false`), swaps `record.session`, re-installs listeners,
+ * and re-prompts the agent to retry its last operation.
+ *
+ * Idempotent: returns silently when the agent is unknown, already disabled,
+ * or non-sandboxed.
+ */
+export async function disableSandboxForSession(agentId: string): Promise<void> {
+  const record = registry.get(agentId);
+  if (!record || !record.sandbox) {
+    console.log(`[agent-service] disableSandboxForSession: no sandbox state for ${agentId}`);
+    return;
+  }
+  if (record.sandbox.state === 'off') {
+    console.log(`[agent-service] disableSandboxForSession: already off for ${agentId}`);
+    return;
+  }
+
+  const client = getCopilotClient();
+  if (!client) {
+    console.error('[agent-service] disableSandboxForSession: no Copilot client');
+    return;
+  }
+
+  // Drain any pending approval / interactive callbacks for this agent so the
+  // resume below doesn't race against an old wait. clearPendingInteractions
+  // already resolves them as deny / cancel / allow-once where appropriate.
+  broker.clearPendingInteractions(record);
+
+  try {
+    const mcpServers = getAllMcpServers();
+    const findRecord = (sid: string) => registry.findBySessionId(sid);
+    const offDir = record.sandbox.configs.offDir;
+
+    // Resume the same session id against the off-dir; the runtime will reload
+    // its sandbox config (enabled=false) when it sees the new configDir.
+    const newSession = await client.resumeSession(record.sessionId, {
+      configDir: offDir,
+      workingDirectory: (await import('../config')).getConfig().workspace ?? undefined,
+      mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
+      tools: getCustomTools(),
+      onPermissionRequest: broker.createPermissionHandler(findRecord),
+      onUserInputRequest: broker.createUserInputHandler(findRecord),
+      onElicitationRequest: broker.createElicitationHandler(findRecord),
+    });
+
+    record.session = newSession;
+    record.sandbox.state = 'off';
+    record.status = 'running';
+    persistence.updateStatus(record);
+
+    setupAgentEventListeners(newSession, record);
+
+    notifier.notifyRenderer(`chat:event:${agentId}`, {
+      type: 'sandbox.disabled',
+      reason: 'user-requested',
+    });
+    notifier.notifyRenderer('agent:status-changed', {
+      agentId, status: 'running', summary: 'Sandbox disabled',
+    });
+
+    // Re-prompt the agent.  We use sendChatMessage so the existing pre-existing
+    // record reactivation path runs.
+    await newSession.send({
+      prompt: 'Sandbox is now disabled. Please retry the operation that was just blocked.',
+    });
+
+    console.log(`[agent-service] Disabled sandbox for agent ${agentId}`);
+  } catch (err: any) {
+    console.error('[agent-service] disableSandboxForSession failed:', err);
+    notifier.notifyRenderer(`chat:event:${agentId}`, {
+      type: 'session.error',
+      message: `Failed to disable sandbox: ${err?.message ?? 'unknown error'}`,
+    });
+  }
+}
+
 /** Attempt to resume a historical agent by restoring its SDK session.
  *  Returns 'resumed' if the original session was restored, 'restarted' if a
  *  new session was created because the original expired, or false on failure. */
@@ -715,6 +794,12 @@ export function setupAgentEventListeners(session: CopilotSession, record: AgentR
       // Clean up sub-agent state
       subagentTracker.clearParent(agentId);
 
+      // Clean up per-agent sandbox config dirs (if any)
+      if (record.sandbox) {
+        const { cleanupSandboxConfigs } = require('../ai');
+        cleanupSandboxConfigs(agentId);
+      }
+
       // Handle comment agent auto-reply + presence cleanup
       if (record.commentContext) {
         // Dynamically import to avoid circular dependency
@@ -741,6 +826,12 @@ export function setupAgentEventListeners(session: CopilotSession, record: AgentR
     // Clean up presence on failure too
     if (record.commentContext) {
       notifier.notifyRenderer('agent:presence-ended', { agentId, intentId: record.intentId });
+    }
+
+    // Clean up per-agent sandbox config dirs on failure
+    if (record.sandbox) {
+      const { cleanupSandboxConfigs } = require('../ai');
+      cleanupSandboxConfigs(agentId);
     }
   });
 

@@ -4,6 +4,11 @@ import * as crypto from 'crypto';
 import type { AgentNotifier } from './agent-notifier';
 import type { AgentPersistence } from './agent-persistence';
 import type { AgentRecord } from './agent-registry';
+import {
+  checkPathScope,
+  normalizePath,
+  type ResolvedPathPolicy,
+} from './sandbox-policies';
 
 // UserInputRequest/UserInputResponse are not re-exported from the SDK index,
 // so we define compatible interfaces here.
@@ -18,15 +23,102 @@ interface UserInputResponse {
   wasFreeform: boolean;
 }
 
+/** Source of a sandbox block emitted to the renderer. */
+export type SandboxBlockSource = 'permission' | 'pre-tool' | 'post-tool-shell';
+
+/**
+ * Detail of a sandbox block emitted to the renderer. Persona-launch wiring
+ * uses this to render the bubble-up prompt.
+ */
+export interface SandboxBlockRequest {
+  requestId: string;
+  agentId: string;
+  source: SandboxBlockSource;
+  /** Conceptual kind of resource being denied. */
+  kind: 'read' | 'write' | 'shell' | 'mcp' | 'url' | 'web-fetch';
+  /** Tool name when the block originates from onPreToolUse / onPostToolUse. */
+  toolName?: string;
+  /** The path / command / url / server name that was out of policy. */
+  target: string;
+  /** Human-readable description from the SDK / runtime, when available. */
+  intention?: string;
+  /** Subset of decisions to offer.  When omitted, all three are shown. */
+  allowedDecisions?: SandboxResolutionDecision[];
+}
+
+export type SandboxResolutionDecision = 'allow-once' | 'allow-for-session' | 'disable';
+
+export interface SandboxResolution {
+  decision: SandboxResolutionDecision;
+}
+
 export class InteractionBroker {
   private approvalCallbacks = new Map<string, (approved: boolean) => void>();
   private userInputCallbacks = new Map<string, (response: UserInputResponse) => void>();
   private elicitationCallbacks = new Map<string, (result: ElicitationResult) => void>();
+  /** Pending sandbox-block resolutions, keyed by requestId. */
+  private sandboxBlockCallbacks = new Map<string, (resolution: SandboxResolution) => void>();
 
   constructor(
     private notifier: AgentNotifier,
     private persistence: AgentPersistence,
   ) {}
+
+  /**
+   * Emit a sandbox block to the renderer and await user resolution.
+   * Used by the path-aware permission handler and pre-tool path hook to ask
+   * the user whether to allow once, allow for session, or disable sandbox
+   * altogether.
+   */
+  emitSandboxBlock(record: AgentRecord, req: Omit<SandboxBlockRequest, 'agentId' | 'requestId'> & { requestId?: string }): Promise<SandboxResolution> {
+    const requestId = req.requestId ?? crypto.randomUUID();
+    const payload: SandboxBlockRequest = {
+      ...req,
+      requestId,
+      agentId: record.agentId,
+    };
+    record.status = 'waiting-approval';
+    this.persistence.updateStatus(record);
+
+    this.notifier.notifyRenderer('agent:sandbox-blocked', payload);
+    this.notifier.notifyRenderer(`chat:event:${record.agentId}`, {
+      type: 'sandbox.blocked',
+      ...payload,
+    });
+    this.notifier.showApprovalNotification({
+      agentId: record.agentId,
+      requestId,
+      permissionKind: `sandbox: ${req.kind}`,
+      intention: req.intention,
+      path: req.target,
+    });
+
+    return new Promise<SandboxResolution>((resolve) => {
+      this.sandboxBlockCallbacks.set(requestId, (resolution) => {
+        if (record.status === 'waiting-approval') {
+          record.status = 'running';
+          this.persistence.updateStatus(record);
+        }
+        resolve(resolution);
+      });
+    });
+  }
+
+  /** Renderer-driven response to a sandbox block. */
+  resolveSandboxBlock(_agentId: string, requestId: string, decision: SandboxResolutionDecision): void {
+    const cb = this.sandboxBlockCallbacks.get(requestId);
+    if (cb) {
+      this.sandboxBlockCallbacks.delete(requestId);
+      cb({ decision });
+    } else {
+      console.warn(`[InteractionBroker] No sandbox-block callback for requestId=${requestId}`);
+    }
+    this.notifier.notifyRenderer(`chat:event:${_agentId}`, {
+      type: 'sandbox.resolved',
+      requestId,
+      decision,
+    });
+  }
 
   /**
    * Permission handler for sandboxed agents.
@@ -41,6 +133,166 @@ export class InteractionBroker {
       // For shell, mcp, url, and other kinds, fall through to normal handler
       return this.createPermissionHandler(findRecord)(request, invocation);
     };
+  }
+
+  /**
+   * Path-aware permission handler for sandboxed personas.
+   *
+   * For `read` and `write`: auto-approves when target is in the resolved policy
+   * scope (or in the per-agent host allow list). When out of scope, emits a
+   * sandbox-block to the renderer and awaits user decision (allow-once /
+   * allow-for-session / disable).
+   *
+   * For `mcp`: auto-rejects when policy disallows MCP, unless the server has
+   * been added to the per-agent host allow list.
+   *
+   * For `url`: bubbles up. (host-side URL allow list is a future extension.)
+   *
+   * For `shell` and other kinds: falls through to the normal interactive handler.
+   *
+   * NOTE: When `disableSandboxForSession` runs, the agent's
+   * `record.sandbox.state` flips to `'off'` and this handler treats subsequent
+   * requests as if they were unsandboxed — falling through to the regular
+   * interactive handler.
+   */
+  createPathAwareSandboxPermissionHandler(findRecord: (sessionId: string) => AgentRecord | undefined) {
+    return async (request: PermissionRequest, invocation: { sessionId: string }) => {
+      const record = findRecord(invocation.sessionId);
+      if (!record) return { kind: 'reject' as const };
+
+      // If sandbox has been disabled mid-session, behave like the normal handler.
+      if (!record.sandbox || record.sandbox.state === 'off') {
+        return this.createPermissionHandler(findRecord)(request, invocation);
+      }
+
+      const policy = record.sandbox.policy;
+      const allowList = record.sandbox.allowList;
+      const req = request as unknown as Record<string, unknown>;
+
+      if (request.kind === 'read') {
+        const targetPath = typeof req.path === 'string' ? req.path : '';
+        if (!targetPath) return { kind: 'approve-once' as const };
+        const norm = normalizePath(targetPath);
+        if (allowList.paths.has(norm)) return { kind: 'approve-once' as const };
+        const r = checkPathScope(targetPath, policy, false);
+        if (r.decision === 'allow-rw' || r.decision === 'allow-ro') {
+          return { kind: 'approve-once' as const };
+        }
+        return this.handleSandboxBlockForPermission(record, request, {
+          source: 'permission',
+          kind: 'read',
+          target: targetPath,
+          intention: typeof req.intention === 'string' ? req.intention : undefined,
+        });
+      }
+
+      if (request.kind === 'write') {
+        const targetPath = typeof req.fileName === 'string' ? req.fileName
+          : typeof req.path === 'string' ? req.path : '';
+        if (!targetPath) {
+          // No path info → require interactive approval to be safe.
+          return this.createPermissionHandler(findRecord)(request, invocation);
+        }
+        const norm = normalizePath(targetPath);
+        if (allowList.paths.has(norm)) return { kind: 'approve-once' as const };
+        const r = checkPathScope(targetPath, policy, true);
+        if (r.decision === 'allow-rw') return { kind: 'approve-once' as const };
+        return this.handleSandboxBlockForPermission(record, request, {
+          source: 'permission',
+          kind: 'write',
+          target: targetPath,
+          intention: typeof req.intention === 'string' ? req.intention : undefined,
+        });
+      }
+
+      if (request.kind === 'mcp' && !record.sandbox.allowMcpServers) {
+        const serverName = typeof req.serverName === 'string' ? req.serverName : '';
+        if (serverName && allowList.resources.has(`mcp:${serverName}`)) {
+          return { kind: 'approve-once' as const };
+        }
+        return this.handleSandboxBlockForPermission(record, request, {
+          source: 'permission',
+          kind: 'mcp',
+          target: serverName || '<unknown mcp>',
+          intention: typeof req.intention === 'string' ? req.intention : undefined,
+        });
+      }
+
+      if (request.kind === 'url') {
+        const url = typeof req.url === 'string' ? req.url : '';
+        if (url && allowList.resources.has(`url:${url}`)) {
+          return { kind: 'approve-once' as const };
+        }
+        return this.handleSandboxBlockForPermission(record, request, {
+          source: 'permission',
+          kind: 'url',
+          target: url || '<unknown url>',
+          intention: typeof req.intention === 'string' ? req.intention : undefined,
+        });
+      }
+
+      // shell + other kinds: fall through (mxc enforces shell at the OS level;
+      // user gets standard approval prompt for anything else).
+      return this.createPermissionHandler(findRecord)(request, invocation);
+    };
+  }
+
+  /**
+   * Render a sandbox block, await the user's decision, and translate it into
+   * an SDK PermissionRequestResult. Side-effects: when the decision is
+   * 'allow-for-session', the target is added to the agent's allow list. When
+   * 'disable', the caller (sdk-runner) handles the session swap; we just
+   * approve the call so the runtime keeps moving while resume is in flight.
+   */
+  private async handleSandboxBlockForPermission(
+    record: AgentRecord,
+    request: PermissionRequest,
+    block: Omit<SandboxBlockRequest, 'agentId' | 'requestId'>,
+  ): Promise<{ kind: 'approve-once' } | { kind: 'reject' }> {
+    // For shell kinds, hide allow-for-session — mxc would still enforce.
+    const allowedDecisions: SandboxResolutionDecision[] = block.kind === 'shell'
+      ? ['allow-once', 'disable']
+      : ['allow-once', 'allow-for-session', 'disable'];
+
+    const resolution = await this.emitSandboxBlock(record, {
+      ...block,
+      allowedDecisions,
+    });
+
+    if (resolution.decision === 'allow-once') {
+      return { kind: 'approve-once' };
+    }
+
+    if (resolution.decision === 'allow-for-session' && record.sandbox) {
+      const target = block.target;
+      switch (block.kind) {
+        case 'read':
+        case 'write':
+          record.sandbox.allowList.paths.add(normalizePath(target));
+          break;
+        case 'mcp':
+          record.sandbox.allowList.resources.add(`mcp:${target}`);
+          break;
+        case 'url':
+          record.sandbox.allowList.resources.add(`url:${target}`);
+          break;
+        case 'web-fetch':
+          record.sandbox.allowList.webFetch = true;
+          break;
+        // shell never reaches here (allowed-for-session not offered)
+      }
+      return { kind: 'approve-once' };
+    }
+
+    if (resolution.decision === 'disable') {
+      // Caller (sdk-runner) listens for the resolution and orchestrates the
+      // session swap. We approve this single call so the runtime can return,
+      // since the resume flow will replace the session afterwards.
+      return { kind: 'approve-once' };
+    }
+
+    void request; // currently unused beyond block payload but kept for symmetry
+    return { kind: 'reject' };
   }
 
   /**
@@ -253,6 +505,13 @@ export class InteractionBroker {
     for (const [requestId, cb] of this.elicitationCallbacks.entries()) {
       cb({ action: 'cancel' });
       this.elicitationCallbacks.delete(requestId);
+    }
+
+    // Cancel any pending sandbox-block callbacks (resolve as 'allow-once' so
+    // the SDK doesn't hang; the agent itself is being torn down anyway).
+    for (const [requestId, cb] of this.sandboxBlockCallbacks.entries()) {
+      cb({ decision: 'allow-once' });
+      this.sandboxBlockCallbacks.delete(requestId);
     }
   }
 }

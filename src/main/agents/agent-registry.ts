@@ -1,7 +1,37 @@
 import type { CopilotSession } from '@github/copilot-sdk';
 import type { AgentAnchor } from '../../shared/types';
+import type { ResolvedPathPolicy } from './sandbox-policies';
+import type { SandboxConfigDirs } from '../ai';
 
 export type AgentStatus = 'running' | 'waiting-approval' | 'completed' | 'failed';
+
+/**
+ * Per-agent sandbox state.  Lives only in memory while the agent runs.
+ * Cleared on agent completion.
+ */
+export interface SandboxRuntimeState {
+  /** Resolved path policy (intent folder + extras, normalized). */
+  policy: ResolvedPathPolicy;
+  /** On/off configDirs materialized for this agent at launch. */
+  configs: SandboxConfigDirs;
+  /** Whether the agent currently runs sandboxed ('on') or has been disabled ('off'). */
+  state: 'on' | 'off';
+  /** Whether MCP is allowed for this agent (policy.allowMcpServers). */
+  allowMcpServers: boolean;
+  /** Whether web_fetch is allowed for this agent (policy.allowWebFetch). */
+  allowWebFetch: boolean;
+  /** Per-agent host allow list — populated by user "Allow for session" decisions. */
+  allowList: SandboxAllowList;
+}
+
+export interface SandboxAllowList {
+  /** Normalized paths the user has approved for the rest of the session. */
+  paths: Set<string>;
+  /** Tool-specific allow-once for non-path resources (e.g. mcp servers, urls). */
+  resources: Set<string>;
+  /** True when web_fetch was approved for the session. */
+  webFetch: boolean;
+}
 
 export interface CommentAgentContext {
   threadIndex: number;
@@ -29,6 +59,8 @@ export interface AgentRecord {
   commentContext?: CommentAgentContext;
   /** True when session was recreated after the original SDK session expired. */
   restarted?: boolean;
+  /** Sandbox runtime state — present iff the agent was launched as sandboxed. */
+  sandbox?: SandboxRuntimeState;
 }
 
 export class AgentRegistry {

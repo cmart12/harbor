@@ -2,8 +2,8 @@ import { v4 as uuid } from 'uuid';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as crypto from 'crypto';
-import { getCopilotClient, getSandboxConfigDir } from '../ai';
-import { type AgentPersona } from '../config';
+import { getCopilotClient, buildSandboxConfigs } from '../ai';
+import { type AgentPersona, resolveSandboxPolicy } from '../config';
 import { getAllMcpServers } from '../mcp';
 import { updateCanvasContent } from '../database';
 import { AgentRegistry } from './agent-registry';
@@ -13,7 +13,13 @@ import { AgentPersistence } from './agent-persistence';
 import { InteractionBroker } from './interaction-broker';
 import { buildCliToolsPrompt } from './sdk-runner';
 import { getCustomTools } from '../tools';
-import { IS_WINDOWS, createSandboxPreToolHook, SANDBOX_SYSTEM_PROMPT } from './sandbox-policies';
+import {
+  IS_WINDOWS,
+  SANDBOX_SYSTEM_PROMPT,
+  resolvePathPolicy,
+  createSandboxPathPolicyHook,
+  createSandboxShellDenialHook,
+} from './sandbox-policies';
 
 /** Shared dependencies injected from agent-service at init time. */
 let registry: AgentRegistry;
@@ -66,12 +72,37 @@ export async function launchCommentAgent(
   } catch { /* file may not exist yet */ }
 
   try {
-    const mcpServers = getAllMcpServers();
+    const allMcpServers = getAllMcpServers();
     const cliToolsPrompt = buildCliToolsPrompt();
     const findRecord = (sid: string) => registry.findBySessionId(sid);
 
     const isSandboxed = persona.sandboxed === true && IS_WINDOWS;
-    const sandboxConfigDir = isSandboxed ? getSandboxConfigDir(workingDir, workspaceRoot) : undefined;
+
+    // Resolve the persona's effective sandbox policy (override or default).
+    const policy = isSandboxed ? resolveSandboxPolicy(persona) : null;
+    const sandboxConfigs = isSandboxed ? buildSandboxConfigs(agentId, workingDir, policy!) : null;
+
+    // Filter tool surface for sandboxed personas:
+    //  - mcpServers: drop entirely if policy disallows MCP
+    //  - custom tools: drop web_fetch if policy disallows it
+    const mcpServers = isSandboxed && !policy!.allowMcpServers ? {} : allMcpServers;
+    const allCustomTools = getCustomTools();
+    const customTools = isSandboxed && !policy!.allowWebFetch
+      ? allCustomTools.filter((t: any) => t?.name !== 'web_fetch' && t?.name !== 'web-fetch')
+      : allCustomTools;
+
+    // Build the sandbox runtime state to attach to the agent record so the
+    // bubble-up handler can consult per-agent allow lists.
+    const sandboxState = isSandboxed
+      ? {
+          policy: resolvePathPolicy(workingDir, policy!),
+          configs: sandboxConfigs!,
+          state: 'on' as const,
+          allowMcpServers: policy!.allowMcpServers,
+          allowWebFetch: policy!.allowWebFetch,
+          allowList: { paths: new Set<string>(), resources: new Set<string>(), webFetch: false },
+        }
+      : undefined;
 
     const systemPrompt = `${persona.instructions}
 
@@ -83,15 +114,69 @@ On this text: "${quotedText}"
 The full canvas document is available as canvas.md in the working directory.
 If you make changes to the document, clearly describe what you changed.${cliToolsPrompt}`;
 
+    // Build hooks for sandboxed personas.
+    let hooks: Record<string, unknown> | undefined;
+    if (isSandboxed && sandboxState) {
+      const onBlock = async (info: { toolName: string; kind: 'read' | 'write' | 'web-fetch' | 'shell'; target: string; requiresWrite: boolean }) => {
+        const livingRecord = registry.get(agentId);
+        if (!livingRecord) return { permissionDecision: 'deny' as const };
+        const resolution = await broker.emitSandboxBlock(livingRecord, {
+          source: 'pre-tool',
+          kind: info.kind,
+          toolName: info.toolName,
+          target: info.target,
+          allowedDecisions: info.kind === 'shell' ? ['allow-once', 'disable'] : ['allow-once', 'allow-for-session', 'disable'],
+        });
+        if (resolution.decision === 'allow-once' || resolution.decision === 'disable') {
+          return { permissionDecision: 'allow' as const };
+        }
+        if (resolution.decision === 'allow-for-session' && livingRecord.sandbox) {
+          if (info.kind === 'web-fetch') {
+            livingRecord.sandbox.allowList.webFetch = true;
+          } else {
+            const { normalizePath } = await import('./sandbox-policies');
+            livingRecord.sandbox.allowList.paths.add(normalizePath(info.target));
+          }
+          return { permissionDecision: 'allow' as const };
+        }
+        return { permissionDecision: 'deny' as const };
+      };
+
+      hooks = {
+        onPreToolUse: createSandboxPathPolicyHook({
+          policy: sandboxState.policy,
+          allowWebFetch: policy!.allowWebFetch,
+          isDisabled: () => registry.get(agentId)?.sandbox?.state === 'off',
+          allowList: () => registry.get(agentId)?.sandbox?.allowList ?? sandboxState.allowList,
+          onBlock,
+        }),
+        onPostToolUse: createSandboxShellDenialHook({
+          isDisabled: () => registry.get(agentId)?.sandbox?.state === 'off',
+          onBlock: async (info) => {
+            const livingRecord = registry.get(agentId);
+            if (!livingRecord) return;
+            await broker.emitSandboxBlock(livingRecord, {
+              source: 'post-tool-shell',
+              kind: 'shell',
+              toolName: info.toolName,
+              target: info.target,
+              intention: `Possible MXC denial detected: "${info.matchedPattern}"`,
+              allowedDecisions: ['allow-once', 'disable'],
+            });
+          },
+        }),
+      };
+    }
+
     const session = await client.createSession({
       workingDirectory: workingDir,
-      ...(sandboxConfigDir ? { configDir: sandboxConfigDir } : {}),
+      ...(sandboxConfigs ? { configDir: sandboxConfigs.onDir } : {}),
       mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
-      tools: getCustomTools(),
+      tools: customTools,
       ...(persona.model ? { model: persona.model } : {}),
-      ...(isSandboxed ? { hooks: { onPreToolUse: createSandboxPreToolHook() } } : {}),
+      ...(hooks ? { hooks } : {}),
       onPermissionRequest: isSandboxed
-        ? broker.createSandboxedPermissionHandler(findRecord)
+        ? broker.createPathAwareSandboxPermissionHandler(findRecord)
         : broker.createPermissionHandler(findRecord),
       onUserInputRequest: broker.createUserInputHandler(findRecord),
       onElicitationRequest: broker.createElicitationHandler(findRecord),
@@ -118,6 +203,7 @@ If you make changes to the document, clearly describe what you changed.${cliTool
       pendingPermissionKind: null,
       pendingApprovals: new Map(),
       summary: 'Starting...',
+      ...(sandboxState ? { sandbox: sandboxState } : {}),
       commentContext: {
         threadIndex,
         personaHandle: persona.handle,

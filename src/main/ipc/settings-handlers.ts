@@ -1,10 +1,10 @@
 import { ipcMain } from 'electron';
 import * as fs from 'fs';
 import { setAIModel, listAvailableModels, reinitCopilot } from '../ai';
-import { resolveCopilotCliPath, invalidateCliPath, checkCliCompatibility, resolveCommandOnPath, resolveCmdToJs } from '../session';
+import { resolveCopilotCliPath, invalidateCliPath, checkCliCompatibility, resolveCommandOnPath, resolveCmdToJs, isCliMxcCapable } from '../session';
 import { getConfigValue, setConfigValue, getConfig, type AgentPersona, type CliRuntime } from '../config';
 import { listDiscoveredMcpServers } from '../mcp';
-import { validateMcpServers, validateCliTools } from '../validators';
+import { validateMcpServers, validateCliTools, validateSandboxPolicy } from '../validators';
 
 const HANDLE_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;
 
@@ -50,6 +50,10 @@ export function registerSettingsHandlers(): void {
     return checkCliCompatibility();
   });
 
+  ipcMain.handle('cli:check-mxc-capable', () => {
+    return { mxcCapable: isCliMxcCapable() };
+  });
+
   ipcMain.handle('models:list', async () => {
     return listAvailableModels();
   });
@@ -91,6 +95,12 @@ export function registerSettingsHandlers(): void {
         ...(raw.sandboxed === true ? { sandboxed: true } : {}),
         ...(emoji ? { emoji } : {}),
         ...(cliRuntime ? { cliRuntime } : {}),
+        ...(raw.sandboxed === true && raw.sandboxPolicyOverride !== undefined
+          ? (() => {
+              const override = validateSandboxPolicy(raw.sandboxPolicyOverride);
+              return override ? { sandboxPolicyOverride: override } : {};
+            })()
+          : {}),
       });
     }
 
@@ -161,5 +171,17 @@ export function registerSettingsHandlers(): void {
     if ('error' in result) return result;
     setConfigValue('cliTools', result);
     return { ok: true };
+  });
+
+  // ── Sandbox default policy ───────────────────────────────
+  ipcMain.handle('sandbox:get-default', () => {
+    return getConfigValue('sandboxDefaultPolicy');
+  });
+
+  ipcMain.handle('sandbox:save-default', (_event, policy: unknown) => {
+    const validated = validateSandboxPolicy(policy);
+    if (!validated) return { error: 'invalid payload' };
+    setConfigValue('sandboxDefaultPolicy', validated);
+    return { ok: true, policy: validated };
   });
 }

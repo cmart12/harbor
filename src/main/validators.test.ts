@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { validateMcpServers, validateCliTools } from './validators';
+import { validateMcpServers, validateCliTools, validateSandboxPolicy } from './validators';
+import { DEFAULT_SANDBOX_POLICY } from '../shared/ipc-contract';
 
 // These are pure validation functions — no Electron mocking needed
 
@@ -158,5 +159,67 @@ describe('validateCliTools', () => {
   it('skips non-object entries', () => {
     const result = validateCliTools([null, 'string', { name: 'ok', description: 'valid' }]);
     expect(result).toHaveLength(1);
+  });
+});
+
+describe('validateSandboxPolicy', () => {
+  it('returns null for non-object input', () => {
+    expect(validateSandboxPolicy(null)).toBeNull();
+    expect(validateSandboxPolicy('not a policy')).toBeNull();
+    expect(validateSandboxPolicy(42)).toBeNull();
+    expect(validateSandboxPolicy(undefined)).toBeNull();
+  });
+
+  it('fills in defaults for an empty object', () => {
+    expect(validateSandboxPolicy({})).toEqual(DEFAULT_SANDBOX_POLICY);
+  });
+
+  it('preserves valid boolean fields', () => {
+    const result = validateSandboxPolicy({
+      scopeToIntentFolder: false,
+      allowOutbound: true,
+      allowMcpServers: true,
+      allowWebFetch: true,
+      allowLocalNetwork: true,
+    });
+    expect(result).toEqual({
+      ...DEFAULT_SANDBOX_POLICY,
+      scopeToIntentFolder: false,
+      allowOutbound: true,
+      allowMcpServers: true,
+      allowWebFetch: true,
+      allowLocalNetwork: true,
+    });
+  });
+
+  it('falls back to defaults for non-boolean fields', () => {
+    const result = validateSandboxPolicy({
+      scopeToIntentFolder: 'yes' as any,
+      allowOutbound: 1 as any,
+    });
+    expect(result?.scopeToIntentFolder).toBe(DEFAULT_SANDBOX_POLICY.scopeToIntentFolder);
+    expect(result?.allowOutbound).toBe(DEFAULT_SANDBOX_POLICY.allowOutbound);
+  });
+
+  it('sanitizes path arrays: trims, drops empties, deduplicates', () => {
+    const result = validateSandboxPolicy({
+      extraReadwritePaths: ['  C:\\foo  ', 'C:\\foo', '', 'C:\\bar'],
+      extraReadonlyPaths: [123 as any, 'C:\\baz'],
+      extraDeniedPaths: ['C:\\Windows'],
+    });
+    expect(result?.extraReadwritePaths).toEqual(['C:\\foo', 'C:\\bar']);
+    expect(result?.extraReadonlyPaths).toEqual(['C:\\baz']);
+    expect(result?.extraDeniedPaths).toEqual(['C:\\Windows']);
+  });
+
+  it('caps path array length to prevent unbounded persistence', () => {
+    const huge = Array.from({ length: 200 }, (_, i) => `C:\\path${i}`);
+    const result = validateSandboxPolicy({ extraReadwritePaths: huge });
+    expect(result?.extraReadwritePaths.length).toBeLessThanOrEqual(64);
+  });
+
+  it('returns empty array when path field is not an array', () => {
+    const result = validateSandboxPolicy({ extraReadwritePaths: 'not an array' });
+    expect(result?.extraReadwritePaths).toEqual([]);
   });
 });

@@ -5,6 +5,7 @@ import type {
   AgentPersona,
   CliToolDefinition,
   CustomMcpServer,
+  SandboxPolicy,
 } from '../shared/ipc-contract';
 import type { ChatEvent } from '../shared/chat-types';
 import type { AgentAnchor, RecurrenceResult, RecallMatch, Skill, SkillContent, CanvasTarget } from '../shared/types';
@@ -48,6 +49,7 @@ export interface IntentAPI {
   // ── CLI / Models ─────────────────────────────────────────
   resolveCliPath(): Promise<IpcCommandResult<'cli:resolve-path'>>;
   checkCliVersion(): Promise<IpcCommandResult<'cli:check-version'>>;
+  checkCliMxcCapable(): Promise<IpcCommandResult<'cli:check-mxc-capable'>>;
   listModels(): Promise<IpcCommandResult<'models:list'>>;
 
   // ── Personas ─────────────────────────────────────────────
@@ -66,6 +68,9 @@ export interface IntentAPI {
   // ── CLI tools ────────────────────────────────────────────
   listCliTools(): Promise<IpcCommandResult<'cli-tools:list'>>;
   saveCliTools(tools: CliToolDefinition[]): Promise<IpcCommandResult<'cli-tools:save'>>;
+  // ── Sandbox default policy ───────────────────────────────
+  getSandboxDefaultPolicy(): Promise<IpcCommandResult<'sandbox:get-default'>>;
+  saveSandboxDefaultPolicy(policy: SandboxPolicy): Promise<IpcCommandResult<'sandbox:save-default'>>;
 
   // ── Sessions ─────────────────────────────────────────────
   launchSession(intentId: string): Promise<IpcCommandResult<'session:launch'>>;
@@ -96,6 +101,7 @@ export interface IntentAPI {
   approveAgent(agentId: string, requestId: string, approved: boolean): Promise<IpcCommandResult<'agent:approve'>>;
   respondToUserInput(agentId: string, requestId: string, answer: string, wasFreeform: boolean): Promise<IpcCommandResult<'agent:respond-user-input'>>;
   respondToElicitation(agentId: string, requestId: string, action: 'accept' | 'decline' | 'cancel', content?: Record<string, unknown>): Promise<IpcCommandResult<'agent:respond-elicitation'>>;
+  resolveSandboxBlock(agentId: string, requestId: string, decision: 'allow-once' | 'allow-for-session' | 'disable'): Promise<IpcCommandResult<'agent:resolve-sandbox'>>;
   abortAgent(agentId: string): Promise<IpcCommandResult<'agent:abort'>>;
   openAgentCli(agentId: string): Promise<IpcCommandResult<'agent:open-cli'>>;
   quickLaunchAgent(prompt: string): Promise<IpcCommandResult<'agent:quick-launch'>>;
@@ -145,6 +151,7 @@ export interface IntentAPI {
   // ── Agent events ─────────────────────────────────────────
   onAgentStatusChanged(callback: (data: IpcEventPayload<'agent:status-changed'>) => void): void;
   onAgentApprovalNeeded(callback: (data: IpcEventPayload<'agent:approval-needed'>) => void): void;
+  onAgentSandboxBlocked(callback: (data: IpcEventPayload<'agent:sandbox-blocked'>) => void): void;
   onAgentCompleted(callback: (data: IpcEventPayload<'agent:completed'>) => void): void;
   onNotificationApprovalClicked(callback: (data: IpcEventPayload<'notification:approval-clicked'>) => void): void;
   onAgentPresenceStarted(callback: (data: IpcEventPayload<'agent:presence-started'>) => void): void;
@@ -204,6 +211,7 @@ const api: IntentAPI = {
   // ── CLI / Models ─────────────────────────────────────────
   resolveCliPath: () => ipcRenderer.invoke('cli:resolve-path'),
   checkCliVersion: () => ipcRenderer.invoke('cli:check-version'),
+  checkCliMxcCapable: () => ipcRenderer.invoke('cli:check-mxc-capable'),
   listModels: () => ipcRenderer.invoke('models:list'),
 
   // ── Personas ─────────────────────────────────────────────
@@ -222,6 +230,8 @@ const api: IntentAPI = {
   // ── CLI tools ────────────────────────────────────────────
   listCliTools: () => ipcRenderer.invoke('cli-tools:list'),
   saveCliTools: (tools) => ipcRenderer.invoke('cli-tools:save', tools),
+  getSandboxDefaultPolicy: () => ipcRenderer.invoke('sandbox:get-default'),
+  saveSandboxDefaultPolicy: (policy) => ipcRenderer.invoke('sandbox:save-default', policy),
 
   // ── Sessions ─────────────────────────────────────────────
   launchSession: (intentId) => ipcRenderer.invoke('session:launch', intentId),
@@ -262,6 +272,8 @@ const api: IntentAPI = {
     ipcRenderer.invoke('agent:respond-user-input', agentId, requestId, answer, wasFreeform),
   respondToElicitation: (agentId, requestId, action, content?) =>
     ipcRenderer.invoke('agent:respond-elicitation', agentId, requestId, action, content),
+  resolveSandboxBlock: (agentId, requestId, decision) =>
+    ipcRenderer.invoke('agent:resolve-sandbox', agentId, requestId, decision),
   abortAgent: (agentId) =>
     ipcRenderer.invoke('agent:abort', agentId),
   openAgentCli: (agentId) =>
@@ -366,6 +378,9 @@ const api: IntentAPI = {
   },
   onAgentApprovalNeeded: (callback) => {
     ipcRenderer.on('agent:approval-needed', (_event: unknown, data: IpcEventPayload<'agent:approval-needed'>) => callback(data));
+  },
+  onAgentSandboxBlocked: (callback) => {
+    ipcRenderer.on('agent:sandbox-blocked', (_event: unknown, data: IpcEventPayload<'agent:sandbox-blocked'>) => callback(data));
   },
   onAgentCompleted: (callback) => {
     ipcRenderer.on('agent:completed', (_event: unknown, data: IpcEventPayload<'agent:completed'>) => callback(data));

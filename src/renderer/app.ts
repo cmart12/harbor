@@ -21,6 +21,28 @@ interface RecallMatch {
   confidence: number;
 }
 
+interface SandboxPolicy {
+  scopeToIntentFolder: boolean;
+  extraReadwritePaths: string[];
+  extraReadonlyPaths: string[];
+  extraDeniedPaths: string[];
+  allowMcpServers: boolean;
+  allowWebFetch: boolean;
+  allowOutbound: boolean;
+  allowLocalNetwork: boolean;
+}
+
+const DEFAULT_SANDBOX_POLICY: SandboxPolicy = {
+  scopeToIntentFolder: true,
+  extraReadwritePaths: [],
+  extraReadonlyPaths: [],
+  extraDeniedPaths: [],
+  allowMcpServers: false,
+  allowWebFetch: false,
+  allowOutbound: false,
+  allowLocalNetwork: false,
+};
+
 interface AgentPersona {
   id: string;
   handle: string;
@@ -30,6 +52,7 @@ interface AgentPersona {
   sandboxed?: boolean;
   emoji?: string;
   cliRuntime?: string;
+  sandboxPolicyOverride?: SandboxPolicy;
 }
 
 interface CliRuntime {
@@ -80,6 +103,7 @@ interface IntentAPI {
   setSetting(key: string, value: string): Promise<string | null | undefined>;
   resolveCliPath(): Promise<string | null>;
   checkCliVersion(): Promise<{ path: string | null; version: string | null; compatible: boolean; minVersion: string }>;
+  checkCliMxcCapable(): Promise<{ mxcCapable: boolean }>;
   listModels(): Promise<{ id: string; name?: string }[]>;
   listPersonas(): Promise<AgentPersona[]>;
   savePersonas(personas: AgentPersona[]): Promise<{ ok?: boolean; error?: string }>;
@@ -90,6 +114,9 @@ interface IntentAPI {
   saveCustomMcp(servers: CustomMcpServer[]): Promise<{ ok?: boolean; error?: string }>;
   listCliTools(): Promise<CliToolDefinition[]>;
   saveCliTools(tools: CliToolDefinition[]): Promise<{ ok?: boolean; error?: string }>;
+  getSandboxDefaultPolicy(): Promise<SandboxPolicy>;
+  saveSandboxDefaultPolicy(policy: SandboxPolicy): Promise<{ ok?: boolean; policy?: SandboxPolicy; error?: string }>;
+  resolveSandboxBlock(agentId: string, requestId: string, decision: 'allow-once' | 'allow-for-session' | 'disable'): Promise<{ ok?: boolean; error?: string }>;
   listEvents(limit?: number): Promise<any[]>;
   resolveDate(dateText: string): Promise<{ due_at: string; due_at_utc: string | null }>;
   classifyInput(text: string): Promise<{ type: 'intent' | 'query'; query_answer?: string }>;
@@ -145,6 +172,16 @@ interface IntentAPI {
   onRecallHint(callback: (intentId: string, match: RecallMatch) => void): void;
   onAgentStatusChanged(callback: (data: any) => void): void;
   onAgentApprovalNeeded(callback: (data: any) => void): void;
+  onAgentSandboxBlocked(callback: (data: {
+    agentId: string;
+    requestId: string;
+    source: 'permission' | 'pre-tool' | 'post-tool-shell';
+    kind: 'read' | 'write' | 'shell' | 'mcp' | 'url' | 'web-fetch';
+    toolName?: string;
+    target: string;
+    intention?: string;
+    allowedDecisions?: Array<'allow-once' | 'allow-for-session' | 'disable'>;
+  }) => void): void;
   onAgentCompleted(callback: (data: any) => void): void;
   onNotificationApprovalClicked(callback: (data: { agentId: string }) => void): void;
   onAgentPresenceStarted(callback: (data: { agentId: string; intentId: string; persona: { name: string; handle: string; color?: string; imageUrl?: string }; anchor: { prefix?: string; suffix?: string } }) => void): void;
@@ -866,10 +903,71 @@ function showPersonaForm(existing?: AgentPersona): void {
     if (locationSelect.value === 'cloud' || !isWindows) {
       sandboxRow.style.display = 'none';
       sandboxCheck.checked = false;
+      sandboxOverrideRow.style.display = 'none';
     } else {
       sandboxRow.style.display = '';
+      updateSandboxOverrideVisibility();
     }
   });
+
+  // ── Sandbox override (visible when 'sandboxed' is checked) ─────────
+  const sandboxOverrideRow = document.createElement('div');
+  sandboxOverrideRow.className = 'persona-form-row persona-sandbox-override-row';
+  sandboxOverrideRow.style.display = 'none';
+  sandboxOverrideRow.style.flexDirection = 'column';
+  sandboxOverrideRow.style.gap = '6px';
+
+  const inheritLabel = document.createElement('label');
+  inheritLabel.className = 'persona-form-checkbox-label';
+  const inheritCheck = document.createElement('input');
+  inheritCheck.type = 'checkbox';
+  inheritCheck.checked = existing?.sandboxPolicyOverride == null;
+  inheritLabel.appendChild(inheritCheck);
+  inheritLabel.appendChild(document.createTextNode(' Inherit default sandbox policy from settings'));
+  sandboxOverrideRow.appendChild(inheritLabel);
+
+  const overrideContainer = document.createElement('div');
+  overrideContainer.className = 'sandbox-policy-form';
+  overrideContainer.style.display = inheritCheck.checked ? 'none' : '';
+  sandboxOverrideRow.appendChild(overrideContainer);
+
+  let personaPolicyApi: { getPolicy: () => SandboxPolicy; setPolicy: (p: SandboxPolicy) => void } | null = null;
+
+  async function ensurePolicyForm(): Promise<void> {
+    if (personaPolicyApi) return;
+    let initial: SandboxPolicy;
+    if (existing?.sandboxPolicyOverride) {
+      initial = existing.sandboxPolicyOverride;
+    } else {
+      try {
+        initial = await intentAPI.getSandboxDefaultPolicy() ?? DEFAULT_SANDBOX_POLICY;
+      } catch {
+        initial = DEFAULT_SANDBOX_POLICY;
+      }
+    }
+    personaPolicyApi = renderSandboxPolicyForm(overrideContainer, initial, { idPrefix: `persona-${existing?.id ?? 'new'}` });
+  }
+
+  inheritCheck.addEventListener('change', async () => {
+    if (inheritCheck.checked) {
+      overrideContainer.style.display = 'none';
+    } else {
+      await ensurePolicyForm();
+      overrideContainer.style.display = '';
+    }
+  });
+
+  function updateSandboxOverrideVisibility(): void {
+    if (sandboxCheck.checked && isWindows && locationSelect.value !== 'cloud') {
+      sandboxOverrideRow.style.display = '';
+      if (!inheritCheck.checked) ensurePolicyForm();
+    } else {
+      sandboxOverrideRow.style.display = 'none';
+    }
+  }
+  sandboxCheck.addEventListener('change', updateSandboxOverrideVisibility);
+  // Initial state: if persona is already sandboxed, render override section.
+  if (sandboxCheck.checked) updateSandboxOverrideVisibility();
 
   // CLI Runtime dropdown
   const runtimeRow = document.createElement('div');
@@ -915,6 +1013,9 @@ function showPersonaForm(existing?: AgentPersona): void {
     const sandboxed = sandboxCheck.checked && runLocation === 'local';
     const emoji = selectedEmoji;
     const cliRuntime = runtimeSelect.value;
+    const sandboxOverride: SandboxPolicy | undefined = (sandboxed && !inheritCheck.checked && personaPolicyApi)
+      ? personaPolicyApi.getPolicy()
+      : undefined;
 
     // Validate
     if (!HANDLE_RE.test(rawHandle)) {
@@ -938,7 +1039,17 @@ function showPersonaForm(existing?: AgentPersona): void {
     if (existing) {
       // Update existing
       personas = personas.map(p => p.id === existing.id
-        ? { ...p, handle: rawHandle, instructions, model, runLocation, emoji: emoji || undefined, cliRuntime: cliRuntime || undefined, ...(sandboxed ? { sandboxed: true } : { sandboxed: undefined }) }
+        ? {
+            ...p,
+            handle: rawHandle,
+            instructions,
+            model,
+            runLocation,
+            emoji: emoji || undefined,
+            cliRuntime: cliRuntime || undefined,
+            ...(sandboxed ? { sandboxed: true } : { sandboxed: undefined }),
+            ...(sandboxOverride ? { sandboxPolicyOverride: sandboxOverride } : { sandboxPolicyOverride: undefined }),
+          }
         : p
       );
     } else {
@@ -952,6 +1063,7 @@ function showPersonaForm(existing?: AgentPersona): void {
         ...(sandboxed ? { sandboxed: true } : {}),
         ...(emoji ? { emoji } : {}),
         ...(cliRuntime ? { cliRuntime } : {}),
+        ...(sandboxOverride ? { sandboxPolicyOverride: sandboxOverride } : {}),
       });
     }
 
@@ -973,6 +1085,7 @@ function showPersonaForm(existing?: AgentPersona): void {
   form.appendChild(modelRow);
   form.appendChild(locationRow);
   form.appendChild(sandboxRow);
+  form.appendChild(sandboxOverrideRow);
   form.appendChild(runtimeRow);
   form.appendChild(errorEl);
   form.appendChild(btnRow);
@@ -3203,6 +3316,7 @@ async function loadCliPathSetting(): Promise<void> {
     cliPathDetected.title = info.path;
     cliPathDetected.style.color = '';
   }
+  await updateCliMxcIndicator();
 }
 
 async function updateCliPathDetected(): Promise<void> {
@@ -3234,6 +3348,7 @@ cliPathInput.addEventListener('input', () => {
     }
     cliPathClear.classList.toggle('hidden', !cliPathInput.value);
     await updateCliPathDetected();
+    await updateCliMxcIndicator();
   }, 500);
 });
 
@@ -3242,7 +3357,247 @@ cliPathClear.addEventListener('click', async () => {
   await intentAPI.setSetting('cli_path', '');
   cliPathClear.classList.add('hidden');
   await updateCliPathDetected();
+  await updateCliMxcIndicator();
 });
+
+// ── MXC capability indicator ────────────────────────────
+const cliMxcIndicator = document.getElementById('cli-mxc-indicator') as HTMLSpanElement | null;
+
+async function updateCliMxcIndicator(): Promise<void> {
+  if (!cliMxcIndicator) return;
+  const platform = intentAPI.getPlatform();
+  if (platform !== 'win32') {
+    cliMxcIndicator.textContent = 'unavailable on this platform';
+    cliMxcIndicator.className = 'cli-mxc-indicator';
+    return;
+  }
+  try {
+    const r = await intentAPI.checkCliMxcCapable();
+    if (r.mxcCapable) {
+      cliMxcIndicator.textContent = '✓ supported (this CLI build ships @microsoft/mxc-sdk)';
+      cliMxcIndicator.className = 'cli-mxc-indicator ok';
+    } else {
+      cliMxcIndicator.textContent = '⚠ not detected — sandboxed personas will fall back to host-side path enforcement only';
+      cliMxcIndicator.className = 'cli-mxc-indicator warn';
+    }
+  } catch {
+    cliMxcIndicator.textContent = '?';
+    cliMxcIndicator.className = 'cli-mxc-indicator';
+  }
+}
+
+// ── Settings tabs ───────────────────────────────────────
+const SETTINGS_TAB_KEY = 'intent.settingsTab';
+function initSettingsTabs(): void {
+  const tabs = document.querySelectorAll<HTMLButtonElement>('.settings-tab-btn');
+  const panels = document.querySelectorAll<HTMLElement>('.settings-tab-panel');
+  if (!tabs.length || !panels.length) return;
+  const stored = localStorage.getItem(SETTINGS_TAB_KEY);
+  const activate = (name: string) => {
+    let matched = false;
+    tabs.forEach(t => {
+      const isActive = t.dataset.tab === name;
+      t.classList.toggle('active', isActive);
+      if (isActive) matched = true;
+    });
+    panels.forEach(p => {
+      p.classList.toggle('active', p.dataset.tab === name);
+    });
+    if (matched) {
+      try { localStorage.setItem(SETTINGS_TAB_KEY, name); } catch { /* ignore */ }
+    }
+  };
+  tabs.forEach(t => {
+    t.addEventListener('click', () => {
+      if (t.dataset.tab) activate(t.dataset.tab);
+    });
+  });
+  if (stored) activate(stored);
+}
+initSettingsTabs();
+
+// ── Sandbox policy form helpers ─────────────────────────
+
+function pathListToTextarea(paths: string[]): string {
+  return (paths || []).join('\n');
+}
+
+function textareaToPathList(text: string): string[] {
+  return text.split(/\r?\n/).map(s => s.trim()).filter(s => s.length > 0).slice(0, 64);
+}
+
+/**
+ * Render an editable sandbox-policy form into `container`. Returns a
+ * `getPolicy()` accessor that reads the current values back as a SandboxPolicy.
+ */
+function renderSandboxPolicyForm(
+  container: HTMLElement,
+  initial: SandboxPolicy,
+  opts?: { idPrefix?: string },
+): { getPolicy: () => SandboxPolicy; setPolicy: (p: SandboxPolicy) => void } {
+  const id = (s: string) => `${opts?.idPrefix ?? 'sandbox'}-${s}`;
+  container.innerHTML = '';
+
+  function checkbox(name: string, label: string, checked: boolean, hint?: string): HTMLInputElement {
+    const lbl = document.createElement('label');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.id = id(name);
+    cb.checked = checked;
+    lbl.appendChild(cb);
+    const span = document.createElement('span');
+    span.textContent = label;
+    lbl.appendChild(span);
+    container.appendChild(lbl);
+    if (hint) {
+      const h = document.createElement('div');
+      h.className = 'sandbox-field-hint';
+      h.textContent = hint;
+      container.appendChild(h);
+    }
+    return cb;
+  }
+
+  function pathTextarea(name: string, label: string, value: string[], hint?: string): HTMLTextAreaElement {
+    const title = document.createElement('div');
+    title.className = 'sandbox-section-title';
+    title.textContent = label;
+    container.appendChild(title);
+    if (hint) {
+      const h = document.createElement('div');
+      h.className = 'sandbox-field-hint';
+      h.textContent = hint;
+      container.appendChild(h);
+    }
+    const ta = document.createElement('textarea');
+    ta.id = id(name);
+    ta.value = pathListToTextarea(value);
+    ta.placeholder = 'One path per line';
+    ta.spellcheck = false;
+    container.appendChild(ta);
+    return ta;
+  }
+
+  // Filesystem section
+  const fsTitle = document.createElement('div');
+  fsTitle.className = 'sandbox-section-title';
+  fsTitle.textContent = 'Filesystem';
+  container.appendChild(fsTitle);
+
+  const scopeBox = checkbox(
+    'scope',
+    'Read & write inside the intent folder',
+    initial.scopeToIntentFolder,
+    'When checked, the agent can read and write anywhere inside its intent folder. Recommended ON.',
+  );
+  const rwArea = pathTextarea('rw', 'Extra read-write paths', initial.extraReadwritePaths,
+    'Optional. Each line is an absolute path the agent may read AND write.');
+  const roArea = pathTextarea('ro', 'Extra read-only paths', initial.extraReadonlyPaths,
+    'Optional. Each line is an absolute path the agent may read only.');
+  const denyArea = pathTextarea('deny', 'Denied paths', initial.extraDeniedPaths,
+    'Optional. Each line is an absolute path the agent must never access (overrides RW/RO).');
+
+  // Tool surface section
+  const toolsTitle = document.createElement('div');
+  toolsTitle.className = 'sandbox-section-title';
+  toolsTitle.textContent = 'Tool surface';
+  container.appendChild(toolsTitle);
+
+  const mcpBox = checkbox(
+    'mcp',
+    'Allow MCP servers',
+    initial.allowMcpServers,
+    'When unchecked, sandboxed agents launch with MCP servers hidden. Default OFF.',
+  );
+  const wfBox = checkbox(
+    'web-fetch',
+    'Allow web_fetch tool',
+    initial.allowWebFetch,
+    'When unchecked, sandboxed agents launch without the web_fetch tool. Default OFF.',
+  );
+
+  // Network section
+  const netTitle = document.createElement('div');
+  netTitle.className = 'sandbox-section-title';
+  netTitle.textContent = 'Network (applies to shell sandbox)';
+  container.appendChild(netTitle);
+
+  const outBox = checkbox(
+    'allow-out',
+    'Allow outbound network',
+    initial.allowOutbound,
+    'When checked, shell commands inside the sandbox may reach the internet (e.g. git fetch). Default OFF.',
+  );
+  const localBox = checkbox(
+    'allow-local',
+    'Allow local network',
+    initial.allowLocalNetwork,
+    'When checked, shell commands may reach localhost / LAN. Default OFF.',
+  );
+
+  function getPolicy(): SandboxPolicy {
+    return {
+      scopeToIntentFolder: scopeBox.checked,
+      extraReadwritePaths: textareaToPathList(rwArea.value),
+      extraReadonlyPaths: textareaToPathList(roArea.value),
+      extraDeniedPaths: textareaToPathList(denyArea.value),
+      allowMcpServers: mcpBox.checked,
+      allowWebFetch: wfBox.checked,
+      allowOutbound: outBox.checked,
+      allowLocalNetwork: localBox.checked,
+    };
+  }
+
+  function setPolicy(p: SandboxPolicy): void {
+    scopeBox.checked = p.scopeToIntentFolder;
+    rwArea.value = pathListToTextarea(p.extraReadwritePaths);
+    roArea.value = pathListToTextarea(p.extraReadonlyPaths);
+    denyArea.value = pathListToTextarea(p.extraDeniedPaths);
+    mcpBox.checked = p.allowMcpServers;
+    wfBox.checked = p.allowWebFetch;
+    outBox.checked = p.allowOutbound;
+    localBox.checked = p.allowLocalNetwork;
+  }
+
+  return { getPolicy, setPolicy };
+}
+
+// ── Default sandbox policy form (in Personas tab) ───────
+let sandboxDefaultFormApi: { getPolicy: () => SandboxPolicy; setPolicy: (p: SandboxPolicy) => void } | null = null;
+
+async function renderDefaultSandboxPolicyForm(): Promise<void> {
+  const container = document.getElementById('sandbox-default-form');
+  if (!container) return;
+  let policy: SandboxPolicy;
+  try {
+    policy = await intentAPI.getSandboxDefaultPolicy() ?? DEFAULT_SANDBOX_POLICY;
+  } catch {
+    policy = DEFAULT_SANDBOX_POLICY;
+  }
+  sandboxDefaultFormApi = renderSandboxPolicyForm(container, policy, { idPrefix: 'sandbox-default' });
+
+  const status = document.getElementById('sandbox-default-status');
+  const saveBtn = document.getElementById('sandbox-default-save-btn');
+  if (saveBtn && !saveBtn.dataset.bound) {
+    saveBtn.dataset.bound = '1';
+    saveBtn.addEventListener('click', async () => {
+      if (!sandboxDefaultFormApi) return;
+      const next = sandboxDefaultFormApi.getPolicy();
+      const result = await intentAPI.saveSandboxDefaultPolicy(next);
+      if (status) {
+        if (result?.error) {
+          status.textContent = `Error: ${result.error}`;
+          status.style.color = 'var(--color-warning, #d29922)';
+        } else {
+          status.textContent = 'Saved.';
+          status.style.color = '';
+          setTimeout(() => { if (status.textContent === 'Saved.') status.textContent = ''; }, 2000);
+        }
+      }
+    });
+  }
+}
+renderDefaultSandboxPolicyForm();
 
 // ── Inline editing ──────────────────────────────────────
 // @ts-ignore - called from onclick in HTML
@@ -4341,6 +4696,92 @@ intentAPI.onAgentApprovalNeeded((data: any) => {
 intentAPI.onAgentCompleted(() => {
   if (currentFilter === 'agents') renderAgentsList();
   if (currentFilter === 'open') loadIntents();
+});
+
+// ── Sandbox bubble-up handler ───────────────────────────
+// Renders a stacked banner asking the user to allow once / for session /
+// disable the sandbox. Lives at the top of <body>; multiple blocks stack.
+const sandboxBlockContainer = (() => {
+  const div = document.createElement('div');
+  div.id = 'sandbox-block-stack';
+  div.style.position = 'fixed';
+  div.style.top = '12px';
+  div.style.right = '12px';
+  div.style.maxWidth = '380px';
+  div.style.zIndex = '10000';
+  div.style.display = 'flex';
+  div.style.flexDirection = 'column';
+  div.style.gap = '6px';
+  document.body.appendChild(div);
+  return div;
+})();
+
+function renderSandboxBlockBanner(data: {
+  agentId: string;
+  requestId: string;
+  source: 'permission' | 'pre-tool' | 'post-tool-shell';
+  kind: 'read' | 'write' | 'shell' | 'mcp' | 'url' | 'web-fetch';
+  toolName?: string;
+  target: string;
+  intention?: string;
+  allowedDecisions?: Array<'allow-once' | 'allow-for-session' | 'disable'>;
+}): void {
+  const banner = document.createElement('div');
+  banner.className = 'sandbox-block-banner';
+
+  const title = document.createElement('div');
+  title.style.fontWeight = '600';
+  title.textContent = data.source === 'post-tool-shell'
+    ? `🔒 Possible sandbox denial`
+    : `🔒 Sandbox blocked: ${data.kind}${data.toolName ? ` (${data.toolName})` : ''}`;
+  banner.appendChild(title);
+
+  const body = document.createElement('div');
+  body.style.fontSize = '12px';
+  body.style.lineHeight = '1.4';
+  body.textContent = (data.intention ? `${data.intention}\n` : '') + `Target: ${data.target}`;
+  body.style.whiteSpace = 'pre-wrap';
+  banner.appendChild(body);
+
+  const actions = document.createElement('div');
+  actions.className = 'sandbox-block-banner-actions';
+
+  const decisions: Array<'allow-once' | 'allow-for-session' | 'disable'> =
+    data.allowedDecisions ?? ['allow-once', 'allow-for-session', 'disable'];
+  const labels: Record<typeof decisions[number], string> = {
+    'allow-once': 'Allow once',
+    'allow-for-session': 'Allow for session',
+    'disable': 'Disable sandbox',
+  };
+  for (const d of decisions) {
+    const btn = document.createElement('button');
+    btn.className = 'sandbox-block-banner-btn';
+    btn.textContent = labels[d];
+    btn.addEventListener('click', async () => {
+      await intentAPI.resolveSandboxBlock(data.agentId, data.requestId, d);
+      banner.remove();
+    });
+    actions.appendChild(btn);
+  }
+
+  if (data.source === 'post-tool-shell') {
+    const ignoreBtn = document.createElement('button');
+    ignoreBtn.className = 'sandbox-block-banner-btn';
+    ignoreBtn.textContent = 'Ignore';
+    ignoreBtn.addEventListener('click', async () => {
+      // Soft signal — resolve as allow-once just to drain the broker callback.
+      await intentAPI.resolveSandboxBlock(data.agentId, data.requestId, 'allow-once');
+      banner.remove();
+    });
+    actions.appendChild(ignoreBtn);
+  }
+
+  banner.appendChild(actions);
+  sandboxBlockContainer.appendChild(banner);
+}
+
+intentAPI.onAgentSandboxBlocked((data: any) => {
+  renderSandboxBlockBanner(data);
 });
 
 // When the user clicks an OS notification, switch to Workers tab

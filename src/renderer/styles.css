@@ -609,6 +609,200 @@ body.dark .settings-overlay.settings-fullpage .settings-modal {
   padding: 12px 16px 16px;
 }
 
+/* Settings tabs */
+.settings-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 0 16px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  flex-shrink: 0;
+}
+
+.settings-tab-btn {
+  background: none;
+  border: none;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(0, 0, 0, 0.55);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color 120ms ease, border-color 120ms ease;
+}
+
+.settings-tab-btn:hover {
+  color: rgba(0, 0, 0, 0.8);
+}
+
+.settings-tab-btn.active {
+  color: rgba(0, 0, 0, 0.9);
+  border-bottom-color: #2d6cdf;
+}
+
+body.dark .settings-tab-btn {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+body.dark .settings-tab-btn:hover {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+body.dark .settings-tab-btn.active {
+  color: rgba(255, 255, 255, 0.95);
+  border-bottom-color: #6ea0ff;
+}
+
+body.dark .settings-tabs {
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+
+.settings-tab-panel {
+  display: none;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.settings-tab-panel.active {
+  display: flex;
+}
+
+/* Sandbox policy form */
+.sandbox-policy-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.03);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 6px;
+}
+
+body.dark .sandbox-policy-form {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.sandbox-policy-form .sandbox-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: rgba(0, 0, 0, 0.6);
+  margin-top: 4px;
+}
+
+body.dark .sandbox-policy-form .sandbox-section-title {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.sandbox-policy-form label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.sandbox-policy-form input[type="checkbox"] {
+  margin-top: 3px;
+}
+
+.sandbox-policy-form textarea {
+  width: 100%;
+  min-height: 60px;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 12px;
+  padding: 6px 8px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 4px;
+  background: white;
+  resize: vertical;
+}
+
+body.dark .sandbox-policy-form textarea {
+  background: #1f1f25;
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #e1e1e6;
+}
+
+.sandbox-policy-form .sandbox-field-hint {
+  font-size: 11px;
+  color: rgba(0, 0, 0, 0.5);
+  margin-top: -4px;
+}
+
+body.dark .sandbox-policy-form .sandbox-field-hint {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+/* Sandbox bubble-up notification banner inside chat */
+.sandbox-block-banner {
+  background: #fff7e6;
+  border: 1px solid #f3c87a;
+  border-left: 3px solid #d68a00;
+  padding: 10px 12px;
+  border-radius: 4px;
+  font-size: 13px;
+  color: #5b3500;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+body.dark .sandbox-block-banner {
+  background: #3a2d10;
+  border-color: #6c4d12;
+  border-left-color: #f3c87a;
+  color: #ffd97a;
+}
+
+.sandbox-block-banner-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.sandbox-block-banner-btn {
+  background: rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.sandbox-block-banner-btn:hover {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+body.dark .sandbox-block-banner-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.15);
+  color: #ffd97a;
+}
+
+body.dark .sandbox-block-banner-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.cli-mxc-indicator {
+  font-weight: 500;
+}
+
+.cli-mxc-indicator.ok {
+  color: #2d8a3a;
+}
+
+.cli-mxc-indicator.warn {
+  color: #b65b00;
+}
+
+.cli-mxc-indicator.err {
+  color: #b91414;
+}
+
 .settings-group {
   display: flex;
   flex-direction: column;

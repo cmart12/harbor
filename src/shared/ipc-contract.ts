@@ -69,7 +69,33 @@ export interface AgentPersona {
   sandboxed?: boolean;  // Windows-only; ignored on other platforms
   emoji?: string;
   cliRuntime?: string;
+  /** Optional per-persona override of the global sandbox policy. */
+  sandboxPolicyOverride?: SandboxPolicy;
 }
+
+/** Sandbox policy applied to a sandboxed agent.  See docs/mxc-sandbox-schema.md. */
+export interface SandboxPolicy {
+  scopeToIntentFolder: boolean;
+  extraReadwritePaths: string[];
+  extraReadonlyPaths: string[];
+  extraDeniedPaths: string[];
+  allowMcpServers: boolean;
+  allowWebFetch: boolean;
+  allowOutbound: boolean;
+  allowLocalNetwork: boolean;
+}
+
+/** Default sandbox policy: maximum restriction (intent folder only, no network, no MCP, no web fetch). */
+export const DEFAULT_SANDBOX_POLICY: SandboxPolicy = {
+  scopeToIntentFolder: true,
+  extraReadwritePaths: [],
+  extraReadonlyPaths: [],
+  extraDeniedPaths: [],
+  allowMcpServers: false,
+  allowWebFetch: false,
+  allowOutbound: false,
+  allowLocalNetwork: false,
+};
 
 export interface CliRuntime {
   id: string;
@@ -149,6 +175,7 @@ export interface IpcCommands {
   // ── CLI / Models ─────────────────────────────────────────
   'cli:resolve-path': { args: []; result: string | null };
   'cli:check-version': { args: []; result: { path: string | null; version: string | null; compatible: boolean; minVersion: string } };
+  'cli:check-mxc-capable': { args: []; result: { mxcCapable: boolean } };
   'models:list': { args: []; result: Array<{ id: string; name: string }> };
 
   // ── Personas ─────────────────────────────────────────────
@@ -163,6 +190,10 @@ export interface IpcCommands {
   // ── CLI tools ────────────────────────────────────────────
   'cli-tools:list': { args: []; result: CliToolDefinition[] };
   'cli-tools:save': { args: [tools: CliToolDefinition[]]; result: { ok: true } | { error: string } };
+
+  // ── Sandbox default policy ───────────────────────────────
+  'sandbox:get-default': { args: []; result: SandboxPolicy };
+  'sandbox:save-default': { args: [policy: SandboxPolicy]; result: { ok: true; policy: SandboxPolicy } | { error: string } };
 
   // ── Sessions ─────────────────────────────────────────────
   'session:launch': { args: [intentId: string]; result: { success: boolean; error?: string } };
@@ -202,6 +233,10 @@ export interface IpcCommands {
   };
   'agent:abort': { args: [agentId: string]; result: void };
   'agent:open-cli': { args: [agentId: string]; result: { error?: string } };
+  'agent:resolve-sandbox': {
+    args: [agentId: string, requestId: string, decision: 'allow-once' | 'allow-for-session' | 'disable'];
+    result: { ok: true } | { error: string };
+  };
   'agent:quick-launch': { args: [prompt: string]; result: { agentId: string; sessionId: string } | { error: string } };
   'agent:list-all': { args: []; result: AgentListAllItem[] };
   'agent:delete-session': { args: [agentId: string]; result: { ok: true } };
@@ -273,6 +308,16 @@ export interface IpcEvents {
   'workspace:changed': { path: string | null };
   'agent:status-changed': { agentId: string; status: string; summary?: string };
   'agent:approval-needed': { agentId: string; requestId: string; permissionKind: string; intention?: string; path?: string };
+  'agent:sandbox-blocked': {
+    agentId: string;
+    requestId: string;
+    source: 'permission' | 'pre-tool' | 'post-tool-shell';
+    kind: 'read' | 'write' | 'shell' | 'mcp' | 'url' | 'web-fetch';
+    toolName?: string;
+    target: string;
+    intention?: string;
+    allowedDecisions?: Array<'allow-once' | 'allow-for-session' | 'disable'>;
+  };
   'agent:completed': { agentId: string; summary: string };
   'notification:approval-clicked': { agentId: string };
   'agent:presence-started': { agentId: string; intentId: string; persona: { name: string; handle: string }; anchor: AgentAnchor };

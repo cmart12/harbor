@@ -101,6 +101,58 @@ export function checkCliCompatibility(): CliVersionInfo {
   return { path: cliPath, version, compatible, minVersion: MIN_CLI_VERSION };
 }
 
+let resolvedMxcCapable: boolean | null = null;
+let mxcCapableResolved = false;
+
+/**
+ * Reset cached mxc-capability probe. Called whenever cliPath changes.
+ * @internal — exported for invalidateCliPath() to chain into.
+ */
+export function invalidateMxcCapability(): void {
+  resolvedMxcCapable = null;
+  mxcCapableResolved = false;
+}
+
+/**
+ * Best-effort probe: returns true if the resolved CLI ships with
+ * `@microsoft/mxc-sdk` in its node_modules. Used to surface a warning when a
+ * sandboxed persona is launched against a CLI that can't enforce MXC.
+ * Result is cached; cleared on cliPath change.
+ */
+export function isCliMxcCapable(): boolean {
+  if (mxcCapableResolved) return resolvedMxcCapable === true;
+  mxcCapableResolved = true;
+  resolvedMxcCapable = false;
+
+  if (process.platform !== 'win32') {
+    // mxc is Windows-only today; even if the package is present it won't enforce.
+    return false;
+  }
+  const cliPath = resolveCopilotCliPath();
+  if (!cliPath) return false;
+
+  // Walk up from the CLI path looking for the runtime's package root, then check
+  // for @microsoft/mxc-sdk in its node_modules.  The runtime's package.json is
+  // typically at <cliRoot>/package.json with bin pointing at index.js / npm-loader.js.
+  let dir = path.dirname(cliPath);
+  for (let i = 0; i < 6; i++) {
+    const pkgJson = path.join(dir, 'package.json');
+    if (fs.existsSync(pkgJson)) {
+      const mxcSdkDir = path.join(dir, 'node_modules', '@microsoft', 'mxc-sdk');
+      if (fs.existsSync(mxcSdkDir)) {
+        resolvedMxcCapable = true;
+        return true;
+      }
+      // Stop at the first package.json we find — that's the CLI's package root.
+      break;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return false;
+}
+
 export interface LaunchResult {
   success: boolean;
   error?: string;
@@ -263,6 +315,7 @@ export function invalidateCliPath(): void {
   resolvedCliPath = null;
   cliVersionResolved = false;
   resolvedCliVersion = null;
+  invalidateMxcCapability();
 }
 
 /** @deprecated Use resolveCopilotCliPath() instead */

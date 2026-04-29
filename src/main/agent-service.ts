@@ -53,6 +53,27 @@ export function respondToElicitation(agentId: string, requestId: string, action:
   broker.respondToElicitation(agentId, requestId, action, content);
 }
 
+/**
+ * Renderer-driven resolution of a sandbox block.  For `disable`, also
+ * triggers the session-swap flow in sdk-runner asynchronously; the broker
+ * resolves the pending permission/pre-tool callback as approve-once so the
+ * runtime can return while the swap is in flight.
+ */
+export async function resolveSandboxBlock(
+  agentId: string,
+  requestId: string,
+  decision: 'allow-once' | 'allow-for-session' | 'disable',
+): Promise<void> {
+  // Resolve the pending broker callback first so the runtime unblocks.
+  broker.resolveSandboxBlock(agentId, requestId, decision);
+  if (decision === 'disable') {
+    const { disableSandboxForSession } = await import('./agents/sdk-runner');
+    await disableSandboxForSession(agentId).catch((err) => {
+      console.error('[agent-service] disableSandboxForSession failed:', err);
+    });
+  }
+}
+
 // ── Agent lifecycle ────────────────────────────────────
 
 export async function abortAgent(agentId: string): Promise<void> {

@@ -80,6 +80,15 @@ export function registerAgentHandlers(): void {
     respondToElicitation(agentId, requestId, action as 'accept' | 'decline' | 'cancel', content);
   });
 
+  ipcMain.handle('agent:resolve-sandbox', async (_event, agentId: string, requestId: string, decision: string) => {
+    if (decision !== 'allow-once' && decision !== 'allow-for-session' && decision !== 'disable') {
+      return { error: 'invalid decision' };
+    }
+    const { resolveSandboxBlock } = await import('../agent-service');
+    await resolveSandboxBlock(agentId, requestId, decision);
+    return { ok: true };
+  });
+
   ipcMain.handle('agent:abort', async (_event, agentId: string) => {
     const { abortAgent } = await import('../agent-service');
     await abortAgent(agentId);
