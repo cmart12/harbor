@@ -713,19 +713,66 @@ function showPersonaForm(existing?: AgentPersona): void {
   const form = document.createElement('div');
   form.className = 'persona-form';
 
-  // Handle input — with emoji prefix
+  // Handle input — with emoji picker
   const handleRow = document.createElement('div');
   handleRow.className = 'persona-form-row';
-  const emojiInput = document.createElement('input');
-  emojiInput.type = 'text';
-  emojiInput.className = 'persona-form-input persona-emoji-input';
-  emojiInput.placeholder = '😀';
-  emojiInput.value = existing?.emoji || '';
-  emojiInput.maxLength = 8;
-  emojiInput.title = 'Emoji avatar (optional)';
-  emojiInput.style.width = '3em';
-  emojiInput.style.textAlign = 'center';
-  emojiInput.style.marginRight = '4px';
+  const emojiBtn = document.createElement('button');
+  emojiBtn.type = 'button';
+  emojiBtn.className = 'emoji-picker-btn';
+  emojiBtn.textContent = existing?.emoji || '😀';
+  emojiBtn.title = 'Pick emoji avatar';
+  let selectedEmoji = existing?.emoji || '';
+
+  const EMOJI_OPTIONS = [
+    '😀','😎','🤖','👻','🦊','🐱','🐶','🦁',
+    '🧠','💡','🔥','⚡','🚀','🎯','💻','🛡️',
+    '🌟','🎨','🔮','🧪','🪄','👾','🤠','🥷',
+    '🦄','🐙','🦅','🐝','🌈','❄️','🌊','🍀',
+  ];
+
+  emojiBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    // Close any existing popup
+    const existing_popup = document.querySelector('.emoji-picker-popup');
+    if (existing_popup) { existing_popup.remove(); return; }
+
+    const popup = document.createElement('div');
+    popup.className = 'emoji-picker-popup';
+    for (const em of EMOJI_OPTIONS) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = em;
+      btn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        selectedEmoji = em;
+        emojiBtn.textContent = em;
+        popup.remove();
+      });
+      popup.appendChild(btn);
+    }
+
+    // Clear option
+    const clearBtn = document.createElement('button');
+    clearBtn.type = 'button';
+    clearBtn.textContent = '✕';
+    clearBtn.title = 'Clear emoji';
+    clearBtn.style.color = '#999';
+    clearBtn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      selectedEmoji = '';
+      emojiBtn.textContent = '😀';
+      popup.remove();
+    });
+    popup.appendChild(clearBtn);
+
+    emojiBtn.style.position = 'relative';
+    emojiBtn.appendChild(popup);
+
+    // Close on outside click
+    const closePopup = () => { popup.remove(); document.removeEventListener('click', closePopup); };
+    setTimeout(() => document.addEventListener('click', closePopup), 0);
+  });
+
   const handleLabel = document.createElement('label');
   handleLabel.textContent = '@';
   handleLabel.className = 'persona-handle-prefix';
@@ -735,7 +782,7 @@ function showPersonaForm(existing?: AgentPersona): void {
   handleInput.placeholder = 'handle';
   handleInput.value = existing?.handle || '';
   handleInput.maxLength = 32;
-  handleRow.appendChild(emojiInput);
+  handleRow.appendChild(emojiBtn);
   handleRow.appendChild(handleLabel);
   handleRow.appendChild(handleInput);
 
@@ -866,7 +913,7 @@ function showPersonaForm(existing?: AgentPersona): void {
     const model = modelSelect.value;
     const runLocation = locationSelect.value as 'local' | 'cloud';
     const sandboxed = sandboxCheck.checked && runLocation === 'local';
-    const emoji = emojiInput.value.trim();
+    const emoji = selectedEmoji;
     const cliRuntime = runtimeSelect.value;
 
     // Validate
@@ -909,6 +956,7 @@ function showPersonaForm(existing?: AgentPersona): void {
     }
 
     await intentAPI.savePersonas(personas);
+    form.remove();
     renderPersonas();
   });
 
@@ -1069,6 +1117,7 @@ function showRuntimeForm(existing?: CliRuntime): void {
     }
 
     await intentAPI.saveRuntimes(cliRuntimes);
+    form.remove();
     renderRuntimes();
   });
 

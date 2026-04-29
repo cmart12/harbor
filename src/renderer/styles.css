@@ -524,6 +524,20 @@ header h1 {
   background: #fafafa;
 }
 
+body.settings-window #app {
+  padding: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}
+
+body.dark.settings-window #app {
+  padding: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}
+
 body.dark .settings-overlay.settings-fullpage .settings-modal {
   background: #1c1c20;
 }
@@ -2080,6 +2094,68 @@ body.dark .workers-badge {
 
 .persona-form-input:focus {
   border-color: rgba(124, 102, 220, 0.5);
+}
+
+.emoji-picker-btn {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  border: 1px solid rgba(140, 120, 180, 0.12);
+  border-radius: 1.5px;
+  background: #ffffff;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  text-align: center;
+  padding: 0;
+  position: relative;
+}
+
+.emoji-picker-btn:hover {
+  border-color: rgba(124, 102, 220, 0.5);
+}
+
+.emoji-picker-popup {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 200;
+  background: #ffffff;
+  border: 1px solid rgba(140, 120, 180, 0.2);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  padding: 8px;
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 2px;
+  max-height: 200px;
+  overflow-y: auto;
+  width: 260px;
+}
+
+.emoji-picker-popup button {
+  border: none;
+  background: none;
+  font-size: 18px;
+  padding: 4px;
+  cursor: pointer;
+  border-radius: 4px;
+  line-height: 1;
+}
+
+.emoji-picker-popup button:hover {
+  background: rgba(124, 102, 220, 0.1);
+}
+
+body.dark .emoji-picker-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+body.dark .emoji-picker-popup {
+  background: #2a2a30;
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
 }
 
 .persona-form-textarea {
