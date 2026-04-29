@@ -3,7 +3,7 @@ import { v4 as uuid } from 'uuid';
 import * as path from 'path';
 import { getCopilotClient } from '../ai';
 import { AgentAnchor } from '../../shared/types';
-import { getConfig, getConfigValue } from '../config';
+import { getConfig, getConfigValue, type AgentPersona } from '../config';
 import { getAllMcpServers } from '../mcp';
 import { AgentRegistry, truncate } from './agent-registry';
 import type { AgentRecord } from './agent-registry';
@@ -13,6 +13,8 @@ import { InteractionBroker } from './interaction-broker';
 import type { SubagentTracker } from '../subagent-service';
 import { getCustomTools } from '../tools';
 import { appendIntentActivity } from '../intent-eventlog';
+import { buildSandboxLaunchSetup } from './sandbox-launch';
+import { SANDBOX_WORKSPACE_SYSTEM_PROMPT } from './sandbox-policies';
 
 /** Shared dependencies injected from agent-service at init time. */
 let registry: AgentRegistry;
@@ -155,6 +157,7 @@ export async function launchAgent(
 export async function launchQuickAgent(
   prompt: string,
   workspaceRoot: string,
+  persona?: AgentPersona,
 ): Promise<{ agentId: string; sessionId: string } | { error: string }> {
   const client = getCopilotClient();
   if (!client) {
@@ -164,27 +167,53 @@ export async function launchQuickAgent(
   const agentId = uuid();
 
   try {
-    const mcpServers = getAllMcpServers();
     const cliToolsPrompt = buildCliToolsPrompt();
     const findRecord = (sid: string) => registry.findBySessionId(sid);
 
+    const sandboxSetup = persona
+      ? buildSandboxLaunchSetup({ agentId, workingDir: workspaceRoot, persona, registry, broker })
+      : null;
+    const isSandboxed = sandboxSetup?.isSandboxed === true;
+    const sandboxConfigs = sandboxSetup?.sandboxConfigs ?? null;
+    const mcpServers = sandboxSetup ? sandboxSetup.mcpServers : getAllMcpServers();
+    const customTools = sandboxSetup ? sandboxSetup.customTools : getCustomTools();
+    const sandboxState = sandboxSetup?.sandboxState;
+    const hooks = sandboxSetup?.hooks;
+
+    // When a persona is supplied, prepend its instructions to the system message
+    // and use its preferred model.  Persona handles are matched against the
+    // 'personas' config; cloud routing happens in the IPC handler so this path
+    // only handles local sessions (sandboxed or not).
+    const personaPreamble = persona ? `${persona.instructions}\n\n` : '';
+    const baseSystemContent = `${personaPreamble}${cliToolsPrompt}`.trim();
+    const systemContent = isSandboxed
+      ? `${baseSystemContent}${SANDBOX_WORKSPACE_SYSTEM_PROMPT}`
+      : baseSystemContent;
+
     const session = await client.createSession({
       workingDirectory: workspaceRoot,
+      ...(sandboxConfigs ? { configDir: sandboxConfigs.onDir } : {}),
       mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
-      tools: getCustomTools(),
-      ...(cliToolsPrompt ? {
+      tools: customTools,
+      ...(persona?.model ? { model: persona.model } : {}),
+      ...(hooks ? { hooks } : {}),
+      ...(systemContent ? {
         systemMessage: {
           mode: 'append' as const,
-          content: cliToolsPrompt,
+          content: `\n${systemContent}`,
         },
       } : {}),
-      onPermissionRequest: broker.createPermissionHandler(findRecord),
+      onPermissionRequest: isSandboxed
+        ? broker.createPathAwareSandboxPermissionHandler(findRecord)
+        : broker.createPermissionHandler(findRecord),
       onUserInputRequest: broker.createUserInputHandler(findRecord),
       onElicitationRequest: broker.createElicitationHandler(findRecord),
     });
 
     const sessionId = (session as any).sessionId || agentId;
     const now = new Date().toISOString();
+
+    const summary = persona ? `Starting as @${persona.handle}...` : 'Starting...';
 
     const record: AgentRecord = {
       agentId,
@@ -197,7 +226,8 @@ export async function launchQuickAgent(
       pendingApprovalId: null,
       pendingPermissionKind: null,
       pendingApprovals: new Map(),
-      summary: 'Starting...',
+      summary,
+      ...(sandboxState ? { sandbox: sandboxState } : {}),
     };
     registry.set(agentId, record);
 
@@ -207,10 +237,10 @@ export async function launchQuickAgent(
       intent_id: null,
       prompt,
       status: 'running',
-      summary: 'Starting...',
+      summary,
       working_dir: workspaceRoot,
       source: 'sdk',
-      persona_handle: null,
+      persona_handle: persona?.handle ?? null,
       created_at: now,
       updated_at: now,
     });

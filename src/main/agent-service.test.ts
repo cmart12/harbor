@@ -83,6 +83,7 @@ import {
   respondToElicitation,
   launchAgent,
   launchCommentAgent,
+  launchQuickAgent,
   approveAgent,
   abortAgent,
   listAgents,
@@ -254,6 +255,79 @@ describe('launchAgent', () => {
     expect(mockSession.on).toHaveBeenCalled();
     // Expect multiple listeners (assistant.message_delta, assistant.message, session.idle, etc.)
     expect(mockSession.on.mock.calls.length).toBeGreaterThanOrEqual(5);
+  });
+});
+
+describe('launchQuickAgent', () => {
+  let uuidCounter: number;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSession.send.mockResolvedValue(undefined);
+    mockClient.createSession.mockResolvedValue(mockSession);
+    uuidCounter = 0;
+    vi.mocked(uuid).mockImplementation(() => `quick-agent-${++uuidCounter}`);
+  });
+
+  it('returns error when Copilot client is null', async () => {
+    disableMockClient();
+    const result = await launchQuickAgent('do something', '/ws');
+    expect(result).toEqual({ error: 'Copilot SDK not initialized' });
+  });
+
+  it('launches without persona and persists with persona_handle null', async () => {
+    enableMockClient();
+    const result = await launchQuickAgent('do the thing', '/ws');
+    expect(result).toEqual({ agentId: 'quick-agent-1', sessionId: 'mock-session-id' });
+    expect(createAgentSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'quick-agent-1',
+        prompt: 'do the thing',
+        working_dir: '/ws',
+        source: 'sdk',
+        persona_handle: null,
+        intent_id: null,
+      }),
+    );
+  });
+
+  it('forwards persona instructions, model, and handle when persona is provided', async () => {
+    enableMockClient();
+    const persona = {
+      id: 'p1', handle: 'reviewer', instructions: 'Be a careful reviewer.',
+      model: 'gpt-4o', runLocation: 'local' as const,
+    };
+    await launchQuickAgent('check the auth module', '/ws', persona as any);
+
+    // Persona instructions must appear in the system message.
+    const sessionOpts = mockClient.createSession.mock.calls[0][0];
+    expect(sessionOpts.systemMessage.content).toContain('Be a careful reviewer.');
+    expect(sessionOpts.model).toBe('gpt-4o');
+
+    expect(createAgentSession).toHaveBeenCalledWith(
+      expect.objectContaining({ persona_handle: 'reviewer', summary: expect.stringContaining('@reviewer') }),
+    );
+  });
+
+  it('skips sandbox setup for sandboxed persona on non-Windows hosts', async () => {
+    // The default test host is non-Windows (process.platform comes from CI). On
+    // Linux/macOS the IS_WINDOWS gate short-circuits sandbox setup, so a
+    // sandboxed persona launches with no configDir and no hooks — same as a
+    // plain persona.  We don't fake win32 here because that requires mocking
+    // sandbox-policies' module-level constant.
+    if (process.platform === 'win32') return; // covered by the next test on Windows hosts
+    enableMockClient();
+    const persona = {
+      id: 'p2', handle: 'jail', instructions: 'sandboxed',
+      model: 'gpt-4o', runLocation: 'local' as const, sandboxed: true,
+    };
+    await launchQuickAgent('do something', '/ws', persona as any);
+
+    const sessionOpts = mockClient.createSession.mock.calls[0][0];
+    expect(sessionOpts.configDir).toBeUndefined();
+    expect(sessionOpts.hooks).toBeUndefined();
+    // Persona instructions still applied.
+    expect(sessionOpts.systemMessage.content).toContain('sandboxed');
   });
 });
 

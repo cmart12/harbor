@@ -137,7 +137,7 @@ interface IntentAPI {
   pasteFile(intentId: string, filename: string, dataArray: number[]): Promise<{ success?: boolean; relativePath?: string; filename?: string; error?: string }>;
   openIntentFolder(intentId: string): Promise<void>;
   listAgents(intentId: string): Promise<any[]>;
-  quickLaunchAgent(prompt: string): Promise<{ agentId?: string; sessionId?: string; error?: string }>;
+  quickLaunchAgent(prompt: string, personaHandle?: string): Promise<{ agentId?: string; sessionId?: string; error?: string }>;
   listAllAgents(): Promise<any[]>;
   deleteAgentSession(agentId: string): Promise<{ ok?: boolean; error?: string }>;
   launchCloudAgent(intentId: string, prompt: string): Promise<{ agentId?: string; sessionId?: string; jobId?: string; error?: string }>;
@@ -417,7 +417,7 @@ function updateWorkersBadge(): void {
 
 function getPlaceholderForFilter(filter: typeof currentFilter): string {
   switch (filter) {
-    case 'agents': return 'What should an agent work on?';
+    case 'agents': return 'What should an agent work on? (start with @ to pick a persona)';
     case 'skills': return 'Describe a skill to create...';
     default: return 'What needs to get done?';
   }
@@ -466,6 +466,10 @@ function setFilter(filter: typeof currentFilter): void {
   if (searchMode) {
     exitSearchMode();
   }
+
+  // Close persona @-mention dropdown if open and clear any selection state.
+  hideMentionDropdown();
+  selectedPersonaHandle = null;
 
   updatePromptHint();
   updateWorkersBadge();
@@ -1830,6 +1834,194 @@ descInput.addEventListener('input', () => {
   inputHints.classList.toggle('hidden', descInput.value.length > 0);
 });
 
+// ── Persona @-mention autocomplete (Workers tab) ─────────
+// When the prompt starts with @<token>, show a dropdown of matching personas.
+// Tab/Enter selects the highlighted persona; Space/whitespace closes the
+// dropdown and the selected handle (if any) is forwarded on submit.
+const mentionDropdown = document.getElementById('persona-mention-dropdown') as HTMLDivElement;
+let mentionMatches: AgentPersona[] = [];
+let mentionSelectedIndex = 0;
+// Persona handle the user has explicitly selected (via dropdown or by typing
+// a complete valid handle).  Cleared if the user edits the leading mention
+// away.  Used at submit time as the source of truth, with raw-text parsing
+// as a fallback for hand-typed handles.
+let selectedPersonaHandle: string | null = null;
+let mentionComposing = false;
+
+descInput.addEventListener('compositionstart', () => { mentionComposing = true; });
+descInput.addEventListener('compositionend', () => {
+  mentionComposing = false;
+  refreshMentionDropdown();
+});
+
+function isMentionEnabled(): boolean {
+  return currentFilter === 'agents' && !searchMode;
+}
+
+/** Parse a leading "@token" from the raw value if present (no whitespace consumed). */
+function parseLeadingMentionToken(value: string): { token: string; afterIndex: number } | null {
+  if (!value.startsWith('@')) return null;
+  // Match leading @<chars-without-whitespace>
+  const m = value.match(/^@(\S*)/);
+  if (!m) return null;
+  return { token: m[1], afterIndex: m[0].length };
+}
+
+/** Find the persona whose handle exactly matches the given token (case-insensitive). */
+function findExactPersona(token: string): AgentPersona | null {
+  const lower = token.toLowerCase();
+  return personas.find(p => p.handle.toLowerCase() === lower) || null;
+}
+
+function refreshMentionDropdown(): void {
+  if (mentionComposing) return;
+  if (!isMentionEnabled()) {
+    hideMentionDropdown();
+    return;
+  }
+
+  const value = descInput.value;
+  const parsed = parseLeadingMentionToken(value);
+  if (!parsed) {
+    hideMentionDropdown();
+    selectedPersonaHandle = null;
+    return;
+  }
+
+  // If user has typed past the @token (i.e. value contains whitespace after the token),
+  // dropdown is closed.  Persona-handle state is locked-in based on what was selected/typed.
+  const afterToken = value.slice(parsed.afterIndex);
+  if (/^\s/.test(afterToken)) {
+    hideMentionDropdown();
+    // Only keep selectedPersonaHandle if the locked-in handle matches the token exactly.
+    const exact = findExactPersona(parsed.token);
+    selectedPersonaHandle = exact ? exact.handle : null;
+    return;
+  }
+
+  // Kick off a silent reload so personas saved in the settings popout window
+  // become available without restarting the main window.  The current render
+  // uses the cached `personas` array; the reload re-runs this function.
+  void maybeRefreshPersonas();
+
+  // Filter personas whose handle starts with the typed prefix (case-insensitive).
+  // Empty token matches all personas.
+  const lower = parsed.token.toLowerCase();
+  const matches = personas.filter(p => p.handle.toLowerCase().startsWith(lower));
+
+  // Pre-set selectedPersonaHandle if exact match is typed.
+  const exact = findExactPersona(parsed.token);
+  selectedPersonaHandle = exact ? exact.handle : null;
+
+  if (matches.length === 0) {
+    hideMentionDropdown();
+    return;
+  }
+
+  mentionMatches = matches;
+  // Keep selection within bounds.
+  if (mentionSelectedIndex < 0 || mentionSelectedIndex >= matches.length) {
+    mentionSelectedIndex = 0;
+  }
+  renderMentionDropdown();
+}
+
+// Throttle background persona reloads so we don't hammer the IPC on every keystroke.
+let mentionPersonasReloadAt = 0;
+let mentionPersonasReloadInflight = false;
+async function maybeRefreshPersonas(): Promise<void> {
+  if (mentionPersonasReloadInflight) return;
+  const now = Date.now();
+  if (now - mentionPersonasReloadAt < 1500) return;
+  mentionPersonasReloadAt = now;
+  mentionPersonasReloadInflight = true;
+  try {
+    const fresh = await intentAPI.listPersonas() || [];
+    const changed = fresh.length !== personas.length
+      || fresh.some((p, i) => p.handle !== personas[i]?.handle);
+    if (changed) {
+      personas = fresh;
+      // Re-render only if the dropdown is open or if the input still starts with @
+      if (descInput.value.startsWith('@')) refreshMentionDropdown();
+    }
+  } catch { /* leave cached personas in place */ }
+  finally {
+    mentionPersonasReloadInflight = false;
+  }
+}
+
+function renderMentionDropdown(): void {
+  mentionDropdown.innerHTML = '';
+  for (let i = 0; i < mentionMatches.length; i++) {
+    const p = mentionMatches[i];
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'mention-item' + (i === mentionSelectedIndex ? ' selected' : '');
+    item.setAttribute('role', 'option');
+    item.dataset.handle = p.handle;
+
+    const handleEl = document.createElement('span');
+    handleEl.className = 'mention-item-handle';
+    handleEl.textContent = (p.emoji ? p.emoji + ' ' : '') + '@' + p.handle;
+    item.appendChild(handleEl);
+
+    if (p.instructions) {
+      const instrEl = document.createElement('span');
+      instrEl.className = 'mention-item-instructions';
+      const firstLine = p.instructions.split('\n')[0];
+      instrEl.textContent = firstLine.length > 80 ? firstLine.slice(0, 77) + '...' : firstLine;
+      item.appendChild(instrEl);
+    }
+
+    item.addEventListener('mousedown', (e) => {
+      // mousedown to fire before blur/input loses focus
+      e.preventDefault();
+      acceptMentionAt(i);
+    });
+    mentionDropdown.appendChild(item);
+  }
+  mentionDropdown.classList.remove('hidden');
+}
+
+function hideMentionDropdown(): void {
+  mentionDropdown.classList.add('hidden');
+  mentionMatches = [];
+  mentionSelectedIndex = 0;
+}
+
+function isMentionDropdownOpen(): boolean {
+  return !mentionDropdown.classList.contains('hidden');
+}
+
+/** Replace the leading @token with the selected persona handle + trailing space. */
+function acceptMentionAt(index: number): void {
+  const persona = mentionMatches[index];
+  if (!persona) return;
+  const value = descInput.value;
+  const parsed = parseLeadingMentionToken(value);
+  if (!parsed) return;
+  const rest = value.slice(parsed.afterIndex);
+  const completion = rest.length > 0 && /^\s/.test(rest) ? '' : ' ';
+  descInput.value = `@${persona.handle}${completion}${rest}`;
+  // Place caret right after the trailing space.
+  const caret = ('@' + persona.handle).length + completion.length;
+  descInput.setSelectionRange(caret, caret);
+  selectedPersonaHandle = persona.handle;
+  hideMentionDropdown();
+  autoResize();
+  inputHints.classList.toggle('hidden', descInput.value.length > 0);
+}
+
+// Refresh dropdown on input changes.
+descInput.addEventListener('input', refreshMentionDropdown);
+
+// Hide dropdown when filter changes (e.g. user switches tabs).
+window.addEventListener('blur', () => hideMentionDropdown());
+descInput.addEventListener('blur', () => {
+  // Delay so click on dropdown items can register.
+  setTimeout(() => hideMentionDropdown(), 100);
+});
+
 // Live search: filter list when in search mode (supports all tabs)
 descInput.addEventListener('input', () => {
   if (searchTimeout) clearTimeout(searchTimeout);
@@ -1899,6 +2091,46 @@ function exitSearchMode(): void {
 }
 
 // Spacebar handling on the textarea
+//
+// Persona @-mention dropdown takes precedence: arrow/enter/tab/escape are
+// captured when the dropdown is open so they don't fall through to the
+// existing nav/submit/voice logic below.
+descInput.addEventListener('keydown', (e) => {
+  if (e.isComposing) return;
+  if (!isMentionDropdownOpen()) return;
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    mentionSelectedIndex = (mentionSelectedIndex + 1) % mentionMatches.length;
+    renderMentionDropdown();
+    return;
+  }
+  if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    mentionSelectedIndex = (mentionSelectedIndex - 1 + mentionMatches.length) % mentionMatches.length;
+    renderMentionDropdown();
+    return;
+  }
+  if (e.key === 'Enter' || e.key === 'Tab') {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    acceptMentionAt(mentionSelectedIndex);
+    return;
+  }
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    hideMentionDropdown();
+    return;
+  }
+  // Space: close dropdown but let the space character through naturally.
+  if (e.key === ' ') {
+    hideMentionDropdown();
+    return;
+  }
+});
+
 descInput.addEventListener('keydown', (e) => {
   // Shift+Tab: toggle search mode on Spaces, Workers, and Skills tabs
   if (e.key === 'Tab' && e.shiftKey) {
@@ -3093,8 +3325,33 @@ form.addEventListener('submit', async (e) => {
       openAgentChat(undefined as any, '', 'new');
       return;
     }
-    showStatus('⚡ Launching agent...');
-    const result = await intentAPI.quickLaunchAgent(text);
+
+    // Extract a leading @persona mention if present.  State (set when the
+    // user picks from the dropdown or types a complete handle) is the
+    // authoritative source; raw-text parse is a fallback for hand-typed
+    // handles that survived the dropdown hide.
+    const raw = descInput.value;
+    const mentionMatch = raw.match(/^@([a-z0-9][a-z0-9-]{0,31})(?:\s+([\s\S]*))?$/i);
+    let promptText = text;
+    let personaHandleArg: string | undefined;
+    if (mentionMatch) {
+      const candidate = mentionMatch[1].toLowerCase();
+      const fromState = selectedPersonaHandle && selectedPersonaHandle.toLowerCase() === candidate ? selectedPersonaHandle : null;
+      const persona = fromState ? findExactPersona(fromState) : findExactPersona(candidate);
+      if (persona) {
+        personaHandleArg = persona.handle;
+        promptText = (mentionMatch[2] || '').trim();
+        if (!promptText) {
+          // User hit submit with only "@handle" and no follow-up — open an
+          // empty chat seeded with the persona instead of launching with no work.
+          openAgentChat(undefined as any, '', 'new');
+          return;
+        }
+      }
+    }
+
+    showStatus(personaHandleArg ? `⚡ Launching @${personaHandleArg}...` : '⚡ Launching agent...');
+    const result = await intentAPI.quickLaunchAgent(promptText, personaHandleArg);
     if ('error' in result && result.error) {
       if (result.error === 'no_workspace') {
         showStatus('Select a workspace directory first');
@@ -3107,6 +3364,8 @@ form.addEventListener('submit', async (e) => {
     }
     descInput.value = '';
     descInput.style.height = 'auto';
+    selectedPersonaHandle = null;
+    hideMentionDropdown();
     descInput.focus();
     hideStatus();
     renderAgentsList();
@@ -5133,6 +5392,12 @@ intentAPI.getSetting('workspace_root').then(ws => {
     loadIntents();
   }
 });
+
+// Load personas in the main window so the @-mention dropdown on the Workers
+// tab has data.  (Settings popout has its own loadPersonas() call.)
+if (!isCanvasMode && !isSettingsMode) {
+  loadPersonas().catch(() => { /* leaves personas[] empty */ });
+}
 
 // Refresh the intent list when the canvas popout window is closed
 intentAPI.onCanvasWindowClosed(() => {

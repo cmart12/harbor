@@ -1296,6 +1296,66 @@ body.dark .waveform-canvas {
   color: rgba(0, 0, 0, 0.2);
 }
 
+/* ── Persona @ mention dropdown ─────────────────────────── */
+
+.mention-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 60;
+  max-height: 220px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid rgba(140, 120, 180, 0.2);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mention-dropdown.hidden {
+  display: none;
+}
+
+.mention-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: none;
+  background: none;
+  border-radius: 5px;
+  cursor: pointer;
+  text-align: left;
+  font-size: 12px;
+  color: #333;
+  transition: background 0.1s;
+}
+
+.mention-item:hover,
+.mention-item.selected {
+  background: rgba(124, 102, 220, 0.1);
+}
+
+.mention-item-handle {
+  font-weight: 600;
+  color: #7c66dc;
+  white-space: nowrap;
+}
+
+.mention-item-instructions {
+  flex: 1;
+  min-width: 0;
+  color: rgba(0, 0, 0, 0.55);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ── Filter bar ───────────────────────────────────────── */
 
 .filter-bar {
@@ -4009,6 +4069,11 @@ body.dark .submit-btn:hover { background: rgba(124, 102, 220, 0.25); }
 body.dark .input-hints { color: rgba(255, 255, 255, 0.3); }
 body.dark .input-hints kbd { color: rgba(255, 255, 255, 0.45); background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.12); }
 body.dark .input-hints .hint-sep { color: rgba(255, 255, 255, 0.15); }
+body.dark .mention-dropdown { background: #1c1c20; border-color: rgba(255, 255, 255, 0.1); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4); }
+body.dark .mention-item { color: #e0e0e0; }
+body.dark .mention-item:hover, body.dark .mention-item.selected { background: rgba(124, 102, 220, 0.18); }
+body.dark .mention-item-handle { color: #a594e8; }
+body.dark .mention-item-instructions { color: rgba(255, 255, 255, 0.45); }
 
 /* Dark body & attachments */
 body.dark .intent-body { color: rgba(255, 255, 255, 0.5); background: rgba(255, 255, 255, 0.03); }

@@ -237,7 +237,7 @@ export interface IpcCommands {
     args: [agentId: string, requestId: string, decision: 'allow-once' | 'allow-for-session' | 'disable'];
     result: { ok: true } | { error: string };
   };
-  'agent:quick-launch': { args: [prompt: string]; result: { agentId: string; sessionId: string } | { error: string } };
+  'agent:quick-launch': { args: [prompt: string, personaHandle?: string]; result: { agentId: string; sessionId: string } | { error: string } };
   'agent:list-all': { args: []; result: AgentListAllItem[] };
   'agent:delete-session': { args: [agentId: string]; result: { ok: true } };
   'agent:launch-cloud': {

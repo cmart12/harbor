@@ -104,7 +104,7 @@ export interface IntentAPI {
   resolveSandboxBlock(agentId: string, requestId: string, decision: 'allow-once' | 'allow-for-session' | 'disable'): Promise<IpcCommandResult<'agent:resolve-sandbox'>>;
   abortAgent(agentId: string): Promise<IpcCommandResult<'agent:abort'>>;
   openAgentCli(agentId: string): Promise<IpcCommandResult<'agent:open-cli'>>;
-  quickLaunchAgent(prompt: string): Promise<IpcCommandResult<'agent:quick-launch'>>;
+  quickLaunchAgent(prompt: string, personaHandle?: string): Promise<IpcCommandResult<'agent:quick-launch'>>;
   listAllAgents(): Promise<IpcCommandResult<'agent:list-all'>>;
   deleteAgentSession(agentId: string): Promise<IpcCommandResult<'agent:delete-session'>>;
   launchCloudAgent(intentId: string, prompt: string): Promise<IpcCommandResult<'agent:launch-cloud'>>;
@@ -278,8 +278,8 @@ const api: IntentAPI = {
     ipcRenderer.invoke('agent:abort', agentId),
   openAgentCli: (agentId) =>
     ipcRenderer.invoke('agent:open-cli', agentId),
-  quickLaunchAgent: (prompt) =>
-    ipcRenderer.invoke('agent:quick-launch', prompt),
+  quickLaunchAgent: (prompt, personaHandle) =>
+    ipcRenderer.invoke('agent:quick-launch', prompt, personaHandle),
   listAllAgents: () =>
     ipcRenderer.invoke('agent:list-all'),
   deleteAgentSession: (agentId) =>

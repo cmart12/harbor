@@ -467,6 +467,71 @@ describe('IPC handlers', () => {
       const result = await invoke('agent:quick-launch', 'do something');
       expect(result).toEqual({ error: 'no_workspace' });
     });
+
+    it('forwards prompt and persona to launchQuickAgent for local persona', async () => {
+      const cfg = vi.mocked(getConfigValue);
+      cfg.mockImplementationOnce((key: string) => key === 'workspace' ? '/mock/workspace' : null as any);
+      cfg.mockImplementationOnce((key: string) => key === 'personas' ? [{
+        id: 'p1', handle: 'reviewer', instructions: 'Be a careful reviewer.',
+        model: 'gpt-4o', runLocation: 'local',
+      }] as any : null as any);
+      const { launchQuickAgent } = await import('./agent-service');
+      vi.mocked(launchQuickAgent).mockClear();
+
+      const result = await invoke('agent:quick-launch', 'review the auth module', 'reviewer');
+      expect(result).toEqual({ agentId: 'a2', sessionId: 's2' });
+      expect(launchQuickAgent).toHaveBeenCalledOnce();
+      const [prompt, workspace, personaArg] = vi.mocked(launchQuickAgent).mock.calls[0];
+      expect(prompt).toBe('review the auth module');
+      expect(workspace).toBe('/mock/workspace');
+      expect(personaArg).toMatchObject({ handle: 'reviewer', instructions: 'Be a careful reviewer.', model: 'gpt-4o' });
+    });
+
+    it('returns error when persona handle does not exist', async () => {
+      const cfg = vi.mocked(getConfigValue);
+      cfg.mockImplementationOnce((key: string) => key === 'workspace' ? '/mock/workspace' : null as any);
+      cfg.mockImplementationOnce((key: string) => key === 'personas' ? [] as any : null as any);
+      const result = await invoke('agent:quick-launch', 'do something', 'ghost');
+      expect(result).toEqual({ error: 'Persona @ghost not found' });
+    });
+
+    it('routes cloud persona to launchCloudAgent and prepends instructions', async () => {
+      const cfg = vi.mocked(getConfigValue);
+      cfg.mockImplementationOnce((key: string) => key === 'workspace' ? '/mock/workspace' : null as any);
+      cfg.mockImplementationOnce((key: string) => key === 'personas' ? [{
+        id: 'p2', handle: 'cloudie', instructions: 'You run in the cloud.',
+        model: 'gpt-4o', runLocation: 'cloud',
+      }] as any : null as any);
+      const { launchCloudAgent } = await import('./cloud-agent');
+      vi.mocked(launchCloudAgent).mockClear();
+      const { launchQuickAgent } = await import('./agent-service');
+      vi.mocked(launchQuickAgent).mockClear();
+
+      const result = await invoke('agent:quick-launch', 'fix the build', 'cloudie');
+      expect(result).toEqual({ agentId: 'mock-uuid', sessionId: 'cs1' });
+      expect(launchQuickAgent).not.toHaveBeenCalled();
+      expect(launchCloudAgent).toHaveBeenCalledOnce();
+      const cloudPrompt = vi.mocked(launchCloudAgent).mock.calls[0][2];
+      expect(cloudPrompt).toContain('You run in the cloud.');
+      expect(cloudPrompt).toContain('fix the build');
+    });
+
+    it('forwards sandboxed persona to launchQuickAgent (no longer blocks)', async () => {
+      const cfg = vi.mocked(getConfigValue);
+      cfg.mockImplementationOnce((key: string) => key === 'workspace' ? '/mock/workspace' : null as any);
+      cfg.mockImplementationOnce((key: string) => key === 'personas' ? [{
+        id: 'p3', handle: 'jail', instructions: 'sandboxed',
+        model: 'gpt-4o', runLocation: 'local', sandboxed: true,
+      }] as any : null as any);
+      const { launchQuickAgent } = await import('./agent-service');
+      vi.mocked(launchQuickAgent).mockClear();
+
+      const result = await invoke('agent:quick-launch', 'do something', 'jail');
+      expect(result).toEqual({ agentId: 'a2', sessionId: 's2' });
+      expect(launchQuickAgent).toHaveBeenCalledOnce();
+      const personaArg = vi.mocked(launchQuickAgent).mock.calls[0][2] as any;
+      expect(personaArg).toMatchObject({ handle: 'jail', sandboxed: true });
+    });
   });
 
   describe('agent:list-all', () => {

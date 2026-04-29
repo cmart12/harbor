@@ -99,12 +99,61 @@ export function registerAgentHandlers(): void {
     return openAgentCli(agentId);
   });
 
-  ipcMain.handle('agent:quick-launch', async (_event, prompt: string) => {
+  ipcMain.handle('agent:quick-launch', async (_event, prompt: string, personaHandle?: string) => {
     const workspace = getConfigValue('workspace');
     if (!workspace) return { error: 'no_workspace' };
 
+    // Resolve persona (if any) before launching so cloud routing can be
+    // applied appropriately.  Sandboxed personas are allowed: launchQuickAgent
+    // applies their sandbox policy rooted at the workspace root, see
+    // src/main/agents/sandbox-launch.ts.
+    let persona: any = null;
+    if (personaHandle) {
+      const allPersonas = (getConfigValue('personas') as any[]) || [];
+      persona = allPersonas.find(p => p.handle === personaHandle) || null;
+      if (!persona) return { error: `Persona @${personaHandle} not found` };
+    }
+
+    if (persona && persona.runLocation === 'cloud') {
+      const fullPrompt = `${persona.instructions}\n\n${prompt}`;
+      const { getWorkspaceRepo, getGitHubToken, launchCloudAgent } = await import('../cloud-agent');
+      const repoInfo = await getWorkspaceRepo(workspace);
+      if (!repoInfo) return { error: 'Could not determine repository from workspace. Ensure a git remote is configured.' };
+
+      const token = await getGitHubToken();
+      if (!token) return { error: 'No GitHub token found. Run `gh auth login` or set GITHUB_TOKEN.' };
+
+      const result = await launchCloudAgent(repoInfo.owner, repoInfo.repo, fullPrompt, token);
+      if ('error' in result) return result;
+
+      const { v4: uuid } = await import('uuid');
+      const agentId = uuid();
+      const now = new Date().toISOString();
+      const summary = `Cloud job ${result.jobId} (@${persona.handle})`;
+      const { createAgentSession } = await import('../database');
+      createAgentSession({
+        id: agentId,
+        session_id: result.sessionId,
+        intent_id: null,
+        prompt,
+        status: 'running',
+        summary,
+        working_dir: workspace,
+        source: 'cloud' as any,
+        persona_handle: persona.handle,
+        created_at: now,
+        updated_at: now,
+      });
+
+      const { startCloudJobPoller } = await import('../cloud-agent-poller');
+      startCloudJobPoller(agentId, repoInfo.owner, repoInfo.repo, result.jobId, token);
+      notifyAllWindows('agent:status-changed', { agentId, status: 'running' });
+
+      return { agentId, sessionId: result.sessionId };
+    }
+
     const { launchQuickAgent } = await import('../agent-service');
-    return launchQuickAgent(prompt, workspace);
+    return launchQuickAgent(prompt, workspace, persona ?? undefined);
   });
 
   ipcMain.handle('agent:launch-document', async (_event, intentId: string) => {

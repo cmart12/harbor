@@ -15,7 +15,7 @@ declare const intentAPI: {
   listModels: () => Promise<{ id: string; name?: string }[]>;
   getSetting: (key: string) => Promise<string | null>;
   setChatModel: (agentId: string, model: string) => Promise<{ error?: string }>;
-  quickLaunchAgent: (prompt: string) => Promise<{ agentId: string; sessionId: string } | { error: string }>;
+  quickLaunchAgent: (prompt: string, personaHandle?: string) => Promise<{ agentId: string; sessionId: string } | { error: string }>;
   getAgentHistory: (agentId: string) => Promise<{ events?: any[]; error?: string; restarted?: boolean }>;
   selectWorkspace: () => Promise<{ selected: boolean; path: string | null }>;
   onWorkspaceChanged: (callback: (path: string | null) => void) => void;

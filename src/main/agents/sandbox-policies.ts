@@ -57,8 +57,14 @@ export function createSandboxPreToolHook() {
   };
 }
 
-/** System prompt appendix for sandboxed sessions. */
-export const SANDBOX_SYSTEM_PROMPT = `\n\n[SANDBOX MODE] You are running in a sandboxed environment scoped to this intent's folder. You may read files and run read-only commands within this directory but must NOT write files outside it, run installs, or execute destructive operations. Do not attempt to access sibling intent folders or the parent workspace.`;
+/** System prompt prefix shared by all sandboxed sessions. */
+const SANDBOX_PROMPT_PREFIX = `\n\n[SANDBOX MODE] You are running in a sandboxed environment. You may read files and run read-only commands within the allowed scope but must NOT write files outside it, run installs, or execute destructive operations.`;
+
+/** System prompt suffix for sandboxed sessions scoped to an intent folder. */
+export const SANDBOX_SYSTEM_PROMPT = `${SANDBOX_PROMPT_PREFIX} Your scope is this intent's folder. Do not attempt to access sibling intent folders or the parent workspace.`;
+
+/** System prompt suffix for sandboxed sessions scoped to the workspace root. */
+export const SANDBOX_WORKSPACE_SYSTEM_PROMPT = `${SANDBOX_PROMPT_PREFIX} Your scope is the workspace root. Do not attempt to access paths outside the workspace.`;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Path-policy engine
