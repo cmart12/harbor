@@ -885,11 +885,11 @@ function renderAgentEditor(persona: AgentPersona): void {
   locationRow.appendChild(locationLabel);
   locationRow.appendChild(locationSelect);
 
-  // Sandbox checkbox (Windows-only, local-only)
+  // Sandbox checkbox (visible on all platforms, functional on Windows only)
   const isWindows = intentAPI.getPlatform() === 'win32';
   const sandboxRow = document.createElement('div');
   sandboxRow.className = 'persona-form-row persona-sandbox-row';
-  if (!isWindows || persona.runLocation === 'cloud') {
+  if (persona.runLocation === 'cloud') {
     sandboxRow.style.display = 'none';
   }
   const sandboxLabel = document.createElement('label');
@@ -897,21 +897,30 @@ function renderAgentEditor(persona: AgentPersona): void {
   const sandboxCheck = document.createElement('input');
   sandboxCheck.type = 'checkbox';
   sandboxCheck.checked = persona.sandboxed === true;
+  if (!isWindows) {
+    sandboxCheck.disabled = true;
+    sandboxCheck.checked = false;
+  }
   sandboxLabel.appendChild(sandboxCheck);
   sandboxLabel.appendChild(document.createTextNode(' 🔒 Run in sandbox (restrict writes & dangerous commands)'));
   if (!isWindows) {
-    sandboxLabel.title = 'Sandbox is only available on Windows';
+    const hint = document.createElement('span');
+    hint.style.cssText = 'font-size:11px;color:rgba(255,255,255,0.4);margin-left:4px';
+    hint.textContent = '(Windows only)';
+    sandboxLabel.appendChild(hint);
+    sandboxLabel.style.opacity = '0.55';
+    sandboxLabel.title = 'Sandbox requires Windows + the mxc-aware Copilot CLI build';
   }
   sandboxRow.appendChild(sandboxLabel);
 
   locationSelect.addEventListener('change', () => {
-    if (locationSelect.value === 'cloud' || !isWindows) {
+    if (locationSelect.value === 'cloud') {
       sandboxRow.style.display = 'none';
       sandboxCheck.checked = false;
       sandboxOverrideRow.style.display = 'none';
     } else {
       sandboxRow.style.display = '';
-      updateSandboxOverrideVisibility();
+      if (isWindows) updateSandboxOverrideVisibility();
     }
   });
 
