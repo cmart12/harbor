@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron';
+import * as fs from 'fs';
 import { setAIModel, listAvailableModels, reinitCopilot } from '../ai';
-import { resolveCopilotCliPath, invalidateCliPath, checkCliCompatibility } from '../session';
+import { resolveCopilotCliPath, invalidateCliPath, checkCliCompatibility, resolveCommandOnPath, resolveCmdToJs } from '../session';
 import { getConfigValue, setConfigValue, getConfig, type AgentPersona, type CliRuntime } from '../config';
 import { listDiscoveredMcpServers } from '../mcp';
 import { validateMcpServers, validateCliTools } from '../validators';
@@ -27,10 +28,17 @@ export function registerSettingsHandlers(): void {
       setConfigValue('model', value);
       await setAIModel(value);
     } else if (key === 'cli_path') {
-      setConfigValue('cliPath', value || null);
+      let resolved = value || null;
+      if (resolved && !fs.existsSync(resolved)) {
+        // Bare command name — try to resolve to full path
+        const found = resolveCommandOnPath(resolved);
+        if (found) resolved = resolveCmdToJs(found);
+      }
+      setConfigValue('cliPath', resolved);
       invalidateCliPath();
       // Reinitialize the SDK so it picks up the new CLI
       await reinitCopilot();
+      return resolved;
     }
   });
 
@@ -113,11 +121,18 @@ export function registerSettingsHandlers(): void {
       if (seen.has(id)) continue;
       seen.add(id);
 
-      validated.push({ id, label, path: rPath });
+      // Resolve bare command names to full paths
+      let resolvedPath = rPath;
+      if (!fs.existsSync(rPath)) {
+        const found = resolveCommandOnPath(rPath);
+        if (found) resolvedPath = resolveCmdToJs(found);
+      }
+
+      validated.push({ id, label, path: resolvedPath });
     }
 
     setConfigValue('cliRuntimes', validated);
-    return { ok: true };
+    return { ok: true, runtimes: validated };
   });
 
   // ── MCP Servers ──────────────────────────────────────────

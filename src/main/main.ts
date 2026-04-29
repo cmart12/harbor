@@ -11,6 +11,7 @@ import { preloadModel } from './voice';
 import { initCopilot, shutdownCopilot } from './ai';
 import { startCliExitMonitor, stopCliExitMonitor } from './agent-service';
 import { createMainWindow, toggleWindow, setupSnapOnDrop, registerWindowIpcHandlers } from './window-manager';
+import { createTray, destroyTray } from './tray';
 
 // Register custom scheme as privileged (must happen before app ready)
 protocol.registerSchemesAsPrivileged([
@@ -138,6 +139,7 @@ app.whenReady().then(async () => {
   createMainWindow({ preloadPath });
   registerWindowIpcHandlers(preloadPath);
   setupSnapOnDrop();
+  createTray();
   preloadModel();
   initCopilot();
   startCliExitMonitor();
@@ -168,9 +170,13 @@ app.whenReady().then(async () => {
 app.on('will-quit', async () => {
   globalShortcut.unregisterAll();
   stopCliExitMonitor();
+  destroyTray();
   await shutdownCopilot();
 });
 
 app.on('window-all-closed', () => {
-  app.quit();
+  // Don't quit — the app stays alive in the system tray
+  if (process.platform === 'darwin') {
+    // On macOS this is standard behavior (app stays in dock)
+  }
 });

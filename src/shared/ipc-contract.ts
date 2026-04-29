@@ -144,7 +144,7 @@ export interface IpcCommands {
 
   // ── Settings ─────────────────────────────────────────────
   'settings:get': { args: [key: string]; result: unknown };
-  'settings:set': { args: [key: string, value: string]; result: void };
+  'settings:set': { args: [key: string, value: string]; result: string | null | undefined };
 
   // ── CLI / Models ─────────────────────────────────────────
   'cli:resolve-path': { args: []; result: string | null };

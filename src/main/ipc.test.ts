@@ -88,6 +88,7 @@ vi.mock('./ai', () => ({
   })),
   classifyInput: vi.fn(async () => ({ type: 'intent' })),
   setAIModel: vi.fn(async () => {}),
+  reinitCopilot: vi.fn(async () => {}),
   listAvailableModels: vi.fn(async () => ['gpt-4', 'gpt-3.5']),
 }));
 
@@ -96,6 +97,9 @@ vi.mock('./session', () => ({
   getActiveSessionIntentIds: vi.fn(() => []),
   resolveCopilotCliPath: vi.fn(async () => '/usr/bin/copilot'),
   invalidateCliPath: vi.fn(),
+  resolveCommandOnPath: vi.fn(() => null),
+  resolveCmdToJs: vi.fn((p: string) => p),
+  checkCliCompatibility: vi.fn(() => ({ path: '/usr/bin/copilot', version: '1.0.36', compatible: true, minVersion: '1.0.36' })),
 }));
 
 vi.mock('./voice', () => ({
@@ -209,7 +213,8 @@ import { initIntentCanvas, readCanvas, writeCanvas, scheduleAutoCommit, commitNo
 import { getConfigValue, setConfigValue } from './config';
 import { listDiscoveredMcpServers } from './mcp';
 import { validateMcpServers, validateCliTools } from './validators';
-import { launchSession } from './session';
+import { launchSession, resolveCommandOnPath, resolveCmdToJs, invalidateCliPath } from './session';
+import * as fs from 'fs';
 
 const fakeEvent = { sender: { id: 1 } } as any;
 
@@ -341,6 +346,35 @@ describe('IPC handlers', () => {
       await invoke('settings:set', 'model', 'gpt-4-turbo');
       expect(setConfigValue).toHaveBeenCalledWith('model', 'gpt-4-turbo');
       expect(setAIModel).toHaveBeenCalledWith('gpt-4-turbo');
+    });
+
+    it('cli_path: stores full path when bare command resolves', async () => {
+      vi.mocked(fs.existsSync).mockReturnValueOnce(false); // bare name doesn't exist as file
+      vi.mocked(resolveCommandOnPath).mockReturnValueOnce('/usr/local/bin/copilot');
+      vi.mocked(resolveCmdToJs).mockReturnValueOnce('/usr/local/lib/node_modules/@github/copilot/index.js');
+      const result = await invoke('settings:set', 'cli_path', 'copilot');
+      expect(resolveCommandOnPath).toHaveBeenCalledWith('copilot');
+      expect(resolveCmdToJs).toHaveBeenCalledWith('/usr/local/bin/copilot');
+      expect(setConfigValue).toHaveBeenCalledWith('cliPath', '/usr/local/lib/node_modules/@github/copilot/index.js');
+      expect(invalidateCliPath).toHaveBeenCalled();
+      expect(result).toBe('/usr/local/lib/node_modules/@github/copilot/index.js');
+    });
+
+    it('cli_path: stores original value when path exists on disk', async () => {
+      vi.mocked(fs.existsSync).mockReturnValueOnce(true); // path exists as file
+      vi.mocked(resolveCommandOnPath).mockClear();
+      const result = await invoke('settings:set', 'cli_path', '/already/exists/copilot');
+      expect(resolveCommandOnPath).not.toHaveBeenCalled();
+      expect(setConfigValue).toHaveBeenCalledWith('cliPath', '/already/exists/copilot');
+      expect(result).toBe('/already/exists/copilot');
+    });
+
+    it('cli_path: stores bare name when resolution fails', async () => {
+      vi.mocked(fs.existsSync).mockReturnValueOnce(false);
+      vi.mocked(resolveCommandOnPath).mockReturnValueOnce(null);
+      const result = await invoke('settings:set', 'cli_path', 'nonexistent-cli');
+      expect(setConfigValue).toHaveBeenCalledWith('cliPath', 'nonexistent-cli');
+      expect(result).toBe('nonexistent-cli');
     });
   });
 
@@ -521,6 +555,39 @@ describe('IPC handlers', () => {
       expect(setConfigValue).toHaveBeenCalledWith('personas', [
         { id: 'p1', handle: 'normal-bot', instructions: 'Do things', model: '', runLocation: 'local' },
       ]);
+    });
+  });
+
+  // ── CLI Runtimes ──────────────────────────────────────────────────
+
+  describe('runtimes:save', () => {
+    it('resolves bare command names to full paths', () => {
+      vi.mocked(fs.existsSync).mockReturnValue(false);
+      vi.mocked(resolveCommandOnPath).mockReturnValueOnce('/usr/local/bin/copilot-dev');
+      vi.mocked(resolveCmdToJs).mockReturnValueOnce('/usr/local/bin/copilot-dev');
+
+      const runtimes = [{ id: 'rt-1', label: 'Dev', path: 'copilot-dev' }];
+      const result = invoke('runtimes:save', runtimes);
+
+      expect(resolveCommandOnPath).toHaveBeenCalledWith('copilot-dev');
+      expect(setConfigValue).toHaveBeenCalledWith('cliRuntimes', [
+        { id: 'rt-1', label: 'Dev', path: '/usr/local/bin/copilot-dev' },
+      ]);
+      expect(result).toMatchObject({ ok: true, runtimes: [{ id: 'rt-1', path: '/usr/local/bin/copilot-dev' }] });
+    });
+
+    it('keeps path as-is when it exists on disk', () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(resolveCommandOnPath).mockClear();
+
+      const runtimes = [{ id: 'rt-1', label: 'Local', path: '/opt/copilot/bin/copilot' }];
+      const result = invoke('runtimes:save', runtimes);
+
+      expect(resolveCommandOnPath).not.toHaveBeenCalled();
+      expect(setConfigValue).toHaveBeenCalledWith('cliRuntimes', [
+        { id: 'rt-1', label: 'Local', path: '/opt/copilot/bin/copilot' },
+      ]);
+      expect(result).toMatchObject({ ok: true });
     });
   });
 

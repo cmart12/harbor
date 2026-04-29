@@ -113,7 +113,7 @@ export interface LaunchResult {
  * Resolve a bare command name (e.g. "copilot", "copilot-dev") to its full
  * path using the system PATH via `where.exe` (Windows) or `which` (Unix).
  */
-function resolveCommandOnPath(command: string): string | null {
+export function resolveCommandOnPath(command: string): string | null {
   try {
     const cmd = process.platform === 'win32' ? `where.exe ${command}` : `which ${command}`;
     const result = execSync(cmd, { windowsHide: true, timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();

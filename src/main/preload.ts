@@ -56,7 +56,7 @@ export interface IntentAPI {
 
   // ── CLI Runtimes ─────────────────────────────────────────
   listRuntimes(): Promise<{ id: string; label: string; path: string }[]>;
-  saveRuntimes(runtimes: { id: string; label: string; path: string }[]): Promise<{ ok?: boolean; error?: string }>;
+  saveRuntimes(runtimes: { id: string; label: string; path: string }[]): Promise<{ ok?: boolean; error?: string; runtimes?: { id: string; label: string; path: string }[] }>;
 
   // ── MCP servers ──────────────────────────────────────────
   listDiscoveredMcp(): Promise<IpcCommandResult<'mcp:list-discovered'>>;

@@ -77,14 +77,14 @@ interface IntentAPI {
   dismissRecurrence(id: string): Promise<boolean>;
   transcribe(audioData: number[]): Promise<string>;
   getSetting(key: string): Promise<string | null>;
-  setSetting(key: string, value: string): Promise<void>;
+  setSetting(key: string, value: string): Promise<string | null | undefined>;
   resolveCliPath(): Promise<string | null>;
   checkCliVersion(): Promise<{ path: string | null; version: string | null; compatible: boolean; minVersion: string }>;
   listModels(): Promise<{ id: string; name?: string }[]>;
   listPersonas(): Promise<AgentPersona[]>;
   savePersonas(personas: AgentPersona[]): Promise<{ ok?: boolean; error?: string }>;
   listRuntimes(): Promise<CliRuntime[]>;
-  saveRuntimes(runtimes: CliRuntime[]): Promise<{ ok?: boolean; error?: string }>;
+  saveRuntimes(runtimes: CliRuntime[]): Promise<{ ok?: boolean; error?: string; runtimes?: CliRuntime[] }>;
   listDiscoveredMcp(): Promise<DiscoveredMcpServer[]>;
   listCustomMcp(): Promise<CustomMcpServer[]>;
   saveCustomMcp(servers: CustomMcpServer[]): Promise<{ ok?: boolean; error?: string }>;
@@ -1116,7 +1116,11 @@ function showRuntimeForm(existing?: CliRuntime): void {
       cliRuntimes.push({ id: crypto.randomUUID(), label, path: rPath });
     }
 
-    await intentAPI.saveRuntimes(cliRuntimes);
+    const result = await intentAPI.saveRuntimes(cliRuntimes);
+    // Update local state with resolved paths from the backend
+    if (result && result.runtimes) {
+      cliRuntimes = result.runtimes;
+    }
     form.remove();
     renderRuntimes();
   });
@@ -3223,8 +3227,12 @@ cliPathInput.addEventListener('input', () => {
   if (cliPathDebounce) clearTimeout(cliPathDebounce);
   cliPathDebounce = setTimeout(async () => {
     const val = cliPathInput.value.trim();
-    await intentAPI.setSetting('cli_path', val);
-    cliPathClear.classList.toggle('hidden', !val);
+    const resolved = await intentAPI.setSetting('cli_path', val);
+    // Update input to show the resolved full path if it changed
+    if (resolved && resolved !== val) {
+      cliPathInput.value = resolved;
+    }
+    cliPathClear.classList.toggle('hidden', !cliPathInput.value);
     await updateCliPathDetected();
   }, 500);
 });
