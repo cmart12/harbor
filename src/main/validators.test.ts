@@ -222,4 +222,21 @@ describe('validateSandboxPolicy', () => {
     const result = validateSandboxPolicy({ extraReadwritePaths: 'not an array' });
     expect(result?.extraReadwritePaths).toEqual([]);
   });
+
+  it('preserves enforcementMode = "mxc-only"', () => {
+    const result = validateSandboxPolicy({ enforcementMode: 'mxc-only' });
+    expect(result?.enforcementMode).toBe('mxc-only');
+  });
+
+  it('preserves enforcementMode = "both"', () => {
+    const result = validateSandboxPolicy({ enforcementMode: 'both' });
+    expect(result?.enforcementMode).toBe('both');
+  });
+
+  it('falls back to "both" for invalid enforcementMode values', () => {
+    expect(validateSandboxPolicy({ enforcementMode: 'whatever' })?.enforcementMode).toBe('both');
+    expect(validateSandboxPolicy({ enforcementMode: 1 as any })?.enforcementMode).toBe('both');
+    expect(validateSandboxPolicy({ enforcementMode: null as any })?.enforcementMode).toBe('both');
+    expect(validateSandboxPolicy({})?.enforcementMode).toBe('both');
+  });
 });

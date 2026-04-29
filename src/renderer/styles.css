@@ -55,25 +55,34 @@ body.platform-darwin {
 }
 
 /* ── Windows WinUI 3 / Fluent ──────────────────────────── */
+/* On Windows the BrowserWindow is created with transparent:true (for the
+   slide animation) but vibrancy is a no-op, so we paint an opaque panel
+   in CSS (see body.platform-win32 #app rules below) and bump card/chrome
+   opacity here so content reads cleanly on top of that panel. */
 body.platform-win32 {
   --card-radius: 6px;
-  --card-bg: rgba(255, 255, 255, 0.78);
-  --card-border: 1px solid rgba(0, 0, 0, 0.06);
+  --card-bg: rgba(255, 255, 255, 0.92);
+  --card-border: 1px solid rgba(0, 0, 0, 0.08);
   --card-padding: 11px 14px;
-  --card-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
-  --card-backdrop: blur(20px);
-  --card-hover-bg: rgba(255, 255, 255, 0.92);
-  --card-hover-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 2px 6px rgba(0, 0, 0, 0.04);
+  --card-backdrop: none;
+  --card-hover-bg: #ffffff;
+  --card-hover-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 
   --card-inner-radius: 4px;
-  --card-inner-bg: rgba(0, 0, 0, 0.02);
-  --card-inner-border: 1px solid rgba(0, 0, 0, 0.04);
+  --card-inner-bg: rgba(0, 0, 0, 0.04);
+  --card-inner-border: 1px solid rgba(0, 0, 0, 0.06);
 
   --chrome-radius: 4px;
-  --chrome-bg: rgba(255, 255, 255, 0.5);
-  --chrome-border: 1px solid rgba(0, 0, 0, 0.06);
-  --chrome-active-bg: rgba(255, 255, 255, 0.7);
+  --chrome-bg: rgba(255, 255, 255, 0.7);
+  --chrome-border: 1px solid rgba(0, 0, 0, 0.08);
+  --chrome-active-bg: rgba(255, 255, 255, 0.92);
   --btn-radius: 4px;
+}
+
+/* Windows: opaque Fluent panel for the main window. */
+body.platform-win32 #app {
+  background: #f5f5f7;
 }
 
 body {
@@ -546,6 +555,16 @@ body.dark.settings-window #app {
   border-radius: 0;
   box-shadow: none;
   background: transparent;
+}
+
+/* Windows: paint the settings popout body with the same opaque panel
+   color so the chrome around the inner modal matches the rest of the app. */
+body.platform-win32.settings-window #app {
+  background: #f5f5f7;
+}
+
+body.dark.platform-win32.settings-window #app {
+  background: #1f1f23;
 }
 
 body.dark .settings-overlay.settings-fullpage .settings-modal {
@@ -4109,19 +4128,25 @@ body.dark.platform-darwin {
 
 /* Dark Windows Fluent / Mica */
 body.dark.platform-win32 {
-  --card-bg: rgba(255, 255, 255, 0.04);
-  --card-border: 1px solid rgba(255, 255, 255, 0.06);
-  --card-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-  --card-backdrop: blur(20px);
-  --card-hover-bg: rgba(255, 255, 255, 0.07);
-  --card-hover-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  --card-bg: rgba(255, 255, 255, 0.06);
+  --card-border: 1px solid rgba(255, 255, 255, 0.10);
+  --card-shadow: 0 2px 4px rgba(0, 0, 0, 0.25);
+  --card-backdrop: none;
+  --card-hover-bg: rgba(255, 255, 255, 0.10);
+  --card-hover-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 
-  --card-inner-bg: rgba(255, 255, 255, 0.03);
-  --card-inner-border: 1px solid rgba(255, 255, 255, 0.05);
+  --card-inner-bg: rgba(255, 255, 255, 0.05);
+  --card-inner-border: 1px solid rgba(255, 255, 255, 0.07);
 
-  --chrome-bg: rgba(255, 255, 255, 0.04);
-  --chrome-border: 1px solid rgba(255, 255, 255, 0.06);
-  --chrome-active-bg: rgba(255, 255, 255, 0.1);
+  --chrome-bg: rgba(255, 255, 255, 0.07);
+  --chrome-border: 1px solid rgba(255, 255, 255, 0.10);
+  --chrome-active-bg: rgba(255, 255, 255, 0.14);
+}
+
+/* Dark Windows: opaque charcoal panel for the main window. */
+body.dark.platform-win32 #app {
+  background: #1f1f23;
+  box-shadow: 0 0 8px rgba(0, 0, 0, 0.35), 0 8px 32px rgba(0, 0, 0, 0.45);
 }
 
 body.dark #app {

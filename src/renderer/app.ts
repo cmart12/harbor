@@ -30,6 +30,7 @@ interface SandboxPolicy {
   allowWebFetch: boolean;
   allowOutbound: boolean;
   allowLocalNetwork: boolean;
+  enforcementMode: 'both' | 'mxc-only';
 }
 
 const DEFAULT_SANDBOX_POLICY: SandboxPolicy = {
@@ -41,6 +42,7 @@ const DEFAULT_SANDBOX_POLICY: SandboxPolicy = {
   allowWebFetch: false,
   allowOutbound: false,
   allowLocalNetwork: false,
+  enforcementMode: 'both',
 };
 
 interface AgentPersona {
@@ -181,6 +183,7 @@ interface IntentAPI {
     target: string;
     intention?: string;
     allowedDecisions?: Array<'allow-once' | 'allow-for-session' | 'disable'>;
+    layer?: 'host:readonly-classifier' | 'host:path-policy' | 'host:web-fetch' | 'host:permission' | 'mxc:shell-denial-suspected';
   }) => void): void;
   onAgentCompleted(callback: (data: any) => void): void;
   onNotificationApprovalClicked(callback: (data: { agentId: string }) => void): void;
@@ -3831,6 +3834,52 @@ function renderSandboxPolicyForm(
     'When checked, shell commands may reach localhost / LAN. Default OFF.',
   );
 
+  // Enforcement section — lets the user pick between defense-in-depth (host
+  // guards on top of MXC) and MXC-only (test mode that disables host guards
+  // so denials come from MXC's AppContainer alone).
+  const enforceTitle = document.createElement('div');
+  enforceTitle.className = 'sandbox-section-title';
+  enforceTitle.textContent = 'Enforcement';
+  container.appendChild(enforceTitle);
+
+  const enforceWrap = document.createElement('label');
+  const enforceLbl = document.createElement('span');
+  enforceLbl.textContent = 'Enforcement mode';
+  enforceWrap.appendChild(enforceLbl);
+  const enforceSelect = document.createElement('select');
+  enforceSelect.id = id('enforcement');
+  const optBoth = document.createElement('option');
+  optBoth.value = 'both';
+  optBoth.textContent = 'Both: host guards + MXC (Recommended)';
+  enforceSelect.appendChild(optBoth);
+  const optMxc = document.createElement('option');
+  optMxc.value = 'mxc-only';
+  optMxc.textContent = 'MXC only (test mode — host guards disabled)';
+  enforceSelect.appendChild(optMxc);
+  enforceSelect.value = initial.enforcementMode === 'mxc-only' ? 'mxc-only' : 'both';
+  enforceWrap.appendChild(enforceSelect);
+  container.appendChild(enforceWrap);
+
+  const enforceHint = document.createElement('div');
+  enforceHint.className = 'sandbox-field-hint';
+  enforceHint.textContent =
+    'Both: host-side read-only classifier + path-policy hook deny most things before MXC sees them. ' +
+    'MXC only: skip those host guards so MXC AppContainer is the sole enforcer for shell commands. ' +
+    'Use MXC-only to verify MXC is actually doing the work — note that path-bearing SDK tools ' +
+    '(view/edit/create/glob/grep) are NOT covered by MXC and become unrestricted in this mode.';
+  container.appendChild(enforceHint);
+
+  const enforceWarn = document.createElement('div');
+  enforceWarn.className = 'sandbox-field-hint';
+  enforceWarn.style.color = '#c0392b';
+  enforceWarn.style.fontWeight = '600';
+  enforceWarn.textContent = '⚠ MXC-only is a test mode. Use only to verify MXC enforcement; less safe than Both.';
+  enforceWarn.style.display = enforceSelect.value === 'mxc-only' ? '' : 'none';
+  container.appendChild(enforceWarn);
+  enforceSelect.addEventListener('change', () => {
+    enforceWarn.style.display = enforceSelect.value === 'mxc-only' ? '' : 'none';
+  });
+
   function getPolicy(): SandboxPolicy {
     return {
       scopeToIntentFolder: scopeBox.checked,
@@ -3841,6 +3890,7 @@ function renderSandboxPolicyForm(
       allowWebFetch: wfBox.checked,
       allowOutbound: outBox.checked,
       allowLocalNetwork: localBox.checked,
+      enforcementMode: enforceSelect.value === 'mxc-only' ? 'mxc-only' : 'both',
     };
   }
 
@@ -3853,6 +3903,8 @@ function renderSandboxPolicyForm(
     wfBox.checked = p.allowWebFetch;
     outBox.checked = p.allowOutbound;
     localBox.checked = p.allowLocalNetwork;
+    enforceSelect.value = p.enforcementMode === 'mxc-only' ? 'mxc-only' : 'both';
+    enforceWarn.style.display = enforceSelect.value === 'mxc-only' ? '' : 'none';
   }
 
   return { getPolicy, setPolicy };
@@ -4993,6 +5045,7 @@ function renderSandboxBlockBanner(data: {
   target: string;
   intention?: string;
   allowedDecisions?: Array<'allow-once' | 'allow-for-session' | 'disable'>;
+  layer?: 'host:readonly-classifier' | 'host:path-policy' | 'host:web-fetch' | 'host:permission' | 'mxc:shell-denial-suspected';
 }): void {
   const banner = document.createElement('div');
   banner.className = 'sandbox-block-banner';
@@ -5003,6 +5056,21 @@ function renderSandboxBlockBanner(data: {
     ? `🔒 Possible sandbox denial`
     : `🔒 Sandbox blocked: ${data.kind}${data.toolName ? ` (${data.toolName})` : ''}`;
   banner.appendChild(title);
+
+  // Show which enforcement layer fired so the user can verify whether MXC
+  // actually denied (mxc:*) vs the host intercepted before MXC (host:*).
+  if (data.layer) {
+    const layerTag = document.createElement('div');
+    layerTag.className = 'sandbox-block-banner-layer';
+    layerTag.style.fontSize = '11px';
+    layerTag.style.opacity = '0.75';
+    layerTag.style.fontFamily = 'monospace';
+    const layerLabel = data.layer.startsWith('mxc:')
+      ? `Enforced by: MXC (${data.layer})`
+      : `Enforced by: host (${data.layer})`;
+    layerTag.textContent = layerLabel;
+    banner.appendChild(layerTag);
+  }
 
   const body = document.createElement('div');
   body.style.fontSize = '12px';

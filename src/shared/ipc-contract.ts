@@ -83,6 +83,18 @@ export interface SandboxPolicy {
   allowWebFetch: boolean;
   allowOutbound: boolean;
   allowLocalNetwork: boolean;
+  /**
+   * Which enforcement layers run for sandboxed agents.
+   *
+   * - `'both'` (default): host-side guards (read-only shell classifier, path-policy
+   *   hook, path-aware permission handler) run before MXC. Most denials are caught
+   *   host-side and never reach MXC.
+   * - `'mxc-only'`: host-side guards are skipped — MXC's AppContainer + network
+   *   firewall is the sole enforcer for the shell tool. Path-bearing SDK tools
+   *   (view/edit/create/glob/grep) become unrestricted because MXC does not see
+   *   them. Use only when verifying MXC's own enforcement; less safe than `both`.
+   */
+  enforcementMode: 'both' | 'mxc-only';
 }
 
 /** Default sandbox policy: maximum restriction (intent folder only, no network, no MCP, no web fetch). */
@@ -95,7 +107,26 @@ export const DEFAULT_SANDBOX_POLICY: SandboxPolicy = {
   allowWebFetch: false,
   allowOutbound: false,
   allowLocalNetwork: false,
+  enforcementMode: 'both',
 };
+
+/**
+ * Identifier of the enforcement layer that produced a sandbox denial. Surfaced
+ * in `SandboxBlockRequest.layer` so the renderer's bubble-up banner can show
+ * which guard fired and so logs can be filtered by layer.
+ *
+ * - `host:readonly-classifier` — read-only shell classifier (host-side, pre-tool)
+ * - `host:path-policy` — path-policy hook for view/edit/create/glob/grep (host-side, pre-tool)
+ * - `host:web-fetch` — web_fetch host-side denial (pre-tool)
+ * - `host:permission` — path-aware permission handler (host-side, runtime read/write request)
+ * - `mxc:shell-denial-suspected` — heuristic detection of MXC AppContainer denial in shell output (post-tool)
+ */
+export type SandboxLayer =
+  | 'host:readonly-classifier'
+  | 'host:path-policy'
+  | 'host:web-fetch'
+  | 'host:permission'
+  | 'mxc:shell-denial-suspected';
 
 export interface CliRuntime {
   id: string;
@@ -317,6 +348,7 @@ export interface IpcEvents {
     target: string;
     intention?: string;
     allowedDecisions?: Array<'allow-once' | 'allow-for-session' | 'disable'>;
+    layer?: SandboxLayer;
   };
   'agent:completed': { agentId: string; summary: string };
   'notification:approval-clicked': { agentId: string };

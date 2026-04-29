@@ -102,5 +102,6 @@ export function validateSandboxPolicy(raw: unknown): SandboxPolicy | null {
     allowLocalNetwork: typeof r.allowLocalNetwork === 'boolean'
       ? r.allowLocalNetwork
       : DEFAULT_SANDBOX_POLICY.allowLocalNetwork,
+    enforcementMode: r.enforcementMode === 'mxc-only' ? 'mxc-only' : 'both',
   };
 }

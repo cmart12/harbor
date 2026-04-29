@@ -151,6 +151,9 @@ export interface SandboxPolicy {
   // Network (passed straight through to the runtime; affects shell child only)
   allowOutbound:     boolean;        // default false
   allowLocalNetwork: boolean;        // default false
+
+  // Enforcement layers — see "enforcementMode field" below.
+  enforcementMode: 'both' | 'mxc-only'; // default 'both'
 }
 ```
 
@@ -185,6 +188,41 @@ function resolveSandboxPolicy(persona: AgentPersona): SandboxPolicy {
 A persona triggers the sandbox path **only when** `persona.sandboxed === true`
 **and** `IS_WINDOWS`. Without `sandboxed`, the agent launches with no `configDir`
 and the full tool surface — same as today.
+
+### `enforcementMode` field
+
+```ts
+enforcementMode: 'both' | 'mxc-only';
+```
+
+- `'both'` (default): host-side guards run on top of MXC. Most denials are
+  caught host-side and never reach MXC.
+- `'mxc-only'`: host-side guards are suppressed at launch — `onPreToolUse` is
+  not installed and the regular interactive `onPermissionRequest` is used
+  instead of `createPathAwareSandboxPermissionHandler`. MXC's AppContainer +
+  network firewall is the sole enforcer for shell tools. Path-bearing SDK
+  tools (view/edit/create/glob/grep) are **not** seen by MXC and become
+  unrestricted in this mode. Intended only for verifying MXC enforcement;
+  see [`mxc-sandbox-flow.md`](./mxc-sandbox-flow.md#how-to-verify-mxc-is-actually-doing-the-enforcement).
+
+The validator (`src/main/validators.ts`) clamps unrecognized values to
+`'both'` so existing on-disk personas that pre-date the field keep working.
+
+### Sandbox layer taxonomy
+
+Every host-side denial and detected MXC denial is tagged with a
+`SandboxLayer` value (defined in `src/shared/ipc-contract.ts`). The tag is
+logged via `logSandboxLayerDenial(...)` in `src/main/agents/sandbox-policies.ts`
+and forwarded to the renderer in `agent:sandbox-blocked.layer` so the
+bubble-up banner can show *which* layer fired:
+
+| Tag | Source | Fires for |
+|---|---|---|
+| `host:readonly-classifier` | `createSandboxPathPolicyHook` (defense-in-depth shell branch) | Non-read-only shell command in `both` mode |
+| `host:path-policy` | `createSandboxPathPolicyHook` (path-bearing tools branch) | view/edit/create/glob/grep/show_file/str_replace_editor outside policy paths |
+| `host:web-fetch` | `createSandboxPathPolicyHook` | `web_fetch` URL with `allowWebFetch=false` |
+| `host:permission` | `createPathAwareSandboxPermissionHandler` | Runtime `read`/`write`/`mcp`/`url` permission requests outside policy |
+| `mxc:shell-denial-suspected` | `createSandboxShellDenialHook` (heuristic post-tool) | Shell output matched MXC denial patterns (`Access is denied.`, `0xC0000022`, `wxc-exec`, etc.) |
 
 ### How the policy materializes per agent
 

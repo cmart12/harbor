@@ -7,7 +7,9 @@ import type { AgentRecord } from './agent-registry';
 import {
   checkPathScope,
   normalizePath,
+  logSandboxLayerDenial,
   type ResolvedPathPolicy,
+  type SandboxLayer,
 } from './sandbox-policies';
 
 // UserInputRequest/UserInputResponse are not re-exported from the SDK index,
@@ -44,6 +46,13 @@ export interface SandboxBlockRequest {
   intention?: string;
   /** Subset of decisions to offer.  When omitted, all three are shown. */
   allowedDecisions?: SandboxResolutionDecision[];
+  /**
+   * Which enforcement layer fired.  Surfaced in the renderer banner so the
+   * user can tell whether MXC actually denied (`mxc:*`) or whether the host
+   * intercepted before MXC (`host:*`).  Logs already include this; passing
+   * it through the renderer event makes verification visible end-to-end.
+   */
+  layer?: SandboxLayer;
 }
 
 export type SandboxResolutionDecision = 'allow-once' | 'allow-for-session' | 'disable';
@@ -178,11 +187,18 @@ export class InteractionBroker {
         if (r.decision === 'allow-rw' || r.decision === 'allow-ro') {
           return { kind: 'approve-once' as const };
         }
+        logSandboxLayerDenial('host:permission', {
+          agentId: record.agentId,
+          toolName: 'permission:read',
+          target: targetPath,
+          reason: r.decision === 'deny' ? r.reason : 'out-of-scope',
+        });
         return this.handleSandboxBlockForPermission(record, request, {
           source: 'permission',
           kind: 'read',
           target: targetPath,
           intention: typeof req.intention === 'string' ? req.intention : undefined,
+          layer: 'host:permission',
         });
       }
 
@@ -197,11 +213,18 @@ export class InteractionBroker {
         if (allowList.paths.has(norm)) return { kind: 'approve-once' as const };
         const r = checkPathScope(targetPath, policy, true);
         if (r.decision === 'allow-rw') return { kind: 'approve-once' as const };
+        logSandboxLayerDenial('host:permission', {
+          agentId: record.agentId,
+          toolName: 'permission:write',
+          target: targetPath,
+          reason: r.decision === 'deny' ? r.reason : 'out-of-scope',
+        });
         return this.handleSandboxBlockForPermission(record, request, {
           source: 'permission',
           kind: 'write',
           target: targetPath,
           intention: typeof req.intention === 'string' ? req.intention : undefined,
+          layer: 'host:permission',
         });
       }
 
@@ -210,11 +233,18 @@ export class InteractionBroker {
         if (serverName && allowList.resources.has(`mcp:${serverName}`)) {
           return { kind: 'approve-once' as const };
         }
+        logSandboxLayerDenial('host:permission', {
+          agentId: record.agentId,
+          toolName: 'permission:mcp',
+          target: serverName,
+          reason: 'mcp denied by policy',
+        });
         return this.handleSandboxBlockForPermission(record, request, {
           source: 'permission',
           kind: 'mcp',
           target: serverName || '<unknown mcp>',
           intention: typeof req.intention === 'string' ? req.intention : undefined,
+          layer: 'host:permission',
         });
       }
 
@@ -223,11 +253,18 @@ export class InteractionBroker {
         if (url && allowList.resources.has(`url:${url}`)) {
           return { kind: 'approve-once' as const };
         }
+        logSandboxLayerDenial('host:permission', {
+          agentId: record.agentId,
+          toolName: 'permission:url',
+          target: url,
+          reason: 'url denied by policy',
+        });
         return this.handleSandboxBlockForPermission(record, request, {
           source: 'permission',
           kind: 'url',
           target: url || '<unknown url>',
           intention: typeof req.intention === 'string' ? req.intention : undefined,
+          layer: 'host:permission',
         });
       }
 

@@ -179,6 +179,11 @@ export async function launchQuickAgent(
     const customTools = sandboxSetup ? sandboxSetup.customTools : getCustomTools();
     const sandboxState = sandboxSetup?.sandboxState;
     const hooks = sandboxSetup?.hooks;
+    const enforcementMode = sandboxSetup?.enforcementMode ?? 'both';
+    // In mxc-only mode, the path-aware permission handler is also suppressed
+    // (MXC is the sole enforcer for shell; SDK reads/writes fall back to the
+    // standard interactive handler).
+    const useHostPathAwareHandler = isSandboxed && enforcementMode === 'both';
 
     // When a persona is supplied, prepend its instructions to the system message
     // and use its preferred model.  Persona handles are matched against the
@@ -203,7 +208,7 @@ export async function launchQuickAgent(
           content: `\n${systemContent}`,
         },
       } : {}),
-      onPermissionRequest: isSandboxed
+      onPermissionRequest: useHostPathAwareHandler
         ? broker.createPathAwareSandboxPermissionHandler(findRecord)
         : broker.createPermissionHandler(findRecord),
       onUserInputRequest: broker.createUserInputHandler(findRecord),

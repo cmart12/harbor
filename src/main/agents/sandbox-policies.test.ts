@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -14,7 +14,9 @@ import {
   isPathInScope,
   samePath,
   createSandboxPathPolicyHook,
+  createSandboxShellDenialHook,
   detectShellSandboxDenial,
+  logSandboxLayerDenial,
 } from './sandbox-policies';
 
 describe('sandbox-policies', () => {
@@ -368,6 +370,98 @@ describe('sandbox-policies', () => {
       const hook = makeHook();
       const r = await hook({ toolName: 'unknown_tool', toolArgs: { foo: 'bar' } });
       expect(r).toEqual({});
+    });
+
+    describe('layer tagging', () => {
+      it('tags read-only-classifier denials with host:readonly-classifier', async () => {
+        const blocks: any[] = [];
+        const hook = makeHook({ onBlock: async (info) => { blocks.push(info); return {}; } });
+        // Read-only classifier denies inline; onBlock is NOT invoked for shell
+        // denials by the classifier path (it returns deny directly). So we
+        // assert the log line and the deny return instead.
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const r = await hook({ toolName: 'bash', toolArgs: { command: 'rm -rf foo' } });
+        expect((r as any).permissionDecision).toBe('deny');
+        const calls = warn.mock.calls.map(c => c.join(' '));
+        expect(calls.some(c => c.includes('[sandbox][host:readonly-classifier]'))).toBe(true);
+        warn.mockRestore();
+      });
+
+      it('tags path-policy denials with host:path-policy', async () => {
+        const blocks: any[] = [];
+        const hook = makeHook({ onBlock: async (info) => { blocks.push(info); return { permissionDecision: 'deny' as const }; } });
+        await hook({ toolName: 'view', toolArgs: { path: path.join(sibling, 'secret.txt') } });
+        expect(blocks).toHaveLength(1);
+        expect(blocks[0].layer).toBe('host:path-policy');
+      });
+
+      it('tags web_fetch denials with host:web-fetch', async () => {
+        const blocks: any[] = [];
+        const hook = makeHook({ onBlock: async (info) => { blocks.push(info); return { permissionDecision: 'deny' as const }; } });
+        await hook({ toolName: 'web_fetch', toolArgs: { url: 'https://example.com' } });
+        expect(blocks).toHaveLength(1);
+        expect(blocks[0].layer).toBe('host:web-fetch');
+      });
+    });
+  });
+
+  describe('createSandboxShellDenialHook (post-tool MXC denial detector)', () => {
+    it('tags MXC denials with mxc:shell-denial-suspected', async () => {
+      const blocks: any[] = [];
+      const hook = createSandboxShellDenialHook({
+        isDisabled: () => false,
+        onBlock: async (info) => { blocks.push(info); },
+      });
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      await hook({
+        toolName: 'bash',
+        toolArgs: { command: 'Set-Content C:\\Users\\foo\\bar.txt hi' },
+        toolResult: { stderr: 'Set-Content : Access is denied. (0xC0000022)' },
+      });
+      expect(blocks).toHaveLength(1);
+      expect(blocks[0].layer).toBe('mxc:shell-denial-suspected');
+      const calls = warn.mock.calls.map(c => c.join(' '));
+      expect(calls.some(c => c.includes('[sandbox][mxc:shell-denial-suspected]'))).toBe(true);
+      warn.mockRestore();
+    });
+
+    it('skips when sandbox is disabled', async () => {
+      const blocks: any[] = [];
+      const hook = createSandboxShellDenialHook({
+        isDisabled: () => true,
+        onBlock: async (info) => { blocks.push(info); },
+      });
+      await hook({
+        toolName: 'bash',
+        toolArgs: { command: 'rm foo' },
+        toolResult: { stderr: 'Access is denied' },
+      });
+      expect(blocks).toHaveLength(0);
+    });
+
+    it('skips when no denial markers are present', async () => {
+      const blocks: any[] = [];
+      const hook = createSandboxShellDenialHook({
+        isDisabled: () => false,
+        onBlock: async (info) => { blocks.push(info); },
+      });
+      await hook({
+        toolName: 'bash',
+        toolArgs: { command: 'echo hi' },
+        toolResult: { content: 'hi' },
+      });
+      expect(blocks).toHaveLength(0);
+    });
+  });
+
+  describe('logSandboxLayerDenial', () => {
+    it('emits a warn line tagged with the layer', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      logSandboxLayerDenial('host:permission', { agentId: 'a1', toolName: 't', target: 'C:\\x', reason: 'oos' });
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('[sandbox][host:permission] agent=a1 tool=t target=C:\\x reason=oos'),
+      );
+      warn.mockRestore();
     });
   });
 

@@ -21,6 +21,7 @@ import {
   createSandboxPathPolicyHook,
   createSandboxShellDenialHook,
   normalizePath,
+  type SandboxLayer,
 } from './sandbox-policies';
 
 type McpServersMap = ReturnType<typeof getAllMcpServers>;
@@ -39,6 +40,11 @@ export interface SandboxLaunchSetup {
   sandboxState: SandboxRuntimeState | undefined;
   /** SDK hooks (onPreToolUse, onPostToolUse) when sandboxed. */
   hooks: Record<string, unknown> | undefined;
+  /**
+   * Resolved enforcement mode. `'both'` for non-sandboxed personas (the value
+   * is unused there) so callers can spread without checking.
+   */
+  enforcementMode: 'both' | 'mxc-only';
 }
 
 /**
@@ -49,6 +55,26 @@ export interface SandboxLaunchSetup {
  * The hooks closures capture `agentId` so they can look up the live
  * `AgentRecord.sandbox` state on every tool use — this lets the user
  * disable sandbox mid-session via the bubble-up dialog.
+ */
+/**
+ * Shared sandbox-launch setup used by both canvas-comment launches
+ * (intent-folder scope) and Workers-tab quick-launch (workspace-root scope).
+ *
+ * Encapsulates the persona-sandbox glue that was originally inlined in
+ * comment-workflow.ts: policy resolution, sandbox config materialization,
+ * MCP/web-fetch filtering, allow-list state, and the pre/post-tool hooks
+ * that drive the bubble-up dialog.
+ *
+ * The returned `enforcementMode` mirrors `policy.enforcementMode` and lets
+ * call sites pick the right `onPermissionRequest` factory:
+ *   - `'both'` (default) → `createPathAwareSandboxPermissionHandler`
+ *   - `'mxc-only'` → `createPermissionHandler` (no host-side path checks).
+ *
+ * In `'mxc-only'` mode this function still pre-materializes the on/off
+ * config dirs and returns the path policy in `sandboxState`, so the
+ * bubble-up dialog and the post-tool MXC-denial detector both stay wired.
+ * Only the host-side `onPreToolUse` (read-only classifier + path-policy
+ * hook) is suppressed.
  */
 export function buildSandboxLaunchSetup(opts: {
   agentId: string;
@@ -72,11 +98,13 @@ export function buildSandboxLaunchSetup(opts: {
       customTools: allCustomTools,
       sandboxState: undefined,
       hooks: undefined,
+      enforcementMode: 'both',
     };
   }
 
   const policy = resolveSandboxPolicy(persona);
   const sandboxConfigs = buildSandboxConfigs(agentId, workingDir, policy);
+  const enforcementMode = policy.enforcementMode === 'mxc-only' ? 'mxc-only' : 'both';
 
   const mcpServers = !policy.allowMcpServers ? {} : allMcpServers;
   const customTools = !policy.allowWebFetch
@@ -92,7 +120,7 @@ export function buildSandboxLaunchSetup(opts: {
     allowList: { paths: new Set<string>(), resources: new Set<string>(), webFetch: false },
   };
 
-  const onBlock = async (info: { toolName: string; kind: 'read' | 'write' | 'web-fetch' | 'shell'; target: string; requiresWrite: boolean }) => {
+  const onBlock = async (info: { toolName: string; kind: 'read' | 'write' | 'web-fetch' | 'shell'; target: string; requiresWrite: boolean; layer: SandboxLayer }) => {
     const livingRecord = registry.get(agentId);
     if (!livingRecord) return { permissionDecision: 'deny' as const };
     const resolution = await broker.emitSandboxBlock(livingRecord, {
@@ -101,6 +129,7 @@ export function buildSandboxLaunchSetup(opts: {
       toolName: info.toolName,
       target: info.target,
       allowedDecisions: info.kind === 'shell' ? ['allow-once', 'disable'] : ['allow-once', 'allow-for-session', 'disable'],
+      layer: info.layer,
     });
     if (resolution.decision === 'allow-once' || resolution.decision === 'disable') {
       return { permissionDecision: 'allow' as const };
@@ -116,30 +145,41 @@ export function buildSandboxLaunchSetup(opts: {
     return { permissionDecision: 'deny' as const };
   };
 
-  const hooks: Record<string, unknown> = {
-    onPreToolUse: createSandboxPathPolicyHook({
-      policy: sandboxState.policy,
-      allowWebFetch: policy.allowWebFetch,
-      isDisabled: () => registry.get(agentId)?.sandbox?.state === 'off',
-      allowList: () => registry.get(agentId)?.sandbox?.allowList ?? sandboxState.allowList,
-      onBlock,
-    }),
-    onPostToolUse: createSandboxShellDenialHook({
-      isDisabled: () => registry.get(agentId)?.sandbox?.state === 'off',
-      onBlock: async (info) => {
-        const livingRecord = registry.get(agentId);
-        if (!livingRecord) return;
-        await broker.emitSandboxBlock(livingRecord, {
-          source: 'post-tool-shell',
-          kind: 'shell',
-          toolName: info.toolName,
-          target: info.target,
-          intention: `Possible MXC denial detected: "${info.matchedPattern}"`,
-          allowedDecisions: ['allow-once', 'disable'],
-        });
-      },
-    }),
-  };
+  // The post-tool MXC-denial detector stays wired in BOTH modes — it's how the
+  // user finds out that MXC actually blocked something at the OS level.
+  const postTool = createSandboxShellDenialHook({
+    isDisabled: () => registry.get(agentId)?.sandbox?.state === 'off',
+    onBlock: async (info) => {
+      const livingRecord = registry.get(agentId);
+      if (!livingRecord) return;
+      await broker.emitSandboxBlock(livingRecord, {
+        source: 'post-tool-shell',
+        kind: 'shell',
+        toolName: info.toolName,
+        target: info.target,
+        intention: `Possible MXC denial detected: "${info.matchedPattern}"`,
+        allowedDecisions: ['allow-once', 'disable'],
+        layer: info.layer,
+      });
+    },
+  });
+
+  // In mxc-only mode, suppress the host-side pre-tool hook entirely so the
+  // read-only shell classifier and path-policy hook don't intercept calls
+  // before MXC sees them.  MCP/web_fetch filtering still applies (those
+  // happen above by stripping tools from `customTools`/`mcpServers`).
+  const hooks: Record<string, unknown> | undefined = enforcementMode === 'mxc-only'
+    ? { onPostToolUse: postTool }
+    : {
+        onPreToolUse: createSandboxPathPolicyHook({
+          policy: sandboxState.policy,
+          allowWebFetch: policy.allowWebFetch,
+          isDisabled: () => registry.get(agentId)?.sandbox?.state === 'off',
+          allowList: () => registry.get(agentId)?.sandbox?.allowList ?? sandboxState.allowList,
+          onBlock,
+        }),
+        onPostToolUse: postTool,
+      };
 
   return {
     isSandboxed: true,
@@ -149,5 +189,6 @@ export function buildSandboxLaunchSetup(opts: {
     customTools,
     sandboxState,
     hooks,
+    enforcementMode,
   };
 }

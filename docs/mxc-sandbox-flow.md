@@ -60,6 +60,32 @@ agent execution and bubble-up of denials. Pair this with
 These two layers cooperate so the user's mental model — "the agent is confined
 to the intent folder" — holds even though MXC alone wouldn't enforce it.
 
+### Enforcement modes (`SandboxPolicy.enforcementMode`)
+
+The persona-level policy can run with the host-side guards turned off so MXC
+is the sole enforcer for the shell tool.  This is **only** intended as a way
+to verify that MXC is doing the work — production personas should leave the
+default (`'both'`) on.
+
+| Mode | Read-only shell classifier | Path-policy `onPreToolUse` | Path-aware `onPermissionRequest` | Post-tool MXC denial detector | MXC AppContainer |
+|------|----|----|----|----|----|
+| `both` (default) | ✅ runs | ✅ runs | ✅ runs | ✅ runs | ✅ runs |
+| `mxc-only` | ❌ skipped | ❌ skipped | ❌ skipped (regular interactive handler) | ✅ runs | ✅ runs |
+
+In both modes the on-/off-config dirs are still pre-materialized; the renderer
+bubble-up still fires; and MCP / `web_fetch` filtering is still tied to the
+existing `allowMcpServers` / `allowWebFetch` policy bits (independent of
+`enforcementMode`).
+
+### Per-layer denial logging
+
+Every host-side and detected-MXC denial is logged with a `SandboxLayer` tag
+(see [`mxc-sandbox-schema.md`](./mxc-sandbox-schema.md#sandbox-layer-taxonomy))
+via `logSandboxLayerDenial(layer, …)` in `sandbox-policies.ts`. The same tag
+is sent to the renderer in the `agent:sandbox-blocked` event, where the
+bubble-up banner shows it as `Enforced by: MXC (mxc:…)` or
+`Enforced by: host (host:…)`.
+
 ---
 
 ## Sequence: launching a sandboxed comment agent
@@ -225,6 +251,72 @@ When an agent reaches `idle` / `failed` / aborted:
    gates the sandbox path on `IS_WINDOWS` only.
 6. **Live MXC policy mutation.** MXC has no "update policy" API; we re-create
    the session via `resumeSession(offDir)` to swap policies.
+
+---
+
+## How to verify MXC is actually doing the enforcement
+
+Because the default `enforcementMode: 'both'` stacks several host-side guards
+in front of MXC, a "the agent can't write to my Desktop" experiment usually
+fails at layer 1 (read-only classifier) or layer 2 (path-policy) and never
+exercises MXC at all. Use `mxc-only` mode with the recipes below to verify
+MXC is enforcing.
+
+> **Setup**
+> 1. Create or pick a sandboxed persona and set `Enforcement mode` to
+>    *"MXC only (test mode)"* in the policy editor.
+> 2. Make sure the resolved CLI bundles `@microsoft/mxc-sdk` — the launch logs
+>    a warning when it doesn't (see `isCliMxcCapable()` in `session.ts`).
+> 3. Run the persona on Windows. Sandbox is gated on `IS_WINDOWS`.
+
+### Recipe 1 — read outside scope
+
+Prompt the agent: `Get-Content C:\Users\<other>\Documents\file.txt`
+
+| Mode | Expected layer | Notes |
+|---|---|---|
+| `both` | `host:path-policy` | Read-only classifier passes (`Get-Content` is read-only); the path-policy hook fires. **MXC never runs.** |
+| `mxc-only` | `mxc:shell-denial-suspected` | The classifier and path hook are skipped. MXC's AppContainer denies the file open; output contains `Access is denied.` / `0xC0000022`; the post-tool detector bubbles up. **This proves MXC enforced.** |
+
+### Recipe 2 — write outside scope
+
+Prompt the agent: `Set-Content C:\Users\<you>\Desktop\foo.txt 'hi'`
+
+| Mode | Expected layer |
+|---|---|
+| `both` | `host:readonly-classifier` (writes are not in the read-only allow list) |
+| `mxc-only` | `mxc:shell-denial-suspected` (MXC AppContainer denies the file create) |
+
+### Recipe 3 — outbound network
+
+With `allowOutbound: false`, prompt: `Invoke-WebRequest https://example.com`
+
+| Mode | Expected layer |
+|---|---|
+| `both` | `host:readonly-classifier` |
+| `mxc-only` | `mxc:shell-denial-suspected` (MXC firewall blocks) |
+
+### What to look at
+
+- **Bubble-up banner.** The renderer shows `Enforced by: MXC (mxc:…)` or
+  `Enforced by: host (host:…)` directly under the title. If you only ever see
+  `host:*`, you're not testing MXC.
+- **Main process logs.** Each denial logs a tagged warn line via
+  `logSandboxLayerDenial`, e.g.
+  `[sandbox][mxc:shell-denial-suspected] tool=bash target=Set-Content … reason=matched pattern "Access is denied."`.
+- **Process tree.** When MXC actually runs the shell, the spawned process is
+  `wxc-exec.exe` (not `pwsh.exe`). `Get-Process | Where-Object Name -like 'wxc*'`
+  during a sandboxed shell call confirms the OS-level isolation is in effect.
+
+### Caveat — what `mxc-only` does NOT cover
+
+MXC only sandboxes shells. Path-bearing SDK tools (`view`, `edit`, `create`,
+`glob`, `grep`, `show_file`, `applyPatch`, `str_replace_editor`) and the
+custom `web_fetch` tool go through Node `fs` / `fetch` inside the runtime
+process and are **not** seen by MXC. In `mxc-only` mode those tools become
+effectively unrestricted (the path-policy hook is off). This is exactly what
+you want when verifying MXC's shell enforcement, but it's why `mxc-only` is
+not a production setting.
 
 ---
 

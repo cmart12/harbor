@@ -11,9 +11,28 @@
 
 import * as path from 'path';
 import * as fs from 'fs';
-import type { SandboxPolicy } from '../../shared/ipc-contract';
+import type { SandboxPolicy, SandboxLayer } from '../../shared/ipc-contract';
+
+export type { SandboxLayer } from '../../shared/ipc-contract';
 
 export const IS_WINDOWS = process.platform === 'win32';
+
+/**
+ * Lightweight tagged-denial logger. Centralized so every host-side guard logs
+ * with a consistent prefix that mentions the layer that fired. Tests can spy
+ * on `console.warn` to assert the right layer was logged.
+ */
+export function logSandboxLayerDenial(
+  layer: SandboxLayer,
+  details: { agentId?: string; toolName?: string; target?: string; reason?: string },
+): void {
+  const parts = [`[sandbox][${layer}]`];
+  if (details.agentId) parts.push(`agent=${details.agentId}`);
+  if (details.toolName) parts.push(`tool=${details.toolName}`);
+  if (details.target) parts.push(`target=${details.target}`);
+  if (details.reason) parts.push(`reason=${details.reason}`);
+  console.warn(parts.join(' '));
+}
 
 // Read-only command patterns (safe to run in sandbox)
 const READ_ONLY_PATTERNS = [
@@ -286,7 +305,9 @@ export interface PathPolicyHookResult {
  *  3. For `web_fetch`: when policy.allowWebFetch is false and the URL hasn't
  *     been added to the per-agent allow list, triggers onBlock.
  *
- * `onBlock` returns the SDK PreToolUseHookOutput shape (allow/deny/ask).
+ * `onBlock` returns the SDK PreToolUseHookOutput shape (allow/deny/ask). It
+ * is also called with a `layer` so the bubble-up + logs can identify which
+ * guard fired (`host:readonly-classifier`, `host:path-policy`, `host:web-fetch`).
  */export function createSandboxPathPolicyHook(args: {
   policy: ResolvedPathPolicy;
   /** When true, the legacy read-only classifier is skipped (caller does its own shell handling). */
@@ -303,6 +324,7 @@ export interface PathPolicyHookResult {
     kind: 'read' | 'write' | 'web-fetch' | 'shell';
     target: string;
     requiresWrite: boolean;
+    layer: SandboxLayer;
   }) => Promise<PathPolicyHookResult>;
 }) {
   const readOnlyHook = createSandboxPreToolHook();
@@ -319,7 +341,15 @@ export interface PathPolicyHookResult {
     // 1. Defense-in-depth shell classifier
     if (!args.skipReadOnlyClassifier && (toolName === 'bash' || toolName === 'shell')) {
       const r = await readOnlyHook(input, invocation);
-      if (r && r.permissionDecision === 'deny') return r as PathPolicyHookResult;
+      if (r && r.permissionDecision === 'deny') {
+        const a = (toolArgs.command as string | undefined) ?? '';
+        logSandboxLayerDenial('host:readonly-classifier', {
+          toolName,
+          target: a,
+          reason: 'non-read-only shell command in sandbox',
+        });
+        return r as PathPolicyHookResult;
+      }
     }
 
     // 2. web_fetch — separate flow because it has no path
@@ -327,7 +357,8 @@ export interface PathPolicyHookResult {
       const allowList = args.allowList();
       if (args.allowWebFetch || allowList.webFetch) return {};
       const url = typeof toolArgs.url === 'string' ? toolArgs.url : '';
-      return args.onBlock({ toolName, kind: 'web-fetch', target: url, requiresWrite: false });
+      logSandboxLayerDenial('host:web-fetch', { toolName, target: url, reason: 'web_fetch denied by policy' });
+      return args.onBlock({ toolName, kind: 'web-fetch', target: url, requiresWrite: false, layer: 'host:web-fetch' });
     }
 
     // 3. Path-bearing tools
@@ -342,11 +373,17 @@ export interface PathPolicyHookResult {
       const result = checkPathScope(target, args.policy, extracted.requiresWrite);
       if (result.decision === 'allow-rw' || result.decision === 'allow-ro') continue;
       // Out of scope or denied — bubble up. First out-of-scope path wins.
+      logSandboxLayerDenial('host:path-policy', {
+        toolName,
+        target,
+        reason: result.decision === 'deny' ? result.reason : 'out-of-scope',
+      });
       return args.onBlock({
         toolName,
         kind: extracted.requiresWrite ? 'write' : 'read',
         target,
         requiresWrite: extracted.requiresWrite,
+        layer: 'host:path-policy',
       });
     }
     return {};
@@ -431,12 +468,18 @@ export function createSandboxShellDenialHook(args: {
     toolName: string;
     target: string;
     matchedPattern: string;
+    layer: SandboxLayer;
   }) => Promise<unknown>;
 }) {
   return async (input: { toolName: string; toolArgs: unknown; toolResult: unknown }, _invocation?: { sessionId: string }) => {
     if (args.isDisabled()) return undefined;
     const hit = detectShellSandboxDenial(input);
     if (!hit) return undefined;
+    logSandboxLayerDenial('mxc:shell-denial-suspected', {
+      toolName: input.toolName,
+      target: hit.command,
+      reason: `matched pattern "${hit.matchedPattern}"`,
+    });
     // Fire-and-forget: we don't block the runtime here, since the tool call
     // already finished. The bubble-up runs asynchronously; the user may resolve
     // it before or after the agent's next turn.
@@ -444,6 +487,7 @@ export function createSandboxShellDenialHook(args: {
       toolName: input.toolName,
       target: hit.command,
       matchedPattern: hit.matchedPattern,
+      layer: 'mxc:shell-denial-suspected',
     });
     return undefined;
   };

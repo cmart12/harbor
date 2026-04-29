@@ -75,7 +75,11 @@ export async function launchCommentAgent(
       registry,
       broker,
     });
-    const { isSandboxed, sandboxConfigs, mcpServers, customTools, sandboxState, hooks } = sandboxSetup;
+    const { isSandboxed, sandboxConfigs, mcpServers, customTools, sandboxState, hooks, enforcementMode } = sandboxSetup;
+    // In mxc-only mode the host-side path-aware permission handler is
+    // suppressed too — MXC's AppContainer is the sole enforcer for the shell;
+    // SDK file ops fall back to the regular interactive handler.
+    const useHostPathAwareHandler = isSandboxed && enforcementMode === 'both';
 
     const systemPrompt = `${persona.instructions}
 
@@ -94,7 +98,7 @@ If you make changes to the document, clearly describe what you changed.${cliTool
       tools: customTools,
       ...(persona.model ? { model: persona.model } : {}),
       ...(hooks ? { hooks } : {}),
-      onPermissionRequest: isSandboxed
+      onPermissionRequest: useHostPathAwareHandler
         ? broker.createPathAwareSandboxPermissionHandler(findRecord)
         : broker.createPermissionHandler(findRecord),
       onUserInputRequest: broker.createUserInputHandler(findRecord),
