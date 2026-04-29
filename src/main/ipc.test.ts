@@ -576,21 +576,49 @@ describe('IPC handlers', () => {
   // ── Persona handlers ────────────────────────────────────────────
 
   describe('personas:list', () => {
-    it('returns personas from config', () => {
+    it('seeds default-agent and persists when config is empty', () => {
+      // The handler guarantees @agent always exists. On the first call when
+      // no personas are saved, it injects default-agent and writes it back
+      // through setConfigValue so subsequent listings/saves see it.
       const result = invoke('personas:list');
       expect(getConfigValue).toHaveBeenCalledWith('personas');
-      expect(result).toEqual([]);
+      expect(result).toEqual([
+        {
+          id: 'default-agent',
+          handle: 'agent',
+          instructions: expect.stringContaining('users instructions'),
+          model: '',
+          runLocation: 'local',
+        },
+      ]);
+      expect(setConfigValue).toHaveBeenCalledWith('personas', expect.arrayContaining([
+        expect.objectContaining({ id: 'default-agent', handle: 'agent' }),
+      ]));
     });
   });
 
   describe('personas:save', () => {
-    it('validates and saves personas', () => {
+    // The save handler prepends default-agent whenever the input doesn't
+    // contain @agent, to prevent users from accidentally deleting it via
+    // the personas list editor (which would break the @-mention dropdown
+    // and the canvas comment workflow). All four "save without @agent"
+    // tests therefore expect the prepended default in the persisted output.
+    const DEFAULT_AGENT_PERSONA = {
+      id: 'default-agent',
+      handle: 'agent',
+      instructions: expect.stringContaining('users instructions'),
+      model: '',
+      runLocation: 'local',
+    };
+
+    it('validates and saves personas (prepends default-agent when missing)', () => {
       const personas = [
         { id: 'p1', handle: 'reviewer', instructions: 'Review code', model: '', runLocation: 'local' },
       ];
       const result = invoke('personas:save', personas);
       expect(result).toEqual({ ok: true });
       expect(setConfigValue).toHaveBeenCalledWith('personas', [
+        DEFAULT_AGENT_PERSONA,
         { id: 'p1', handle: 'reviewer', instructions: 'Review code', model: '', runLocation: 'local' },
       ]);
     });
@@ -600,25 +628,42 @@ describe('IPC handlers', () => {
       expect(result).toEqual({ error: 'invalid payload' });
     });
 
-    it('preserves sandboxed flag when true', () => {
+    it('preserves sandboxed flag when true (with default-agent prepended)', () => {
       const personas = [
         { id: 'p1', handle: 'safe-bot', instructions: 'Read only', model: '', runLocation: 'local', sandboxed: true },
       ];
       const result = invoke('personas:save', personas);
       expect(result).toEqual({ ok: true });
       expect(setConfigValue).toHaveBeenCalledWith('personas', [
+        DEFAULT_AGENT_PERSONA,
         { id: 'p1', handle: 'safe-bot', instructions: 'Read only', model: '', runLocation: 'local', sandboxed: true },
       ]);
     });
 
-    it('omits sandboxed flag when false or missing', () => {
+    it('omits sandboxed flag when false or missing (with default-agent prepended)', () => {
       const personas = [
         { id: 'p1', handle: 'normal-bot', instructions: 'Do things', model: '', runLocation: 'local', sandboxed: false },
       ];
       const result = invoke('personas:save', personas);
       expect(result).toEqual({ ok: true });
       expect(setConfigValue).toHaveBeenCalledWith('personas', [
+        DEFAULT_AGENT_PERSONA,
         { id: 'p1', handle: 'normal-bot', instructions: 'Do things', model: '', runLocation: 'local' },
+      ]);
+    });
+
+    it('does not duplicate default-agent when caller already includes it', () => {
+      // When the editor passes the @agent persona through (the normal flow
+      // when saving from the UI), the handler must NOT prepend a duplicate.
+      const personas = [
+        { id: 'default-agent', handle: 'agent', instructions: 'Custom @agent instructions', model: '', runLocation: 'local' },
+        { id: 'p1', handle: 'reviewer', instructions: 'Review code', model: '', runLocation: 'local' },
+      ];
+      const result = invoke('personas:save', personas);
+      expect(result).toEqual({ ok: true });
+      expect(setConfigValue).toHaveBeenCalledWith('personas', [
+        { id: 'default-agent', handle: 'agent', instructions: 'Custom @agent instructions', model: '', runLocation: 'local' },
+        { id: 'p1', handle: 'reviewer', instructions: 'Review code', model: '', runLocation: 'local' },
       ]);
     });
   });
