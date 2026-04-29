@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron';
 import * as fs from 'fs';
-import { setAIModel, listAvailableModels, reinitCopilot } from '../ai';
+import * as path from 'path';
+import { setAIModel, listAvailableModels, reinitCopilot, previewSandboxConfig } from '../ai';
 import { resolveCopilotCliPath, invalidateCliPath, checkCliCompatibility, resolveCommandOnPath, resolveCmdToJs, isCliMxcCapable } from '../session';
 import { getConfigValue, setConfigValue, getConfig, type AgentPersona, type CliRuntime } from '../config';
 import { listDiscoveredMcpServers } from '../mcp';
@@ -217,5 +218,29 @@ export function registerSettingsHandlers(): void {
     if (!validated) return { error: 'invalid payload' };
     setConfigValue('sandboxDefaultPolicy', validated);
     return { ok: true, policy: validated };
+  });
+
+  // Materializes the runtime-format config.json the same way buildSandboxConfigs
+  // does at agent launch, writes it to a stable preview file under userData,
+  // and opens it in the OS default editor via shell.openPath. Lets the user
+  // see exactly what their policy translates into without spawning an agent.
+  ipcMain.handle('sandbox:open-config-preview', async (_event, policy: unknown) => {
+    const validated = validateSandboxPolicy(policy);
+    if (!validated) return { error: 'invalid payload' };
+    try {
+      const { app, shell } = await import('electron');
+      const previewDir = path.join(app.getPath('userData'), 'sandbox-config', 'preview');
+      fs.mkdirSync(previewDir, { recursive: true });
+      const previewPath = path.join(previewDir, 'config.json');
+      const content = previewSandboxConfig(validated);
+      fs.writeFileSync(previewPath, JSON.stringify(content, null, 2));
+      const openErr = await shell.openPath(previewPath);
+      if (openErr) {
+        return { error: `Failed to open preview: ${openErr}` };
+      }
+      return { ok: true as const, path: previewPath };
+    } catch (err: any) {
+      return { error: err?.message || 'Failed to materialize sandbox config preview' };
+    }
   });
 }

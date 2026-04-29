@@ -71,6 +71,7 @@ export interface IntentAPI {
   // ── Sandbox default policy ───────────────────────────────
   getSandboxDefaultPolicy(): Promise<IpcCommandResult<'sandbox:get-default'>>;
   saveSandboxDefaultPolicy(policy: SandboxPolicy): Promise<IpcCommandResult<'sandbox:save-default'>>;
+  openSandboxConfigPreview(policy: SandboxPolicy): Promise<IpcCommandResult<'sandbox:open-config-preview'>>;
 
   // ── Sessions ─────────────────────────────────────────────
   launchSession(intentId: string): Promise<IpcCommandResult<'session:launch'>>;
@@ -232,6 +233,7 @@ const api: IntentAPI = {
   saveCliTools: (tools) => ipcRenderer.invoke('cli-tools:save', tools),
   getSandboxDefaultPolicy: () => ipcRenderer.invoke('sandbox:get-default'),
   saveSandboxDefaultPolicy: (policy) => ipcRenderer.invoke('sandbox:save-default', policy),
+  openSandboxConfigPreview: (policy) => ipcRenderer.invoke('sandbox:open-config-preview', policy),
 
   // ── Sessions ─────────────────────────────────────────────
   launchSession: (intentId) => ipcRenderer.invoke('session:launch', intentId),

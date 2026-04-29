@@ -118,6 +118,7 @@ interface IntentAPI {
   saveCliTools(tools: CliToolDefinition[]): Promise<{ ok?: boolean; error?: string }>;
   getSandboxDefaultPolicy(): Promise<SandboxPolicy>;
   saveSandboxDefaultPolicy(policy: SandboxPolicy): Promise<{ ok?: boolean; policy?: SandboxPolicy; error?: string }>;
+  openSandboxConfigPreview(policy: SandboxPolicy): Promise<{ ok?: boolean; path?: string; error?: string }>;
   resolveSandboxBlock(agentId: string, requestId: string, decision: 'allow-once' | 'allow-for-session' | 'disable'): Promise<{ ok?: boolean; error?: string }>;
   listEvents(limit?: number): Promise<any[]>;
   resolveDate(dateText: string): Promise<{ due_at: string; due_at_utc: string | null }>;
@@ -1120,6 +1121,53 @@ function renderAgentEditor(persona: AgentPersona): void {
 
   btnRow.appendChild(saveBtn);
   btnRow.appendChild(deleteBtn);
+
+  // "Open config preview" — materializes the persona's current sandbox
+  // policy to a config.json file under userData/sandbox-config/preview/ and
+  // opens it in the OS default text editor. Lets the user verify exactly
+  // which config the runtime will load at agent launch (companion to the
+  // [sandbox] launch-time logs in main).
+  const previewBtn = document.createElement('button');
+  previewBtn.className = 'persona-form-cancel';
+  previewBtn.type = 'button';
+  previewBtn.textContent = 'Open config preview';
+  previewBtn.title = 'Materialize the runtime config.json for this policy and open it in your default text editor.';
+  previewBtn.style.marginLeft = 'auto';
+  previewBtn.addEventListener('click', async () => {
+    if (!sandboxCheck.checked) {
+      errorEl.textContent = 'Enable "Run in sandbox" to preview the config.';
+      errorEl.classList.remove('hidden');
+      return;
+    }
+    // Materialize the policy form lazily — covers both inherit-from-default
+    // and explicit-override cases. Either way personaPolicyApi.getPolicy()
+    // returns the values that would be saved on click.
+    await ensurePolicyForm();
+    if (!personaPolicyApi) {
+      errorEl.textContent = 'Could not load sandbox policy form.';
+      errorEl.classList.remove('hidden');
+      return;
+    }
+    const policy = personaPolicyApi.getPolicy();
+    const result = await intentAPI.openSandboxConfigPreview(policy);
+    if (result?.ok) {
+      errorEl.textContent = `Opened ${result.path}`;
+      errorEl.style.color = '#2d8a3a';
+      errorEl.classList.remove('hidden');
+      setTimeout(() => { errorEl.classList.add('hidden'); errorEl.style.color = ''; }, 2500);
+    } else {
+      errorEl.textContent = result?.error || 'Failed to open config preview';
+      errorEl.classList.remove('hidden');
+    }
+  });
+  // Hide the preview button when sandbox is off (or the platform doesn't
+  // support sandboxing at all) — there's nothing meaningful to materialize.
+  const updatePreviewVisibility = () => {
+    previewBtn.style.display = sandboxCheck.checked && isWindows ? '' : 'none';
+  };
+  updatePreviewVisibility();
+  sandboxCheck.addEventListener('change', updatePreviewVisibility);
+  btnRow.appendChild(previewBtn);
 
   form.appendChild(handleRow);
   form.appendChild(instrRow);

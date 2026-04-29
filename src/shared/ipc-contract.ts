@@ -227,6 +227,7 @@ export interface IpcCommands {
   // ── Sandbox default policy ───────────────────────────────
   'sandbox:get-default': { args: []; result: SandboxPolicy };
   'sandbox:save-default': { args: [policy: SandboxPolicy]; result: { ok: true; policy: SandboxPolicy } | { error: string } };
+  'sandbox:open-config-preview': { args: [policy: SandboxPolicy]; result: { ok: true; path: string } | { error: string } };
 
   // ── Sessions ─────────────────────────────────────────────
   'session:launch': { args: [intentId: string]; result: { success: boolean; error?: string } };

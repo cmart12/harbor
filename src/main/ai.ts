@@ -78,16 +78,38 @@ export function buildSandboxConfigs(
   fs.mkdirSync(onDir, { recursive: true });
   fs.mkdirSync(offDir, { recursive: true });
 
-  fs.writeFileSync(
-    path.join(onDir, 'config.json'),
-    JSON.stringify(materializeRuntimeConfig(true, intentWorkingDir, policy), null, 2),
-  );
-  fs.writeFileSync(
-    path.join(offDir, 'config.json'),
-    JSON.stringify(materializeRuntimeConfig(false, intentWorkingDir, policy), null, 2),
+  const onConfig = materializeRuntimeConfig(true, intentWorkingDir, policy);
+  const offConfig = materializeRuntimeConfig(false, intentWorkingDir, policy);
+
+  fs.writeFileSync(path.join(onDir, 'config.json'), JSON.stringify(onConfig, null, 2));
+  fs.writeFileSync(path.join(offDir, 'config.json'), JSON.stringify(offConfig, null, 2));
+
+  // Surfaces the exact paths and policy applied so users can verify which
+  // config the runtime is loading. Matches the "Open config preview" button
+  // in the persona editor — both pull from materializeRuntimeConfig().
+  console.log(
+    `[sandbox] Materialized configs for agent ${agentId}:\n` +
+    `  on:  ${path.join(onDir, 'config.json')}\n` +
+    `  off: ${path.join(offDir, 'config.json')}\n` +
+    `  policy: enforcementMode=${policy.enforcementMode} scopeToIntentFolder=${policy.scopeToIntentFolder} ` +
+    `allowMcpServers=${policy.allowMcpServers} allowWebFetch=${policy.allowWebFetch} ` +
+    `allowOutbound=${policy.allowOutbound} allowLocalNetwork=${policy.allowLocalNetwork}\n` +
+    `  on-config: ${JSON.stringify(onConfig)}`,
   );
 
   return { onDir, offDir };
+}
+
+/**
+ * Materialize a "preview" config.json for a sandbox policy without writing
+ * any per-agent state. The intent folder is left as a placeholder so the
+ * user can see where it'd be substituted at real agent launch time.
+ *
+ * Returns the JSON object — callers (e.g., the IPC handler that opens the
+ * preview in the default text editor) decide where to write it.
+ */
+export function previewSandboxConfig(policy: SandboxPolicy): Record<string, unknown> {
+  return materializeRuntimeConfig(true, '<intent folder — replaced at agent launch>', policy);
 }
 
 /**

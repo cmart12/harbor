@@ -106,6 +106,15 @@ export function buildSandboxLaunchSetup(opts: {
   const sandboxConfigs = buildSandboxConfigs(agentId, workingDir, policy);
   const enforcementMode = policy.enforcementMode === 'mxc-only' ? 'mxc-only' : 'both';
 
+  // High-level launch summary — the "which config is being loaded?" question
+  // the user is most likely asking. The materialization side already logs
+  // the JSON contents; this line gives the per-agent "where + which mode".
+  console.log(
+    `[sandbox] Launching sandboxed agent ${agentId} ` +
+    `persona=@${persona.handle} mode=${enforcementMode} ` +
+    `configDir=${sandboxConfigs?.onDir ?? '<none>'} workingDir=${workingDir}`,
+  );
+
   const mcpServers = !policy.allowMcpServers ? {} : allMcpServers;
   const customTools = !policy.allowWebFetch
     ? allCustomTools.filter((t: any) => t?.name !== 'web_fetch' && t?.name !== 'web-fetch')
