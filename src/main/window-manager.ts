@@ -195,8 +195,11 @@ export function registerWindowIpcHandlers(preloadPath: string): void {
     }
   });
 
-  // Forward theme changes to canvas window
+  // Forward theme changes to all windows
   ipcMain.on('canvas-window:theme-changed', (_event, theme: string) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('canvas-window:theme-changed', theme);
+    }
     if (canvasWindow && !canvasWindow.isDestroyed()) {
       canvasWindow.webContents.send('canvas-window:theme-changed', theme);
     }

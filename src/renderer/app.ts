@@ -5529,6 +5529,13 @@ intentAPI.onCanvasWindowClosed(() => {
   if (!isCanvasMode) loadIntents();
 });
 
+// Listen for theme changes from other windows (e.g. settings popout)
+if (!isCanvasMode && !isSettingsMode) {
+  intentAPI.onCanvasThemeChanged((theme: string) => {
+    applyTheme(theme);
+  });
+}
+
 // Reload all data when workspace changes (select or clear)
 intentAPI.onWorkspaceChanged((path: string | null) => {
   if (isCanvasMode || isSettingsMode) {
