@@ -140,10 +140,7 @@ async function getRecallSession(): Promise<CopilotSession | null> {
 export async function initCopilot(): Promise<void> {
   try {
     const cliPath = resolveCopilotCliPath();
-    const opts: Record<string, unknown> = {
-      useStdio: false,
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
-    };
+    const opts: Record<string, unknown> = { useStdio: false };
     if (cliPath) {
       opts.cliPath = cliPath;
       console.log(`[copilot-sdk] Using local CLI: ${cliPath}`);

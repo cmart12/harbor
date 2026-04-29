@@ -56,6 +56,7 @@ export async function launchCliSession(
     summary: 'Running in terminal...',
     working_dir: workspaceRoot,
     source: 'cli',
+    persona_handle: null,
     created_at: now,
     updated_at: now,
   });

@@ -46,7 +46,7 @@ export function registerAgentHandlers(): void {
       createAgentSession({
         id: agentId, session_id: result.sessionId, intent_id: intentId,
         prompt: commentBody, status: 'running', summary: `Cloud job ${result.jobId}`,
-        working_dir: workspace, source: 'cloud' as any, created_at: now, updated_at: now,
+        working_dir: workspace, source: 'cloud' as any, persona_handle: persona.handle, created_at: now, updated_at: now,
       });
 
       const { startCloudJobPoller } = await import('../cloud-agent-poller');
@@ -151,6 +151,7 @@ export function registerAgentHandlers(): void {
       summary: `Cloud job ${result.jobId}`,
       working_dir: workspace,
       source: 'cloud' as any,
+      persona_handle: null,
       created_at: now,
       updated_at: now,
     });

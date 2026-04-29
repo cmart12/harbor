@@ -116,6 +116,7 @@ export async function launchAgent(
       summary: 'Starting...',
       working_dir: workingDir,
       source: 'sdk',
+      persona_handle: null,
       created_at: now,
       updated_at: now,
     });
@@ -209,6 +210,7 @@ export async function launchQuickAgent(
       summary: 'Starting...',
       working_dir: workspaceRoot,
       source: 'sdk',
+      persona_handle: null,
       created_at: now,
       updated_at: now,
     });
@@ -317,6 +319,7 @@ export async function launchDocumentAgent(
       summary: 'Executing document...',
       working_dir: workingDir,
       source: 'sdk',
+      persona_handle: null,
       created_at: now,
       updated_at: now,
     });

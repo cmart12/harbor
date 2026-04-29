@@ -2685,7 +2685,7 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
   countEl.textContent = String(intents.filter(i => i.status !== 'done').length);
 
   // Gather all agents (including workspace-level ones)
-  let allAgents: Array<{ agentId: string; sessionId: string; status: string; summary: string; selectedText: string; intentId: string; createdAt?: string; pendingApprovalId?: string | null; pendingPermissionKind?: string | null; source?: 'sdk' | 'cli' | 'cloud' }> = [];
+  let allAgents: Array<{ agentId: string; sessionId: string; status: string; summary: string; selectedText: string; intentId: string; createdAt?: string; pendingApprovalId?: string | null; pendingPermissionKind?: string | null; source?: 'sdk' | 'cli' | 'cloud'; personaHandle?: string | null }> = [];
 
   try {
     allAgents = await intentAPI.listAllAgents();
@@ -2754,14 +2754,16 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
                         agent.status === 'completed' ? 'agent-completed' :
                         'agent-failed';
 
-    const statusIcon = agent.source === 'cli'
-      ? '🖥'
-      : agent.source === 'cloud'
-        ? '☁️'
-        : agent.status === 'running' ? '<svg class="agent-icon-svg agent-icon-running" width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="8" stroke="#a855f7" stroke-width="2" stroke-dasharray="12 38" stroke-linecap="round"><animateTransform attributeName="transform" type="rotate" from="0 9 9" to="360 9 9" dur="0.8s" repeatCount="indefinite"/></circle><circle cx="9" cy="9" r="4" fill="#a855f7" opacity="0.3"/></svg>' :
+    // Status icon always reflects agent state (not source)
+    const statusIcon = agent.status === 'running' ? '<svg class="agent-icon-svg agent-icon-running" width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="8" stroke="#a855f7" stroke-width="2" stroke-dasharray="12 38" stroke-linecap="round"><animateTransform attributeName="transform" type="rotate" from="0 9 9" to="360 9 9" dur="0.8s" repeatCount="indefinite"/></circle><circle cx="9" cy="9" r="4" fill="#a855f7" opacity="0.3"/></svg>' :
                        agent.status === 'waiting-approval' ? '<svg class="agent-icon-svg" width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="8" fill="#f59e0b" opacity="0.15" stroke="#f59e0b" stroke-width="1.5"/><circle cx="9" cy="9" r="3.5" stroke="#f59e0b" stroke-width="1.5" fill="none"/><path d="M9 7V9.5L10.5 10.5" stroke="#f59e0b" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>' :
                        agent.status === 'completed' ? '<svg class="agent-icon-svg" width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="9" fill="#22c55e"/><path d="M5.5 9.5L7.8 11.8L12.5 6.5" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' :
                        '<svg class="agent-icon-svg" width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="9" fill="#ef4444"/><path d="M6 6L12 12M12 6L6 12" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>';
+
+    // Source label (cloud/cli/local)
+    const sourceLabel = agent.source === 'cloud' ? '<span class="agent-card-source">☁️ Cloud</span>'
+      : agent.source === 'cli' ? '<span class="agent-card-source">🖥 CLI</span>'
+      : '';
 
     const intentLabel = agent.source === 'cli'
       ? 'CLI Session'
@@ -2774,6 +2776,11 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
     const title = agent.selectedText.length > 80
       ? agent.selectedText.slice(0, 77) + '...'
       : agent.selectedText;
+
+    // Look up persona emoji
+    const personaEmoji = agent.personaHandle
+      ? (personas.find(p => p.handle === agent.personaHandle)?.emoji || '')
+      : '';
 
     // Build steps HTML (live steps if available, else just summary)
     const steps = agentSteps.get(agent.agentId) || [];
@@ -2813,21 +2820,24 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
       ? `<button class="agent-card-canvas-btn" data-intent-id="${agent.intentId}" title="Open canvas">📄</button>`
       : '';
 
+    // Only show summary when it adds information beyond the status
+    const trivialSummaries = ['Completed', 'Failed', 'Starting...', ''];
+    const showSummary = (agent.status === 'completed' || agent.status === 'failed') && agent.summary && !trivialSummaries.includes(agent.summary);
+
     return `
       <div class="agent-card ${statusClass}" data-agent-id="${agent.agentId}" title="Click to open chat">
         <div class="agent-card-header">
           <span class="agent-card-icon">${statusIcon}</span>
           <span class="agent-card-name">${intentLabel}</span>
+          ${sourceLabel}
           <div class="agent-card-actions">
             ${canvasBtn}
             <button class="agent-card-delete-btn" data-agent-id="${agent.agentId}" title="Delete session">✕</button>
           </div>
         </div>
-        <div class="agent-card-title">${escapeHtml(title)}</div>
+        <div class="agent-card-title">${personaEmoji ? `<span class="agent-card-persona-emoji">${personaEmoji}</span> ` : ''}${escapeHtml(title)}</div>
         ${stepsHtml ? `<div class="agent-card-steps">${stepsHtml}</div>` : ''}
-        ${agent.status === 'completed' ? `<div class="agent-card-status-badge status-completed"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="6" fill="#22c55e"/><path d="M3.5 6.2L5.2 7.9L8.5 4.3" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg> Completed</div>` :
-          agent.status === 'failed' ? `<div class="agent-card-status-badge status-failed"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="6" fill="#ef4444"/><path d="M4 4L8 8M8 4L4 8" stroke="white" stroke-width="1.5" stroke-linecap="round"/></svg> Failed</div>` : ''}
-        ${(agent.status === 'completed' || agent.status === 'failed') && agent.summary ? `<div class="agent-card-summary">${escapeHtml(agent.summary)}</div>` : ''}
+        ${showSummary ? `<div class="agent-card-summary">${escapeHtml(agent.summary)}</div>` : ''}
         ${approvalHtml}
       </div>
     `;

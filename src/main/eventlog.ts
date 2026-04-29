@@ -149,11 +149,11 @@ function applyEvent(db: Database.Database, event: LogEvent): void {
     case 'agent_session.created': {
       const d = event.data;
       db.prepare(
-        `INSERT OR REPLACE INTO agent_sessions (id, session_id, intent_id, prompt, status, summary, working_dir, source, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT OR REPLACE INTO agent_sessions (id, session_id, intent_id, prompt, status, summary, working_dir, source, persona_handle, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(
         d.id, d.session_id, d.intent_id ?? null, d.prompt, d.status ?? 'running',
-        d.summary ?? '', d.working_dir ?? null, d.source ?? 'sdk', d.created_at, d.updated_at,
+        d.summary ?? '', d.working_dir ?? null, d.source ?? 'sdk', d.persona_handle ?? null, d.created_at, d.updated_at,
       );
       break;
     }

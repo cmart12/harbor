@@ -48,6 +48,7 @@ export interface AgentListAllItem extends AgentListItem {
   pendingIntention: string | null;
   pendingPath: string | null;
   source: 'sdk' | 'cli' | 'cloud';
+  personaHandle: string | null;
 }
 
 export interface CanvasCommit {

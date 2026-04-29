@@ -140,6 +140,7 @@ If you make changes to the document, clearly describe what you changed.${cliTool
       summary: 'Starting...',
       working_dir: workingDir,
       source: 'sdk',
+      persona_handle: persona.handle,
       created_at: now,
       updated_at: now,
     });

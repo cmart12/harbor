@@ -92,7 +92,7 @@ export function getAgentSessionId(agentId: string): string | null {
   return registry.get(agentId)?.sessionId ?? null;
 }
 
-export function listAllAgents(): Array<{ agentId: string; sessionId: string; status: import('./agents/agent-registry').AgentStatus; summary: string; selectedText: string; intentId: string; createdAt: string; pendingApprovalId: string | null; pendingPermissionKind: string | null; pendingIntention: string | null; pendingPath: string | null; source: 'sdk' | 'cli' | 'cloud' }> {
+export function listAllAgents(): Array<{ agentId: string; sessionId: string; status: import('./agents/agent-registry').AgentStatus; summary: string; selectedText: string; intentId: string; createdAt: string; pendingApprovalId: string | null; pendingPermissionKind: string | null; pendingIntention: string | null; pendingPath: string | null; source: 'sdk' | 'cli' | 'cloud'; personaHandle: string | null }> {
   // Read persisted sessions from DB (sorted newest first)
   let persisted: AgentSession[] = [];
   try {
@@ -101,7 +101,7 @@ export function listAllAgents(): Array<{ agentId: string; sessionId: string; sta
 
   // Build result: overlay live in-memory state on top of DB records
   const seen = new Set<string>();
-  const result: Array<{ agentId: string; sessionId: string; status: import('./agents/agent-registry').AgentStatus; summary: string; selectedText: string; intentId: string; createdAt: string; pendingApprovalId: string | null; pendingPermissionKind: string | null; pendingIntention: string | null; pendingPath: string | null; source: 'sdk' | 'cli' | 'cloud' }> = [];
+  const result: Array<{ agentId: string; sessionId: string; status: import('./agents/agent-registry').AgentStatus; summary: string; selectedText: string; intentId: string; createdAt: string; pendingApprovalId: string | null; pendingPermissionKind: string | null; pendingIntention: string | null; pendingPath: string | null; source: 'sdk' | 'cli' | 'cloud'; personaHandle: string | null }> = [];
 
   for (const row of persisted) {
     seen.add(row.id);
@@ -120,6 +120,7 @@ export function listAllAgents(): Array<{ agentId: string; sessionId: string; sta
       pendingIntention: pendingApproval?.intention ?? null,
       pendingPath: pendingApproval?.path ?? null,
       source: row.source ?? 'sdk',
+      personaHandle: row.persona_handle ?? null,
     });
   }
 
@@ -140,6 +141,7 @@ export function listAllAgents(): Array<{ agentId: string; sessionId: string; sta
         pendingIntention: pendingApproval?.intention ?? null,
         pendingPath: pendingApproval?.path ?? null,
         source: 'sdk',
+        personaHandle: a.commentContext?.personaHandle ?? null,
       });
     }
   }
