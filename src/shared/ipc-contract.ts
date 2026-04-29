@@ -119,6 +119,7 @@ export const DEFAULT_SANDBOX_POLICY: SandboxPolicy = {
  * - `host:path-policy` — path-policy hook for view/edit/create/glob/grep (host-side, pre-tool)
  * - `host:web-fetch` — web_fetch host-side denial (pre-tool)
  * - `host:permission` — path-aware permission handler (host-side, runtime read/write request)
+ * - `mxc-only:auto-approve` — auto-approval breadcrumb in `mxc-only` mode (no host-side gate; logged for traceability)
  * - `mxc:shell-denial-suspected` — heuristic detection of MXC AppContainer denial in shell output (post-tool)
  */
 export type SandboxLayer =
@@ -126,6 +127,7 @@ export type SandboxLayer =
   | 'host:path-policy'
   | 'host:web-fetch'
   | 'host:permission'
+  | 'mxc-only:auto-approve'
   | 'mxc:shell-denial-suspected';
 
 export interface CliRuntime {

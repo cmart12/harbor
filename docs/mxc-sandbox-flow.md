@@ -67,15 +67,15 @@ is the sole enforcer for the shell tool.  This is **only** intended as a way
 to verify that MXC is doing the work — production personas should leave the
 default (`'both'`) on.
 
-| Mode | Read-only shell classifier | Path-policy `onPreToolUse` | Path-aware `onPermissionRequest` | `[SANDBOX MODE]` system prompt | Post-tool MXC denial detector | MXC AppContainer |
+| Mode | Read-only shell classifier | Path-policy `onPreToolUse` | `onPermissionRequest` | `[SANDBOX MODE]` system prompt | Post-tool MXC denial detector | MXC AppContainer |
 |------|----|----|----|----|----|----|
-| `both` (default) | ✅ runs | ✅ runs | ✅ runs | ✅ appended | ✅ runs | ✅ runs |
-| `mxc-only` | ❌ skipped | ❌ skipped | ❌ skipped (regular interactive handler) | ❌ omitted | ✅ runs | ✅ runs |
+| `both` (default) | ✅ runs | ✅ runs | ✅ path-aware (bubbles up out-of-scope writes) | ✅ appended | ✅ runs | ✅ runs |
+| `mxc-only` | ❌ skipped | ❌ skipped | ✅ **auto-approve all** (MXC is sole gate) | ❌ omitted | ✅ runs | ✅ runs |
 
 In both modes the on-/off-config dirs are still pre-materialized; the renderer
-bubble-up still fires; and MCP / `web_fetch` filtering is still tied to the
-existing `allowMcpServers` / `allowWebFetch` policy bits (independent of
-`enforcementMode`).
+bubble-up still fires for post-tool MXC denials; and MCP / `web_fetch`
+filtering is still tied to the existing `allowMcpServers` / `allowWebFetch`
+policy bits (independent of `enforcementMode`).
 
 In `mxc-only` the agent is **not** told it's running sandboxed — the
 `[SANDBOX MODE] You are running in a sandboxed environment …` system-prompt
@@ -86,6 +86,20 @@ the very calls we want MXC to deny. See
 `SANDBOX_SYSTEM_PROMPT` / `SANDBOX_WORKSPACE_SYSTEM_PROMPT` in
 `src/main/agents/sandbox-policies.ts` and the gates in
 `src/main/agents/comment-workflow.ts` and `src/main/agents/sdk-runner.ts`.
+
+For the same reason, `mxc-only` also installs an **auto-approve permission
+handler** (`InteractionBroker.createMxcOnlyPermissionHandler`) so SDK
+permission requests (`read` / `write` / `shell` / `mcp` / `url`) never bubble
+up to the user as `agent:approval-needed`. Each auto-approval is logged with
+the `mxc-only:auto-approve` layer tag so the trace is still discoverable.
+For shell tools the call then proceeds to MXC's AppContainer at the OS
+level, where actual denials surface via the post-tool detector
+(`mxc:shell-denial-suspected`). For path-bearing SDK tools that MXC does
+not see (view/edit/create/glob/grep) the call simply succeeds — that's
+what "unrestricted in this mode" means in the table above. If the user
+clicks "Disable sandbox" on a post-tool denial bubble-up, the auto-approve
+handler falls back to the regular interactive handler so the user regains
+control after explicitly opting out.
 
 ### Per-layer denial logging
 

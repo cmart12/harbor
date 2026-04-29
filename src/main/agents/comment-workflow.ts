@@ -76,10 +76,14 @@ export async function launchCommentAgent(
       broker,
     });
     const { isSandboxed, sandboxConfigs, mcpServers, customTools, sandboxState, hooks, enforcementMode } = sandboxSetup;
-    // In mxc-only mode the host-side path-aware permission handler is
-    // suppressed too — MXC's AppContainer is the sole enforcer for the shell;
-    // SDK file ops fall back to the regular interactive handler.
+    // Permission-handler routing:
+    //   - both     → path-aware sandbox handler (host-side path checks +
+    //                bubble-up dialog for out-of-scope writes)
+    //   - mxc-only → auto-approve handler (MXC is sole enforcer; SDK calls
+    //                proceed to MXC for shell, unrestricted for SDK file ops)
+    //   - non-sandboxed → regular interactive handler
     const useHostPathAwareHandler = isSandboxed && enforcementMode === 'both';
+    const useMxcOnlyAutoApprove = isSandboxed && enforcementMode === 'mxc-only';
 
     const systemPrompt = `${persona.instructions}
 
@@ -100,7 +104,9 @@ If you make changes to the document, clearly describe what you changed.${cliTool
       ...(hooks ? { hooks } : {}),
       onPermissionRequest: useHostPathAwareHandler
         ? broker.createPathAwareSandboxPermissionHandler(findRecord)
-        : broker.createPermissionHandler(findRecord),
+        : useMxcOnlyAutoApprove
+          ? broker.createMxcOnlyPermissionHandler(findRecord)
+          : broker.createPermissionHandler(findRecord),
       onUserInputRequest: broker.createUserInputHandler(findRecord),
       onElicitationRequest: broker.createElicitationHandler(findRecord),
       systemMessage: {

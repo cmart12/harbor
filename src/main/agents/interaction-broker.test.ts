@@ -510,4 +510,98 @@ describe('InteractionBroker', () => {
       expect(record.sandbox!.allowList.paths.size).toBeGreaterThan(0);
     });
   });
+
+  describe('createMxcOnlyPermissionHandler', () => {
+    function makeSandboxedRecord(): AgentRecord {
+      const record = makeRecord();
+      record.sandbox = {
+        policy: resolvePathPolicy('C:\\workspace\\my-intent', {
+          scopeToIntentFolder: true,
+          extraReadwritePaths: [],
+          extraReadonlyPaths: [],
+          extraDeniedPaths: [],
+        }),
+        configs: { onDir: 'C:\\sb-on', offDir: 'C:\\sb-off' },
+        state: 'on',
+        allowMcpServers: false,
+        allowWebFetch: false,
+        allowList: { paths: new Set(), resources: new Set(), webFetch: false },
+      };
+      return record;
+    }
+
+    it('rejects when no record is found for the session', async () => {
+      const handler = broker.createMxcOnlyPermissionHandler(() => undefined);
+      const r = await handler({ kind: 'write', toolCallId: 'tc' } as any, { sessionId: 'unknown' });
+      expect(r).toEqual({ kind: 'reject' });
+    });
+
+    it('auto-approves a write request without bubbling up to the renderer', async () => {
+      const record = makeSandboxedRecord();
+      const handler = broker.createMxcOnlyPermissionHandler((sid) => sid === 'session-1' ? record : undefined);
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const r = await handler({
+        kind: 'write',
+        toolCallId: 'tc',
+        fileName: 'C:\\workspace\\my-intent\\out.txt',
+      } as any, { sessionId: 'session-1' });
+      expect(r).toEqual({ kind: 'approve-once' });
+      expect(notifier.notifyRenderer).not.toHaveBeenCalled();
+      expect(notifier.showApprovalNotification).not.toHaveBeenCalled();
+      // Logged with the auto-approve layer breadcrumb for traceability.
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('mxc-only:auto-approve'));
+      warnSpy.mockRestore();
+    });
+
+    it('auto-approves read, shell, mcp, and url requests', async () => {
+      const record = makeSandboxedRecord();
+      const handler = broker.createMxcOnlyPermissionHandler((sid) => sid === 'session-1' ? record : undefined);
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      const cases = [
+        { kind: 'read', path: 'C:\\workspace\\my-intent\\notes.md' },
+        { kind: 'shell', command: 'rm -rf C:\\workspace\\my-intent' },
+        { kind: 'mcp', serverName: 'github' },
+        { kind: 'url', url: 'https://example.com' },
+      ];
+      for (const req of cases) {
+        const r = await handler({ ...req, toolCallId: 'tc' } as any, { sessionId: 'session-1' });
+        expect(r).toEqual({ kind: 'approve-once' });
+      }
+      expect(notifier.notifyRenderer).not.toHaveBeenCalled();
+    });
+
+    it('falls back to the regular interactive handler when sandbox state is "off"', async () => {
+      const record = makeSandboxedRecord();
+      record.sandbox!.state = 'off';
+      const handler = broker.createMxcOnlyPermissionHandler((sid) => sid === 'session-1' ? record : undefined);
+
+      // Read should still auto-approve via the fallback handler (and not log
+      // the auto-approve breadcrumb, since the mxc-only path was abandoned).
+      const r = await handler({ kind: 'read', toolCallId: 'tc' } as any, { sessionId: 'session-1' });
+      expect(r).toEqual({ kind: 'approve-once' });
+
+      // Write should bubble up via the fallback handler — verify by checking
+      // the renderer was notified (we don't need to resolve the promise).
+      void handler({
+        kind: 'write',
+        toolCallId: 'tc-w',
+        fileName: 'C:\\workspace\\my-intent\\out.txt',
+      } as any, { sessionId: 'session-1' });
+      // Allow microtasks to flush the synchronous notify in createPermissionHandler.
+      await Promise.resolve();
+      expect(notifier.notifyRenderer).toHaveBeenCalledWith(
+        'agent:approval-needed',
+        expect.objectContaining({ requestId: 'tc-w' }),
+      );
+    });
+
+    it('falls back to the regular interactive handler when sandbox state is missing', async () => {
+      const record = makeRecord();
+      // record.sandbox is undefined.
+      const handler = broker.createMxcOnlyPermissionHandler((sid) => sid === 'session-1' ? record : undefined);
+      const r = await handler({ kind: 'read', toolCallId: 'tc' } as any, { sessionId: 'session-1' });
+      expect(r).toEqual({ kind: 'approve-once' });
+    });
+  });
 });

@@ -199,16 +199,23 @@ enforcementMode: 'both' | 'mxc-only';
   caught host-side and never reach MXC. The agent receives a
   `[SANDBOX MODE] You are running in a sandboxed environment …` fragment in
   its system prompt so it self-restricts on top of the host-side guards.
-- `'mxc-only'`: host-side guards are suppressed at launch — `onPreToolUse` is
-  not installed and the regular interactive `onPermissionRequest` is used
-  instead of `createPathAwareSandboxPermissionHandler`. The
-  `[SANDBOX MODE]` system-prompt fragment is **also omitted**, so the agent
-  has no awareness that a sandbox exists — that's necessary to observe MXC's
-  own denials (an agent told it's sandboxed will avoid the very calls we
-  want MXC to deny). MXC's AppContainer + network firewall is the sole
-  enforcer for shell tools. Path-bearing SDK tools
+  `onPermissionRequest` uses `createPathAwareSandboxPermissionHandler`,
+  which auto-approves in-scope reads/writes and bubbles up out-of-scope
+  ones via `agent:sandbox-blocked`.
+- `'mxc-only'`: host-side guards are suppressed at launch — `onPreToolUse`
+  is not installed and `onPermissionRequest` uses
+  `createMxcOnlyPermissionHandler`, an auto-approve handler that lets every
+  SDK permission kind through (logged with the `mxc-only:auto-approve` layer
+  tag for traceability). The `[SANDBOX MODE]` system-prompt fragment is
+  **also omitted**, so the agent has no awareness that a sandbox exists —
+  that's necessary to observe MXC's own denials (an agent told it's
+  sandboxed, or asked for permission for every write, will avoid the very
+  calls we want MXC to deny). MXC's AppContainer + network firewall is the
+  sole enforcer for shell tools — actual denials surface via the post-tool
+  detector (`mxc:shell-denial-suspected`). Path-bearing SDK tools
   (view/edit/create/glob/grep) are **not** seen by MXC and become
-  unrestricted in this mode. Intended only for verifying MXC enforcement;
+  unrestricted in this mode (auto-approve → call succeeds). Intended only
+  for verifying MXC enforcement;
   see [`mxc-sandbox-flow.md`](./mxc-sandbox-flow.md#how-to-verify-mxc-is-actually-doing-the-enforcement).
 
 The validator (`src/main/validators.ts`) clamps unrecognized values to

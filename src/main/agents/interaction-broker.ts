@@ -145,6 +145,54 @@ export class InteractionBroker {
   }
 
   /**
+   * Permission handler for sandboxed agents running in `mxc-only` enforcement
+   * mode. Auto-approves *every* SDK permission kind so the call reaches MXC's
+   * AppContainer at the OS level (for shell tools) or proceeds unrestricted
+   * (for path-bearing SDK tools that MXC does not see — view/edit/create/
+   * glob/grep, per `docs/mxc-sandbox-flow.md#caveat`). The whole point of
+   * `mxc-only` is to verify MXC's own enforcement; surfacing a host-side
+   * approval prompt before the call ever reaches MXC defeats that purpose.
+   *
+   * Each auto-approval is logged via `logSandboxLayerDenial` with layer
+   * `mxc-only:auto-approve` so the trail is still discoverable in logs and
+   * reachable to tests via spies on `console.warn`.
+   *
+   * Mid-session disable: if the user clicks "Disable sandbox" on a
+   * post-tool MXC-denial bubble-up (`record.sandbox.state === 'off'`),
+   * we fall back to the regular interactive handler — same shape as
+   * `createPathAwareSandboxPermissionHandler` (line 173-175) — so the user
+   * regains control after explicitly opting out.
+   */
+  createMxcOnlyPermissionHandler(findRecord: (sessionId: string) => AgentRecord | undefined) {
+    return async (request: PermissionRequest, invocation: { sessionId: string }) => {
+      const record = findRecord(invocation.sessionId);
+      if (!record) return { kind: 'reject' as const };
+
+      // Mid-session opt-out → behave like the normal handler.
+      if (!record.sandbox || record.sandbox.state === 'off') {
+        return this.createPermissionHandler(findRecord)(request, invocation);
+      }
+
+      const req = request as unknown as Record<string, unknown>;
+      const target = typeof req.path === 'string' ? req.path
+        : typeof req.fileName === 'string' ? req.fileName
+        : typeof req.command === 'string' ? req.command
+        : typeof req.url === 'string' ? req.url
+        : typeof req.serverName === 'string' ? req.serverName
+        : '';
+
+      logSandboxLayerDenial('mxc-only:auto-approve', {
+        agentId: record.agentId,
+        toolName: `permission:${request.kind ?? 'unknown'}`,
+        target,
+        reason: 'mxc-only mode: SDK permission auto-approved (MXC is sole enforcer)',
+      });
+
+      return { kind: 'approve-once' as const };
+    };
+  }
+
+  /**
    * Path-aware permission handler for sandboxed personas.
    *
    * For `read` and `write`: auto-approves when target is in the resolved policy

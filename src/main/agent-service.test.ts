@@ -400,6 +400,55 @@ describe('launchQuickAgent', () => {
       // Persona instructions still applied.
       expect(sessionOpts.systemMessage.content).toContain('Persona instructions here.');
     });
+
+    it('installs auto-approve permission handler when enforcementMode=mxc-only', async () => {
+      // In mxc-only mode the SDK's onPermissionRequest must auto-approve so
+      // MXC at the OS level is the sole enforcer. This is the behavioral
+      // counterpart to the system-prompt suppression — the agent isn't told
+      // it's sandboxed AND the user isn't prompted.
+      enableMockClient();
+      // Use a unique session id so findBySessionId hits THIS test's agent
+      // record (the registry singleton is shared across tests in this file).
+      const uniqueSessionId = 'mxc-only-handler-session';
+      const originalSessionId = mockSession.sessionId;
+      mockSession.sessionId = uniqueSessionId;
+
+      const persona = {
+        id: 'p-mxc-handler', handle: 'guard', instructions: 'inst',
+        model: 'gpt-4o', runLocation: 'local' as const,
+        sandboxed: true,
+        sandboxPolicyOverride: {
+          scopeToIntentFolder: true,
+          extraReadwritePaths: [],
+          extraReadonlyPaths: [],
+          extraDeniedPaths: [],
+          allowMcpServers: false,
+          allowWebFetch: false,
+          allowOutbound: false,
+          allowLocalNetwork: false,
+          enforcementMode: 'mxc-only' as const,
+        },
+      };
+      // Suppress the auto-approve breadcrumb log for clean test output.
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        await launchQuickAgent('do something', '/ws', persona as any);
+
+        const sessionOpts = mockClient.createSession.mock.calls[0][0];
+        // Invoke the wired handler with a write request — it must approve
+        // without prompting the user (no agent:approval-needed notification).
+        const decision = await sessionOpts.onPermissionRequest(
+          { kind: 'write', toolCallId: 'tc-mxc-write', fileName: '/ws/out.txt' },
+          { sessionId: uniqueSessionId },
+        );
+        expect(decision).toEqual({ kind: 'approve-once' });
+        // The auto-approve breadcrumb should be the only side effect.
+        expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('mxc-only:auto-approve'));
+      } finally {
+        warnSpy.mockRestore();
+        mockSession.sessionId = originalSessionId;
+      }
+    });
   }
 });
 
