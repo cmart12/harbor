@@ -49,6 +49,7 @@ export interface AgentListAllItem extends AgentListItem {
   pendingPath: string | null;
   source: 'sdk' | 'cli' | 'cloud';
   personaHandle: string | null;
+  yoloMode: boolean;
 }
 
 export interface CanvasCommit {
@@ -280,6 +281,7 @@ export interface IpcCommands {
   };
   'agent:cloud-status': { args: [agentId: string]; result: CloudJobPollResult };
   'agent:get-history': { args: [agentId: string]; result: { events: unknown[]; restarted?: boolean } | { error: string } };
+  'agent:set-yolo': { args: [agentId: string, enabled: boolean]; result: { ok: true } | { error: string } };
 
   // ── CLI session ──────────────────────────────────────────
   'cli:launch-session': { args: []; result: { agentId: string; sessionId: string } | { error: string } };
@@ -354,6 +356,7 @@ export interface IpcEvents {
     layer?: SandboxLayer;
   };
   'agent:completed': { agentId: string; summary: string };
+  'agent:yolo-changed': { agentId: string; enabled: boolean };
   'notification:approval-clicked': { agentId: string };
   'agent:presence-started': { agentId: string; intentId: string; persona: { name: string; handle: string }; anchor: AgentAnchor };
   'agent:presence-ended': { agentId: string; intentId: string };

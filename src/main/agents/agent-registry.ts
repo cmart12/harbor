@@ -61,6 +61,8 @@ export interface AgentRecord {
   restarted?: boolean;
   /** Sandbox runtime state — present iff the agent was launched as sandboxed. */
   sandbox?: SandboxRuntimeState;
+  /** When true, all permission requests are auto-approved without user interaction. Session-only. */
+  yoloMode?: boolean;
 }
 
 export class AgentRegistry {

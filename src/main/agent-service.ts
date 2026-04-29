@@ -54,6 +54,29 @@ export function respondToElicitation(agentId: string, requestId: string, action:
 }
 
 /**
+ * Toggle yolo mode for an agent.  When enabled, all subsequent permission
+ * requests are auto-approved without user interaction.  Also auto-approves
+ * any currently-pending permission requests.
+ */
+export function setAgentYolo(agentId: string, enabled: boolean): { ok: true } | { error: string } {
+  const record = registry.get(agentId);
+  if (!record) return { error: 'Agent not found' };
+
+  record.yoloMode = enabled;
+  console.log(`[agent-service] yolo mode ${enabled ? 'enabled' : 'disabled'} for agent=${agentId}`);
+  notifier.notifyRenderer('agent:yolo-changed', { agentId, enabled });
+
+  // When enabling, auto-approve any pending permission requests
+  if (enabled && record.pendingApprovals.size > 0) {
+    for (const requestId of [...record.pendingApprovals.keys()]) {
+      broker.approveAgent(agentId, requestId, true);
+    }
+  }
+
+  return { ok: true };
+}
+
+/**
  * Renderer-driven resolution of a sandbox block.  For `disable`, also
  * triggers the session-swap flow in sdk-runner asynchronously; the broker
  * resolves the pending permission/pre-tool callback as approve-once so the
@@ -113,7 +136,7 @@ export function getAgentSessionId(agentId: string): string | null {
   return registry.get(agentId)?.sessionId ?? null;
 }
 
-export function listAllAgents(): Array<{ agentId: string; sessionId: string; status: import('./agents/agent-registry').AgentStatus; summary: string; selectedText: string; intentId: string; createdAt: string; pendingApprovalId: string | null; pendingPermissionKind: string | null; pendingIntention: string | null; pendingPath: string | null; source: 'sdk' | 'cli' | 'cloud'; personaHandle: string | null }> {
+export function listAllAgents(): Array<{ agentId: string; sessionId: string; status: import('./agents/agent-registry').AgentStatus; summary: string; selectedText: string; intentId: string; createdAt: string; pendingApprovalId: string | null; pendingPermissionKind: string | null; pendingIntention: string | null; pendingPath: string | null; source: 'sdk' | 'cli' | 'cloud'; personaHandle: string | null; yoloMode: boolean }> {
   // Read persisted sessions from DB (sorted newest first)
   let persisted: AgentSession[] = [];
   try {
@@ -122,7 +145,7 @@ export function listAllAgents(): Array<{ agentId: string; sessionId: string; sta
 
   // Build result: overlay live in-memory state on top of DB records
   const seen = new Set<string>();
-  const result: Array<{ agentId: string; sessionId: string; status: import('./agents/agent-registry').AgentStatus; summary: string; selectedText: string; intentId: string; createdAt: string; pendingApprovalId: string | null; pendingPermissionKind: string | null; pendingIntention: string | null; pendingPath: string | null; source: 'sdk' | 'cli' | 'cloud'; personaHandle: string | null }> = [];
+  const result: Array<{ agentId: string; sessionId: string; status: import('./agents/agent-registry').AgentStatus; summary: string; selectedText: string; intentId: string; createdAt: string; pendingApprovalId: string | null; pendingPermissionKind: string | null; pendingIntention: string | null; pendingPath: string | null; source: 'sdk' | 'cli' | 'cloud'; personaHandle: string | null; yoloMode: boolean }> = [];
 
   for (const row of persisted) {
     seen.add(row.id);
@@ -142,6 +165,7 @@ export function listAllAgents(): Array<{ agentId: string; sessionId: string; sta
       pendingPath: pendingApproval?.path ?? null,
       source: row.source ?? 'sdk',
       personaHandle: row.persona_handle ?? null,
+      yoloMode: live?.yoloMode ?? false,
     });
   }
 
@@ -163,6 +187,7 @@ export function listAllAgents(): Array<{ agentId: string; sessionId: string; sta
         pendingPath: pendingApproval?.path ?? null,
         source: 'sdk',
         personaHandle: a.commentContext?.personaHandle ?? null,
+        yoloMode: a.yoloMode ?? false,
       });
     }
   }

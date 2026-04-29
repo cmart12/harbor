@@ -112,6 +112,7 @@ export interface IntentAPI {
   getCloudJobStatus(agentId: string): Promise<IpcCommandResult<'agent:cloud-status'>>;
   getAgentHistory(agentId: string): Promise<IpcCommandResult<'agent:get-history'>>;
   getAgentWorkingDir(agentId: string): Promise<string | null>;
+  setAgentYolo(agentId: string, enabled: boolean): Promise<IpcCommandResult<'agent:set-yolo'>>;
 
   // ── CLI session ──────────────────────────────────────────
   launchCliSession(): Promise<IpcCommandResult<'cli:launch-session'>>;
@@ -154,6 +155,7 @@ export interface IntentAPI {
   onAgentApprovalNeeded(callback: (data: IpcEventPayload<'agent:approval-needed'>) => void): void;
   onAgentSandboxBlocked(callback: (data: IpcEventPayload<'agent:sandbox-blocked'>) => void): void;
   onAgentCompleted(callback: (data: IpcEventPayload<'agent:completed'>) => void): void;
+  onAgentYoloChanged(callback: (data: IpcEventPayload<'agent:yolo-changed'>) => void): void;
   onNotificationApprovalClicked(callback: (data: IpcEventPayload<'notification:approval-clicked'>) => void): void;
   onAgentPresenceStarted(callback: (data: IpcEventPayload<'agent:presence-started'>) => void): void;
   onAgentPresenceEnded(callback: (data: IpcEventPayload<'agent:presence-ended'>) => void): void;
@@ -294,6 +296,8 @@ const api: IntentAPI = {
     ipcRenderer.invoke('agent:get-history', agentId),
   getAgentWorkingDir: (agentId) =>
     ipcRenderer.invoke('agent:get-working-dir', agentId),
+  setAgentYolo: (agentId, enabled) =>
+    ipcRenderer.invoke('agent:set-yolo', agentId, enabled),
 
   // ── CLI session ──────────────────────────────────────────
   launchCliSession: () =>
@@ -386,6 +390,9 @@ const api: IntentAPI = {
   },
   onAgentCompleted: (callback) => {
     ipcRenderer.on('agent:completed', (_event: unknown, data: IpcEventPayload<'agent:completed'>) => callback(data));
+  },
+  onAgentYoloChanged: (callback) => {
+    ipcRenderer.on('agent:yolo-changed', (_event: unknown, data: IpcEventPayload<'agent:yolo-changed'>) => callback(data));
   },
   onNotificationApprovalClicked: (callback) => {
     ipcRenderer.on('notification:approval-clicked', (_event: unknown, data: IpcEventPayload<'notification:approval-clicked'>) => callback(data));

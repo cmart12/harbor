@@ -137,6 +137,11 @@ export class InteractionBroker {
    */
   createSandboxedPermissionHandler(findRecord: (sessionId: string) => AgentRecord | undefined) {
     return async (request: PermissionRequest, invocation: { sessionId: string }) => {
+      const record = findRecord(invocation.sessionId);
+      if (record?.yoloMode) {
+        console.log(`[InteractionBroker] yolo-mode auto-approve: kind=${request.kind} agent=${record.agentId}`);
+        return { kind: 'approve-once' as const };
+      }
       if (request.kind === 'read') return { kind: 'approve-once' as const };
       if (request.kind === 'write') return { kind: 'reject' as const };
       // For shell, mcp, url, and other kinds, fall through to normal handler
@@ -216,6 +221,11 @@ export class InteractionBroker {
     return async (request: PermissionRequest, invocation: { sessionId: string }) => {
       const record = findRecord(invocation.sessionId);
       if (!record) return { kind: 'reject' as const };
+
+      if (record.yoloMode) {
+        console.log(`[InteractionBroker] yolo-mode auto-approve: kind=${request.kind} agent=${record.agentId}`);
+        return { kind: 'approve-once' as const };
+      }
 
       // If sandbox has been disabled mid-session, behave like the normal handler.
       if (!record.sandbox || record.sandbox.state === 'off') {
@@ -391,6 +401,12 @@ export class InteractionBroker {
 
       // Auto-approve read operations (view, grep, glob, etc.)
       if (request.kind === 'read') return { kind: 'approve-once' as const };
+
+      // Yolo mode: auto-approve everything without prompting
+      if (record.yoloMode) {
+        console.log(`[InteractionBroker] yolo-mode auto-approve: kind=${request.kind} agent=${record.agentId}`);
+        return { kind: 'approve-once' as const };
+      }
 
       const requestId = request.toolCallId ?? crypto.randomUUID();
       // Extract rich context from the SDK permission request

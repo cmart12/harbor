@@ -19,6 +19,8 @@ declare const intentAPI: {
   getAgentHistory: (agentId: string) => Promise<{ events?: any[]; error?: string; restarted?: boolean }>;
   selectWorkspace: () => Promise<{ selected: boolean; path: string | null }>;
   onWorkspaceChanged: (callback: (path: string | null) => void) => void;
+  setAgentYolo: (agentId: string, enabled: boolean) => Promise<{ ok?: boolean; error?: string }>;
+  onAgentYoloChanged: (callback: (data: { agentId: string; enabled: boolean }) => void) => void;
   [key: string]: any;
 };
 
@@ -366,6 +368,7 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   const [cwd, setCwd] = useState<string>('');
   const [overlayAgentId, setOverlayAgentId] = useState<string | null>(null);
+  const [yoloEnabled, setYoloEnabled] = useState(false);
   const modelDropdownRef = useRef<HTMLDivElement>(null);
 
   // Track the current streaming assistant message ID
@@ -416,6 +419,15 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [modelDropdownOpen]);
+
+  // Listen for yolo mode changes
+  useEffect(() => {
+    intentAPI.onAgentYoloChanged((data: { agentId: string; enabled: boolean }) => {
+      if (data.agentId === currentAgentId) {
+        setYoloEnabled(data.enabled);
+      }
+    });
+  }, [currentAgentId]);
 
   // Load conversation history for existing agents (especially CLI sessions)
   useEffect(() => {
@@ -892,6 +904,12 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
     await intentAPI.selectWorkspace();
   }, []);
 
+  const handleToggleYolo = useCallback(async () => {
+    if (currentAgentId) {
+      await intentAPI.setAgentYolo(currentAgentId, !yoloEnabled);
+    }
+  }, [currentAgentId, yoloEnabled]);
+
   const handleAbort = useCallback(async () => {
     if (currentAgentId) await intentAPI.abortAgent(currentAgentId);
   }, [currentAgentId]);
@@ -990,6 +1008,19 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
             </div>
           )}
         </div>
+
+        <span className="chat-status-bar-divider">|</span>
+
+        <button
+          className={`chat-status-bar-item chat-yolo-btn${yoloEnabled ? ' active' : ''}`}
+          onClick={handleToggleYolo}
+          title={yoloEnabled ? 'Yolo mode ON — auto-approving all permissions' : 'Enable yolo mode (auto-approve all)'}
+        >
+          <span className="chat-status-bar-icon">🔥</span>
+          <span className="chat-status-bar-text">
+            {yoloEnabled ? 'YOLO' : 'Yolo'}
+          </span>
+        </button>
       </div>
 
       {isLoadingHistory && (

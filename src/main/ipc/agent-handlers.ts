@@ -180,6 +180,11 @@ export function registerAgentHandlers(): void {
     return { ok: true };
   });
 
+  ipcMain.handle('agent:set-yolo', async (_event, agentId: string, enabled: boolean) => {
+    const { setAgentYolo } = await import('../agent-service');
+    return setAgentYolo(agentId, enabled);
+  });
+
   // ── Cloud agent launch ────────────────────────────────────
   ipcMain.handle('agent:launch-cloud', async (_event, intentId: string, prompt: string) => {
     const workspace = getConfigValue('workspace');

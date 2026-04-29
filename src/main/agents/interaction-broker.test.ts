@@ -121,6 +121,62 @@ describe('InteractionBroker', () => {
     });
   });
 
+  describe('yolo mode', () => {
+    it('auto-approves write requests when yoloMode is enabled', async () => {
+      const record = makeRecord({ yoloMode: true });
+      const handler = broker.createPermissionHandler((sid) => sid === 'session-1' ? record : undefined);
+
+      const result = await handler({ kind: 'write', toolCallId: 'req-y1' } as any, { sessionId: 'session-1' });
+      expect(result).toEqual({ kind: 'approve-once' });
+      // Should not trigger any renderer notifications (yolo auto-approved)
+      expect(notifier.notifyRenderer).not.toHaveBeenCalled();
+      expect(notifier.showApprovalNotification).not.toHaveBeenCalled();
+    });
+
+    it('auto-approves shell requests when yoloMode is enabled', async () => {
+      const record = makeRecord({ yoloMode: true });
+      const handler = broker.createPermissionHandler((sid) => sid === 'session-1' ? record : undefined);
+
+      const result = await handler({ kind: 'shell', toolCallId: 'req-y2' } as any, { sessionId: 'session-1' });
+      expect(result).toEqual({ kind: 'approve-once' });
+      expect(notifier.notifyRenderer).not.toHaveBeenCalled();
+    });
+
+    it('does not auto-approve when yoloMode is disabled', async () => {
+      const record = makeRecord({ yoloMode: false });
+      const handler = broker.createPermissionHandler((sid) => sid === 'session-1' ? record : undefined);
+
+      const promise = handler({ kind: 'write', toolCallId: 'req-y3' } as any, { sessionId: 'session-1' });
+      // Should trigger renderer notification (interactive prompt)
+      expect(notifier.notifyRenderer).toHaveBeenCalled();
+
+      // Resolve the pending approval to avoid hanging
+      broker.approveAgent('agent-1', 'req-y3', true);
+      const result = await promise;
+      expect(result).toEqual({ kind: 'approve-once' });
+    });
+
+    it('auto-approves in sandboxed permission handler when yoloMode is enabled', async () => {
+      const record = makeRecord({ yoloMode: true });
+      const handler = broker.createSandboxedPermissionHandler((sid) => sid === 'session-1' ? record : undefined);
+
+      const result = await handler({ kind: 'write', toolCallId: 'req-y4' } as any, { sessionId: 'session-1' });
+      expect(result).toEqual({ kind: 'approve-once' });
+    });
+
+    it('logs yolo auto-approve', async () => {
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const record = makeRecord({ yoloMode: true });
+      const handler = broker.createPermissionHandler((sid) => sid === 'session-1' ? record : undefined);
+
+      await handler({ kind: 'write', toolCallId: 'req-y5' } as any, { sessionId: 'session-1' });
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringContaining('yolo-mode auto-approve')
+      );
+      logSpy.mockRestore();
+    });
+  });
+
   describe('respondToUserInput', () => {
     it('resolves pending user input callback', async () => {
       const record = makeRecord();

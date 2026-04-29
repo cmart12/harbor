@@ -109,6 +109,7 @@ import {
   stopCliExitMonitor,
   setAgentModel,
   getAgentHistory,
+  setAgentYolo,
 } from './agent-service';
 import { getCopilotClient } from './ai';
 import { createCanvasAgent, createAgentSession, updateAgentSessionStatus, updateAgentSessionId, getAgentSession, listAgentSessions } from './database';
@@ -686,6 +687,49 @@ describe('listAllAgents', () => {
       expect(a).toHaveProperty('status');
       expect(a).toHaveProperty('source');
     }
+  });
+});
+
+describe('setAgentYolo', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSession.send.mockResolvedValue(undefined);
+    mockClient.createSession.mockResolvedValue(mockSession);
+    vi.mocked(uuid).mockReturnValue('yolo-agent-1');
+  });
+
+  it('returns error for unknown agent', () => {
+    const result = setAgentYolo('nonexistent', true);
+    expect(result).toEqual({ error: 'Agent not found' });
+  });
+
+  it('enables yolo mode on a live agent', async () => {
+    enableMockClient();
+    await launchAgent('intent-1', 'task', { quote: '', prefix: '', suffix: '' }, '/ws', 'folder');
+
+    const result = setAgentYolo('yolo-agent-1', true);
+    expect(result).toEqual({ ok: true });
+
+    // Verify the yoloMode flag is reflected in listAllAgents
+    vi.mocked(listAgentSessions).mockReturnValue([]);
+    const all = listAllAgents();
+    const agent = all.find(a => a.agentId === 'yolo-agent-1');
+    expect(agent).toBeDefined();
+    expect(agent!.yoloMode).toBe(true);
+  });
+
+  it('disables yolo mode on a live agent', async () => {
+    enableMockClient();
+    await launchAgent('intent-1', 'task', { quote: '', prefix: '', suffix: '' }, '/ws', 'folder');
+
+    setAgentYolo('yolo-agent-1', true);
+    setAgentYolo('yolo-agent-1', false);
+
+    vi.mocked(listAgentSessions).mockReturnValue([]);
+    const all = listAllAgents();
+    const agent = all.find(a => a.agentId === 'yolo-agent-1');
+    expect(agent).toBeDefined();
+    expect(agent!.yoloMode).toBe(false);
   });
 });
 

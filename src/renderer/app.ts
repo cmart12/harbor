@@ -143,6 +143,7 @@ interface IntentAPI {
   quickLaunchAgent(prompt: string, personaHandle?: string): Promise<{ agentId?: string; sessionId?: string; error?: string }>;
   listAllAgents(): Promise<any[]>;
   deleteAgentSession(agentId: string): Promise<{ ok?: boolean; error?: string }>;
+  setAgentYolo(agentId: string, enabled: boolean): Promise<{ ok?: boolean; error?: string }>;
   launchCloudAgent(intentId: string, prompt: string): Promise<{ agentId?: string; sessionId?: string; jobId?: string; error?: string }>;
   getCloudJobStatus(agentId: string): Promise<any>;
   launchCliSession(): Promise<{ agentId?: string; sessionId?: string; error?: string }>;
@@ -187,6 +188,7 @@ interface IntentAPI {
     layer?: 'host:readonly-classifier' | 'host:path-policy' | 'host:web-fetch' | 'host:permission' | 'mxc:shell-denial-suspected';
   }) => void): void;
   onAgentCompleted(callback: (data: any) => void): void;
+  onAgentYoloChanged(callback: (data: { agentId: string; enabled: boolean }) => void): void;
   onNotificationApprovalClicked(callback: (data: { agentId: string }) => void): void;
   onAgentPresenceStarted(callback: (data: { agentId: string; intentId: string; persona: { name: string; handle: string; color?: string; imageUrl?: string }; anchor: { prefix?: string; suffix?: string } }) => void): void;
   onAgentPresenceEnded(callback: (data: { agentId: string; intentId: string }) => void): void;
@@ -2713,6 +2715,7 @@ interface AgentStep {
 }
 const agentSteps = new Map<string, AgentStep[]>();
 const agentApprovals = new Map<string, { requestId: string; permissionKind: string; intention?: string; path?: string }>();
+const agentYoloState = new Map<string, boolean>();
 const agentChatUnsubs = new Map<string, () => void>();
 
 function basename(filePath: string): string {
@@ -3178,6 +3181,9 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
         path: (agent as any).pendingPath || undefined,
       });
     }
+    if ((agent as any).yoloMode) {
+      agentYoloState.set(agent.agentId, true);
+    }
   }
 
   listEl.innerHTML = allAgents.map(agent => {
@@ -3252,6 +3258,11 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
       ? `<button class="agent-card-canvas-btn" data-intent-id="${agent.intentId}" title="Open canvas">📄</button>`
       : '';
 
+    const isYolo = agentYoloState.get(agent.agentId) || false;
+    const yoloBtn = (agent.status === 'running' || agent.status === 'waiting-approval')
+      ? `<button class="agent-card-yolo-btn${isYolo ? ' active' : ''}" data-agent-id="${agent.agentId}" title="${isYolo ? 'Yolo mode ON — click to disable' : 'Enable yolo mode (auto-approve all)'}">🔥</button>`
+      : '';
+
     // Only show summary when it adds information beyond the status
     const trivialSummaries = ['Completed', 'Failed', 'Starting...', ''];
     const showSummary = (agent.status === 'completed' || agent.status === 'failed') && agent.summary && !trivialSummaries.includes(agent.summary);
@@ -3263,6 +3274,7 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
           <span class="agent-card-name">${intentLabel}</span>
           ${sourceLabel}
           <div class="agent-card-actions">
+            ${yoloBtn}
             ${canvasBtn}
             <button class="agent-card-delete-btn" data-agent-id="${agent.agentId}" title="Delete session">✕</button>
           </div>
@@ -3317,6 +3329,16 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
       e.stopPropagation();
       const intentId = (e.currentTarget as HTMLElement).dataset.intentId!;
       openCanvas(intentId, true);
+    });
+  });
+
+  // Wire up yolo toggle handlers
+  listEl.querySelectorAll('.agent-card-yolo-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const aid = (e.currentTarget as HTMLElement).dataset.agentId!;
+      const current = agentYoloState.get(aid) || false;
+      intentAPI.setAgentYolo(aid, !current);
     });
   });
 
@@ -5064,6 +5086,16 @@ intentAPI.onAgentApprovalNeeded((data: any) => {
 intentAPI.onAgentCompleted(() => {
   if (currentFilter === 'agents') renderAgentsList();
   if (currentFilter === 'open') loadIntents();
+});
+
+intentAPI.onAgentYoloChanged((data: { agentId: string; enabled: boolean }) => {
+  agentYoloState.set(data.agentId, data.enabled);
+  // Update the yolo button if visible
+  const btn = document.querySelector(`.agent-card-yolo-btn[data-agent-id="${data.agentId}"]`) as HTMLElement | null;
+  if (btn) {
+    btn.classList.toggle('active', data.enabled);
+    btn.title = data.enabled ? 'Yolo mode ON — click to disable' : 'Enable yolo mode (auto-approve all)';
+  }
 });
 
 // ── Sandbox bubble-up handler ───────────────────────────
