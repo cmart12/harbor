@@ -470,6 +470,13 @@ header h1 {
   border-radius: 2.5px;
 }
 
+.space-count-badge {
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.45);
+  margin-left: 2px;
+}
+
 .header-icon-btn {
   background: none;
   border: none;
@@ -4182,6 +4189,7 @@ body.dark header h1 { color: #ffffff; }
 body.dark .header-icon-btn { color: rgba(255, 255, 255, 0.55); }
 body.dark .header-icon-btn:hover { color: rgba(255, 255, 255, 0.9); background: rgba(255, 255, 255, 0.06); }
 body.dark .badge { background: rgba(124, 102, 220, 0.2); color: #a594e8; }
+body.dark .space-count-badge { color: rgba(255, 255, 255, 0.4); }
 
 body.dark .status-bar { background: rgba(124, 102, 220, 0.1); color: #a594e8; }
 body.dark .status-bar.error { background: rgba(239, 68, 68, 0.1); color: #f87171; }
