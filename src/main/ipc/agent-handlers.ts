@@ -146,7 +146,6 @@ export function registerAgentHandlers(): void {
         created_at: now,
         updated_at: now,
       });
-      });
 
       const { startCloudJobPoller } = await import('../cloud-agent-poller');
       startCloudJobPoller(agentId, repoInfo.owner, repoInfo.repo, result.jobId, token);
