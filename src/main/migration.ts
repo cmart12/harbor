@@ -6,7 +6,7 @@ import { appendEvent } from './eventlog';
 import { getLogPath } from './workspace';
 import { setConfigValue, loadConfig } from './config';
 
-const OLD_DB_PATH = path.join(app.getPath('userData'), 'intents.db');
+const OLD_DB_PATH = path.join(app.getPath('userData'), 'spaces.db');
 
 /**
  * Migrate data from the old userData DB to the new workspace event log.
@@ -40,11 +40,11 @@ export function migrateOldDatabase(workspaceRoot: string): void {
        FROM intents`
     ).all() as any[];
 
-    // Read all intent events
+    // Read all space events
     let intentEvents: any[] = [];
     try {
       intentEvents = oldDb.prepare(
-        `SELECT id, intent_id, event_type, due_at, due_at_utc, completed_at, recurrence_json, created_at
+        `SELECT id, space_id, event_type, due_at, due_at_utc, completed_at, recurrence_json, created_at
          FROM intent_events`
       ).all() as any[];
     } catch {

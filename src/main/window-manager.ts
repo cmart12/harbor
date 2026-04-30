@@ -54,7 +54,7 @@ export function createMainWindow(options: WindowManagerOptions): BrowserWindow {
   });
 
   // Load via custom protocol so Web Speech API works (needs a real origin, not file://)
-  win.loadURL('copilot-intent://app/renderer/index.html');
+  win.loadURL('copilot-whim://app/renderer/index.html');
   attachBlurHide(win);
   attachResizePersist(win);
   attachExternalLinkHandler(win);
@@ -237,7 +237,7 @@ export function registerWindowIpcHandlers(preloadPath: string): void {
 
   // ── Cross-window agent chat ────────────────────────────
   // Canvas window requests opening an agent chat in the main panel
-  ipcMain.on('main-window:open-agent-chat', (_event, data: { agentId: string; agentPrompt: string; agentStatus: string; agentSource?: 'sdk' | 'cli'; intentId?: string }) => {
+  ipcMain.on('main-window:open-agent-chat', (_event, data: { agentId: string; agentPrompt: string; agentStatus: string; agentSource?: 'sdk' | 'cli'; spaceId?: string }) => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
 
     // Show the main window if hidden
@@ -419,7 +419,7 @@ function createCanvasWindow(preloadPath: string): BrowserWindow {
     },
   });
 
-  win.loadURL('copilot-intent://app/renderer/index.html?mode=canvas');
+  win.loadURL('copilot-whim://app/renderer/index.html?mode=canvas');
   attachExternalLinkHandler(win);
 
   canvasWindows.add(win);
@@ -461,7 +461,7 @@ function createSettingsWindow(preloadPath: string): BrowserWindow {
     },
   });
 
-  win.loadURL('copilot-intent://app/renderer/index.html?mode=settings');
+  win.loadURL('copilot-whim://app/renderer/index.html?mode=settings');
   attachExternalLinkHandler(win);
 
   win.on('closed', () => {

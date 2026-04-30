@@ -6,7 +6,7 @@ export interface CaptureFormProps {
 }
 
 /**
- * Intent capture form — text input with voice transcription.
+ * Space capture form — text input with voice transcription.
  * TODO: Migrate capture form UI from app.ts
  */
 export function CaptureForm(props: CaptureFormProps) {

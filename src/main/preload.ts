@@ -13,7 +13,7 @@ import type { AgentAnchor, RecurrenceResult, RecallMatch, Skill, SkillContent, C
 const { contextBridge, ipcRenderer } = require('electron');
 
 // ---------------------------------------------------------------------------
-// Typed API interfaces — exported so the renderer can declare window.intentAPI
+// Typed API interfaces — exported so the renderer can declare window.whimAPI
 // ---------------------------------------------------------------------------
 
 export interface SubagentAPI {
@@ -25,19 +25,19 @@ export interface SubagentAPI {
   onChanged(parentAgentId: string, callback: () => void): () => void;
 }
 
-export interface IntentAPI {
-  // ── Intents ──────────────────────────────────────────────
-  create(input: IpcCommandArgs<'intent:create'>[0]): Promise<IpcCommandResult<'intent:create'>>;
-  list(): Promise<IpcCommandResult<'intent:list'>>;
-  update(id: string, updates: IpcCommandArgs<'intent:update'>[1]): Promise<IpcCommandResult<'intent:update'>>;
-  delete(id: string): Promise<IpcCommandResult<'intent:delete'>>;
-  dismissRecurrence(id: string): Promise<IpcCommandResult<'intent:dismiss-recurrence'>>;
-  listEvents(limit?: number): Promise<IpcCommandResult<'intent:events'>>;
-  resolveDate(dateText: string): Promise<IpcCommandResult<'intent:resolve-date'>>;
-  classifyInput(text: string): Promise<IpcCommandResult<'intent:classify'>>;
-  searchIntents(query: string): Promise<IpcCommandResult<'intent:search'>>;
-  unarchive(id: string): Promise<IpcCommandResult<'intent:unarchive'>>;
-  summarizeTitle(canvasContent: string): Promise<IpcCommandResult<'intent:summarize-title'>>;
+export interface WhimAPI {
+  // ── Spaces ──────────────────────────────────────────────
+  create(input: IpcCommandArgs<'space:create'>[0]): Promise<IpcCommandResult<'space:create'>>;
+  list(): Promise<IpcCommandResult<'space:list'>>;
+  update(id: string, updates: IpcCommandArgs<'space:update'>[1]): Promise<IpcCommandResult<'space:update'>>;
+  delete(id: string): Promise<IpcCommandResult<'space:delete'>>;
+  dismissRecurrence(id: string): Promise<IpcCommandResult<'space:dismiss-recurrence'>>;
+  listEvents(limit?: number): Promise<IpcCommandResult<'space:events'>>;
+  resolveDate(dateText: string): Promise<IpcCommandResult<'space:resolve-date'>>;
+  classifyInput(text: string): Promise<IpcCommandResult<'space:classify'>>;
+  searchSpaces(query: string): Promise<IpcCommandResult<'space:search'>>;
+  unarchive(id: string): Promise<IpcCommandResult<'space:unarchive'>>;
+  summarizeTitle(canvasContent: string): Promise<IpcCommandResult<'space:summarize-title'>>;
 
   // ── Voice ────────────────────────────────────────────────
   transcribe(audioData: number[]): Promise<IpcCommandResult<'voice:transcribe'>>;
@@ -74,8 +74,8 @@ export interface IntentAPI {
   openSandboxConfigPreview(policy: SandboxPolicy): Promise<IpcCommandResult<'sandbox:open-config-preview'>>;
 
   // ── Sessions ─────────────────────────────────────────────
-  launchSession(intentId: string): Promise<IpcCommandResult<'session:launch'>>;
-  getActiveSessions(): Promise<IpcCommandResult<'session:active-intents'>>;
+  launchSession(spaceId: string): Promise<IpcCommandResult<'session:launch'>>;
+  getActiveSessions(): Promise<IpcCommandResult<'session:active-spaces'>>;
 
   // ── Workspace / Shell ────────────────────────────────────
   selectWorkspace(): Promise<IpcCommandResult<'workspace:select'>>;
@@ -83,22 +83,22 @@ export interface IntentAPI {
   openPath(folderPath: string): Promise<IpcCommandResult<'shell:openPath'>>;
 
   // ── Canvas ───────────────────────────────────────────────
-  readCanvas(intentId: string): Promise<IpcCommandResult<'canvas:read'>>;
-  writeCanvas(intentId: string, content: string): Promise<IpcCommandResult<'canvas:write'>>;
-  closeCanvas(intentId: string, content: string): Promise<IpcCommandResult<'canvas:close'>>;
-  canvasHistory(intentId: string): Promise<IpcCommandResult<'canvas:history'>>;
-  canvasRestore(intentId: string, sha: string): Promise<IpcCommandResult<'canvas:restore'>>;
-  canvasPreviewVersion(intentId: string, sha: string): Promise<IpcCommandResult<'canvas:preview-version'>>;
-  readActivityLog(intentId: string): Promise<{ events: any[]; error?: string }>;
-  pasteFile(intentId: string, filename: string, dataArray: number[]): Promise<IpcCommandResult<'canvas:paste-file'>>;
-  readFile(intentId: string, relativePath: string): Promise<{ data?: number[]; mimeType?: string; error?: string }>;
-  openIntentFolder(intentId: string): Promise<void>;
+  readCanvas(spaceId: string): Promise<IpcCommandResult<'canvas:read'>>;
+  writeCanvas(spaceId: string, content: string): Promise<IpcCommandResult<'canvas:write'>>;
+  closeCanvas(spaceId: string, content: string): Promise<IpcCommandResult<'canvas:close'>>;
+  canvasHistory(spaceId: string): Promise<IpcCommandResult<'canvas:history'>>;
+  canvasRestore(spaceId: string, sha: string): Promise<IpcCommandResult<'canvas:restore'>>;
+  canvasPreviewVersion(spaceId: string, sha: string): Promise<IpcCommandResult<'canvas:preview-version'>>;
+  readActivityLog(spaceId: string): Promise<{ events: any[]; error?: string }>;
+  pasteFile(spaceId: string, filename: string, dataArray: number[]): Promise<IpcCommandResult<'canvas:paste-file'>>;
+  readFile(spaceId: string, relativePath: string): Promise<{ data?: number[]; mimeType?: string; error?: string }>;
+  openSpaceFolder(spaceId: string): Promise<void>;
 
   // ── Agent ────────────────────────────────────────────────
-  launchAgent(intentId: string, selectedText: string, anchor: AgentAnchor, options?: { repo?: string; model?: string }): Promise<IpcCommandResult<'agent:launch'>>;
-  launchDocumentAgent(intentId: string): Promise<{ agentId: string; sessionId: string } | { error: string }>;
-  launchCommentAgent(intentId: string, commentBody: string, quotedText: string, anchor: AgentAnchor, personaHandle: string, threadIndex: number): Promise<IpcCommandResult<'agent:launch-from-comment'>>;
-  listAgents(intentId: string): Promise<IpcCommandResult<'agent:list'>>;
+  launchAgent(spaceId: string, selectedText: string, anchor: AgentAnchor, options?: { repo?: string; model?: string }): Promise<IpcCommandResult<'agent:launch'>>;
+  launchDocumentAgent(spaceId: string): Promise<{ agentId: string; sessionId: string } | { error: string }>;
+  launchCommentAgent(spaceId: string, commentBody: string, quotedText: string, anchor: AgentAnchor, personaHandle: string, threadIndex: number): Promise<IpcCommandResult<'agent:launch-from-comment'>>;
+  listAgents(spaceId: string): Promise<IpcCommandResult<'agent:list'>>;
   approveAgent(agentId: string, requestId: string, approved: boolean): Promise<IpcCommandResult<'agent:approve'>>;
   respondToUserInput(agentId: string, requestId: string, answer: string, wasFreeform: boolean): Promise<IpcCommandResult<'agent:respond-user-input'>>;
   respondToElicitation(agentId: string, requestId: string, action: 'accept' | 'decline' | 'cancel', content?: Record<string, unknown>): Promise<IpcCommandResult<'agent:respond-elicitation'>>;
@@ -108,7 +108,7 @@ export interface IntentAPI {
   quickLaunchAgent(prompt: string, personaHandle?: string): Promise<IpcCommandResult<'agent:quick-launch'>>;
   listAllAgents(): Promise<IpcCommandResult<'agent:list-all'>>;
   deleteAgentSession(agentId: string): Promise<IpcCommandResult<'agent:delete-session'>>;
-  launchCloudAgent(intentId: string, prompt: string): Promise<IpcCommandResult<'agent:launch-cloud'>>;
+  launchCloudAgent(spaceId: string, prompt: string): Promise<IpcCommandResult<'agent:launch-cloud'>>;
   getCloudJobStatus(agentId: string): Promise<IpcCommandResult<'agent:cloud-status'>>;
   getAgentHistory(agentId: string): Promise<IpcCommandResult<'agent:get-history'>>;
   getAgentWorkingDir(agentId: string): Promise<string | null>;
@@ -140,8 +140,8 @@ export interface IntentAPI {
   onCanvasWindowClosed(callback: () => void): void;
   notifyCanvasThemeChanged(theme: string): void;
   onCanvasThemeChanged(callback: (theme: string) => void): void;
-  openAgentChatInPanel(data: { agentId: string; agentPrompt: string; agentStatus: string; agentSource?: 'sdk' | 'cli'; intentId?: string }): void;
-  onOpenAgentChatInPanel(callback: (data: { agentId: string; agentPrompt: string; agentStatus: string; agentSource?: 'sdk' | 'cli'; intentId?: string }) => void): void;
+  openAgentChatInPanel(data: { agentId: string; agentPrompt: string; agentStatus: string; agentSource?: 'sdk' | 'cli'; spaceId?: string }): void;
+  onOpenAgentChatInPanel(callback: (data: { agentId: string; agentPrompt: string; agentStatus: string; agentSource?: 'sdk' | 'cli'; spaceId?: string }) => void): void;
 
   // ── Settings popout window ──────────────────────────────
   openSettingsWindow(): void;
@@ -165,11 +165,11 @@ export interface IntentAPI {
   onAgentReplyReady(callback: (data: IpcEventPayload<'agent:reply-ready'>) => void): void;
   onCanvasContentUpdated(callback: (data: IpcEventPayload<'canvas:content-updated'>) => void): () => void;
 
-  // ── Intent events ────────────────────────────────────────
-  onIntentProcessed(callback: (id: string) => void): void;
-  onRecurrenceResult(callback: (intentId: string, result: RecurrenceResult) => void): void;
-  onRecurrenceApplied(callback: (intentId: string) => void): void;
-  onRecallHint(callback: (intentId: string, match: RecallMatch) => void): void;
+  // ── Space events ────────────────────────────────────────
+  onSpaceProcessed(callback: (id: string) => void): void;
+  onRecurrenceResult(callback: (spaceId: string, result: RecurrenceResult) => void): void;
+  onRecurrenceApplied(callback: (spaceId: string) => void): void;
+  onRecallHint(callback: (spaceId: string, match: RecallMatch) => void): void;
 
   // ── Skills ──────────────────────────────────────────────
   listSkills(): Promise<IpcCommandResult<'skill:list'>>;
@@ -179,7 +179,7 @@ export interface IntentAPI {
   createSkillFromPrompt(description: string): Promise<IpcCommandResult<'skill:create-from-prompt'>>;
   deleteSkill(skillId: string): Promise<IpcCommandResult<'skill:delete'>>;
   openSkillFolder(skillId: string): Promise<IpcCommandResult<'skill:open-folder'>>;
-  createIntentFromSkill(skillId: string): Promise<IpcCommandResult<'skill:create-intent'>>;
+  createSpaceFromSkill(skillId: string): Promise<IpcCommandResult<'skill:create-space'>>;
   launchSkill(skillId: string): Promise<IpcCommandResult<'skill:launch'>>;
   onSkillsChanged(callback: () => void): void;
 
@@ -191,21 +191,21 @@ export interface IntentAPI {
 // Implementation — runtime behavior is identical to the original
 // ---------------------------------------------------------------------------
 
-const api: IntentAPI = {
-  // ── Intents ──────────────────────────────────────────────
+const api: WhimAPI = {
+  // ── Spaces ──────────────────────────────────────────────
   create: (input) =>
-    ipcRenderer.invoke('intent:create', input),
-  list: () => ipcRenderer.invoke('intent:list'),
+    ipcRenderer.invoke('space:create', input),
+  list: () => ipcRenderer.invoke('space:list'),
   update: (id, updates) =>
-    ipcRenderer.invoke('intent:update', id, updates),
-  delete: (id) => ipcRenderer.invoke('intent:delete', id),
-  dismissRecurrence: (id) => ipcRenderer.invoke('intent:dismiss-recurrence', id),
-  listEvents: (limit?) => ipcRenderer.invoke('intent:events', limit),
-  resolveDate: (dateText) => ipcRenderer.invoke('intent:resolve-date', dateText),
-  classifyInput: (text) => ipcRenderer.invoke('intent:classify', text),
-  searchIntents: (query) => ipcRenderer.invoke('intent:search', query),
-  unarchive: (id) => ipcRenderer.invoke('intent:unarchive', id),
-  summarizeTitle: (canvasContent) => ipcRenderer.invoke('intent:summarize-title', canvasContent),
+    ipcRenderer.invoke('space:update', id, updates),
+  delete: (id) => ipcRenderer.invoke('space:delete', id),
+  dismissRecurrence: (id) => ipcRenderer.invoke('space:dismiss-recurrence', id),
+  listEvents: (limit?) => ipcRenderer.invoke('space:events', limit),
+  resolveDate: (dateText) => ipcRenderer.invoke('space:resolve-date', dateText),
+  classifyInput: (text) => ipcRenderer.invoke('space:classify', text),
+  searchSpaces: (query) => ipcRenderer.invoke('space:search', query),
+  unarchive: (id) => ipcRenderer.invoke('space:unarchive', id),
+  summarizeTitle: (canvasContent) => ipcRenderer.invoke('space:summarize-title', canvasContent),
 
   // ── Voice ────────────────────────────────────────────────
   transcribe: (audioData) => ipcRenderer.invoke('voice:transcribe', audioData),
@@ -241,8 +241,8 @@ const api: IntentAPI = {
   openSandboxConfigPreview: (policy) => ipcRenderer.invoke('sandbox:open-config-preview', policy),
 
   // ── Sessions ─────────────────────────────────────────────
-  launchSession: (intentId) => ipcRenderer.invoke('session:launch', intentId),
-  getActiveSessions: () => ipcRenderer.invoke('session:active-intents'),
+  launchSession: (spaceId) => ipcRenderer.invoke('session:launch', spaceId),
+  getActiveSessions: () => ipcRenderer.invoke('session:active-spaces'),
 
   // ── Workspace / Shell ────────────────────────────────────
   selectWorkspace: () => ipcRenderer.invoke('workspace:select'),
@@ -250,29 +250,29 @@ const api: IntentAPI = {
   openPath: (folderPath) => ipcRenderer.invoke('shell:openPath', folderPath),
 
   // ── Canvas ───────────────────────────────────────────────
-  readCanvas: (intentId) => ipcRenderer.invoke('canvas:read', intentId),
-  writeCanvas: (intentId, content) => ipcRenderer.invoke('canvas:write', intentId, content),
-  closeCanvas: (intentId, content) => ipcRenderer.invoke('canvas:close', intentId, content),
-  canvasHistory: (intentId) => ipcRenderer.invoke('canvas:history', intentId),
-  canvasRestore: (intentId, sha) => ipcRenderer.invoke('canvas:restore', intentId, sha),
-  canvasPreviewVersion: (intentId, sha) => ipcRenderer.invoke('canvas:preview-version', intentId, sha),
-  readActivityLog: (intentId) => ipcRenderer.invoke('canvas:read-activity-log', intentId),
-  pasteFile: (intentId, filename, dataArray) =>
-    ipcRenderer.invoke('canvas:paste-file', intentId, filename, dataArray),
-  readFile: (intentId, relativePath) =>
-    ipcRenderer.invoke('canvas:read-file', intentId, relativePath),
-  openIntentFolder: (intentId) =>
-    ipcRenderer.invoke('canvas:open-folder', intentId),
+  readCanvas: (spaceId) => ipcRenderer.invoke('canvas:read', spaceId),
+  writeCanvas: (spaceId, content) => ipcRenderer.invoke('canvas:write', spaceId, content),
+  closeCanvas: (spaceId, content) => ipcRenderer.invoke('canvas:close', spaceId, content),
+  canvasHistory: (spaceId) => ipcRenderer.invoke('canvas:history', spaceId),
+  canvasRestore: (spaceId, sha) => ipcRenderer.invoke('canvas:restore', spaceId, sha),
+  canvasPreviewVersion: (spaceId, sha) => ipcRenderer.invoke('canvas:preview-version', spaceId, sha),
+  readActivityLog: (spaceId) => ipcRenderer.invoke('canvas:read-activity-log', spaceId),
+  pasteFile: (spaceId, filename, dataArray) =>
+    ipcRenderer.invoke('canvas:paste-file', spaceId, filename, dataArray),
+  readFile: (spaceId, relativePath) =>
+    ipcRenderer.invoke('canvas:read-file', spaceId, relativePath),
+  openSpaceFolder: (spaceId) =>
+    ipcRenderer.invoke('canvas:open-folder', spaceId),
 
   // ── Agent ────────────────────────────────────────────────
-  launchAgent: (intentId, selectedText, anchor, options?) =>
-    ipcRenderer.invoke('agent:launch', intentId, selectedText, anchor, options),
-  launchDocumentAgent: (intentId) =>
-    ipcRenderer.invoke('agent:launch-document', intentId),
-  launchCommentAgent: (intentId, commentBody, quotedText, anchor, personaHandle, threadIndex) =>
-    ipcRenderer.invoke('agent:launch-from-comment', intentId, commentBody, quotedText, anchor, personaHandle, threadIndex),
-  listAgents: (intentId) =>
-    ipcRenderer.invoke('agent:list', intentId),
+  launchAgent: (spaceId, selectedText, anchor, options?) =>
+    ipcRenderer.invoke('agent:launch', spaceId, selectedText, anchor, options),
+  launchDocumentAgent: (spaceId) =>
+    ipcRenderer.invoke('agent:launch-document', spaceId),
+  launchCommentAgent: (spaceId, commentBody, quotedText, anchor, personaHandle, threadIndex) =>
+    ipcRenderer.invoke('agent:launch-from-comment', spaceId, commentBody, quotedText, anchor, personaHandle, threadIndex),
+  listAgents: (spaceId) =>
+    ipcRenderer.invoke('agent:list', spaceId),
   approveAgent: (agentId, requestId, approved) =>
     ipcRenderer.invoke('agent:approve', agentId, requestId, approved),
   respondToUserInput: (agentId, requestId, answer, wasFreeform) =>
@@ -291,8 +291,8 @@ const api: IntentAPI = {
     ipcRenderer.invoke('agent:list-all'),
   deleteAgentSession: (agentId) =>
     ipcRenderer.invoke('agent:delete-session', agentId),
-  launchCloudAgent: (intentId, prompt) =>
-    ipcRenderer.invoke('agent:launch-cloud', intentId, prompt),
+  launchCloudAgent: (spaceId, prompt) =>
+    ipcRenderer.invoke('agent:launch-cloud', spaceId, prompt),
   getCloudJobStatus: (agentId) =>
     ipcRenderer.invoke('agent:cloud-status', agentId),
   getAgentHistory: (agentId) =>
@@ -363,7 +363,7 @@ const api: IntentAPI = {
   },
   openAgentChatInPanel: (data) => ipcRenderer.send('main-window:open-agent-chat', data),
   onOpenAgentChatInPanel: (callback) => {
-    ipcRenderer.on('main-window:open-agent-chat', (_event: unknown, data: { agentId: string; agentPrompt: string; agentStatus: string; agentSource?: 'sdk' | 'cli'; intentId?: string }) => callback(data));
+    ipcRenderer.on('main-window:open-agent-chat', (_event: unknown, data: { agentId: string; agentPrompt: string; agentStatus: string; agentSource?: 'sdk' | 'cli'; spaceId?: string }) => callback(data));
   },
 
   // ── Settings popout window ──────────────────────────────
@@ -421,18 +421,18 @@ const api: IntentAPI = {
     return () => { ipcRenderer.removeListener(channel, handler); };
   },
 
-  // ── Intent events ────────────────────────────────────────
-  onIntentProcessed: (callback) => {
-    ipcRenderer.on('intent:processed', (_event: unknown, id: string) => callback(id));
+  // ── Space events ────────────────────────────────────────
+  onSpaceProcessed: (callback) => {
+    ipcRenderer.on('space:processed', (_event: unknown, id: string) => callback(id));
   },
   onRecurrenceResult: (callback) => {
-    ipcRenderer.on('intent:recurrence', (_event: unknown, intentId: string, result: RecurrenceResult) => callback(intentId, result));
+    ipcRenderer.on('space:recurrence', (_event: unknown, spaceId: string, result: RecurrenceResult) => callback(spaceId, result));
   },
   onRecurrenceApplied: (callback) => {
-    ipcRenderer.on('intent:recurrence-applied', (_event: unknown, intentId: string) => callback(intentId));
+    ipcRenderer.on('space:recurrence-applied', (_event: unknown, spaceId: string) => callback(spaceId));
   },
   onRecallHint: (callback) => {
-    ipcRenderer.on('intent:recall', (_event: unknown, intentId: string, match: RecallMatch) => callback(intentId, match));
+    ipcRenderer.on('space:recall', (_event: unknown, spaceId: string, match: RecallMatch) => callback(spaceId, match));
   },
 
   // ── Skills ──────────────────────────────────────────────
@@ -443,7 +443,7 @@ const api: IntentAPI = {
   createSkillFromPrompt: (description) => ipcRenderer.invoke('skill:create-from-prompt', description),
   deleteSkill: (skillId) => ipcRenderer.invoke('skill:delete', skillId),
   openSkillFolder: (skillId) => ipcRenderer.invoke('skill:open-folder', skillId),
-  createIntentFromSkill: (skillId) => ipcRenderer.invoke('skill:create-intent', skillId),
+  createSpaceFromSkill: (skillId) => ipcRenderer.invoke('skill:create-space', skillId),
   launchSkill: (skillId) => ipcRenderer.invoke('skill:launch', skillId),
   onSkillsChanged: (callback) => {
     ipcRenderer.on('skills:changed', callback);
@@ -453,7 +453,7 @@ const api: IntentAPI = {
   getPlatform: () => process.platform,
 };
 
-contextBridge.exposeInMainWorld('intentAPI', api);
+contextBridge.exposeInMainWorld('whimAPI', api);
 
 // Expose platform info so the renderer can apply platform-adaptive styling
 contextBridge.exposeInMainWorld('__platform', process.platform);

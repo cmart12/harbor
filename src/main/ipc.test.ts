@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeAll } from 'vitest';
 const handlers = new Map<string, Function>();
 
 vi.mock('electron', () => ({
-  app: { getPath: () => '/mock/intent-test' },
+  app: { getPath: () => '/mock/space-test' },
   ipcMain: {
     handle: vi.fn((channel: string, handler: Function) => {
       handlers.set(channel, handler);
@@ -25,17 +25,17 @@ vi.mock('fs', async () => {
 
 vi.mock('./database', () => ({
   isInitialized: vi.fn(() => true),
-  createIntent: vi.fn((input: any) => ({
-    id: 'intent-1',
+  createSpace: vi.fn((input: any) => ({
+    id: 'space-1',
     ...input,
     status: 'captured',
     created_at: '2024-01-01',
     updated_at: '2024-01-01',
   })),
-  listIntents: vi.fn(() => []),
-  updateIntent: vi.fn((id: string, updates: any) => ({ id, ...updates, updated_at: '2024-01-02' })),
-  deleteIntent: vi.fn(() => true),
-  getIntent: vi.fn((id: string) => ({
+  listSpaces: vi.fn(() => []),
+  updateSpace: vi.fn((id: string, updates: any) => ({ id, ...updates, updated_at: '2024-01-02' })),
+  deleteSpace: vi.fn(() => true),
+  getSpace: vi.fn((id: string) => ({
     id,
     folder: 'test-folder',
     description: 'test',
@@ -56,14 +56,14 @@ vi.mock('./database', () => ({
     created_at: '2024-01-01',
     updated_at: '2024-01-01',
   })),
-  searchIntents: vi.fn(() => [{ id: 'i1', description: 'found' }]),
-  updateIntentCAS: vi.fn(() => true),
-  logIntentEvent: vi.fn(),
-  listIntentEvents: vi.fn(() => []),
+  searchSpaces: vi.fn(() => [{ id: 'i1', description: 'found' }]),
+  updateSpaceCAS: vi.fn(() => true),
+  logSpaceEvent: vi.fn(),
+  listSpaceEvents: vi.fn(() => []),
   initDatabase: vi.fn(),
   closeDatabase: vi.fn(),
   mergeSessionIds: vi.fn(),
-  assignIntentFolder: vi.fn(),
+  assignSpaceFolder: vi.fn(),
   updateCanvasContent: vi.fn(),
   syncCanvasContent: vi.fn(),
   createAgentSession: vi.fn(),
@@ -74,19 +74,19 @@ vi.mock('./database', () => ({
 }));
 
 vi.mock('./ai', () => ({
-  parseIntentWithAI: vi.fn(async () => ({
+  parseSpaceWithAI: vi.fn(async () => ({
     description: 'parsed',
     client: null,
     due_at: null,
     due_at_utc: null,
   })),
   evaluateRecurrence: vi.fn(async () => ({ should_recur: false })),
-  findSimilarIntent: vi.fn(async () => null),
+  findSimilarSpace: vi.fn(async () => null),
   resolveDateWithAI: vi.fn(async () => ({
     date: '2024-01-01',
     utc: '2024-01-01T00:00:00Z',
   })),
-  classifyInput: vi.fn(async () => ({ type: 'intent' })),
+  classifyInput: vi.fn(async () => ({ type: 'space' })),
   setAIModel: vi.fn(async () => {}),
   reinitCopilot: vi.fn(async () => {}),
   listAvailableModels: vi.fn(async () => ['gpt-4', 'gpt-3.5']),
@@ -113,20 +113,20 @@ vi.mock('./frontmatter', () => ({
 
 vi.mock('./workspace', () => ({
   initWorkspace: vi.fn(),
-  getDbPath: vi.fn((dir: string) => `${dir}/.intent/intents.db`),
-  getLogPath: vi.fn((dir: string) => `${dir}/.intent/events.jsonl`),
-  initIntentCanvas: vi.fn(() => 'test-folder'),
+  getDbPath: vi.fn((dir: string) => `${dir}/.whim/spaces.db`),
+  getLogPath: vi.fn((dir: string) => `${dir}/.whim/events.jsonl`),
+  initSpaceCanvas: vi.fn(() => 'test-folder'),
   readCanvas: vi.fn(() => 'canvas content'),
   writeCanvas: vi.fn(),
   scheduleAutoCommit: vi.fn(),
   commitNow: vi.fn(async () => {}),
-  archiveIntentFolder: vi.fn(),
-  deleteIntentFolder: vi.fn(),
+  archiveSpaceFolder: vi.fn(),
+  deleteSpaceFolder: vi.fn(),
   saveAttachment: vi.fn(() => ({ path: 'attachments/test.png' })),
   resolveAttachmentPath: vi.fn(() => '/abs/path/test.png'),
   getMimeType: vi.fn(() => 'image/png'),
-  getIntentHistory: vi.fn(async () => []),
-  restoreIntentVersion: vi.fn(async () => ({ success: true })),
+  getSpaceHistory: vi.fn(async () => []),
+  restoreSpaceVersion: vi.fn(async () => ({ success: true })),
 }));
 
 vi.mock('./config', () => ({
@@ -207,9 +207,9 @@ vi.mock('uuid', () => ({
 
 // ── Import after mocks ─────────────────────────────────────────────
 import { registerIpcHandlers } from './ipc';
-import { isInitialized, createIntent, listIntents, updateIntent, deleteIntent, getIntent, getSkill, searchIntents, logIntentEvent, listIntentEvents, assignIntentFolder, updateCanvasContent } from './database';
+import { isInitialized, createSpace, listSpaces, updateSpace, deleteSpace, getSpace, getSkill, searchSpaces, logSpaceEvent, listSpaceEvents, assignSpaceFolder, updateCanvasContent } from './database';
 import { classifyInput, setAIModel, evaluateRecurrence } from './ai';
-import { initIntentCanvas, readCanvas, writeCanvas, scheduleAutoCommit, commitNow, archiveIntentFolder, deleteIntentFolder } from './workspace';
+import { initSpaceCanvas, readCanvas, writeCanvas, scheduleAutoCommit, commitNow, archiveSpaceFolder, deleteSpaceFolder } from './workspace';
 import { getConfigValue, setConfigValue } from './config';
 import { listDiscoveredMcpServers } from './mcp';
 import { validateMcpServers, validateCliTools } from './validators';
@@ -230,72 +230,72 @@ describe('IPC handlers', () => {
     registerIpcHandlers();
   });
 
-  // ── Intent CRUD ─────────────────────────────────────────────────
+  // ── Space CRUD ─────────────────────────────────────────────────
 
-  describe('intent:create', () => {
-    it('creates an intent and returns it', async () => {
-      const result = await invoke('intent:create', {
+  describe('space:create', () => {
+    it('creates an space and returns it', async () => {
+      const result = await invoke('space:create', {
         body: 'Build a new feature',
         description: 'new feature',
       });
-      expect(result).toMatchObject({ id: 'intent-1', status: 'captured' });
-      expect(createIntent).toHaveBeenCalledWith({
+      expect(result).toMatchObject({ id: 'space-1', status: 'captured' });
+      expect(createSpace).toHaveBeenCalledWith({
         body: 'Build a new feature',
         description: 'new feature',
       });
-      expect(initIntentCanvas).toHaveBeenCalled();
-      expect(assignIntentFolder).toHaveBeenCalledWith('intent-1', 'test-folder');
+      expect(initSpaceCanvas).toHaveBeenCalled();
+      expect(assignSpaceFolder).toHaveBeenCalledWith('space-1', 'test-folder');
     });
 
     it('returns error when DB not initialized', async () => {
       vi.mocked(isInitialized).mockReturnValueOnce(false);
-      const result = await invoke('intent:create', { body: 'test' });
+      const result = await invoke('space:create', { body: 'test' });
       expect(result).toEqual({ error: 'no_workspace' });
     });
   });
 
-  describe('intent:list', () => {
+  describe('space:list', () => {
     it('returns empty array when not initialized', () => {
       vi.mocked(isInitialized).mockReturnValueOnce(false);
-      const result = invoke('intent:list');
+      const result = invoke('space:list');
       expect(result).toEqual([]);
     });
 
-    it('returns intents when initialized', () => {
-      vi.mocked(listIntents).mockReturnValueOnce([
+    it('returns spaces when initialized', () => {
+      vi.mocked(listSpaces).mockReturnValueOnce([
         { id: 'i1', description: 'test' } as any,
       ]);
-      const result = invoke('intent:list');
+      const result = invoke('space:list');
       expect(result).toEqual([{ id: 'i1', description: 'test' }]);
     });
   });
 
-  describe('intent:update', () => {
-    it('calls updateIntent with updates', async () => {
-      const result = await invoke('intent:update', 'intent-1', { description: 'updated' });
-      expect(updateIntent).toHaveBeenCalledWith('intent-1', { description: 'updated' });
-      expect(result).toMatchObject({ id: 'intent-1', description: 'updated' });
+  describe('space:update', () => {
+    it('calls updateSpace with updates', async () => {
+      const result = await invoke('space:update', 'space-1', { description: 'updated' });
+      expect(updateSpace).toHaveBeenCalledWith('space-1', { description: 'updated' });
+      expect(result).toMatchObject({ id: 'space-1', description: 'updated' });
     });
 
     it('handles status transition to done — completion + recurrence', async () => {
-      vi.mocked(getIntent).mockReturnValueOnce({
-        id: 'intent-1',
+      vi.mocked(getSpace).mockReturnValueOnce({
+        id: 'space-1',
         status: 'active',
         due_at: '2024-06-01',
         due_at_utc: '2024-06-01T00:00:00Z',
       } as any);
-      vi.mocked(updateIntent).mockReturnValueOnce({
-        id: 'intent-1',
+      vi.mocked(updateSpace).mockReturnValueOnce({
+        id: 'space-1',
         status: 'done',
         due_at: '2024-06-01',
         due_at_utc: '2024-06-01T00:00:00Z',
         updated_at: '2024-01-02',
       } as any);
 
-      const result = await invoke('intent:update', 'intent-1', { status: 'done' });
-      expect(result).toMatchObject({ id: 'intent-1', status: 'done' });
-      expect(logIntentEvent).toHaveBeenCalledWith(
-        'intent-1',
+      const result = await invoke('space:update', 'space-1', { status: 'done' });
+      expect(result).toMatchObject({ id: 'space-1', status: 'done' });
+      expect(logSpaceEvent).toHaveBeenCalledWith(
+        'space-1',
         'completed',
         expect.objectContaining({ due_at: '2024-06-01' }),
       );
@@ -306,12 +306,12 @@ describe('IPC handlers', () => {
     });
   });
 
-  describe('intent:delete', () => {
-    it('calls deleteIntent and schedules auto-commit', () => {
-      const result = invoke('intent:delete', 'intent-1');
-      expect(deleteIntent).toHaveBeenCalledWith('intent-1');
+  describe('space:delete', () => {
+    it('calls deleteSpace and schedules auto-commit', () => {
+      const result = invoke('space:delete', 'space-1');
+      expect(deleteSpace).toHaveBeenCalledWith('space-1');
       expect(result).toBe(true);
-      expect(deleteIntentFolder).toHaveBeenCalledWith('/mock/workspace', 'test-folder');
+      expect(deleteSpaceFolder).toHaveBeenCalledWith('/mock/workspace', 'test-folder');
       expect(scheduleAutoCommit).toHaveBeenCalled();
     });
   });
@@ -381,24 +381,24 @@ describe('IPC handlers', () => {
   // ── Canvas ──────────────────────────────────────────────────────
 
   describe('canvas:read', () => {
-    it('returns content for valid intent', () => {
-      const result = invoke('canvas:read', 'intent-1');
+    it('returns content for valid space', () => {
+      const result = invoke('canvas:read', 'space-1');
       expect(result).toEqual({ content: 'canvas content' });
       expect(readCanvas).toHaveBeenCalled();
     });
 
     it('returns error when no workspace', () => {
       vi.mocked(getConfigValue).mockReturnValueOnce(null as any);
-      const result = invoke('canvas:read', 'intent-1');
+      const result = invoke('canvas:read', 'space-1');
       expect(result).toMatchObject({ error: 'no_workspace' });
     });
   });
 
   describe('canvas:write', () => {
     it('writes content and updates DB', () => {
-      const result = invoke('canvas:write', 'intent-1', 'new content');
+      const result = invoke('canvas:write', 'space-1', 'new content');
       expect(writeCanvas).toHaveBeenCalledWith('/mock/workspace', 'test-folder', 'new content');
-      expect(updateCanvasContent).toHaveBeenCalledWith('intent-1', 'new content');
+      expect(updateCanvasContent).toHaveBeenCalledWith('space-1', 'new content');
       expect(result).toEqual({ success: true });
     });
 
@@ -406,7 +406,7 @@ describe('IPC handlers', () => {
       vi.clearAllMocks();
       const result = invoke('canvas:write', '__skill__my-skill', '---\nname: Test\n---\nBody text');
       expect(getSkill).toHaveBeenCalledWith('my-skill');
-      // Should NOT call writeCanvas (that's for intents)
+      // Should NOT call writeCanvas (that's for spaces)
       expect(writeCanvas).not.toHaveBeenCalled();
       expect(result).toEqual({ success: true });
     });
@@ -420,7 +420,7 @@ describe('IPC handlers', () => {
 
   describe('canvas:close', () => {
     it('writes and schedules auto-commit', () => {
-      invoke('canvas:close', 'intent-1', 'final content');
+      invoke('canvas:close', 'space-1', 'final content');
       expect(writeCanvas).toHaveBeenCalled();
       expect(updateCanvasContent).toHaveBeenCalled();
       expect(scheduleAutoCommit).toHaveBeenCalledWith('/mock/workspace');
@@ -429,25 +429,25 @@ describe('IPC handlers', () => {
 
   // ── Search & classify ───────────────────────────────────────────
 
-  describe('intent:search', () => {
-    it('returns results from searchIntents', () => {
-      const result = invoke('intent:search', 'query');
-      expect(searchIntents).toHaveBeenCalledWith('query');
+  describe('space:search', () => {
+    it('returns results from searchSpaces', () => {
+      const result = invoke('space:search', 'query');
+      expect(searchSpaces).toHaveBeenCalledWith('query');
       expect(result).toEqual([{ id: 'i1', description: 'found' }]);
     });
 
     it('returns empty when not initialized', () => {
       vi.mocked(isInitialized).mockReturnValueOnce(false);
-      const result = invoke('intent:search', 'query');
+      const result = invoke('space:search', 'query');
       expect(result).toEqual([]);
     });
   });
 
-  describe('intent:classify', () => {
+  describe('space:classify', () => {
     it('returns classification result', async () => {
-      const result = await invoke('intent:classify', 'what is going on');
+      const result = await invoke('space:classify', 'what is going on');
       expect(classifyInput).toHaveBeenCalled();
-      expect(result).toEqual({ type: 'intent' });
+      expect(result).toEqual({ type: 'space' });
     });
   });
 
@@ -715,17 +715,17 @@ describe('IPC handlers', () => {
 
   // ── Misc ────────────────────────────────────────────────────────
 
-  describe('intent:events', () => {
+  describe('space:events', () => {
     it('returns events list', () => {
-      invoke('intent:events', 50);
-      expect(listIntentEvents).toHaveBeenCalledWith(50);
+      invoke('space:events', 50);
+      expect(listSpaceEvents).toHaveBeenCalledWith(50);
     });
   });
 
   describe('session:launch', () => {
     it('delegates to launchSession', async () => {
-      const result = await invoke('session:launch', 'intent-1');
-      expect(launchSession).toHaveBeenCalledWith('intent-1', '/mock/workspace');
+      const result = await invoke('session:launch', 'space-1');
+      expect(launchSession).toHaveBeenCalledWith('space-1', '/mock/workspace');
       expect(result).toEqual({ success: true });
     });
   });
@@ -774,8 +774,8 @@ describe('IPC handlers', () => {
   describe('handler registration', () => {
     it('registers all expected channels', () => {
       const expected = [
-        'intent:create', 'intent:list', 'intent:update', 'intent:delete',
-        'intent:search', 'intent:classify', 'intent:events',
+        'space:create', 'space:list', 'space:update', 'space:delete',
+        'space:search', 'space:classify', 'space:events',
         'settings:get', 'settings:set',
         'canvas:read', 'canvas:write', 'canvas:close',
         'mcp:list-discovered', 'mcp:list-custom', 'mcp:save-custom',

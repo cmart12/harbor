@@ -1,26 +1,26 @@
 /**
- * Per-intent activity log — writes to {intentFolder}/.intent/events.jsonl
+ * Per-space activity log — writes to {spaceFolder}/.whim/events.jsonl
  * Append-only log for debugging agent activity on a canvas.
  */
 import * as fs from 'fs';
 import * as path from 'path';
 
-export interface IntentActivityEvent {
+export interface SpaceActivityEvent {
   ts: string;
   type: string;
   [key: string]: any;
 }
 
-/** Get the activity log path for an intent folder. */
-export function getIntentActivityLogPath(workspaceRoot: string, intentFolder: string): string {
-  return path.join(workspaceRoot, intentFolder, '.intent', 'events.jsonl');
+/** Get the activity log path for a space folder. */
+export function getSpaceActivityLogPath(workspaceRoot: string, spaceFolder: string): string {
+  return path.join(workspaceRoot, spaceFolder, '.whim', 'events.jsonl');
 }
 
-/** Append an event to the per-intent activity log. */
-export function appendIntentActivity(workspaceRoot: string, intentFolder: string, type: string, data: Record<string, any>): void {
-  if (!workspaceRoot || !intentFolder) return;
+/** Append an event to the per-space activity log. */
+export function appendSpaceActivity(workspaceRoot: string, spaceFolder: string, type: string, data: Record<string, any>): void {
+  if (!workspaceRoot || !spaceFolder) return;
 
-  const logDir = path.join(workspaceRoot, intentFolder, '.intent');
+  const logDir = path.join(workspaceRoot, spaceFolder, '.whim');
   const logPath = path.join(logDir, 'events.jsonl');
 
   try {
@@ -28,7 +28,7 @@ export function appendIntentActivity(workspaceRoot: string, intentFolder: string
       fs.mkdirSync(logDir, { recursive: true });
     }
 
-    const event: IntentActivityEvent = {
+    const event: SpaceActivityEvent = {
       ts: new Date().toISOString(),
       type,
       ...data,
@@ -46,14 +46,14 @@ export function appendIntentActivity(workspaceRoot: string, intentFolder: string
   }
 }
 
-/** Read all events from the per-intent activity log. */
-export function readIntentActivityLog(workspaceRoot: string, intentFolder: string): IntentActivityEvent[] {
-  const logPath = getIntentActivityLogPath(workspaceRoot, intentFolder);
+/** Read all events from the per-space activity log. */
+export function readSpaceActivityLog(workspaceRoot: string, spaceFolder: string): SpaceActivityEvent[] {
+  const logPath = getSpaceActivityLogPath(workspaceRoot, spaceFolder);
   if (!fs.existsSync(logPath)) return [];
 
   try {
     const content = fs.readFileSync(logPath, 'utf-8');
-    const events: IntentActivityEvent[] = [];
+    const events: SpaceActivityEvent[] = [];
     for (const line of content.split('\n')) {
       const trimmed = line.trim();
       if (!trimmed) continue;

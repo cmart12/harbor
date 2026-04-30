@@ -3,9 +3,9 @@ import * as fs from 'fs';
 import { execFile } from 'child_process';
 import { BrowserWindow } from 'electron';
 
-const INTENT_DIR = '.intent';
+const WHIM_DIR = '.whim';
 const LOG_FILE = 'events.jsonl';
-const DB_FILE = 'intents.db';
+const DB_FILE = 'spaces.db';
 
 const RESERVED_NAMES = new Set([
   'con', 'prn', 'aux', 'nul',
@@ -13,23 +13,43 @@ const RESERVED_NAMES = new Set([
   'lpt1', 'lpt2', 'lpt3', 'lpt4', 'lpt5', 'lpt6', 'lpt7', 'lpt8', 'lpt9',
 ]);
 
-export function getIntentDir(workspaceRoot: string): string {
-  return path.join(workspaceRoot, INTENT_DIR);
+export function getWhimDir(workspaceRoot: string): string {
+  return path.join(workspaceRoot, WHIM_DIR);
 }
 
 export function getLogPath(workspaceRoot: string): string {
-  return path.join(workspaceRoot, INTENT_DIR, LOG_FILE);
+  return path.join(workspaceRoot, WHIM_DIR, LOG_FILE);
 }
 
 export function getDbPath(workspaceRoot: string): string {
-  return path.join(workspaceRoot, INTENT_DIR, DB_FILE);
+  return path.join(workspaceRoot, WHIM_DIR, DB_FILE);
 }
 
-/** Ensure the .intent/ directory and .gitignore entries exist in the workspace. */
+/** Ensure the .whim/ directory and .gitignore entries exist in the workspace. */
 export function initWorkspace(rootPath: string): void {
-  const intentDir = getIntentDir(rootPath);
-  if (!fs.existsSync(intentDir)) {
-    fs.mkdirSync(intentDir, { recursive: true });
+  const whimDir = getWhimDir(rootPath);
+
+  // Backward compatibility: migrate .intent/ → .whim/
+  const oldDir = path.join(rootPath, '.intent');
+  if (fs.existsSync(oldDir)) {
+    if (!fs.existsSync(whimDir)) {
+      // Simple rename when .whim/ doesn't exist yet
+      fs.renameSync(oldDir, whimDir);
+    } else {
+      // Both exist: move any files from .intent/ into .whim/ (don't overwrite)
+      for (const entry of fs.readdirSync(oldDir)) {
+        const src = path.join(oldDir, entry);
+        const dest = path.join(whimDir, entry);
+        if (!fs.existsSync(dest)) {
+          fs.renameSync(src, dest);
+        }
+      }
+      fs.rmSync(oldDir, { recursive: true, force: true });
+    }
+  }
+
+  if (!fs.existsSync(whimDir)) {
+    fs.mkdirSync(whimDir, { recursive: true });
   }
 
   // Ensure .agents/skills/ directory exists
@@ -40,14 +60,14 @@ export function initWorkspace(rootPath: string): void {
 
   const gitignorePath = path.join(rootPath, '.gitignore');
   const requiredEntries = [
-    '.intent/*.db',
-    '.intent/*.db-journal',
-    '.intent/*.db-wal',
-    '.intent/*.db-shm',
+    '.whim/*.db',
+    '.whim/*.db-journal',
+    '.whim/*.db-wal',
+    '.whim/*.db-shm',
     '*/attachments/',
     '*/uploads/',
     '*/.workspace/',
-    '*/.intent/',
+    '*/.whim/',
   ];
 
   let existing = '';
@@ -58,13 +78,13 @@ export function initWorkspace(rootPath: string): void {
   const missing = requiredEntries.filter(entry => !existing.includes(entry));
   if (missing.length > 0) {
     const nl = existing && !existing.endsWith('\n') ? '\n' : '';
-    const addition = `${nl}# Intent app local cache\n${missing.join('\n')}\n`;
+    const addition = `${nl}# Whim app local cache\n${missing.join('\n')}\n`;
     fs.appendFileSync(gitignorePath, addition);
   }
 }
 
-/** Generate a filesystem-safe slug from a description, with intent ID suffix for uniqueness. */
-export function slugify(text: string, intentId: string): string {
+/** Generate a filesystem-safe slug from a description, with space ID suffix for uniqueness. */
+export function slugify(text: string, spaceId: string): string {
   let slug = text
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
@@ -78,16 +98,16 @@ export function slugify(text: string, intentId: string): string {
   // Guard against Windows reserved names
   const firstSegment = slug.split('-')[0];
   if (RESERVED_NAMES.has(firstSegment)) {
-    slug = 'intent-' + slug;
+    slug = 'space-' + slug;
   }
 
-  const idSuffix = intentId.replace(/-/g, '').substring(0, 4);
+  const idSuffix = spaceId.replace(/-/g, '').substring(0, 4);
   return slug ? `${slug}-${idSuffix}` : idSuffix;
 }
 
-/** Create a subfolder for an intent inside the workspace. Returns the folder name (relative). */
-export function createIntentFolder(workspaceRoot: string, intentId: string, description: string): string {
-  const folder = slugify(description, intentId);
+/** Create a subfolder for a space inside the workspace. Returns the folder name (relative). */
+export function createSpaceFolder(workspaceRoot: string, spaceId: string, description: string): string {
+  const folder = slugify(description, spaceId);
   const folderPath = path.join(workspaceRoot, folder);
 
   if (!fs.existsSync(folderPath)) {
@@ -102,20 +122,20 @@ const ATTACHMENTS_DIR = 'uploads';
 
 const MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024; // 25MB
 
-/** Get the absolute path to an intent's canvas file. */
+/** Get the absolute path to a space's canvas file. */
 export function getCanvasPath(workspaceRoot: string, folder: string): string {
   return path.join(workspaceRoot, folder, CANVAS_FILE);
 }
 
-/** Read the canvas content for an intent. Returns empty string if file doesn't exist. */
+/** Read the canvas content for a space. Returns empty string if file doesn't exist. */
 export function readCanvas(workspaceRoot: string, folder: string): string {
   const canvasPath = getCanvasPath(workspaceRoot, folder);
   if (!fs.existsSync(canvasPath)) return '';
   return fs.readFileSync(canvasPath, 'utf-8');
 }
 
-/** Get the canvas content for an intent at a specific git commit (non-destructive). */
-export async function getIntentVersionContent(workspaceRoot: string, folder: string, sha: string): Promise<{ content: string; error?: string }> {
+/** Get the canvas content for a space at a specific git commit (non-destructive). */
+export async function getSpaceVersionContent(workspaceRoot: string, folder: string, sha: string): Promise<{ content: string; error?: string }> {
   try {
     if (!/^[0-9a-f]{7,40}$/.test(sha)) {
       return { content: '', error: 'Invalid commit SHA' };
@@ -127,7 +147,7 @@ export async function getIntentVersionContent(workspaceRoot: string, folder: str
   }
 }
 
-/** Write content to an intent's canvas file. Creates the folder if needed. */
+/** Write content to a space's canvas file. Creates the folder if needed. */
 export function writeCanvas(workspaceRoot: string, folder: string, content: string): void {
   const folderPath = path.join(workspaceRoot, folder);
   if (!fs.existsSync(folderPath)) {
@@ -137,9 +157,9 @@ export function writeCanvas(workspaceRoot: string, folder: string, content: stri
   fs.writeFileSync(canvasPath, content, 'utf-8');
 }
 
-/** Create an intent's folder and seed its canvas with initial content. */
-export function initIntentCanvas(workspaceRoot: string, intentId: string, description: string, body: string | null): string {
-  const folder = createIntentFolder(workspaceRoot, intentId, description);
+/** Create a space's folder and seed its canvas with initial content. */
+export function initSpaceCanvas(workspaceRoot: string, spaceId: string, description: string, body: string | null): string {
+  const folder = createSpaceFolder(workspaceRoot, spaceId, description);
   const canvasPath = getCanvasPath(workspaceRoot, folder);
 
   // Only seed if canvas doesn't already exist
@@ -153,13 +173,13 @@ export function initIntentCanvas(workspaceRoot: string, intentId: string, descri
 
 const ARCHIVE_DIR = 'archive';
 
-/** Move an intent folder into .intent/archive/ for safekeeping. */
-export function archiveIntentFolder(workspaceRoot: string, folder: string): void {
+/** Move a space folder into .whim/archive/ for safekeeping. */
+export function archiveSpaceFolder(workspaceRoot: string, folder: string): void {
   if (!folder) return;
   const src = path.join(workspaceRoot, folder);
   if (!fs.existsSync(src)) return;
 
-  const archiveDir = path.join(workspaceRoot, INTENT_DIR, ARCHIVE_DIR);
+  const archiveDir = path.join(workspaceRoot, WHIM_DIR, ARCHIVE_DIR);
   if (!fs.existsSync(archiveDir)) {
     fs.mkdirSync(archiveDir, { recursive: true });
   }
@@ -173,10 +193,10 @@ export function archiveIntentFolder(workspaceRoot: string, folder: string): void
   fs.renameSync(src, dest);
 }
 
-/** Move an intent folder from .intent/archive/ back to the workspace root. */
-export function unarchiveIntentFolder(workspaceRoot: string, folder: string): void {
+/** Move a space folder from .whim/archive/ back to the workspace root. */
+export function unarchiveSpaceFolder(workspaceRoot: string, folder: string): void {
   if (!folder) return;
-  const archivePath = path.join(workspaceRoot, INTENT_DIR, ARCHIVE_DIR, folder);
+  const archivePath = path.join(workspaceRoot, WHIM_DIR, ARCHIVE_DIR, folder);
   if (!fs.existsSync(archivePath)) return;
 
   const dest = path.join(workspaceRoot, folder);
@@ -187,8 +207,8 @@ export function unarchiveIntentFolder(workspaceRoot: string, folder: string): vo
   fs.renameSync(archivePath, dest);
 }
 
-/** Remove an intent folder from disk (workspace root and/or archive). */
-export function deleteIntentFolder(workspaceRoot: string, folder: string): void {
+/** Remove a space folder from disk (workspace root and/or archive). */
+export function deleteSpaceFolder(workspaceRoot: string, folder: string): void {
   if (!folder) return;
 
   const livePath = path.join(workspaceRoot, folder);
@@ -196,7 +216,7 @@ export function deleteIntentFolder(workspaceRoot: string, folder: string): void 
     fs.rmSync(livePath, { recursive: true, force: true });
   }
 
-  const archivePath = path.join(workspaceRoot, INTENT_DIR, ARCHIVE_DIR, folder);
+  const archivePath = path.join(workspaceRoot, WHIM_DIR, ARCHIVE_DIR, folder);
   if (fs.existsSync(archivePath)) {
     fs.rmSync(archivePath, { recursive: true, force: true });
   }
@@ -233,7 +253,7 @@ async function doCommit(workspaceRoot: string): Promise<void> {
     // Check if this is a git repo
     await runGit(workspaceRoot, ['rev-parse', '--git-dir']);
 
-    // Stage the .intent/ dir (event log) and all tracked/new files (intent folders)
+    // Stage the .whim/ dir (event log) and all tracked/new files (space folders)
     await runGit(workspaceRoot, ['add', '-A']);
 
     // Check if there's anything to commit
@@ -248,7 +268,7 @@ async function doCommit(workspaceRoot: string): Promise<void> {
     const timestamp = new Date().toLocaleString('en-US', {
       month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
     });
-    await runGit(workspaceRoot, ['commit', '-m', `intent: auto-save ${timestamp}`, '--no-verify']);
+    await runGit(workspaceRoot, ['commit', '-m', `space: auto-save ${timestamp}`, '--no-verify']);
     console.log(`[workspace] Auto-committed at ${timestamp}`);
 
     // Notify renderer so history panel can refresh
@@ -268,7 +288,7 @@ async function doCommit(workspaceRoot: string): Promise<void> {
 
 /**
  * Schedule an auto-commit for the workspace. Debounced so rapid changes
- * (typing, canvas saves, multiple intent updates) coalesce into one commit.
+ * (typing, canvas saves, multiple space updates) coalesce into one commit.
  */
 export function scheduleAutoCommit(workspaceRoot: string): void {
   if (commitTimer) clearTimeout(commitTimer);
@@ -302,8 +322,8 @@ export interface FolderCommit {
   filesChanged: string[];
 }
 
-/** Get git commit history for an intent folder. */
-export async function getIntentHistory(workspaceRoot: string, folder: string, limit = 50): Promise<FolderCommit[]> {
+/** Get git commit history for an space folder. */
+export async function getSpaceHistory(workspaceRoot: string, folder: string, limit = 50): Promise<FolderCommit[]> {
   try {
     const SEPARATOR = '---COMMIT---';
     const raw = await runGitOutput(workspaceRoot, [
@@ -343,8 +363,8 @@ export async function getIntentHistory(workspaceRoot: string, folder: string, li
   }
 }
 
-/** Restore an intent folder to a specific commit's state. */
-export async function restoreIntentVersion(workspaceRoot: string, folder: string, sha: string): Promise<{ success: boolean; error?: string }> {
+/** Restore an space folder to a specific commit's state. */
+export async function restoreSpaceVersion(workspaceRoot: string, folder: string, sha: string): Promise<{ success: boolean; error?: string }> {
   try {
     // Validate sha looks legit
     if (!/^[0-9a-f]{7,40}$/.test(sha)) {
@@ -367,7 +387,7 @@ export async function restoreIntentVersion(workspaceRoot: string, folder: string
     const timestamp = new Date().toLocaleString('en-US', {
       month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
     });
-    await runGit(workspaceRoot, ['commit', '-m', `intent: restore to ${sha.slice(0, 7)} (${timestamp})`, '--no-verify']);
+    await runGit(workspaceRoot, ['commit', '-m', `space: restore to ${sha.slice(0, 7)} (${timestamp})`, '--no-verify']);
     return { success: true };
   } catch (err: any) {
     return { success: false, error: err?.message || 'Restore failed' };
@@ -412,7 +432,7 @@ export interface SaveAttachmentResult {
   error?: string;
 }
 
-/** Save a pasted file into the intent's attachments folder. */
+/** Save a pasted file into the space's attachments folder. */
 export function saveAttachment(
   workspaceRoot: string,
   folder: string,
@@ -433,7 +453,7 @@ export function saveAttachment(
   const finalName = deduplicateFilename(attachDir, sanitized);
   const filePath = path.join(attachDir, finalName);
 
-  // Verify resolved path is within the intent folder
+  // Verify resolved path is within the space folder
   const resolved = path.resolve(filePath);
   const folderRoot = path.resolve(path.join(workspaceRoot, folder));
   if (!resolved.startsWith(folderRoot)) {
@@ -461,8 +481,8 @@ export function resolveAttachmentPath(
   return resolved;
 }
 
-/** Read a file from an intent folder and return its raw bytes + MIME type. */
-export function readIntentFile(
+/** Read a file from an space folder and return its raw bytes + MIME type. */
+export function readSpaceFile(
   workspaceRoot: string,
   folder: string,
   relativePath: string

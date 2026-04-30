@@ -1,13 +1,13 @@
-import { listIntents } from '../database';
-import { findSimilarIntent } from '../ai';
+import { listSpaces } from '../database';
+import { findSimilarSpace } from '../ai';
 import { notifyAllWindows } from '../notify';
 
-export async function searchForRecall(intentId: string, description: string): Promise<void> {
+export async function searchForRecall(spaceId: string, description: string): Promise<void> {
   try {
-    const allIntents = listIntents();
-    // Exclude the intent itself, get recent ones (last 30)
-    const candidates = allIntents
-      .filter(i => i.id !== intentId)
+    const allSpaces = listSpaces();
+    // Exclude the space itself, get recent ones (last 30)
+    const candidates = allSpaces
+      .filter(i => i.id !== spaceId)
       .slice(0, 30);
 
     if (candidates.length === 0) return;
@@ -17,16 +17,16 @@ export async function searchForRecall(intentId: string, description: string): Pr
     const scored = candidates.map(c => {
       const cWords = (c.description || '').toLowerCase().split(/\s+/);
       const overlap = cWords.filter(w => words.has(w)).length;
-      return { intent: c, overlap };
+      return { space: c, overlap };
     });
     scored.sort((a, b) => b.overlap - a.overlap);
-    const topCandidates = scored.slice(0, 8).map(s => s.intent);
+    const topCandidates = scored.slice(0, 8).map(s => s.space);
 
     if (topCandidates.length === 0) return;
 
-    const match = await findSimilarIntent(description, topCandidates);
+    const match = await findSimilarSpace(description, topCandidates);
     if (match) {
-      notifyAllWindows('intent:recall', intentId, match);
+      notifyAllWindows('space:recall', spaceId, match);
     }
   } catch (err) {
     console.error('[recall] Search failed:', err);

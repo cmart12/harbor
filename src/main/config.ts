@@ -50,7 +50,7 @@ export interface AppConfig {
   theme: 'light' | 'dark';
   model: string | null;
   cliPath: string | null;          // user override for Copilot CLI path; null = auto-detect
-  sessions: Record<string, string>; // intentId → copilot CLI sessionId
+  sessions: Record<string, string>; // spaceId → copilot CLI sessionId
   pinned: boolean;
   snapPosition: SnapPosition;
   windowWidth: number;
@@ -122,8 +122,8 @@ export function setConfigValue<K extends keyof AppConfig>(key: K, value: AppConf
   saveConfig();
 }
 
-export function getSessionId(intentId: string): string | null {
-  return config.sessions[intentId] ?? null;
+export function getSessionId(spaceId: string): string | null {
+  return config.sessions[spaceId] ?? null;
 }
 
 /**
@@ -140,12 +140,12 @@ export function resolveSandboxPolicy(persona: AgentPersona): SandboxPolicy {
   return { ...DEFAULT_SANDBOX_POLICY, ...config.sandboxDefaultPolicy };
 }
 
-export function setSessionId(intentId: string, sessionId: string): void {
-  config.sessions[intentId] = sessionId;
+export function setSessionId(spaceId: string, sessionId: string): void {
+  config.sessions[spaceId] = sessionId;
   saveConfig();
 }
 
-export function removeSession(intentId: string): void {
-  delete config.sessions[intentId];
+export function removeSession(spaceId: string): void {
+  delete config.sessions[spaceId];
   saveConfig();
 }

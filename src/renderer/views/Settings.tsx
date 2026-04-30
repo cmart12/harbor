@@ -1,5 +1,5 @@
 import React from 'react';
-import type { IntentAPI } from '../ipc-client';
+import type { WhimAPI } from '../ipc-client';
 
 export interface SettingsProps {
   onClose: () => void;

@@ -5,7 +5,7 @@ import { DEFAULT_SANDBOX_POLICY, type SandboxPolicy } from '../../shared/ipc-con
 
 // Electron must be mocked before any modules that import it indirectly.
 vi.mock('electron', () => ({
-  app: { getPath: () => path.join(os.tmpdir(), 'intent-sandbox-launch-test') },
+  app: { getPath: () => path.join(os.tmpdir(), 'space-sandbox-launch-test') },
 }));
 
 // Stub MCP + tools registries so we don't pull in their full graphs.

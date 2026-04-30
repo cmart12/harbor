@@ -141,13 +141,13 @@ describe('sandbox-policies', () => {
   describe('path-policy engine', () => {
     // Use real filesystem paths so realpath() can canonicalize them.
     const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sandbox-policy-test-'));
-    const intentFolder = path.join(tmpRoot, 'workspace', 'my-intent');
-    const sibling = path.join(tmpRoot, 'workspace', 'sibling-intent');
+    const intentFolder = path.join(tmpRoot, 'workspace', 'my-space');
+    const sibling = path.join(tmpRoot, 'workspace', 'sibling-space');
     fs.mkdirSync(intentFolder, { recursive: true });
     fs.mkdirSync(sibling, { recursive: true });
 
     const policy = resolvePathPolicy(intentFolder, {
-      scopeToIntentFolder: true,
+      scopeToSpaceFolder: true,
       extraReadwritePaths: [],
       extraReadonlyPaths: [],
       extraDeniedPaths: [],
@@ -164,8 +164,8 @@ describe('sandbox-policies', () => {
       });
 
       it('rejects a sibling path with prefix overlap', () => {
-        // intentFolder = ".../my-intent", look-alike = ".../my-intent-other"
-        const lookalike = path.join(tmpRoot, 'workspace', 'my-intent-other');
+        // intentFolder = ".../my-space", look-alike = ".../my-space-other"
+        const lookalike = path.join(tmpRoot, 'workspace', 'my-space-other');
         fs.mkdirSync(lookalike, { recursive: true });
         expect(isPathInside(normalizePath(lookalike), policy.intentFolder)).toBe(false);
       });
@@ -176,25 +176,25 @@ describe('sandbox-policies', () => {
       });
     });
 
-    describe('checkPathScope (default policy: intent folder only)', () => {
-      it('allows write under the intent folder', () => {
+    describe('checkPathScope (default policy: space folder only)', () => {
+      it('allows write under the space folder', () => {
         const child = path.join(intentFolder, 'canvas.md');
         expect(checkPathScope(child, policy, true)).toEqual({ decision: 'allow-rw' });
       });
 
-      it('allows read under the intent folder', () => {
+      it('allows read under the space folder', () => {
         const child = path.join(intentFolder, 'sub', 'file.txt');
         expect(checkPathScope(child, policy, false)).toEqual({ decision: 'allow-rw' });
       });
 
-      it('denies write to a sibling intent folder', () => {
+      it('denies write to a sibling space folder', () => {
         const target = path.join(sibling, 'secret.txt');
         expect(checkPathScope(target, policy, true)).toEqual({
           decision: 'deny', reason: 'out-of-scope',
         });
       });
 
-      it('denies read of a sibling intent folder', () => {
+      it('denies read of a sibling space folder', () => {
         const target = path.join(sibling, 'secret.txt');
         expect(checkPathScope(target, policy, false)).toEqual({
           decision: 'deny', reason: 'out-of-scope',
@@ -211,7 +211,7 @@ describe('sandbox-policies', () => {
       fs.mkdirSync(denied, { recursive: true });
 
       const richPolicy = resolvePathPolicy(intentFolder, {
-        scopeToIntentFolder: true,
+        scopeToSpaceFolder: true,
         extraReadwritePaths: [tools],
         extraReadonlyPaths: [data],
         extraDeniedPaths: [denied],
@@ -239,10 +239,10 @@ describe('sandbox-policies', () => {
       });
     });
 
-    describe('scopeToIntentFolder = false', () => {
-      it('does not implicitly RW the intent folder when disabled', () => {
+    describe('scopeToSpaceFolder = false', () => {
+      it('does not implicitly RW the space folder when disabled', () => {
         const noScope = resolvePathPolicy(intentFolder, {
-          scopeToIntentFolder: false,
+          scopeToSpaceFolder: false,
           extraReadwritePaths: [],
           extraReadonlyPaths: [],
           extraDeniedPaths: [],
@@ -271,13 +271,13 @@ describe('sandbox-policies', () => {
 
   describe('createSandboxPathPolicyHook', () => {
     const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sandbox-pretool-test-'));
-    const intentFolder = path.join(tmpRoot, 'workspace', 'my-intent');
+    const intentFolder = path.join(tmpRoot, 'workspace', 'my-space');
     const sibling = path.join(tmpRoot, 'workspace', 'sibling');
     fs.mkdirSync(intentFolder, { recursive: true });
     fs.mkdirSync(sibling, { recursive: true });
 
     const policy = resolvePathPolicy(intentFolder, {
-      scopeToIntentFolder: true,
+      scopeToSpaceFolder: true,
       extraReadwritePaths: [],
       extraReadonlyPaths: [],
       extraDeniedPaths: [],
@@ -294,13 +294,13 @@ describe('sandbox-policies', () => {
       });
     }
 
-    it('allows a view inside the intent folder', async () => {
+    it('allows a view inside the space folder', async () => {
       const hook = makeHook();
       const r = await hook({ toolName: 'view', toolArgs: { path: path.join(intentFolder, 'canvas.md') } });
       expect(r).toEqual({});
     });
 
-    it('blocks a view outside the intent folder', async () => {
+    it('blocks a view outside the space folder', async () => {
       const blocks: any[] = [];
       const hook = makeHook({ onBlock: async (info) => { blocks.push(info); return { permissionDecision: 'deny' as const }; } });
       const r = await hook({ toolName: 'view', toolArgs: { path: path.join(sibling, 'secret.txt') } });
@@ -309,7 +309,7 @@ describe('sandbox-policies', () => {
       expect(blocks[0]).toMatchObject({ toolName: 'view', kind: 'read', requiresWrite: false });
     });
 
-    it('blocks an edit outside the intent folder', async () => {
+    it('blocks an edit outside the space folder', async () => {
       const blocks: any[] = [];
       const hook = makeHook({ onBlock: async (info) => { blocks.push(info); return { permissionDecision: 'deny' as const }; } });
       await hook({ toolName: 'edit', toolArgs: { path: path.join(sibling, 'secret.txt') } });

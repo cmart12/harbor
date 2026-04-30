@@ -22,7 +22,7 @@ export function createTray(): void {
   }
 
   tray = new Tray(icon);
-  tray.setToolTip('Intent');
+  tray.setToolTip('Whim');
 
   const contextMenu = Menu.buildFromTemplate([
     { label: 'Show/Hide', click: () => toggleWindow() },

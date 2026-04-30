@@ -7,7 +7,7 @@ let root: Root | null = null;
 let canvasRef: React.RefObject<DocumintCanvasHandle | null> = React.createRef();
 
 export interface MountCanvasOptions {
-  intentId: string;
+  spaceId: string;
   content: string;
   frontmatter?: Record<string, unknown>;
   theme: 'light' | 'dark';
@@ -28,7 +28,7 @@ export function mountCanvas(container: HTMLElement, options: MountCanvasOptions)
   root.render(
     <DocumintCanvas
       ref={canvasRef}
-      intentId={options.intentId}
+      spaceId={options.spaceId}
       initialContent={options.content}
       initialFrontmatter={options.frontmatter}
       theme={options.theme}

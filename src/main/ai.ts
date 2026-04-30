@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import { CopilotClient, CopilotSession } from '@github/copilot-sdk';
 import { getConfigValue } from './config';
 import { resolveCopilotCliPath } from './session';
-import { RecurrenceResult, RecallMatch, Intent } from '../shared/types';
+import { RecurrenceResult, RecallMatch, Space } from '../shared/types';
 import type { SandboxPolicy } from '../shared/ipc-contract';
 
 /**
@@ -18,7 +18,7 @@ export interface SandboxConfigDirs {
 }
 
 /**
- * Build the runtime-format sandbox config object for a given policy and intent
+ * Build the runtime-format sandbox config object for a given policy and space
  * working directory. Mirrors the shape consumed by `copilot-agent-runtime`'s
  * `UserSettings.sandbox` (see docs/mxc-sandbox-schema.md).
  */
@@ -28,7 +28,7 @@ function materializeRuntimeConfig(
   policy: SandboxPolicy,
 ): Record<string, unknown> {
   const readwritePaths: string[] = [];
-  if (policy.scopeToIntentFolder) readwritePaths.push(intentWorkingDir);
+  if (policy.scopeToSpaceFolder) readwritePaths.push(intentWorkingDir);
   for (const p of policy.extraReadwritePaths) {
     if (!readwritePaths.includes(p)) readwritePaths.push(p);
   }
@@ -91,7 +91,7 @@ export function buildSandboxConfigs(
     `[sandbox] Materialized configs for agent ${agentId}:\n` +
     `  on:  ${path.join(onDir, 'config.json')}\n` +
     `  off: ${path.join(offDir, 'config.json')}\n` +
-    `  policy: enforcementMode=${policy.enforcementMode} scopeToIntentFolder=${policy.scopeToIntentFolder} ` +
+    `  policy: enforcementMode=${policy.enforcementMode} scopeToSpaceFolder=${policy.scopeToSpaceFolder} ` +
     `allowMcpServers=${policy.allowMcpServers} allowWebFetch=${policy.allowWebFetch} ` +
     `allowOutbound=${policy.allowOutbound} allowLocalNetwork=${policy.allowLocalNetwork}\n` +
     `  on-config: ${JSON.stringify(onConfig)}`,
@@ -102,14 +102,14 @@ export function buildSandboxConfigs(
 
 /**
  * Materialize a "preview" config.json for a sandbox policy without writing
- * any per-agent state. The intent folder is left as a placeholder so the
+ * any per-agent state. The space folder is left as a placeholder so the
  * user can see where it'd be substituted at real agent launch time.
  *
  * Returns the JSON object — callers (e.g., the IPC handler that opens the
  * preview in the default text editor) decide where to write it.
  */
 export function previewSandboxConfig(policy: SandboxPolicy): Record<string, unknown> {
-  return materializeRuntimeConfig(true, '<intent folder — replaced at agent launch>', policy);
+  return materializeRuntimeConfig(true, '<space folder — replaced at agent launch>', policy);
 }
 
 /**
@@ -126,7 +126,7 @@ export function cleanupSandboxConfigs(agentId: string): void {
   }
 }
 
-export interface ParsedIntent {
+export interface ParsedSpace {
   description: string;
   client: string | null;
   due_at: string | null;
@@ -138,11 +138,11 @@ let parseSession: CopilotSession | null = null;
 let recurrenceSession: CopilotSession | null = null;
 let recallSession: CopilotSession | null = null;
 
-const PARSE_SYSTEM_MESSAGE = `You are an intent parser. Given user input that may range from a short phrase to a long voice transcript (covering initiatives, goals, overviews, etc.), extract structured fields.
+const PARSE_SYSTEM_MESSAGE = `You are an space parser. Given user input that may range from a short phrase to a long voice transcript (covering initiatives, goals, overviews, etc.), extract structured fields.
 The user's current local time will be provided for resolving relative dates.
 
 Return ONLY a JSON object with these fields (no markdown, no explanation):
-- "title": a concise, action-oriented title (max ~10 words) that captures the core intent
+- "title": a concise, action-oriented title (max ~10 words) that captures the core space
 - "client": the client/company name if mentioned, otherwise null
 - "due_at": a human-readable due date/time if mentioned, otherwise null
 - "due_at_utc": the due date as ISO 8601 UTC (e.g. "2026-04-21T17:00:00Z") if a date was mentioned, otherwise null
@@ -158,8 +158,8 @@ Output: {"title":"Plan Q3 roadmap and Contoso API alignment","client":"Contoso",
 Input: "review the PR"
 Output: {"title":"Review the PR","client":null,"due_at":null,"due_at_utc":null}`;
 
-const RECURRENCE_SYSTEM_MESSAGE = `You evaluate whether a completed intent should recur.
-Based on the intent's language, decide if this is a recurring task or a one-off.
+const RECURRENCE_SYSTEM_MESSAGE = `You evaluate whether a completed space should recur.
+Based on the space's language, decide if this is a recurring task or a one-off.
 
 Return ONLY a JSON object (no markdown, no explanation):
 {
@@ -169,25 +169,25 @@ Return ONLY a JSON object (no markdown, no explanation):
   "next_due_utc": "ISO 8601 UTC next date, or null"
 }
 
-Examples of recurring intents:
+Examples of recurring spaces:
 - "send weekly status update by Monday" → recur, next Monday
 - "review PRs before standup every day" → recur, tomorrow
 - "file quarterly taxes by April 15" → recur, July 15
 
-Examples of one-off intents:
+Examples of one-off spaces:
 - "finish the presentation by Friday" → don't recur
 - "buy birthday gift for mom" → don't recur`;
 
-const RECALL_SYSTEM_MESSAGE = `You find semantically similar intents. Given a new intent and a list of past intents, identify the most relevant past intent if any.
+const RECALL_SYSTEM_MESSAGE = `You find semantically similar spaces. Given a new space and a list of past spaces, identify the most relevant past space if any.
 
 Return ONLY a JSON object (no markdown, no explanation):
 {
-  "match_index": the 0-based index of the most similar past intent, or -1 if none are similar enough,
+  "match_index": the 0-based index of the most similar past space, or -1 if none are similar enough,
   "confidence": a number from 0.0 to 1.0 indicating similarity,
   "reasoning": "brief explanation"
 }
 
-Only match intents that are genuinely about the same task or topic. Don't match on superficial word overlap.
+Only match spaces that are genuinely about the same task or topic. Don't match on superficial word overlap.
 A confidence below 0.5 means no meaningful match.`;
 
 async function createSession(systemMessage: string): Promise<CopilotSession | null> {
@@ -317,7 +317,7 @@ function getTimezoneOffsetString(): string {
   return `${sign}${hrs}:${mins}`;
 }
 
-export async function parseIntentWithAI(rawText: string): Promise<ParsedIntent> {
+export async function parseSpaceWithAI(rawText: string): Promise<ParsedSpace> {
   const session = await getParseSession();
   if (!session) {
     console.warn('[copilot-sdk] Parse session not ready, returning raw text');
@@ -326,7 +326,7 @@ export async function parseIntentWithAI(rawText: string): Promise<ParsedIntent> 
 
   try {
     const response = await session.sendAndWait({
-      prompt: `${getLocalTimeContext()}\n\nParse this intent:\nInput: "${rawText}"`,
+      prompt: `${getLocalTimeContext()}\n\nParse this space:\nInput: "${rawText}"`,
     }, 30000);
 
     const content = response?.data?.content ?? '';
@@ -382,16 +382,16 @@ Input: "${dateText}"`,
 }
 
 export interface InputClassification {
-  type: 'intent' | 'query';
+  type: 'space' | 'query';
   query_answer?: string;
 }
 
-/** Classify whether user input is a new intent or a question about their intents/history */
-export async function classifyInput(text: string, recentIntents: { description: string; status: string; due_at: string | null; completed_at: string | null }[]): Promise<InputClassification> {
+/** Classify whether user input is a new space or a question about their spaces/history */
+export async function classifyInput(text: string, recentSpaces: { description: string; status: string; due_at: string | null; completed_at: string | null }[]): Promise<InputClassification> {
   const session = await getParseSession();
-  if (!session) return { type: 'intent' };
+  if (!session) return { type: 'space' };
 
-  const intentList = recentIntents.slice(0, 15).map((i, idx) =>
+  const intentList = recentSpaces.slice(0, 15).map((i, idx) =>
     `${idx}. "${i.description}" [${i.status}]${i.due_at ? ` due: ${i.due_at}` : ''}${i.completed_at ? ` completed: ${i.completed_at}` : ''}`
   ).join('\n');
 
@@ -400,33 +400,33 @@ export async function classifyInput(text: string, recentIntents: { description: 
       prompt: `${getLocalTimeContext()}
 
 Classify this user input. Is it:
-A) A new intent/task to capture (action item, to-do, reminder)
-B) A question or query about their existing intents, history, or schedule
+A) A new space/task to capture (action item, to-do, reminder)
+B) A question or query about their existing spaces, history, or schedule
 
-User's current intents:
+User's current spaces:
 ${intentList || '(none)'}
 
 User input: "${text}"
 
 Return ONLY JSON:
-{"type": "intent" or "query", "query_answer": "brief answer if type=query, otherwise null"}`,
+{"type": "space" or "query", "query_answer": "brief answer if type=query, otherwise null"}`,
     }, 15000);
 
     const content = response?.data?.content ?? '';
     const parsed = extractJson(content);
-    if (!parsed) return { type: 'intent' };
+    if (!parsed) return { type: 'space' };
 
     return {
-      type: parsed.type === 'query' ? 'query' : 'intent',
+      type: parsed.type === 'query' ? 'query' : 'space',
       query_answer: parsed.query_answer || undefined,
     };
   } catch (err) {
     console.error('[copilot-sdk] Classify failed:', err);
-    return { type: 'intent' };
+    return { type: 'space' };
   }
 }
 
-export async function evaluateRecurrence(intent: {
+export async function evaluateRecurrence(space: {
   raw_text: string | null;
   description: string;
   due_at: string | null;
@@ -441,13 +441,13 @@ export async function evaluateRecurrence(intent: {
     const response = await session.sendAndWait({
       prompt: `${getLocalTimeContext()}
 
-The user completed this intent:
-  Original text: "${intent.raw_text || intent.description}"
-  Refined description: "${intent.description}"
-  Due date: "${intent.due_at || 'none'}" (${intent.due_at_utc || 'no UTC date'})
-  Completed at: "${intent.completed_at}"
+The user completed this space:
+  Original text: "${space.raw_text || space.description}"
+  Refined description: "${space.description}"
+  Due date: "${space.due_at || 'none'}" (${space.due_at_utc || 'no UTC date'})
+  Completed at: "${space.completed_at}"
 
-Should this intent recur? If yes, when is the next due date?`,
+Should this space recur? If yes, when is the next due date?`,
     }, 30000);
 
     const content = response?.data?.content ?? '';
@@ -466,7 +466,7 @@ Should this intent recur? If yes, when is the next due date?`,
 
     // Sanity: next due must be after completion
     if (result.should_recur && result.next_due_utc) {
-      if (new Date(result.next_due_utc) <= new Date(intent.completed_at)) {
+      if (new Date(result.next_due_utc) <= new Date(space.completed_at)) {
         console.warn('[copilot-sdk] Recurrence next_due_utc is not after completed_at, discarding');
         result.next_due_utc = null;
       }
@@ -480,7 +480,7 @@ Should this intent recur? If yes, when is the next due date?`,
   }
 }
 
-export async function findSimilarIntent(newDescription: string, candidates: Intent[]): Promise<RecallMatch | null> {
+export async function findSimilarSpace(newDescription: string, candidates: Space[]): Promise<RecallMatch | null> {
   if (candidates.length === 0) return null;
   const session = await getRecallSession();
   if (!session) return null;
@@ -491,12 +491,12 @@ export async function findSimilarIntent(newDescription: string, candidates: Inte
     ).join('\n');
 
     const response = await session.sendAndWait({
-      prompt: `New intent: "${newDescription}"
+      prompt: `New space: "${newDescription}"
 
-Past intents:
+Past spaces:
 ${candidateList}
 
-Find the most semantically similar past intent, if any.`,
+Find the most semantically similar past space, if any.`,
     }, 30000);
 
     const content = response?.data?.content ?? '';
@@ -508,7 +508,7 @@ Find the most semantically similar past intent, if any.`,
 
     const matched = candidates[idx];
     return {
-      intent_id: matched.id,
+      space_id: matched.id,
       description: matched.description,
       completed_at: matched.completed_at,
       confidence: parsed.confidence,

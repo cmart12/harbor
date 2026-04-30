@@ -23,7 +23,7 @@
             <div class="step-number">1</div>
             <div class="step-body">
               <div class="step-label">Select a workspace</div>
-              <div class="step-hint" id="welcome-workspace-hint">A folder where your intents, skills, and agent data will live.</div>
+              <div class="step-hint" id="welcome-workspace-hint">A folder where your spaces, skills, and agent data will live.</div>
               <div class="step-action">
                 <button id="welcome-workspace-btn" class="welcome-btn">Choose Folder…</button>
               </div>
@@ -50,7 +50,7 @@
             <div class="step-number">3</div>
             <div class="step-body">
               <div class="step-label">Choose a default model</div>
-              <div class="step-hint">The AI model used for agents and intent processing.</div>
+              <div class="step-hint">The AI model used for agents and space processing.</div>
               <div class="step-action">
                 <select id="welcome-model-select">
                   <option value="">Loading models…</option>
@@ -70,7 +70,7 @@
       <header>
         <h1>whim</h1>
         <div class="header-actions">
-          <span id="intent-count" class="badge">0</span>
+          <span id="space-count" class="badge">0</span>
           <button id="pin-btn" class="header-icon-btn" title="Pin window (keep visible)">📌</button>
           <button id="settings-btn" class="header-icon-btn" title="Settings">⚙</button>
         </div>
@@ -80,7 +80,7 @@
         <button class="filter-btn active" data-filter="open">Spaces</button>
         <button class="filter-btn" data-filter="agents">Workers<span id="workers-badge" class="workers-badge hidden"></span></button>
         <button class="filter-btn" data-filter="skills">Skills</button>
-        <button class="filter-btn" data-filter="closed">Past</button>
+        <button class="filter-btn" data-filter="closed">History</button>
       </div>
 
       <div id="focus-banner" class="focus-banner hidden">
@@ -121,7 +121,7 @@
 
       <div id="agent-summary" class="agent-summary hidden"></div>
 
-      <div id="intent-list"></div>
+      <div id="space-list"></div>
       <div id="query-result" class="query-result hidden"></div>
     </div>
 

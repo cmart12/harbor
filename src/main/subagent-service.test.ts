@@ -357,7 +357,7 @@ describe('SubagentTracker', () => {
     });
   });
 
-  // ── 9. Intent tracking ───────────────────────────────────────────
+  // ── 9. Space tracking ───────────────────────────────────────────
 
   describe('trackIntent', () => {
     it('sets progress.currentIntent', () => {
@@ -611,7 +611,7 @@ describe('SubagentTracker', () => {
       // Start
       tracker.trackStarted(PARENT, startData({ agentId: 'a1' }));
 
-      // Model & intent
+      // Model & space
       tracker.trackModel(PARENT, 'a1', 'claude-sonnet-4');
       tracker.trackIntent(PARENT, 'a1', 'Analyzing code');
 

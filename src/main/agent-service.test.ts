@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 // ── Module-level mocks (must precede imports) ──────────────────────────
 
 vi.mock('electron', () => ({
-  app: { getPath: () => '/mock/intent-test' },
+  app: { getPath: () => '/mock/space-test' },
   BrowserWindow: { getAllWindows: () => [] },
   Notification: vi.fn().mockImplementation(() => ({ on: vi.fn(), show: vi.fn() })),
 }));
@@ -224,13 +224,13 @@ describe('launchAgent', () => {
 
   it('returns error when Copilot client is null', async () => {
     disableMockClient();
-    const result = await launchAgent('intent-1', 'selected text', { quote: '', prefix: '', suffix: '' }, '/workspace', 'folder');
+    const result = await launchAgent('space-1', 'selected text', { quote: '', prefix: '', suffix: '' }, '/workspace', 'folder');
     expect(result).toEqual({ error: 'Copilot SDK not initialized' });
   });
 
   it('creates agent record and persists to DB on success', async () => {
     enableMockClient();
-    const result = await launchAgent('intent-1', 'selected text', { quote: 'q', prefix: 'p', suffix: 's' }, '/workspace', 'folder');
+    const result = await launchAgent('space-1', 'selected text', { quote: 'q', prefix: 'p', suffix: 's' }, '/workspace', 'folder');
 
     expect(result).toHaveProperty('agentId');
     expect(result).toHaveProperty('sessionId');
@@ -239,7 +239,7 @@ describe('launchAgent', () => {
     expect(createCanvasAgent).toHaveBeenCalledWith(
       expect.objectContaining({
         id: 'agent-1',
-        intent_id: 'intent-1',
+        space_id: 'space-1',
         selected_text: 'selected text',
         status: 'running',
       }),
@@ -249,7 +249,7 @@ describe('launchAgent', () => {
     expect(createAgentSession).toHaveBeenCalledWith(
       expect.objectContaining({
         id: 'agent-1',
-        intent_id: 'intent-1',
+        space_id: 'space-1',
         prompt: 'selected text',
         source: 'sdk',
         status: 'running',
@@ -259,13 +259,13 @@ describe('launchAgent', () => {
 
   it('returns agentId and sessionId on success', async () => {
     enableMockClient();
-    const result = await launchAgent('intent-1', 'text', { quote: '', prefix: '', suffix: '' }, '/ws', 'folder');
+    const result = await launchAgent('space-1', 'text', { quote: '', prefix: '', suffix: '' }, '/ws', 'folder');
     expect(result).toEqual({ agentId: 'agent-1', sessionId: 'mock-session-id' });
   });
 
   it('calls setupAgentEventListeners on the session', async () => {
     enableMockClient();
-    await launchAgent('intent-1', 'text', { quote: '', prefix: '', suffix: '' }, '/ws', 'folder');
+    await launchAgent('space-1', 'text', { quote: '', prefix: '', suffix: '' }, '/ws', 'folder');
 
     // setupAgentEventListeners registers event handlers via session.on
     expect(mockSession.on).toHaveBeenCalled();
@@ -302,7 +302,7 @@ describe('launchQuickAgent', () => {
         working_dir: '/ws',
         source: 'sdk',
         persona_handle: null,
-        intent_id: null,
+        space_id: null,
       }),
     );
   });
@@ -356,7 +356,7 @@ describe('launchQuickAgent', () => {
         model: 'gpt-4o', runLocation: 'local' as const,
         sandboxed: true,
         sandboxPolicyOverride: {
-          scopeToIntentFolder: true,
+          scopeToSpaceFolder: true,
           extraReadwritePaths: [],
           extraReadonlyPaths: [],
           extraDeniedPaths: [],
@@ -381,7 +381,7 @@ describe('launchQuickAgent', () => {
         model: 'gpt-4o', runLocation: 'local' as const,
         sandboxed: true,
         sandboxPolicyOverride: {
-          scopeToIntentFolder: true,
+          scopeToSpaceFolder: true,
           extraReadwritePaths: [],
           extraReadonlyPaths: [],
           extraDeniedPaths: [],
@@ -419,7 +419,7 @@ describe('launchQuickAgent', () => {
         model: 'gpt-4o', runLocation: 'local' as const,
         sandboxed: true,
         sandboxPolicyOverride: {
-          scopeToIntentFolder: true,
+          scopeToSpaceFolder: true,
           extraReadwritePaths: [],
           extraReadonlyPaths: [],
           extraDeniedPaths: [],
@@ -468,13 +468,13 @@ describe('launchCommentAgent', () => {
 
   it('returns error when Copilot client is null', async () => {
     disableMockClient();
-    const result = await launchCommentAgent('intent-1', 'comment body', 'quoted', {}, persona, 0, '/ws', 'folder');
+    const result = await launchCommentAgent('space-1', 'comment body', 'quoted', {}, persona, 0, '/ws', 'folder');
     expect(result).toEqual({ error: 'Copilot SDK not initialized' });
   });
 
   it('creates agent with commentContext and returns agentId/sessionId', async () => {
     enableMockClient();
-    const result = await launchCommentAgent('intent-1', 'fix this', 'quoted text', { prefix: 'p', suffix: 's' }, persona, 3, '/ws', 'folder');
+    const result = await launchCommentAgent('space-1', 'fix this', 'quoted text', { prefix: 'p', suffix: 's' }, persona, 3, '/ws', 'folder');
 
     expect(result).toEqual({ agentId: 'comment-agent-1', sessionId: 'mock-session-id' });
 
@@ -489,7 +489,7 @@ describe('launchCommentAgent', () => {
 
   it('sends the comment body as the prompt', async () => {
     enableMockClient();
-    await launchCommentAgent('intent-1', 'fix this', 'quoted text', {}, persona, 0, '/ws', 'folder');
+    await launchCommentAgent('space-1', 'fix this', 'quoted text', {}, persona, 0, '/ws', 'folder');
 
     expect(mockSession.send).toHaveBeenCalledWith(
       expect.objectContaining({ prompt: 'fix this' }),
@@ -506,7 +506,7 @@ describe('launchCommentAgent', () => {
         model: 'gpt-4o', runLocation: 'local' as const,
         sandboxed: true,
         sandboxPolicyOverride: {
-          scopeToIntentFolder: true,
+          scopeToSpaceFolder: true,
           extraReadwritePaths: [],
           extraReadonlyPaths: [],
           extraDeniedPaths: [],
@@ -517,7 +517,7 @@ describe('launchCommentAgent', () => {
           enforcementMode: 'both' as const,
         },
       };
-      await launchCommentAgent('intent-1', 'fix this', 'quoted', {}, sandboxedPersona, 0, '/ws', 'folder');
+      await launchCommentAgent('space-1', 'fix this', 'quoted', {}, sandboxedPersona, 0, '/ws', 'folder');
 
       const sessionOpts = mockClient.createSession.mock.calls[0][0];
       expect(sessionOpts.systemMessage.content).toContain('[SANDBOX MODE]');
@@ -531,7 +531,7 @@ describe('launchCommentAgent', () => {
         model: 'gpt-4o', runLocation: 'local' as const,
         sandboxed: true,
         sandboxPolicyOverride: {
-          scopeToIntentFolder: true,
+          scopeToSpaceFolder: true,
           extraReadwritePaths: [],
           extraReadonlyPaths: [],
           extraDeniedPaths: [],
@@ -542,7 +542,7 @@ describe('launchCommentAgent', () => {
           enforcementMode: 'mxc-only' as const,
         },
       };
-      await launchCommentAgent('intent-1', 'fix this', 'quoted', {}, sandboxedPersona, 0, '/ws', 'folder');
+      await launchCommentAgent('space-1', 'fix this', 'quoted', {}, sandboxedPersona, 0, '/ws', 'folder');
 
       const sessionOpts = mockClient.createSession.mock.calls[0][0];
       // Agent must NOT be told it's sandboxed in mxc-only mode — MXC is the
@@ -591,7 +591,7 @@ describe('abortAgent', () => {
 
   it('calls session.abort() and updates status to failed', async () => {
     enableMockClient();
-    const result = await launchAgent('intent-1', 'text', { quote: '', prefix: '', suffix: '' }, '/ws', 'folder');
+    const result = await launchAgent('space-1', 'text', { quote: '', prefix: '', suffix: '' }, '/ws', 'folder');
     const agentId = (result as any).agentId;
 
     await abortAgent(agentId);
@@ -613,21 +613,21 @@ describe('listAgents', () => {
     vi.mocked(uuid).mockImplementation(() => `list-agent-${++uuidCounter}`);
   });
 
-  it('returns agents filtered by intentId', async () => {
+  it('returns agents filtered by spaceId', async () => {
     enableMockClient();
-    await launchAgent('intent-A', 'text-a', { quote: '', prefix: '', suffix: '' }, '/ws', 'folder');
-    await launchAgent('intent-B', 'text-b', { quote: '', prefix: '', suffix: '' }, '/ws', 'folder');
+    await launchAgent('space-A', 'text-a', { quote: '', prefix: '', suffix: '' }, '/ws', 'folder');
+    await launchAgent('space-B', 'text-b', { quote: '', prefix: '', suffix: '' }, '/ws', 'folder');
 
-    const agentsA = listAgents('intent-A');
+    const agentsA = listAgents('space-A');
     expect(agentsA).toHaveLength(1);
     expect(agentsA[0].agentId).toBe('list-agent-1');
 
-    const agentsB = listAgents('intent-B');
+    const agentsB = listAgents('space-B');
     expect(agentsB).toHaveLength(1);
     expect(agentsB[0].agentId).toBe('list-agent-2');
   });
 
-  it('returns empty array for unknown intentId', () => {
+  it('returns empty array for unknown spaceId', () => {
     const result = listAgents('unknown');
     expect(result).toEqual([]);
   });
@@ -645,14 +645,14 @@ describe('listAllAgents', () => {
     enableMockClient();
 
     // Create a live agent
-    await launchAgent('intent-1', 'text', { quote: '', prefix: '', suffix: '' }, '/ws', 'folder');
+    await launchAgent('space-1', 'text', { quote: '', prefix: '', suffix: '' }, '/ws', 'folder');
 
     // Mock DB to return a persisted record that matches the live agent
     vi.mocked(listAgentSessions).mockReturnValue([
       {
         id: 'all-agent-1',
         session_id: 'mock-session-id',
-        intent_id: 'intent-1',
+        space_id: 'space-1',
         prompt: 'text',
         status: 'completed', // DB says completed
         summary: 'DB summary',
@@ -705,7 +705,7 @@ describe('setAgentYolo', () => {
 
   it('enables yolo mode on a live agent', async () => {
     enableMockClient();
-    await launchAgent('intent-1', 'task', { quote: '', prefix: '', suffix: '' }, '/ws', 'folder');
+    await launchAgent('space-1', 'task', { quote: '', prefix: '', suffix: '' }, '/ws', 'folder');
 
     const result = setAgentYolo('yolo-agent-1', true);
     expect(result).toEqual({ ok: true });
@@ -720,7 +720,7 @@ describe('setAgentYolo', () => {
 
   it('disables yolo mode on a live agent', async () => {
     enableMockClient();
-    await launchAgent('intent-1', 'task', { quote: '', prefix: '', suffix: '' }, '/ws', 'folder');
+    await launchAgent('space-1', 'task', { quote: '', prefix: '', suffix: '' }, '/ws', 'folder');
 
     setAgentYolo('yolo-agent-1', true);
     setAgentYolo('yolo-agent-1', false);
@@ -753,7 +753,7 @@ describe('sendChatMessage', () => {
 
   it('sends message to session on success', async () => {
     enableMockClient();
-    const launched = await launchAgent('intent-1', 'text', { quote: '', prefix: '', suffix: '' }, '/ws', 'folder');
+    const launched = await launchAgent('space-1', 'text', { quote: '', prefix: '', suffix: '' }, '/ws', 'folder');
     const agentId = (launched as any).agentId;
 
     const result = await sendChatMessage(agentId, 'follow-up');
@@ -862,7 +862,7 @@ describe('setAgentModel', () => {
 
   it('calls session.setModel() for active agents', async () => {
     enableMockClient();
-    const launched = await launchAgent('intent-1', 'text', { quote: '', prefix: '', suffix: '' }, '/ws', 'folder');
+    const launched = await launchAgent('space-1', 'text', { quote: '', prefix: '', suffix: '' }, '/ws', 'folder');
     const agentId = (launched as any).agentId;
 
     const result = await setAgentModel(agentId, 'gpt-4o');
@@ -878,7 +878,7 @@ describe('setAgentModel', () => {
 
   it('returns error when setModel throws', async () => {
     enableMockClient();
-    const launched = await launchAgent('intent-1', 'text', { quote: '', prefix: '', suffix: '' }, '/ws', 'folder');
+    const launched = await launchAgent('space-1', 'text', { quote: '', prefix: '', suffix: '' }, '/ws', 'folder');
     const agentId = (launched as any).agentId;
 
     mockSession.setModel.mockRejectedValueOnce(new Error('model not supported'));
@@ -903,7 +903,7 @@ describe('getAgentHistory', () => {
 
   it('returns events from session.getMessages()', async () => {
     enableMockClient();
-    const launched = await launchAgent('intent-1', 'text', { quote: '', prefix: '', suffix: '' }, '/ws', 'folder');
+    const launched = await launchAgent('space-1', 'text', { quote: '', prefix: '', suffix: '' }, '/ws', 'folder');
     const agentId = (launched as any).agentId;
 
     const result = await getAgentHistory(agentId);
@@ -924,7 +924,7 @@ describe('getAgentHistory', () => {
     const persistedSession = {
       id: 'old-agent-id',
       session_id: 'old-session-id',
-      intent_id: 'intent-1',
+      space_id: 'space-1',
       prompt: 'do something',
       status: 'completed' as const,
       summary: 'Done',
@@ -951,7 +951,7 @@ describe('getAgentHistory', () => {
     const persistedSession = {
       id: 'failed-agent',
       session_id: 'failed-session-id',
-      intent_id: 'intent-1',
+      space_id: 'space-1',
       prompt: 'do something',
       status: 'failed' as const,
       summary: 'Error occurred',
@@ -974,7 +974,7 @@ describe('getAgentHistory', () => {
     const persistedSession = {
       id: 'cli-agent-id',
       session_id: 'cli-session-id',
-      intent_id: null,
+      space_id: null,
       prompt: 'CLI Session',
       status: 'completed' as const,
       summary: 'CLI session ended',
@@ -998,7 +998,7 @@ describe('getAgentHistory', () => {
     const persistedSession = {
       id: 'cli-fail-agent',
       session_id: 'cli-fail-session-id',
-      intent_id: null,
+      space_id: null,
       prompt: 'CLI Session',
       status: 'completed' as const,
       summary: 'CLI session ended',
@@ -1022,7 +1022,7 @@ describe('getAgentHistory', () => {
     const persistedSession = {
       id: 'sdk-fail-agent',
       session_id: 'sdk-fail-session-id',
-      intent_id: 'intent-1',
+      space_id: 'space-1',
       prompt: 'do something',
       status: 'completed' as const,
       summary: 'Done',
@@ -1052,7 +1052,7 @@ describe('getAgentHistory', () => {
     const persistedSession = {
       id: 'sdk-both-fail-agent',
       session_id: 'sdk-both-fail-session-id',
-      intent_id: 'intent-1',
+      space_id: 'space-1',
       prompt: 'do something',
       status: 'completed' as const,
       summary: 'Done',
@@ -1076,7 +1076,7 @@ describe('getAgentHistory', () => {
     const persistedSession = {
       id: 'canvas-restart-agent',
       session_id: 'canvas-restart-session-id',
-      intent_id: 'intent-1',
+      space_id: 'space-1',
       prompt: 'fix the bug in section 2',
       status: 'completed' as const,
       summary: 'Fixed the bug',
@@ -1102,7 +1102,7 @@ describe('getAgentHistory', () => {
     const persistedSession = {
       id: 'cli-no-fallback-agent',
       session_id: 'cli-no-fallback-session-id',
-      intent_id: null,
+      space_id: null,
       prompt: 'CLI Session',
       status: 'completed' as const,
       summary: 'CLI session ended',
@@ -1127,7 +1127,7 @@ describe('getAgentHistory', () => {
     const persistedSession = {
       id: 'sysmsg-agent-id',
       session_id: 'sysmsg-session-id',
-      intent_id: 'intent-1',
+      space_id: 'space-1',
       prompt: 'do something',
       status: 'completed' as const,
       summary: 'Done',

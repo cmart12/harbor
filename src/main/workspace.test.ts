@@ -10,20 +10,20 @@ vi.mock('electron', () => ({
 
 import {
   slugify,
-  createIntentFolder,
+  createSpaceFolder,
   initWorkspace,
   readCanvas,
   writeCanvas,
   getCanvasPath,
-  initIntentCanvas,
+  initSpaceCanvas,
   saveAttachment,
   resolveAttachmentPath,
   getMimeType,
-  getIntentDir,
+  getWhimDir,
   getLogPath,
   getDbPath,
-  archiveIntentFolder,
-  deleteIntentFolder,
+  archiveSpaceFolder,
+  deleteSpaceFolder,
 } from './workspace';
 
 let tmpDir: string;
@@ -38,21 +38,21 @@ afterEach(() => {
 
 // ── Path helpers ────────────────────────────────────────
 
-describe('getIntentDir', () => {
-  it('returns .intent dir inside workspace root', () => {
-    expect(getIntentDir('/workspace')).toBe(path.join('/workspace', '.intent'));
+describe('getWhimDir', () => {
+  it('returns .whim dir inside workspace root', () => {
+    expect(getWhimDir('/workspace')).toBe(path.join('/workspace', '.whim'));
   });
 });
 
 describe('getLogPath', () => {
-  it('returns events.jsonl inside .intent', () => {
-    expect(getLogPath('/workspace')).toBe(path.join('/workspace', '.intent', 'events.jsonl'));
+  it('returns events.jsonl inside .whim', () => {
+    expect(getLogPath('/workspace')).toBe(path.join('/workspace', '.whim', 'events.jsonl'));
   });
 });
 
 describe('getDbPath', () => {
-  it('returns intents.db inside .intent', () => {
-    expect(getDbPath('/workspace')).toBe(path.join('/workspace', '.intent', 'intents.db'));
+  it('returns spaces.db inside .whim', () => {
+    expect(getDbPath('/workspace')).toBe(path.join('/workspace', '.whim', 'spaces.db'));
   });
 });
 
@@ -84,16 +84,16 @@ describe('slugify', () => {
     expect(result).toBe('hello-abcd');
   });
 
-  it('prefixes Windows reserved names with intent-', () => {
+  it('prefixes Windows reserved names with space-', () => {
     for (const reserved of ['con', 'prn', 'aux', 'nul', 'com1', 'lpt1']) {
       const result = slugify(reserved, id);
-      expect(result).toMatch(/^intent-/);
+      expect(result).toMatch(/^space-/);
     }
   });
 
   it('prefixes reserved name even when followed by other segments', () => {
     const result = slugify('CON something', id);
-    expect(result).toBe('intent-con-something-abcd');
+    expect(result).toBe('space-con-something-abcd');
   });
 
   it('returns just the id suffix for empty string', () => {
@@ -106,31 +106,31 @@ describe('slugify', () => {
     expect(result).toBe('abcd');
   });
 
-  it('strips hyphens from intentId to form suffix', () => {
+  it('strips hyphens from spaceId to form suffix', () => {
     const result = slugify('test', 'aaaa-bbbb-cccc');
     expect(result).toBe('test-aaaa');
   });
 });
 
-// ── createIntentFolder ──────────────────────────────────
+// ── createSpaceFolder ──────────────────────────────────
 
-describe('createIntentFolder', () => {
+describe('createSpaceFolder', () => {
   const id = 'abcd-1234';
 
   it('creates a directory in the workspace root', () => {
-    const folder = createIntentFolder(tmpDir, id, 'My Task');
+    const folder = createSpaceFolder(tmpDir, id, 'My Task');
     expect(fs.existsSync(path.join(tmpDir, folder))).toBe(true);
   });
 
   it('returns the relative folder name (the slug)', () => {
-    const folder = createIntentFolder(tmpDir, id, 'My Task');
+    const folder = createSpaceFolder(tmpDir, id, 'My Task');
     expect(folder).toBe('my-task-abcd');
     expect(path.isAbsolute(folder)).toBe(false);
   });
 
   it('does not fail if folder already exists', () => {
-    const folder = createIntentFolder(tmpDir, id, 'My Task');
-    expect(() => createIntentFolder(tmpDir, id, 'My Task')).not.toThrow();
+    const folder = createSpaceFolder(tmpDir, id, 'My Task');
+    expect(() => createSpaceFolder(tmpDir, id, 'My Task')).not.toThrow();
     expect(fs.existsSync(path.join(tmpDir, folder))).toBe(true);
   });
 });
@@ -138,31 +138,31 @@ describe('createIntentFolder', () => {
 // ── initWorkspace ───────────────────────────────────────
 
 describe('initWorkspace', () => {
-  it('creates .intent/ directory', () => {
+  it('creates .whim/ directory', () => {
     initWorkspace(tmpDir);
-    expect(fs.existsSync(path.join(tmpDir, '.intent'))).toBe(true);
+    expect(fs.existsSync(path.join(tmpDir, '.whim'))).toBe(true);
   });
 
   it('creates .gitignore with required entries when none exists', () => {
     initWorkspace(tmpDir);
     const content = fs.readFileSync(path.join(tmpDir, '.gitignore'), 'utf-8');
-    expect(content).toContain('.intent/*.db');
-    expect(content).toContain('.intent/*.db-journal');
-    expect(content).toContain('.intent/*.db-wal');
-    expect(content).toContain('.intent/*.db-shm');
+    expect(content).toContain('.whim/*.db');
+    expect(content).toContain('.whim/*.db-journal');
+    expect(content).toContain('.whim/*.db-wal');
+    expect(content).toContain('.whim/*.db-shm');
     expect(content).toContain('*/attachments/');
     expect(content).toContain('*/uploads/');
     expect(content).toContain('*/.workspace/');
   });
 
   it('appends missing entries to existing .gitignore', () => {
-    fs.writeFileSync(path.join(tmpDir, '.gitignore'), '# existing\nnode_modules/\n.intent/*.db\n');
+    fs.writeFileSync(path.join(tmpDir, '.gitignore'), '# existing\nnode_modules/\n.whim/*.db\n');
     initWorkspace(tmpDir);
     const content = fs.readFileSync(path.join(tmpDir, '.gitignore'), 'utf-8');
     // Existing entry should not be duplicated
-    expect(content.match(/\.intent\/\*\.db\n/g)?.length).toBe(1);
+    expect(content.match(/\.whim\/\*\.db\n/g)?.length).toBe(1);
     // Missing entries should be added
-    expect(content).toContain('.intent/*.db-journal');
+    expect(content).toContain('.whim/*.db-journal');
     expect(content).toContain('*/attachments/');
     expect(content).toContain('*/uploads/');
   });
@@ -171,7 +171,7 @@ describe('initWorkspace', () => {
     initWorkspace(tmpDir);
     initWorkspace(tmpDir);
     const content = fs.readFileSync(path.join(tmpDir, '.gitignore'), 'utf-8');
-    expect(content.match(/\.intent\/\*\.db\n/g)?.length).toBe(1);
+    expect(content.match(/\.whim\/\*\.db\n/g)?.length).toBe(1);
     expect(content.match(/\*\/attachments\//g)?.length).toBe(1);
     expect(content.match(/\*\/uploads\//g)?.length).toBe(1);
   });
@@ -199,38 +199,38 @@ describe('readCanvas / writeCanvas', () => {
   });
 });
 
-// ── initIntentCanvas ────────────────────────────────────
+// ── initSpaceCanvas ────────────────────────────────────
 
-describe('initIntentCanvas', () => {
+describe('initSpaceCanvas', () => {
   const id = 'abcd-1234';
 
   it('seeds canvas with body content', () => {
-    const folder = initIntentCanvas(tmpDir, id, 'My Task', 'Initial body text');
+    const folder = initSpaceCanvas(tmpDir, id, 'My Task', 'Initial body text');
     const content = readCanvas(tmpDir, folder);
     expect(content).toBe('Initial body text\n');
   });
 
   it('does not overwrite existing canvas file', () => {
-    const folder = initIntentCanvas(tmpDir, id, 'My Task', 'First body');
-    initIntentCanvas(tmpDir, id, 'My Task', 'Second body');
+    const folder = initSpaceCanvas(tmpDir, id, 'My Task', 'First body');
+    initSpaceCanvas(tmpDir, id, 'My Task', 'Second body');
     const content = readCanvas(tmpDir, folder);
     expect(content).toBe('First body\n');
   });
 
   it('handles null body gracefully', () => {
-    const folder = initIntentCanvas(tmpDir, id, 'My Task', null);
+    const folder = initSpaceCanvas(tmpDir, id, 'My Task', null);
     const content = readCanvas(tmpDir, folder);
     expect(content).toBe('');
   });
 
   it('handles empty string body gracefully', () => {
-    const folder = initIntentCanvas(tmpDir, id, 'My Task', '');
+    const folder = initSpaceCanvas(tmpDir, id, 'My Task', '');
     const content = readCanvas(tmpDir, folder);
     expect(content).toBe('');
   });
 
   it('handles whitespace-only body gracefully', () => {
-    const folder = initIntentCanvas(tmpDir, id, 'My Task', '   \n  ');
+    const folder = initSpaceCanvas(tmpDir, id, 'My Task', '   \n  ');
     const content = readCanvas(tmpDir, folder);
     expect(content).toBe('');
   });
@@ -239,7 +239,7 @@ describe('initIntentCanvas', () => {
 // ── saveAttachment ──────────────────────────────────────
 
 describe('saveAttachment', () => {
-  const folder = 'test-intent';
+  const folder = 'test-space';
 
   beforeEach(() => {
     fs.mkdirSync(path.join(tmpDir, folder), { recursive: true });
@@ -306,7 +306,7 @@ describe('saveAttachment', () => {
     const data = Buffer.from('x');
     const result = saveAttachment(tmpDir, folder, '../../etc/passwd', data);
     expect(result.success).toBe(true);
-    // File should end up inside the intent folder, not outside
+    // File should end up inside the space folder, not outside
     const filePath = path.join(tmpDir, folder, 'uploads', result.filename!);
     const resolved = path.resolve(filePath);
     expect(resolved.startsWith(path.resolve(path.join(tmpDir, folder)))).toBe(true);
@@ -316,7 +316,7 @@ describe('saveAttachment', () => {
 // ── resolveAttachmentPath ───────────────────────────────
 
 describe('resolveAttachmentPath', () => {
-  const folder = 'test-intent';
+  const folder = 'test-space';
 
   beforeEach(() => {
     const attachDir = path.join(tmpDir, folder, 'attachments');
@@ -386,60 +386,60 @@ describe('getMimeType', () => {
   });
 });
 
-// ── archiveIntentFolder ─────────────────────────────────
+// ── archiveSpaceFolder ─────────────────────────────────
 
-describe('archiveIntentFolder', () => {
+describe('archiveSpaceFolder', () => {
   const folder = 'my-task-abcd';
 
-  it('moves folder into .intent/archive/', () => {
+  it('moves folder into .whim/archive/', () => {
     const src = path.join(tmpDir, folder);
     fs.mkdirSync(src, { recursive: true });
     fs.writeFileSync(path.join(src, 'canvas.md'), 'hello');
 
-    archiveIntentFolder(tmpDir, folder);
+    archiveSpaceFolder(tmpDir, folder);
 
     expect(fs.existsSync(src)).toBe(false);
-    const archived = path.join(tmpDir, '.intent', 'archive', folder, 'canvas.md');
+    const archived = path.join(tmpDir, '.whim', 'archive', folder, 'canvas.md');
     expect(fs.existsSync(archived)).toBe(true);
     expect(fs.readFileSync(archived, 'utf-8')).toBe('hello');
   });
 
-  it('creates .intent/archive/ directory if it does not exist', () => {
+  it('creates .whim/archive/ directory if it does not exist', () => {
     const src = path.join(tmpDir, folder);
     fs.mkdirSync(src, { recursive: true });
 
-    archiveIntentFolder(tmpDir, folder);
+    archiveSpaceFolder(tmpDir, folder);
 
-    expect(fs.existsSync(path.join(tmpDir, '.intent', 'archive'))).toBe(true);
+    expect(fs.existsSync(path.join(tmpDir, '.whim', 'archive'))).toBe(true);
   });
 
   it('replaces existing archive if re-completing', () => {
     const src = path.join(tmpDir, folder);
     fs.mkdirSync(src, { recursive: true });
     fs.writeFileSync(path.join(src, 'canvas.md'), 'v1');
-    archiveIntentFolder(tmpDir, folder);
+    archiveSpaceFolder(tmpDir, folder);
 
     // Re-create and re-archive with new content
     fs.mkdirSync(src, { recursive: true });
     fs.writeFileSync(path.join(src, 'canvas.md'), 'v2');
-    archiveIntentFolder(tmpDir, folder);
+    archiveSpaceFolder(tmpDir, folder);
 
-    const archived = path.join(tmpDir, '.intent', 'archive', folder, 'canvas.md');
+    const archived = path.join(tmpDir, '.whim', 'archive', folder, 'canvas.md');
     expect(fs.readFileSync(archived, 'utf-8')).toBe('v2');
   });
 
   it('does nothing when source folder does not exist', () => {
-    expect(() => archiveIntentFolder(tmpDir, 'nonexistent')).not.toThrow();
+    expect(() => archiveSpaceFolder(tmpDir, 'nonexistent')).not.toThrow();
   });
 
   it('does nothing when folder is empty string', () => {
-    expect(() => archiveIntentFolder(tmpDir, '')).not.toThrow();
+    expect(() => archiveSpaceFolder(tmpDir, '')).not.toThrow();
   });
 });
 
-// ── deleteIntentFolder ──────────────────────────────────
+// ── deleteSpaceFolder ──────────────────────────────────
 
-describe('deleteIntentFolder', () => {
+describe('deleteSpaceFolder', () => {
   const folder = 'my-task-abcd';
 
   it('removes the live folder from workspace root', () => {
@@ -447,17 +447,17 @@ describe('deleteIntentFolder', () => {
     fs.mkdirSync(src, { recursive: true });
     fs.writeFileSync(path.join(src, 'canvas.md'), 'data');
 
-    deleteIntentFolder(tmpDir, folder);
+    deleteSpaceFolder(tmpDir, folder);
 
     expect(fs.existsSync(src)).toBe(false);
   });
 
   it('removes the archived folder too', () => {
-    const archivePath = path.join(tmpDir, '.intent', 'archive', folder);
+    const archivePath = path.join(tmpDir, '.whim', 'archive', folder);
     fs.mkdirSync(archivePath, { recursive: true });
     fs.writeFileSync(path.join(archivePath, 'canvas.md'), 'data');
 
-    deleteIntentFolder(tmpDir, folder);
+    deleteSpaceFolder(tmpDir, folder);
 
     expect(fs.existsSync(archivePath)).toBe(false);
   });
@@ -467,21 +467,21 @@ describe('deleteIntentFolder', () => {
     fs.mkdirSync(livePath, { recursive: true });
     fs.writeFileSync(path.join(livePath, 'canvas.md'), 'live');
 
-    const archivePath = path.join(tmpDir, '.intent', 'archive', folder);
+    const archivePath = path.join(tmpDir, '.whim', 'archive', folder);
     fs.mkdirSync(archivePath, { recursive: true });
     fs.writeFileSync(path.join(archivePath, 'canvas.md'), 'archived');
 
-    deleteIntentFolder(tmpDir, folder);
+    deleteSpaceFolder(tmpDir, folder);
 
     expect(fs.existsSync(livePath)).toBe(false);
     expect(fs.existsSync(archivePath)).toBe(false);
   });
 
   it('does nothing when neither folder exists', () => {
-    expect(() => deleteIntentFolder(tmpDir, 'nonexistent')).not.toThrow();
+    expect(() => deleteSpaceFolder(tmpDir, 'nonexistent')).not.toThrow();
   });
 
   it('does nothing when folder is empty string', () => {
-    expect(() => deleteIntentFolder(tmpDir, '')).not.toThrow();
+    expect(() => deleteSpaceFolder(tmpDir, '')).not.toThrow();
   });
 });

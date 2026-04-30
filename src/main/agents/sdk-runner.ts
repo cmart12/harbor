@@ -12,7 +12,7 @@ import { AgentPersistence } from './agent-persistence';
 import { InteractionBroker } from './interaction-broker';
 import type { SubagentTracker } from '../subagent-service';
 import { getCustomTools } from '../tools';
-import { appendIntentActivity } from '../intent-eventlog';
+import { appendSpaceActivity } from '../space-eventlog';
 import { buildSandboxLaunchSetup } from './sandbox-launch';
 import { SANDBOX_WORKSPACE_SYSTEM_PROMPT } from './sandbox-policies';
 
@@ -46,11 +46,11 @@ export function buildCliToolsPrompt(): string {
 }
 
 export async function launchAgent(
-  intentId: string,
+  spaceId: string,
   selectedText: string,
   anchor: AgentAnchor,
   workspaceRoot: string,
-  intentFolder: string,
+  spaceFolder: string,
   _options?: { repo?: string; model?: string }
 ): Promise<{ agentId: string; sessionId: string } | { error: string }> {
   const client = getCopilotClient();
@@ -59,7 +59,7 @@ export async function launchAgent(
   }
 
   const agentId = uuid();
-  const workingDir = path.join(workspaceRoot, intentFolder);
+  const workingDir = path.join(workspaceRoot, spaceFolder);
 
   try {
     const mcpServers = getAllMcpServers();
@@ -86,7 +86,7 @@ export async function launchAgent(
       agentId,
       sessionId,
       session,
-      intentId,
+      spaceId,
       selectedText,
       anchor,
       status: 'running',
@@ -100,7 +100,7 @@ export async function launchAgent(
     // Persist to DB (both canvas_agents for backward compat + agent_sessions as central registry)
     persistence.createCanvasAgentRecord({
       id: agentId,
-      intent_id: intentId,
+      space_id: spaceId,
       selected_text: selectedText,
       session_id: sessionId,
       pid: null,
@@ -112,7 +112,7 @@ export async function launchAgent(
     persistence.createAgentSessionRecord({
       id: agentId,
       session_id: sessionId,
-      intent_id: intentId,
+      space_id: spaceId,
       prompt: selectedText,
       status: 'running',
       summary: 'Starting...',
@@ -126,7 +126,7 @@ export async function launchAgent(
     // Set up event listeners
     setupAgentEventListeners(session, record);
 
-    // Log to per-intent activity log
+    // Log to per-space activity log
     logIntentActivity(record, 'agent.launched', {
       sessionId,
       prompt: truncate(selectedText, 200),
@@ -234,7 +234,7 @@ export async function launchQuickAgent(
       agentId,
       sessionId,
       session,
-      intentId: '__workspace__',
+      spaceId: '__workspace__',
       selectedText: prompt,
       anchor: { quote: '', prefix: '', suffix: '' },
       status: 'running',
@@ -249,7 +249,7 @@ export async function launchQuickAgent(
     persistence.createAgentSessionRecord({
       id: agentId,
       session_id: sessionId,
-      intent_id: null,
+      space_id: null,
       prompt,
       status: 'running',
       summary,
@@ -280,11 +280,11 @@ export async function launchQuickAgent(
   }
 }
 
-/** Launch an SDK agent with the full canvas document as context, using the intent folder as cwd. */
+/** Launch an SDK agent with the full canvas document as context, using the space folder as cwd. */
 export async function launchDocumentAgent(
-  intentId: string,
+  spaceId: string,
   workspaceRoot: string,
-  intentFolder: string,
+  spaceFolder: string,
 ): Promise<{ agentId: string; sessionId: string } | { error: string }> {
   const client = getCopilotClient();
   if (!client) {
@@ -292,7 +292,7 @@ export async function launchDocumentAgent(
   }
 
   const agentId = uuid();
-  const workingDir = path.join(workspaceRoot, intentFolder);
+  const workingDir = path.join(workspaceRoot, spaceFolder);
 
   // Read the full canvas document
   const fs = require('fs');
@@ -322,7 +322,7 @@ export async function launchDocumentAgent(
       onElicitationRequest: broker.createElicitationHandler(findRecord),
       systemMessage: {
         mode: 'append',
-        content: `\nThe user has pressed "Run" on their intent document. Execute all instructions in the document below. The full document is also available as canvas.md in your working directory.\n\n---\n${documentContent}\n---\n${cliToolsPrompt}`,
+        content: `\nThe user has pressed "Run" on their space document. Execute all instructions in the document below. The full document is also available as canvas.md in your working directory.\n\n---\n${documentContent}\n---\n${cliToolsPrompt}`,
       },
     });
 
@@ -333,7 +333,7 @@ export async function launchDocumentAgent(
       agentId,
       sessionId,
       session,
-      intentId,
+      spaceId,
       selectedText: documentContent,
       anchor: { quote: '', prefix: '', suffix: '' },
       status: 'running',
@@ -346,7 +346,7 @@ export async function launchDocumentAgent(
 
     persistence.createCanvasAgentRecord({
       id: agentId,
-      intent_id: intentId,
+      space_id: spaceId,
       selected_text: truncate(documentContent, 500),
       session_id: sessionId,
       pid: null,
@@ -358,7 +358,7 @@ export async function launchDocumentAgent(
     persistence.createAgentSessionRecord({
       id: agentId,
       session_id: sessionId,
-      intent_id: intentId,
+      space_id: spaceId,
       prompt: truncate(documentContent, 500),
       status: 'running',
       summary: 'Executing document...',
@@ -371,7 +371,7 @@ export async function launchDocumentAgent(
 
     setupAgentEventListeners(session, record);
 
-    // Log to per-intent activity log
+    // Log to per-space activity log
     logIntentActivity(record, 'document.executed', {
       sessionId,
       cwd: workingDir,
@@ -565,7 +565,7 @@ async function resumeAgentSession(agentId: string): Promise<'resumed' | 'restart
       agentId,
       sessionId: persisted.session_id,
       session,
-      intentId: persisted.intent_id || '__workspace__',
+      spaceId: persisted.space_id || '__workspace__',
       selectedText: persisted.prompt,
       anchor: { quote: '', prefix: '', suffix: '' },
       status: restoredStatus,
@@ -604,7 +604,7 @@ async function restartExpiredSession(
     const cliToolsPrompt = buildCliToolsPrompt();
     const findRecord = (sid: string) => registry.findBySessionId(sid);
 
-    const isCanvasAgent = persisted.intent_id && persisted.intent_id !== '__workspace__';
+    const isCanvasAgent = persisted.space_id && persisted.space_id !== '__workspace__';
 
     // Build system message with previous context
     let systemContent: string;
@@ -642,7 +642,7 @@ async function restartExpiredSession(
       agentId,
       sessionId: newSessionId,
       session,
-      intentId: persisted.intent_id || '__workspace__',
+      spaceId: persisted.space_id || '__workspace__',
       selectedText: persisted.prompt,
       anchor: { quote: '', prefix: '', suffix: '' },
       status: 'completed',
@@ -713,24 +713,24 @@ export async function getAgentHistory(agentId: string): Promise<{ events: any[];
 
 // ── Event Listener Setup ──────────────────────────────────────
 
-/** Resolve workspace + intentFolder for activity logging. Returns null if unavailable. */
-function resolveIntentActivityContext(record: AgentRecord): { workspaceRoot: string; intentFolder: string } | null {
-  if (!record.intentId || record.intentId === '__workspace__') return null;
+/** Resolve workspace + spaceFolder for activity logging. Returns null if unavailable. */
+function resolveSpaceActivityContext(record: AgentRecord): { workspaceRoot: string; spaceFolder: string } | null {
+  if (!record.spaceId || record.spaceId === '__workspace__') return null;
   const workspace = getConfigValue('workspace');
   if (!workspace) return null;
   try {
-    const { getIntent } = require('../database');
-    const intent = getIntent(record.intentId);
-    if (!intent?.folder) return null;
-    return { workspaceRoot: workspace, intentFolder: intent.folder };
+    const { getSpace } = require('../database');
+    const space = getSpace(record.spaceId);
+    if (!space?.folder) return null;
+    return { workspaceRoot: workspace, spaceFolder: space.folder };
   } catch { return null; }
 }
 
-/** Append to the per-intent activity log (non-fatal on failure). */
+/** Append to the per-space activity log (non-fatal on failure). */
 function logIntentActivity(record: AgentRecord, type: string, data: Record<string, any>): void {
-  const ctx = resolveIntentActivityContext(record);
+  const ctx = resolveSpaceActivityContext(record);
   if (!ctx) return;
-  appendIntentActivity(ctx.workspaceRoot, ctx.intentFolder, type, { agentId: record.agentId, ...data });
+  appendSpaceActivity(ctx.workspaceRoot, ctx.spaceFolder, type, { agentId: record.agentId, ...data });
 }
 
 export function setupAgentEventListeners(session: CopilotSession, record: AgentRecord): void {
@@ -870,7 +870,7 @@ export function setupAgentEventListeners(session: CopilotSession, record: AgentR
 
     // Clean up presence on failure too
     if (record.commentContext) {
-      notifier.notifyRenderer('agent:presence-ended', { agentId, intentId: record.intentId });
+      notifier.notifyRenderer('agent:presence-ended', { agentId, spaceId: record.spaceId });
     }
 
     // Clean up per-agent sandbox config dirs on failure

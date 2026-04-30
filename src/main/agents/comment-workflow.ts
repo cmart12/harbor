@@ -39,7 +39,7 @@ export function initCommentWorkflow(deps: {
 
 /** Launch an agent session triggered by an @mention in a canvas comment */
 export async function launchCommentAgent(
-  intentId: string,
+  spaceId: string,
   commentBody: string,
   quotedText: string,
   anchor: { prefix?: string; suffix?: string },
@@ -128,7 +128,7 @@ If you make changes to the document, clearly describe what you changed.${cliTool
       agentId,
       sessionId,
       session,
-      intentId,
+      spaceId,
       selectedText: commentBody,
       anchor: { quote: quotedText, prefix: anchor.prefix || '', suffix: anchor.suffix || '' },
       status: 'running',
@@ -153,7 +153,7 @@ If you make changes to the document, clearly describe what you changed.${cliTool
     persistence.createAgentSessionRecord({
       id: agentId,
       session_id: sessionId,
-      intent_id: intentId,
+      space_id: spaceId,
       prompt: commentBody,
       status: 'running',
       summary: 'Starting...',
@@ -169,7 +169,7 @@ If you make changes to the document, clearly describe what you changed.${cliTool
     // Notify renderer to show presence
     notifier.notifyRenderer('agent:presence-started', {
       agentId,
-      intentId,
+      spaceId,
       persona: { name: persona.handle, handle: persona.handle },
       anchor,
     });
@@ -186,7 +186,7 @@ If you make changes to the document, clearly describe what you changed.${cliTool
         message: err.message || 'Failed to process message',
       });
       if (record.commentContext) {
-        notifier.notifyRenderer('agent:presence-ended', { agentId, intentId: record.intentId });
+        notifier.notifyRenderer('agent:presence-ended', { agentId, spaceId: record.spaceId });
       }
     });
 
@@ -203,7 +203,7 @@ export function handleCommentAgentCompletion(record: AgentRecord): void {
   // End presence
   notifier.notifyRenderer('agent:presence-ended', {
     agentId: record.agentId,
-    intentId: record.intentId,
+    spaceId: record.spaceId,
   });
 
   // Detect if agent modified canvas.md
@@ -217,9 +217,9 @@ export function handleCommentAgentCompletion(record: AgentRecord): void {
 
   // If the document changed, sync DB and push live update to renderer
   if (documentChanged) {
-    updateCanvasContent(record.intentId, newContent);
+    updateCanvasContent(record.spaceId, newContent);
     notifier.notifyRenderer('canvas:content-updated', {
-      intentId: record.intentId,
+      spaceId: record.spaceId,
       content: newContent,
     });
   }
@@ -231,7 +231,7 @@ export function handleCommentAgentCompletion(record: AgentRecord): void {
 
   notifier.notifyRenderer('agent:reply-ready', {
     agentId: record.agentId,
-    intentId: record.intentId,
+    spaceId: record.spaceId,
     threadIndex: ctx.threadIndex,
     body: replyBody,
   });

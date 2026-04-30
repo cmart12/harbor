@@ -84,9 +84,9 @@ export function validateSandboxPolicy(raw: unknown): SandboxPolicy | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Record<string, unknown>;
   return {
-    scopeToIntentFolder: typeof r.scopeToIntentFolder === 'boolean'
-      ? r.scopeToIntentFolder
-      : DEFAULT_SANDBOX_POLICY.scopeToIntentFolder,
+    scopeToSpaceFolder: typeof r.scopeToSpaceFolder === 'boolean'
+      ? r.scopeToSpaceFolder
+      : DEFAULT_SANDBOX_POLICY.scopeToSpaceFolder,
     extraReadwritePaths: sanitizeStringList(r.extraReadwritePaths),
     extraReadonlyPaths: sanitizeStringList(r.extraReadonlyPaths),
     extraDeniedPaths: sanitizeStringList(r.extraDeniedPaths),

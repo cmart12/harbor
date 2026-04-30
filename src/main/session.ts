@@ -1,17 +1,17 @@
 import { execSync } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
-import { getIntent, assignIntentFolder } from './database';
+import { getSpace, assignSpaceFolder } from './database';
 import { getSessionId, setSessionId as configSetSessionId, getConfigValue } from './config';
-import { setIntentSessionId } from './database';
-import { createIntentFolder } from './workspace';
+import { setSpaceSessionId } from './database';
+import { createSpaceFolder } from './workspace';
 import { launchInTerminal as platformLaunchInTerminal } from './platform/terminal';
 import { focusTerminalWindow } from './platform/focus';
 
-// Per-intent launch lock to prevent duplicate terminals
+// Per-space launch lock to prevent duplicate terminals
 const launching = new Set<string>();
 
-// Track running terminal processes: intentId → session info
+// Track running terminal processes: spaceId → session info
 interface TrackedSession {
   pid: number | null;
   sessionId: string;
@@ -365,14 +365,14 @@ function isTrackedSessionAlive(tracked: TrackedSession): boolean {
   return isSessionProcessRunning(tracked.sessionId);
 }
 
-/** Get intent IDs that have active running terminal processes */
+/** Get space IDs that have active running terminal processes */
 export function getActiveSessionIntentIds(): string[] {
   const active: string[] = [];
-  for (const [intentId, tracked] of runningProcesses) {
+  for (const [spaceId, tracked] of runningProcesses) {
     if (isTrackedSessionAlive(tracked)) {
-      active.push(intentId);
+      active.push(spaceId);
     } else {
-      runningProcesses.delete(intentId);
+      runningProcesses.delete(spaceId);
     }
   }
   return active;
@@ -402,24 +402,24 @@ export async function launchSessionInTerminal(sessionId: string, cwd: string, si
   return { pid: result.pid ?? null };
 }
 
-export async function launchSession(intentId: string, workspaceRoot: string): Promise<LaunchResult> {
+export async function launchSession(spaceId: string, workspaceRoot: string): Promise<LaunchResult> {
   // Check if there's already a running process — bring it to foreground
-  const existing = runningProcesses.get(intentId);
+  const existing = runningProcesses.get(spaceId);
   if (existing && isTrackedSessionAlive(existing)) {
     const focused = await focusTerminalWindow({
       title: existing.sessionId,
       pid: existing.pid ?? undefined,
     });
     if (focused) {
-      console.log(`[session] Reactivated existing terminal for ${intentId}`);
+      console.log(`[session] Reactivated existing terminal for ${spaceId}`);
       return { success: true, sessionId: existing.sessionId };
     }
     // Process alive but couldn't focus — clear and relaunch
-    runningProcesses.delete(intentId);
+    runningProcesses.delete(spaceId);
   }
 
   // Launch lock
-  if (launching.has(intentId)) {
+  if (launching.has(spaceId)) {
     return { success: false, error: 'Session is already launching' };
   }
 
@@ -441,19 +441,19 @@ export async function launchSession(intentId: string, workspaceRoot: string): Pr
     };
   }
 
-  launching.add(intentId);
+  launching.add(spaceId);
 
   try {
-    const intent = getIntent(intentId);
-    if (!intent) {
-      return { success: false, error: 'Intent not found' };
+    const space = getSpace(spaceId);
+    if (!space) {
+      return { success: false, error: 'Space not found' };
     }
 
-    // Ensure the intent has a workspace subfolder
-    let folder = intent.folder;
+    // Ensure the space has a workspace subfolder
+    let folder = space.folder;
     if (!folder) {
-      folder = createIntentFolder(workspaceRoot, intentId, intent.description);
-      assignIntentFolder(intentId, folder);
+      folder = createSpaceFolder(workspaceRoot, spaceId, space.description);
+      assignSpaceFolder(spaceId, folder);
     }
     const cwd = path.join(workspaceRoot, folder);
 
@@ -463,12 +463,12 @@ export async function launchSession(intentId: string, workspaceRoot: string): Pr
     }
 
     // Resolve session ID from local config (per-machine)
-    let sessionId = getSessionId(intentId);
+    let sessionId = getSessionId(spaceId);
     if (!sessionId) {
       const { v4: uuidv4 } = require('uuid');
       sessionId = uuidv4() as string;
-      configSetSessionId(intentId, sessionId);
-      setIntentSessionId(intentId, sessionId);
+      configSetSessionId(spaceId, sessionId);
+      setSpaceSessionId(spaceId, sessionId);
     }
 
     const result = await platformLaunchInTerminal({
@@ -488,7 +488,7 @@ export async function launchSession(intentId: string, workspaceRoot: string): Pr
             execSync(`pgrep -nf "resume=${sessionId}"`, { timeout: 3000 }).toString().trim()
           );
           if (realPid) {
-            const tracked = runningProcesses.get(intentId);
+            const tracked = runningProcesses.get(spaceId);
             if (tracked && tracked.sessionId === sessionId) {
               tracked.pid = realPid;
             }
@@ -497,10 +497,10 @@ export async function launchSession(intentId: string, workspaceRoot: string): Pr
       }, 2000);
     }
 
-    runningProcesses.set(intentId, { pid: result.pid, sessionId: sessionId! });
-    console.log(`[session] Launched terminal for ${intentId} in ${folder} (PID ${result.pid || 'unknown'})`);
+    runningProcesses.set(spaceId, { pid: result.pid, sessionId: sessionId! });
+    console.log(`[session] Launched terminal for ${spaceId} in ${folder} (PID ${result.pid || 'unknown'})`);
     return { success: true, sessionId: sessionId! };
   } finally {
-    setTimeout(() => launching.delete(intentId), 2000);
+    setTimeout(() => launching.delete(spaceId), 2000);
   }
 }

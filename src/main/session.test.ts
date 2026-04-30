@@ -8,7 +8,7 @@ const { mockExistsSync, mockStatSync, mockMkdirSync, mockExecSync } = vi.hoisted
 }));
 
 vi.mock('electron', () => ({
-  app: { getPath: () => '/mock/intent-test' },
+  app: { getPath: () => '/mock/space-test' },
 }));
 
 vi.mock('fs', async () => {
@@ -28,13 +28,13 @@ vi.mock('./config', () => ({
 }));
 
 vi.mock('./database', () => ({
-  getIntent: vi.fn(),
-  assignIntentFolder: vi.fn(),
-  setIntentSessionId: vi.fn(),
+  getSpace: vi.fn(),
+  assignSpaceFolder: vi.fn(),
+  setSpaceSessionId: vi.fn(),
 }));
 
 vi.mock('./workspace', () => ({
-  createIntentFolder: vi.fn(),
+  createSpaceFolder: vi.fn(),
 }));
 
 import { resolveCopilotCliPath, invalidateCliPath, checkCopilotCli, launchSession, parseCliVersion, compareVersions, getCopilotCliVersion, checkCliCompatibility, resolveCmdToJs, isCliMxcCapable, invalidateMxcCapability, MIN_CLI_VERSION } from './session';
@@ -195,7 +195,7 @@ describe('session', () => {
     it('returns error when workspace directory does not exist', async () => {
       mockExistsSync.mockReturnValue(false);
 
-      const result = await launchSession('intent-1', '/nonexistent/workspace');
+      const result = await launchSession('space-1', '/nonexistent/workspace');
       expect(result.success).toBe(false);
       expect(result.error).toBe('Workspace directory does not exist');
     });
@@ -219,7 +219,7 @@ describe('session', () => {
         throw new Error('not found');
       });
 
-      const result = await launchSession('intent-2', '/valid/workspace');
+      const result = await launchSession('space-2', '/valid/workspace');
       expect(result.success).toBe(false);
       expect(result.error).toContain('Copilot CLI not found');
     });

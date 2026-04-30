@@ -2,9 +2,9 @@ import { execSync } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
-import { getIntent, assignIntentFolder, createCanvasAgent } from './database';
+import { getSpace, assignSpaceFolder, createCanvasAgent } from './database';
 import { checkCopilotCli, checkCliCompatibility } from './session';
-import { createIntentFolder } from './workspace';
+import { createSpaceFolder } from './workspace';
 import { CanvasAgent } from '../shared/types';
 import { launchInTerminal as platformLaunchInTerminal, shellEscapeDouble } from './platform/terminal';
 
@@ -16,11 +16,11 @@ export interface AgentLaunchResult {
 
 /**
  * Launch a Copilot CLI session in interactive mode (-i) for a specific
- * text selection on the canvas. The workspace dir is the intent folder
+ * text selection on the canvas. The workspace dir is the space folder
  * so copilot can read canvas.md directly.
  */
 export async function launchCanvasAgent(
-  intentId: string,
+  spaceId: string,
   selectedText: string,
   workspaceRoot: string
 ): Promise<AgentLaunchResult> {
@@ -37,16 +37,16 @@ export async function launchCanvasAgent(
     };
   }
 
-  const intent = getIntent(intentId);
-  if (!intent) {
-    return { success: false, error: 'Intent not found' };
+  const space = getSpace(spaceId);
+  if (!space) {
+    return { success: false, error: 'Space not found' };
   }
 
-  // Ensure intent has a workspace folder
-  let folder = intent.folder;
+  // Ensure space has a workspace folder
+  let folder = space.folder;
   if (!folder) {
-    folder = createIntentFolder(workspaceRoot, intentId, intent.description);
-    assignIntentFolder(intentId, folder);
+    folder = createSpaceFolder(workspaceRoot, spaceId, space.description);
+    assignSpaceFolder(spaceId, folder);
   }
 
   const cwd = path.join(workspaceRoot, folder);
@@ -59,7 +59,7 @@ export async function launchCanvasAgent(
 
   const agent: CanvasAgent = {
     id: agentId,
-    intent_id: intentId,
+    space_id: spaceId,
     selected_text: selectedText,
     session_id: agentId,
     pid: null,
@@ -78,7 +78,7 @@ export async function launchCanvasAgent(
   // Record in database
   createCanvasAgent(agent);
 
-  console.log(`[canvas-agent] Launched interactive agent ${agentId} for intent ${intentId} (PID ${pid || 'unknown'})`);
+  console.log(`[canvas-agent] Launched interactive agent ${agentId} for space ${spaceId} (PID ${pid || 'unknown'})`);
   return { success: true, agent };
 }
 

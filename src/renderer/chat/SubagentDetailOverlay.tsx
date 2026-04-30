@@ -3,7 +3,7 @@ import type { SubagentInfo, SubagentType } from '../../shared/subagent-types';
 import type { ChatMessage } from '../../shared/chat-types';
 import { MessageList } from './MessageList';
 
-declare const intentAPI: {
+declare const whimAPI: {
   subagentAPI: {
     read: (parentAgentId: string, agentId: string) => Promise<SubagentInfo | null>;
     write: (parentAgentId: string, agentId: string, message: string) => Promise<{ error?: string }>;
@@ -116,7 +116,7 @@ export function SubagentDetailOverlay({ parentAgentId, agentId, onClose }: Subag
 
   const refresh = useCallback(async () => {
     if (!agentId) return;
-    const info = await intentAPI.subagentAPI.read(parentAgentId, agentId);
+    const info = await whimAPI.subagentAPI.read(parentAgentId, agentId);
     setAgent(info);
   }, [parentAgentId, agentId]);
 
@@ -125,7 +125,7 @@ export function SubagentDetailOverlay({ parentAgentId, agentId, onClose }: Subag
     if (!agentId) return;
     refresh();
     const interval = setInterval(refresh, 1500);
-    const unsubscribe = intentAPI.subagentAPI.onChanged(parentAgentId, refresh);
+    const unsubscribe = whimAPI.subagentAPI.onChanged(parentAgentId, refresh);
     return () => {
       clearInterval(interval);
       unsubscribe();
@@ -166,7 +166,7 @@ export function SubagentDetailOverlay({ parentAgentId, agentId, onClose }: Subag
     setSending(true);
     setSendError(null);
     try {
-      const result = await intentAPI.subagentAPI.write(parentAgentId, agentId, steerInput.trim());
+      const result = await whimAPI.subagentAPI.write(parentAgentId, agentId, steerInput.trim());
       if (result?.error) {
         setSendError(result.error);
       } else {
@@ -181,7 +181,7 @@ export function SubagentDetailOverlay({ parentAgentId, agentId, onClose }: Subag
 
   const handleCancel = async () => {
     if (!agent || !isActive || !agentId) return;
-    await intentAPI.subagentAPI.cancel(parentAgentId, agentId);
+    await whimAPI.subagentAPI.cancel(parentAgentId, agentId);
   };
 
   const messages = agent ? agentToMessages(agent) : [];

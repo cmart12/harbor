@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // ── Hoisted mocks ───────────────────────────────────────
-const { mockEvaluateRecurrence, mockUpdateIntentCAS, mockLogIntentEvent, mockNotifyAllWindows } = vi.hoisted(() => ({
+const { mockEvaluateRecurrence, mockUpdateIntentCAS, mockLogSpaceEvent, mockNotifyAllWindows } = vi.hoisted(() => ({
   mockEvaluateRecurrence: vi.fn(),
   mockUpdateIntentCAS: vi.fn(),
-  mockLogIntentEvent: vi.fn(),
+  mockLogSpaceEvent: vi.fn(),
   mockNotifyAllWindows: vi.fn(),
 }));
 
@@ -13,8 +13,8 @@ vi.mock('../ai', () => ({
 }));
 
 vi.mock('../database', () => ({
-  updateIntentCAS: mockUpdateIntentCAS,
-  logIntentEvent: mockLogIntentEvent,
+  updateSpaceCAS: mockUpdateIntentCAS,
+  logSpaceEvent: mockLogSpaceEvent,
 }));
 
 vi.mock('../notify', () => ({
@@ -30,8 +30,8 @@ import {
 } from './recurrence';
 
 const sampleIntent = {
-  id: 'intent-1',
-  description: 'Test intent',
+  id: 'space-1',
+  description: 'Test space',
   body: null,
   raw_text: 'Buy groceries every week',
   client: null,
@@ -68,7 +68,7 @@ describe('recurrence service', () => {
 
       await handleRecurrence(sampleIntent, 'v1');
 
-      expect(mockNotifyAllWindows).toHaveBeenCalledWith('intent:recurrence', 'intent-1', expect.objectContaining({
+      expect(mockNotifyAllWindows).toHaveBeenCalledWith('space:recurrence', 'space-1', expect.objectContaining({
         should_recur: false,
       }));
     });
@@ -83,8 +83,8 @@ describe('recurrence service', () => {
 
       await handleRecurrence(sampleIntent, 'v1');
 
-      expect(hasPendingRecurrence('intent-1')).toBe(true);
-      expect(mockNotifyAllWindows).toHaveBeenCalledWith('intent:recurrence', 'intent-1', expect.objectContaining({
+      expect(hasPendingRecurrence('space-1')).toBe(true);
+      expect(mockNotifyAllWindows).toHaveBeenCalledWith('space:recurrence', 'space-1', expect.objectContaining({
         should_recur: true,
       }));
     });
@@ -106,7 +106,7 @@ describe('recurrence service', () => {
       // Advance past the 5-second undo window
       vi.advanceTimersByTime(5000);
 
-      expect(mockUpdateIntentCAS).toHaveBeenCalledWith('intent-1', 'v1', expect.objectContaining({
+      expect(mockUpdateIntentCAS).toHaveBeenCalledWith('space-1', 'v1', expect.objectContaining({
         status: 'captured',
         due_at: '2024-01-22',
         due_at_utc: '2024-01-22T00:00:00Z',
@@ -119,41 +119,41 @@ describe('recurrence service', () => {
       // Should not throw
       await handleRecurrence(sampleIntent, 'v1');
 
-      expect(hasPendingRecurrence('intent-1')).toBe(false);
+      expect(hasPendingRecurrence('space-1')).toBe(false);
     });
   });
 
   describe('applyRecurrence', () => {
-    it('updates intent via CAS and logs event on success', () => {
+    it('updates space via CAS and logs event on success', () => {
       mockUpdateIntentCAS.mockReturnValue(true);
 
-      applyRecurrence('intent-1', 'v1', {
+      applyRecurrence('space-1', 'v1', {
         should_recur: true,
         reasoning: 'Weekly',
         next_due: '2024-01-22',
         next_due_utc: '2024-01-22T00:00:00Z',
       });
 
-      expect(mockUpdateIntentCAS).toHaveBeenCalledWith('intent-1', 'v1', expect.objectContaining({
+      expect(mockUpdateIntentCAS).toHaveBeenCalledWith('space-1', 'v1', expect.objectContaining({
         status: 'captured',
         due_at: '2024-01-22',
       }));
-      expect(mockLogIntentEvent).toHaveBeenCalledWith('intent-1', 'recycled', expect.any(Object));
-      expect(mockNotifyAllWindows).toHaveBeenCalledWith('intent:recurrence-applied', 'intent-1');
+      expect(mockLogSpaceEvent).toHaveBeenCalledWith('space-1', 'recycled', expect.any(Object));
+      expect(mockNotifyAllWindows).toHaveBeenCalledWith('space:recurrence-applied', 'space-1');
     });
 
     it('does not log event when CAS fails', () => {
       mockUpdateIntentCAS.mockReturnValue(false);
 
-      applyRecurrence('intent-1', 'v1', {
+      applyRecurrence('space-1', 'v1', {
         should_recur: true,
         reasoning: 'Weekly',
         next_due: '2024-01-22',
         next_due_utc: '2024-01-22T00:00:00Z',
       });
 
-      expect(mockLogIntentEvent).not.toHaveBeenCalled();
-      expect(mockNotifyAllWindows).not.toHaveBeenCalledWith('intent:recurrence-applied', 'intent-1');
+      expect(mockLogSpaceEvent).not.toHaveBeenCalled();
+      expect(mockNotifyAllWindows).not.toHaveBeenCalledWith('space:recurrence-applied', 'space-1');
     });
   });
 
@@ -167,21 +167,21 @@ describe('recurrence service', () => {
       });
 
       await handleRecurrence(sampleIntent, 'v1');
-      expect(hasPendingRecurrence('intent-1')).toBe(true);
+      expect(hasPendingRecurrence('space-1')).toBe(true);
 
-      dismissRecurrence('intent-1');
+      dismissRecurrence('space-1');
 
-      expect(hasPendingRecurrence('intent-1')).toBe(false);
-      expect(mockLogIntentEvent).toHaveBeenCalledWith('intent-1', 'recurrence_dismissed', expect.any(Object));
+      expect(hasPendingRecurrence('space-1')).toBe(false);
+      expect(mockLogSpaceEvent).toHaveBeenCalledWith('space-1', 'recurrence_dismissed', expect.any(Object));
 
       // Timer should not fire after dismiss
       vi.advanceTimersByTime(5000);
       expect(mockUpdateIntentCAS).not.toHaveBeenCalled();
     });
 
-    it('is a no-op for non-pending intent', () => {
-      dismissRecurrence('unknown-intent');
-      expect(mockLogIntentEvent).not.toHaveBeenCalled();
+    it('is a no-op for non-pending space', () => {
+      dismissRecurrence('unknown-space');
+      expect(mockLogSpaceEvent).not.toHaveBeenCalled();
     });
   });
 
@@ -195,12 +195,12 @@ describe('recurrence service', () => {
       });
 
       await handleRecurrence(sampleIntent, 'v1');
-      expect(hasPendingRecurrence('intent-1')).toBe(true);
+      expect(hasPendingRecurrence('space-1')).toBe(true);
 
-      cancelPendingRecurrence('intent-1');
+      cancelPendingRecurrence('space-1');
 
-      expect(hasPendingRecurrence('intent-1')).toBe(false);
-      expect(mockLogIntentEvent).not.toHaveBeenCalled();
+      expect(hasPendingRecurrence('space-1')).toBe(false);
+      expect(mockLogSpaceEvent).not.toHaveBeenCalled();
     });
   });
 
@@ -219,10 +219,10 @@ describe('recurrence service', () => {
 
       await handleRecurrence(sampleIntent, 'v1');
 
-      expect(hasPendingRecurrence('intent-1')).toBe(true);
+      expect(hasPendingRecurrence('space-1')).toBe(true);
 
       // Clean up
-      cancelPendingRecurrence('intent-1');
+      cancelPendingRecurrence('space-1');
     });
   });
 });

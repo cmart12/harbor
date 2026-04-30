@@ -6,7 +6,7 @@ function makeRecord(overrides: Partial<AgentRecord> = {}): AgentRecord {
     agentId: overrides.agentId ?? 'agent-1',
     sessionId: overrides.sessionId ?? 'session-1',
     session: {} as any,
-    intentId: 'intent-1',
+    spaceId: 'space-1',
     selectedText: '',
     anchor: { quote: '', prefix: '', suffix: '' },
     status: 'running',

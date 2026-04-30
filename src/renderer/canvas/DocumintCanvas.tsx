@@ -18,10 +18,10 @@ import {
 } from 'documint';
 import { FrontmatterEditor } from './FrontmatterEditor';
 
-declare const intentAPI: {
-  writeCanvas(intentId: string, content: string): Promise<void>;
-  pasteFile(intentId: string, filename: string, dataArray: number[]): Promise<{ error?: string; filename?: string; relativePath?: string }>;
-  readFile(intentId: string, relativePath: string): Promise<{ data?: number[]; mimeType?: string; error?: string }>;
+declare const whimAPI: {
+  writeCanvas(spaceId: string, content: string): Promise<void>;
+  pasteFile(spaceId: string, filename: string, dataArray: number[]): Promise<{ error?: string; filename?: string; relativePath?: string }>;
+  readFile(spaceId: string, relativePath: string): Promise<{ data?: number[]; mimeType?: string; error?: string }>;
   getSetting(key: string): Promise<string | null>;
 };
 
@@ -43,7 +43,7 @@ export interface MentionEvent {
 }
 
 export interface DocumintCanvasProps {
-  intentId: string;
+  spaceId: string;
   initialContent: string;
   initialFrontmatter?: Record<string, unknown>;
   theme: 'light' | 'dark';
@@ -123,7 +123,7 @@ function formatAttachmentRef(filename: string, relativePath: string, mimeType: s
 }
 
 export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasProps>(
-  function DocumintCanvas({ intentId, initialContent, initialFrontmatter, theme, personas: initialPersonas, agentPresence: initialPresence, onDirtyChange, onSaveStatus, onAgentMentioned }, ref) {
+  function DocumintCanvas({ spaceId, initialContent, initialFrontmatter, theme, personas: initialPersonas, agentPresence: initialPresence, onDirtyChange, onSaveStatus, onAgentMentioned }, ref) {
     const hasFrontmatter = initialFrontmatter !== undefined;
     const [content, setContent] = useState(initialContent);
     const [frontmatter, setFrontmatter] = useState<Record<string, unknown>>(initialFrontmatter ?? {});
@@ -160,11 +160,11 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
       [personas],
     );
 
-    // Documint storage: read/write files from the intent's folder
+    // Documint storage: read/write files from the space's folder
     const storage: DocumintStorage = React.useMemo(() => ({
       async readFile(filePath: string): Promise<Blob | null> {
         try {
-          const result = await intentAPI.readFile(intentId, filePath);
+          const result = await whimAPI.readFile(spaceId, filePath);
           if (result.error || !result.data) return null;
           const bytes = new Uint8Array(result.data);
           return new Blob([bytes], { type: result.mimeType || 'application/octet-stream' });
@@ -175,11 +175,11 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
       async writeFile(file: File): Promise<string> {
         const buffer = await file.arrayBuffer();
         const dataArray = Array.from(new Uint8Array(buffer));
-        const result = await intentAPI.pasteFile(intentId, file.name, dataArray);
+        const result = await whimAPI.pasteFile(spaceId, file.name, dataArray);
         if (result.error) throw new Error(result.error);
         return result.relativePath!;
       },
-    }), [intentId]);
+    }), [spaceId]);
 
     const doSave = useCallback(async () => {
       if (savingRef.current) return;
@@ -188,7 +188,7 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
 
       savingRef.current = true;
       try {
-        await intentAPI.writeCanvas(intentId, fullContent);
+        await whimAPI.writeCanvas(spaceId, fullContent);
         lastSavedRef.current = fullContent;
         onDirtyChange(getFullContent() !== lastSavedRef.current);
         onSaveStatus('✓');
@@ -199,7 +199,7 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
       } finally {
         savingRef.current = false;
       }
-    }, [intentId, onDirtyChange, onSaveStatus, getFullContent]);
+    }, [spaceId, onDirtyChange, onSaveStatus, getFullContent]);
 
     const scheduleSave = useCallback(() => {
       if (pendingSaveRef.current) clearTimeout(pendingSaveRef.current);
@@ -390,7 +390,7 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
           try {
             const buffer = await file.arrayBuffer();
             const dataArray = Array.from(new Uint8Array(buffer));
-            const result = await intentAPI.pasteFile(intentId, file.name, dataArray);
+            const result = await whimAPI.pasteFile(spaceId, file.name, dataArray);
 
             if (result.error) {
               onSaveStatus('✗ ' + result.error);
@@ -416,7 +416,7 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
         el.removeEventListener('dragleave', handleDragLeave);
         el.removeEventListener('drop', handleDrop);
       };
-    }, [intentId, onSaveStatus]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [spaceId, onSaveStatus]); // eslint-disable-line react-hooks/exhaustive-deps
 
     function insertAttachment(markdownRef: string) {
       const current = contentRef.current;

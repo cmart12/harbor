@@ -1,4 +1,4 @@
-import { registerIntentHandlers } from './intent-handlers';
+import { registerSpaceHandlers } from './space-handlers';
 import { registerAgentHandlers } from './agent-handlers';
 import { registerCanvasHandlers } from './canvas-handlers';
 import { registerSettingsHandlers } from './settings-handlers';
@@ -7,7 +7,7 @@ import { registerWorkspaceHandlers } from './workspace-handlers';
 import { registerSkillHandlers } from './skill-handlers';
 
 export function registerIpcHandlers(): void {
-  registerIntentHandlers();
+  registerSpaceHandlers();
   registerAgentHandlers();
   registerCanvasHandlers();
   registerSettingsHandlers();

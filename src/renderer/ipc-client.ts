@@ -1,19 +1,19 @@
 /**
  * Typed IPC client for the renderer process.
  *
- * Provides typed access to the preload-injected `window.intentAPI` bridge
+ * Provides typed access to the preload-injected `window.whimAPI` bridge
  * and re-exports the types that renderer code commonly needs.
  *
  * Usage:
  *   import { getAPI } from './ipc-client';
  *   const api = getAPI();
- *   const intents = await api.list();
+ *   const spaces = await api.list();
  */
 
 // ── Core API interfaces from preload ────────────────────────────────────────
-import type { IntentAPI, SubagentAPI } from '../main/preload';
+import type { WhimAPI, SubagentAPI } from '../main/preload';
 
-export type { IntentAPI, SubagentAPI };
+export type { WhimAPI, SubagentAPI };
 
 // ── IPC contract types ──────────────────────────────────────────────────────
 export type {
@@ -23,8 +23,8 @@ export type {
   DiscoveredMcpServer,
   AgentListItem,
   AgentListAllItem,
-  IntentUpdates,
-  IntentEvent,
+  SpaceUpdates,
+  SpaceEvent,
   CanvasCommit,
   CloudJobPollResult,
   CloudJobResult,
@@ -33,8 +33,8 @@ export type {
 
 // ── Domain types ────────────────────────────────────────────────────────────
 export type {
-  Intent,
-  CreateIntentInput,
+  Space,
+  CreateSpaceInput,
   AgentAnchor,
   AgentSession,
   LinkPreviewMeta,
@@ -71,8 +71,8 @@ export type {
 
 /**
  * Typed accessor for the preload-injected IPC bridge.
- * Use this instead of accessing `window.intentAPI` directly.
+ * Use this instead of accessing `window.whimAPI` directly.
  */
-export function getAPI(): IntentAPI {
-  return (window as any).intentAPI;
+export function getAPI(): WhimAPI {
+  return (window as any).whimAPI;
 }

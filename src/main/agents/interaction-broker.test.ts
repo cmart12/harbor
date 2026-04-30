@@ -23,7 +23,7 @@ function makeRecord(overrides: Partial<AgentRecord> = {}): AgentRecord {
     agentId: overrides.agentId ?? 'agent-1',
     sessionId: overrides.sessionId ?? 'session-1',
     session: {} as any,
-    intentId: 'intent-1',
+    spaceId: 'space-1',
     selectedText: '',
     anchor: { quote: '', prefix: '', suffix: '' },
     status: 'running',
@@ -499,8 +499,8 @@ describe('InteractionBroker', () => {
     function makeSandboxedRecord(): AgentRecord {
       const record = makeRecord();
       record.sandbox = {
-        policy: resolvePathPolicy('C:\\workspace\\my-intent', {
-          scopeToIntentFolder: true,
+        policy: resolvePathPolicy('C:\\workspace\\my-space', {
+          scopeToSpaceFolder: true,
           extraReadwritePaths: [],
           extraReadonlyPaths: [],
           extraDeniedPaths: [],
@@ -524,18 +524,18 @@ describe('InteractionBroker', () => {
       expect(result).toEqual({ kind: 'approve-once' });
     });
 
-    it('approves a read inside the intent folder', async () => {
+    it('approves a read inside the space folder', async () => {
       const record = makeSandboxedRecord();
       const handler = broker.createPathAwareSandboxPermissionHandler((sid) => sid === 'session-1' ? record : undefined);
       const r = await handler({
         kind: 'read',
         toolCallId: 'tc',
-        path: 'C:\\workspace\\my-intent\\canvas.md',
+        path: 'C:\\workspace\\my-space\\canvas.md',
       } as any, { sessionId: 'session-1' });
       expect(r).toEqual({ kind: 'approve-once' });
     });
 
-    it('emits a sandbox block for a read outside the intent folder', async () => {
+    it('emits a sandbox block for a read outside the space folder', async () => {
       const record = makeSandboxedRecord();
       const handler = broker.createPathAwareSandboxPermissionHandler((sid) => sid === 'session-1' ? record : undefined);
       const promise = handler({
@@ -571,8 +571,8 @@ describe('InteractionBroker', () => {
     function makeSandboxedRecord(): AgentRecord {
       const record = makeRecord();
       record.sandbox = {
-        policy: resolvePathPolicy('C:\\workspace\\my-intent', {
-          scopeToIntentFolder: true,
+        policy: resolvePathPolicy('C:\\workspace\\my-space', {
+          scopeToSpaceFolder: true,
           extraReadwritePaths: [],
           extraReadonlyPaths: [],
           extraDeniedPaths: [],
@@ -599,7 +599,7 @@ describe('InteractionBroker', () => {
       const r = await handler({
         kind: 'write',
         toolCallId: 'tc',
-        fileName: 'C:\\workspace\\my-intent\\out.txt',
+        fileName: 'C:\\workspace\\my-space\\out.txt',
       } as any, { sessionId: 'session-1' });
       expect(r).toEqual({ kind: 'approve-once' });
       expect(notifier.notifyRenderer).not.toHaveBeenCalled();
@@ -615,8 +615,8 @@ describe('InteractionBroker', () => {
       vi.spyOn(console, 'warn').mockImplementation(() => {});
 
       const cases = [
-        { kind: 'read', path: 'C:\\workspace\\my-intent\\notes.md' },
-        { kind: 'shell', command: 'rm -rf C:\\workspace\\my-intent' },
+        { kind: 'read', path: 'C:\\workspace\\my-space\\notes.md' },
+        { kind: 'shell', command: 'rm -rf C:\\workspace\\my-space' },
         { kind: 'mcp', serverName: 'github' },
         { kind: 'url', url: 'https://example.com' },
       ];
@@ -642,7 +642,7 @@ describe('InteractionBroker', () => {
       void handler({
         kind: 'write',
         toolCallId: 'tc-w',
-        fileName: 'C:\\workspace\\my-intent\\out.txt',
+        fileName: 'C:\\workspace\\my-space\\out.txt',
       } as any, { sessionId: 'session-1' });
       // Allow microtasks to flush the synchronous notify in createPermissionHandler.
       await Promise.resolve();

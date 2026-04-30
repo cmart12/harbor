@@ -3,7 +3,7 @@ import * as path from 'path';
 
 // Mock electron (required by config.ts)
 vi.mock('electron', () => ({
-  app: { getPath: () => '/tmp/intent-test' },
+  app: { getPath: () => '/tmp/space-test' },
 }));
 
 // Mock fs for controlled filesystem behavior

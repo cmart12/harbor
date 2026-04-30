@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 
-declare const intentAPI: any;
+declare const whimAPI: any;
 
 export interface SubagentTileProps {
   toolCallId: string;
@@ -91,7 +91,7 @@ export function SubagentTile({
 
     const poll = async () => {
       try {
-        const data = await intentAPI.subagentAPI?.read(parentAgentId, agentId);
+        const data = await whimAPI.subagentAPI?.read(parentAgentId, agentId);
         if (cancelled || !data) return;
         if (data.intent) setCurrentIntent(data.intent);
         if (data.totalTokens !== undefined) setTotalTokens(data.totalTokens);
@@ -105,7 +105,7 @@ export function SubagentTile({
     poll();
     const interval = setInterval(poll, 2000);
 
-    const unsub = intentAPI.subagentAPI?.onChanged?.(parentAgentId, (changed: any) => {
+    const unsub = whimAPI.subagentAPI?.onChanged?.(parentAgentId, (changed: any) => {
       if (changed?.agentId === agentId) {
         if (changed.intent) setCurrentIntent(changed.intent);
         if (changed.totalTokens !== undefined) setTotalTokens(changed.totalTokens);
@@ -129,7 +129,7 @@ export function SubagentTile({
 
     (async () => {
       try {
-        const persisted = await intentAPI.subagentAPI?.listPersisted?.(parentAgentId);
+        const persisted = await whimAPI.subagentAPI?.listPersisted?.(parentAgentId);
         if (!persisted) return;
         const match = persisted.find((a: any) => a.agentId === agentId);
         if (!match) return;

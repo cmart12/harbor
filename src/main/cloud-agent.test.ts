@@ -44,8 +44,8 @@ describe('cloud-agent', () => {
     });
 
     it('handles URLs with trailing whitespace/newline', () => {
-      const result = parseGitRemote('https://github.com/patniko/intent.git\n');
-      expect(result).toEqual({ owner: 'patniko', repo: 'intent' });
+      const result = parseGitRemote('https://github.com/patniko/space.git\n');
+      expect(result).toEqual({ owner: 'patniko', repo: 'space' });
     });
 
     it('handles HTTPS URL with embedded credentials', () => {

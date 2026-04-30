@@ -78,7 +78,7 @@ export function registerWorkspaceHandlers(): void {
   });
 
   // Session launch
-  ipcMain.handle('session:launch', async (_event, intentId: string) => {
+  ipcMain.handle('session:launch', async (_event, spaceId: string) => {
     const workspace = getConfigValue('workspace');
     if (!workspace || !fs.existsSync(workspace)) {
       return { success: false, error: 'no_workspace' };
@@ -86,11 +86,11 @@ export function registerWorkspaceHandlers(): void {
     if (!isInitialized()) {
       return { success: false, error: 'no_workspace' };
     }
-    return launchSession(intentId, workspace);
+    return launchSession(spaceId, workspace);
   });
 
   // Query which intents have active running terminal processes
-  ipcMain.handle('session:active-intents', () => {
+  ipcMain.handle('session:active-spaces', () => {
     return getActiveSessionIntentIds();
   });
 

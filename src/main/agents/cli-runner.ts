@@ -50,7 +50,7 @@ export async function launchCliSession(
   persistence.createAgentSessionRecord({
     id: agentId,
     session_id: sessionId,
-    intent_id: null,
+    space_id: null,
     prompt: 'CLI Session',
     status: 'running',
     summary: 'Running in terminal...',

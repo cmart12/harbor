@@ -176,7 +176,7 @@ describe('validateSandboxPolicy', () => {
 
   it('preserves valid boolean fields', () => {
     const result = validateSandboxPolicy({
-      scopeToIntentFolder: false,
+      scopeToSpaceFolder: false,
       allowOutbound: true,
       allowMcpServers: true,
       allowWebFetch: true,
@@ -184,7 +184,7 @@ describe('validateSandboxPolicy', () => {
     });
     expect(result).toEqual({
       ...DEFAULT_SANDBOX_POLICY,
-      scopeToIntentFolder: false,
+      scopeToSpaceFolder: false,
       allowOutbound: true,
       allowMcpServers: true,
       allowWebFetch: true,
@@ -194,10 +194,10 @@ describe('validateSandboxPolicy', () => {
 
   it('falls back to defaults for non-boolean fields', () => {
     const result = validateSandboxPolicy({
-      scopeToIntentFolder: 'yes' as any,
+      scopeToSpaceFolder: 'yes' as any,
       allowOutbound: 1 as any,
     });
-    expect(result?.scopeToIntentFolder).toBe(DEFAULT_SANDBOX_POLICY.scopeToIntentFolder);
+    expect(result?.scopeToSpaceFolder).toBe(DEFAULT_SANDBOX_POLICY.scopeToSpaceFolder);
     expect(result?.allowOutbound).toBe(DEFAULT_SANDBOX_POLICY.allowOutbound);
   });
 

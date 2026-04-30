@@ -30,17 +30,17 @@ describe('typed-handler', () => {
   describe('registerHandler', () => {
     it('registers a handler on ipcMain.handle', () => {
       const handler = vi.fn(async (_event) => []);
-      registerHandler('intent:list', handler);
+      registerHandler('space:list', handler);
 
-      expect(ipcMain.handle).toHaveBeenCalledWith('intent:list', expect.any(Function));
-      expect(handlers.has('intent:list')).toBe(true);
+      expect(ipcMain.handle).toHaveBeenCalledWith('space:list', expect.any(Function));
+      expect(handlers.has('space:list')).toBe(true);
     });
 
     it('registers a handler that receives typed args', () => {
       const handler = vi.fn(async (_event, id: string) => true);
-      registerHandler('intent:delete', handler);
+      registerHandler('space:delete', handler);
 
-      expect(ipcMain.handle).toHaveBeenCalledWith('intent:delete', expect.any(Function));
+      expect(ipcMain.handle).toHaveBeenCalledWith('space:delete', expect.any(Function));
     });
   });
 

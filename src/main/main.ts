@@ -16,7 +16,7 @@ import { createTray, destroyTray } from './tray';
 // Register custom scheme as privileged (must happen before app ready)
 protocol.registerSchemesAsPrivileged([
   {
-    scheme: 'copilot-intent',
+    scheme: 'copilot-whim',
     privileges: {
       standard: true,
       secure: true,
@@ -49,8 +49,8 @@ const MIME_TYPES: Record<string, string> = {
 
 app.whenReady().then(async () => {
   // Register custom protocol to serve renderer files (Web Speech API needs a real origin, not file://)
-  // Also serves workspace attachment files via copilot-intent://app/workspace/<intentFolder>/<path>
-  protocol.handle('copilot-intent', (request) => {
+  // Also serves workspace attachment files via copilot-whim://app/workspace/<intentFolder>/<path>
+  protocol.handle('copilot-whim', (request) => {
     const url = new URL(request.url);
     const pathname = url.pathname;
 
@@ -82,7 +82,7 @@ app.whenReady().then(async () => {
     }
 
     // Default: serve app renderer files
-    // URL: intent://app/renderer/index.html → host="app", pathname="/renderer/index.html"
+    // URL: whim://app/renderer/index.html → host="app", pathname="/renderer/index.html"
     const filePath = path.join(__dirname, '..', pathname);
     const ext = path.extname(filePath);
     const mimeType = MIME_TYPES[ext] || 'application/octet-stream';

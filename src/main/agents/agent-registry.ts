@@ -10,7 +10,7 @@ export type AgentStatus = 'running' | 'waiting-approval' | 'completed' | 'failed
  * Cleared on agent completion.
  */
 export interface SandboxRuntimeState {
-  /** Resolved path policy (intent folder + extras, normalized). */
+  /** Resolved path policy (space folder + extras, normalized). */
   policy: ResolvedPathPolicy;
   /** On/off configDirs materialized for this agent at launch. */
   configs: SandboxConfigDirs;
@@ -48,7 +48,7 @@ export interface AgentRecord {
   agentId: string;
   sessionId: string;
   session: CopilotSession;
-  intentId: string;
+  spaceId: string;
   selectedText: string;
   anchor: AgentAnchor;
   status: AgentStatus;

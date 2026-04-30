@@ -5,7 +5,7 @@
  * This file is **types only** — no runtime code.
  */
 
-import type { Intent, CreateIntentInput, Attachment, AgentAnchor, AgentSession, LinkPreviewMeta, RecurrenceResult, RecallMatch, Skill, SkillContent, CanvasTarget } from './types';
+import type { Space, CreateSpaceInput, Attachment, AgentAnchor, AgentSession, LinkPreviewMeta, RecurrenceResult, RecallMatch, Skill, SkillContent, CanvasTarget } from './types';
 import type { ChatEvent, ElicitationSchema, ElicitationFieldValue } from './chat-types';
 import type { SubagentSummary, SubagentInfo } from './subagent-types';
 
@@ -13,21 +13,21 @@ import type { SubagentSummary, SubagentInfo } from './subagent-types';
 // Helper types needed by the contract that don't exist in shared/ yet
 // ---------------------------------------------------------------------------
 
-export type IntentUpdates = Partial<
-  Pick<Intent, 'description' | 'body' | 'client' | 'due_at' | 'due_at_utc' | 'status' | 'attachments'>
+export type SpaceUpdates = Partial<
+  Pick<Space, 'description' | 'body' | 'client' | 'due_at' | 'due_at_utc' | 'status' | 'attachments'>
 >;
 
-export interface IntentEvent {
+export interface SpaceEvent {
   id: string;
-  intent_id: string;
+  space_id: string;
   event_type: string;
   due_at: string | null;
   due_at_utc: string | null;
   completed_at: string | null;
   recurrence_json: string | null;
   created_at: string;
-  intent_description: string | null;
-  intent_client: string | null;
+  space_description: string | null;
+  space_client: string | null;
   session_id: string | null;
 }
 
@@ -41,7 +41,7 @@ export interface AgentListItem {
 }
 
 export interface AgentListAllItem extends AgentListItem {
-  intentId: string;
+  spaceId: string;
   createdAt: string;
   pendingApprovalId: string | null;
   pendingPermissionKind: string | null;
@@ -76,7 +76,7 @@ export interface AgentPersona {
 
 /** Sandbox policy applied to a sandboxed agent.  See docs/mxc-sandbox-schema.md. */
 export interface SandboxPolicy {
-  scopeToIntentFolder: boolean;
+  scopeToSpaceFolder: boolean;
   extraReadwritePaths: string[];
   extraReadonlyPaths: string[];
   extraDeniedPaths: string[];
@@ -98,9 +98,9 @@ export interface SandboxPolicy {
   enforcementMode: 'both' | 'mxc-only';
 }
 
-/** Default sandbox policy: maximum restriction (intent folder only, no network, no MCP, no web fetch). */
+/** Default sandbox policy: maximum restriction (space folder only, no network, no MCP, no web fetch). */
 export const DEFAULT_SANDBOX_POLICY: SandboxPolicy = {
-  scopeToIntentFolder: true,
+  scopeToSpaceFolder: true,
   extraReadwritePaths: [],
   extraReadonlyPaths: [],
   extraDeniedPaths: [],
@@ -187,17 +187,17 @@ export interface CloudJobPollResult {
 
 export interface IpcCommands {
   // ── Intents ──────────────────────────────────────────────
-  'intent:create': { args: [input: CreateIntentInput]; result: Intent };
-  'intent:list': { args: []; result: Intent[] };
-  'intent:update': { args: [id: string, updates: IntentUpdates]; result: Intent | null };
-  'intent:delete': { args: [id: string]; result: boolean };
-  'intent:dismiss-recurrence': { args: [id: string]; result: boolean };
-  'intent:events': { args: [limit?: number]; result: IntentEvent[] };
-  'intent:resolve-date': { args: [dateText: string]; result: { date: string; utc: string } | null };
-  'intent:classify': { args: [text: string]; result: { type: 'intent' | 'query'; answer?: string } };
-  'intent:summarize-title': { args: [canvasContent: string]; result: { title: string | null } };
-  'intent:search': { args: [query: string]; result: Intent[] };
-  'intent:unarchive': { args: [id: string]; result: Intent | null };
+  'space:create': { args: [input: CreateSpaceInput]; result: Space };
+  'space:list': { args: []; result: Space[] };
+  'space:update': { args: [id: string, updates: SpaceUpdates]; result: Space | null };
+  'space:delete': { args: [id: string]; result: boolean };
+  'space:dismiss-recurrence': { args: [id: string]; result: boolean };
+  'space:events': { args: [limit?: number]; result: SpaceEvent[] };
+  'space:resolve-date': { args: [dateText: string]; result: { date: string; utc: string } | null };
+  'space:classify': { args: [text: string]; result: { type: 'space' | 'query'; answer?: string } };
+  'space:summarize-title': { args: [canvasContent: string]; result: { title: string | null } };
+  'space:search': { args: [query: string]; result: Space[] };
+  'space:unarchive': { args: [id: string]; result: Space | null };
 
   // ── Voice ────────────────────────────────────────────────
   'voice:transcribe': { args: [audioData: number[]]; result: string };
@@ -231,8 +231,8 @@ export interface IpcCommands {
   'sandbox:open-config-preview': { args: [policy: SandboxPolicy]; result: { ok: true; path: string } | { error: string } };
 
   // ── Sessions ─────────────────────────────────────────────
-  'session:launch': { args: [intentId: string]; result: { success: boolean; error?: string } };
-  'session:active-intents': { args: []; result: string[] };
+  'session:launch': { args: [spaceId: string]; result: { success: boolean; error?: string } };
+  'session:active-spaces': { args: []; result: string[] };
 
   // ── Workspace / Shell ────────────────────────────────────
   'workspace:select': { args: []; result: { selected: boolean; path: string | null } };
@@ -240,26 +240,26 @@ export interface IpcCommands {
   'shell:openPath': { args: [folderPath: string]; result: string };
 
   // ── Canvas ───────────────────────────────────────────────
-  'canvas:read': { args: [intentId: string]; result: { content: string; error?: string } };
-  'canvas:write': { args: [intentId: string, content: string]; result: { success?: boolean; error?: string } };
-  'canvas:close': { args: [intentId: string, content: string]; result: void };
-  'canvas:paste-file': { args: [intentId: string, filename: string, dataArray: number[]]; result: { path: string } | { error: string } };
-  'canvas:resolve-attachment': { args: [intentId: string, relativePath: string]; result: { path: string; mimeType: string } | { error: string } };
+  'canvas:read': { args: [spaceId: string]; result: { content: string; error?: string } };
+  'canvas:write': { args: [spaceId: string, content: string]; result: { success?: boolean; error?: string } };
+  'canvas:close': { args: [spaceId: string, content: string]; result: void };
+  'canvas:paste-file': { args: [spaceId: string, filename: string, dataArray: number[]]; result: { path: string } | { error: string } };
+  'canvas:resolve-attachment': { args: [spaceId: string, relativePath: string]; result: { path: string; mimeType: string } | { error: string } };
   'canvas:fetch-link-meta': { args: [url: string]; result: LinkPreviewMeta };
-  'canvas:history': { args: [intentId: string]; result: { commits: CanvasCommit[]; error?: string } };
-  'canvas:restore': { args: [intentId: string, sha: string]; result: { success: boolean; error?: string } };
-  'canvas:preview-version': { args: [intentId: string, sha: string]; result: { content: string; error?: string } };
+  'canvas:history': { args: [spaceId: string]; result: { commits: CanvasCommit[]; error?: string } };
+  'canvas:restore': { args: [spaceId: string, sha: string]; result: { success: boolean; error?: string } };
+  'canvas:preview-version': { args: [spaceId: string, sha: string]; result: { content: string; error?: string } };
 
   // ── Agent ────────────────────────────────────────────────
   'agent:launch': {
-    args: [intentId: string, selectedText: string, anchor: AgentAnchor, options?: { repo?: string; model?: string }];
+    args: [spaceId: string, selectedText: string, anchor: AgentAnchor, options?: { repo?: string; model?: string }];
     result: { agentId: string; sessionId: string } | { error: string };
   };
   'agent:launch-from-comment': {
-    args: [intentId: string, commentBody: string, quotedText: string, anchor: AgentAnchor, personaHandle: string, threadIndex: number];
+    args: [spaceId: string, commentBody: string, quotedText: string, anchor: AgentAnchor, personaHandle: string, threadIndex: number];
     result: { agentId: string; sessionId: string } | { error: string };
   };
-  'agent:list': { args: [intentId: string]; result: AgentListItem[] };
+  'agent:list': { args: [spaceId: string]; result: AgentListItem[] };
   'agent:approve': { args: [agentId: string, requestId: string, approved: boolean]; result: void };
   'agent:respond-user-input': { args: [agentId: string, requestId: string, answer: string, wasFreeform: boolean]; result: void };
   'agent:respond-elicitation': {
@@ -276,7 +276,7 @@ export interface IpcCommands {
   'agent:list-all': { args: []; result: AgentListAllItem[] };
   'agent:delete-session': { args: [agentId: string]; result: { ok: true } };
   'agent:launch-cloud': {
-    args: [intentId: string, prompt: string];
+    args: [spaceId: string, prompt: string];
     result: { agentId: string; sessionId: string; jobId: string } | { error: string };
   };
   'agent:cloud-status': { args: [agentId: string]; result: CloudJobPollResult };
@@ -310,8 +310,8 @@ export interface IpcCommands {
   'skill:create-from-prompt': { args: [description: string]; result: { agentId: string; sessionId: string } | { error: string } };
   'skill:delete': { args: [skillId: string]; result: boolean };
   'skill:open-folder': { args: [skillId: string]; result: void };
-  'skill:create-intent': { args: [skillId: string]; result: Intent | { error: string } };
-  'skill:launch': { args: [skillId: string]; result: Intent | { error: string } };
+  'skill:create-space': { args: [skillId: string]; result: Space | { error: string } };
+  'skill:launch': { args: [skillId: string]; result: Space | { error: string } };
 }
 
 // ---------------------------------------------------------------------------
@@ -358,14 +358,14 @@ export interface IpcEvents {
   'agent:completed': { agentId: string; summary: string };
   'agent:yolo-changed': { agentId: string; enabled: boolean };
   'notification:approval-clicked': { agentId: string };
-  'agent:presence-started': { agentId: string; intentId: string; persona: { name: string; handle: string }; anchor: AgentAnchor };
-  'agent:presence-ended': { agentId: string; intentId: string };
-  'agent:reply-ready': { agentId: string; intentId: string; threadIndex: number; body: string };
-  'canvas:content-updated': { intentId: string; content: string };
-  'intent:processed': { intentId: string };
-  'intent:recurrence': { intentId: string; result: RecurrenceResult };
-  'intent:recurrence-applied': { intentId: string };
-  'intent:recall': { intentId: string; match: RecallMatch };
+  'agent:presence-started': { agentId: string; spaceId: string; persona: { name: string; handle: string }; anchor: AgentAnchor };
+  'agent:presence-ended': { agentId: string; spaceId: string };
+  'agent:reply-ready': { agentId: string; spaceId: string; threadIndex: number; body: string };
+  'canvas:content-updated': { spaceId: string; content: string };
+  'space:processed': { spaceId: string };
+  'space:recurrence': { spaceId: string; result: RecurrenceResult };
+  'space:recurrence-applied': { spaceId: string };
+  'space:recall': { spaceId: string; match: RecallMatch };
   'skills:changed': void;
 }
 

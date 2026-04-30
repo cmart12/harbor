@@ -1,6 +1,6 @@
 /**
  * Shared sandbox-launch setup used by both canvas-comment launches
- * (intent-folder scope) and Workers-tab quick-launch (workspace-root scope).
+ * (space-folder scope) and Workers-tab quick-launch (workspace-root scope).
  *
  * Encapsulates the persona-sandbox glue that was originally inlined in
  * comment-workflow.ts: policy resolution, sandbox config materialization,
@@ -58,7 +58,7 @@ export interface SandboxLaunchSetup {
  */
 /**
  * Shared sandbox-launch setup used by both canvas-comment launches
- * (intent-folder scope) and Workers-tab quick-launch (workspace-root scope).
+ * (space-folder scope) and Workers-tab quick-launch (workspace-root scope).
  *
  * Encapsulates the persona-sandbox glue that was originally inlined in
  * comment-workflow.ts: policy resolution, sandbox config materialization,

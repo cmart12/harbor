@@ -4,7 +4,7 @@ import { MessageList } from './MessageList';
 import { PromptBar } from './PromptBar';
 import { SubagentDetailOverlay } from './SubagentDetailOverlay';
 
-declare const intentAPI: {
+declare const whimAPI: {
   sendChatMessage: (agentId: string, prompt: string, attachments?: any[]) => Promise<{ error?: string }>;
   onChatEvent: (agentId: string, callback: (event: ChatEvent) => void) => () => void;
   approveAgent: (agentId: string, requestId: string, approved: boolean) => Promise<void>;
@@ -29,12 +29,12 @@ interface ChatViewProps {
   agentPrompt: string;
   agentStatus: string;
   agentSource?: 'sdk' | 'cli';
-  intentId?: string;
+  spaceId?: string;
   pendingApprovalId?: string;
   pendingPermissionKind?: string;
   onClose: () => void;
   onOpenCli: (agentId: string) => void;
-  onOpenCanvas?: (intentId: string) => void;
+  onOpenCanvas?: (spaceId: string) => void;
 }
 
 let nextMsgId = 1;
@@ -332,7 +332,7 @@ function replayBufferedEvents(msgs: ChatMessage[], events: ChatEvent[]): ChatMes
   return result;
 }
 
-export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: initialStatus, agentSource, intentId, pendingApprovalId, pendingPermissionKind, onClose, onOpenCli, onOpenCanvas }: ChatViewProps) {
+export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: initialStatus, agentSource, spaceId, pendingApprovalId, pendingPermissionKind, onClose, onOpenCli, onOpenCanvas }: ChatViewProps) {
   const [currentAgentId, setCurrentAgentId] = useState<string | null>(initialAgentId || null);
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     // For CLI sessions or sessions with history, don't seed — history will load
@@ -386,8 +386,8 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
   useEffect(() => {
     (async () => {
       const [modelList, currentModel] = await Promise.all([
-        intentAPI.listModels(),
-        intentAPI.getSetting('model'),
+        whimAPI.listModels(),
+        whimAPI.getSetting('model'),
       ]);
       setModels(modelList);
       if (currentModel) setSelectedModel(currentModel);
@@ -400,14 +400,14 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
     (async () => {
       if (currentAgentId) {
         try {
-          const workingDir = await (intentAPI as any).getAgentWorkingDir?.(currentAgentId);
+          const workingDir = await (whimAPI as any).getAgentWorkingDir?.(currentAgentId);
           if (workingDir) { setCwd(workingDir); return; }
         } catch { /* fall through */ }
       }
-      const val = await intentAPI.getSetting('workspace_root');
+      const val = await whimAPI.getSetting('workspace_root');
       if (val) setCwd(val);
     })();
-    intentAPI.onWorkspaceChanged((path) => setCwd(path || ''));
+    whimAPI.onWorkspaceChanged((path) => setCwd(path || ''));
   }, [currentAgentId]);
 
   // Close model dropdown on outside click
@@ -424,7 +424,7 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
 
   // Listen for yolo mode changes
   useEffect(() => {
-    intentAPI.onAgentYoloChanged((data: { agentId: string; enabled: boolean }) => {
+    whimAPI.onAgentYoloChanged((data: { agentId: string; enabled: boolean }) => {
       if (data.agentId === currentAgentId) {
         setYoloEnabled(data.enabled);
       }
@@ -436,7 +436,7 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
     if (!initialAgentId) return;
     (async () => {
       try {
-        const result = await intentAPI.getAgentHistory(initialAgentId);
+        const result = await whimAPI.getAgentHistory(initialAgentId);
         if (result.events && result.events.length > 0) {
           const historyMessages = parseHistoryEvents(result.events);
           if (historyMessages.length > 0) {
@@ -525,7 +525,7 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
   // Subscribe to chat events immediately — buffer all events until history loads
   useEffect(() => {
     if (!currentAgentId) return;
-    const unsubscribe = intentAPI.onChatEvent(currentAgentId, (event: ChatEvent) => {
+    const unsubscribe = whimAPI.onChatEvent(currentAgentId, (event: ChatEvent) => {
       // Buffer ALL events that arrive before history loads for deduped replay
       if (!historyLoadedRef.current) {
         pendingEvents.current.push(event);
@@ -835,7 +835,7 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
 
     // If no agent yet, create one with this first message
     if (!currentAgentId) {
-      const launchResult = await intentAPI.quickLaunchAgent(message);
+      const launchResult = await whimAPI.quickLaunchAgent(message);
       if ('error' in launchResult && launchResult.error) {
         setMessages(prev => [...prev, {
           id: genId(),
@@ -853,7 +853,7 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
       return;
     }
 
-    const result = await intentAPI.sendChatMessage(currentAgentId, message, chatAttachments);
+    const result = await whimAPI.sendChatMessage(currentAgentId, message, chatAttachments);
     if (result.error) {
       setMessages(prev => [...prev, {
         id: genId(),
@@ -868,7 +868,7 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
 
   const handleApprovalRespond = useCallback((requestId: string, approved: boolean) => {
     if (!currentAgentId) return;
-    intentAPI.approveAgent(currentAgentId, requestId, approved);
+    whimAPI.approveAgent(currentAgentId, requestId, approved);
     setMessages(prev => prev.map(m =>
       m.type === 'approval' && m.requestId === requestId
         ? { ...m, responded: true, approved }
@@ -878,7 +878,7 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
 
   const handleUserInputRespond = useCallback((requestId: string, answer: string, wasFreeform: boolean) => {
     if (!currentAgentId) return;
-    intentAPI.respondToUserInput(currentAgentId, requestId, answer, wasFreeform);
+    whimAPI.respondToUserInput(currentAgentId, requestId, answer, wasFreeform);
     setMessages(prev => prev.map(m =>
       m.type === 'user_input' && m.requestId === requestId
         ? { ...m, responded: true, answer, wasFreeform }
@@ -888,7 +888,7 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
 
   const handleElicitationRespond = useCallback((requestId: string, action: 'accept' | 'decline' | 'cancel', content?: Record<string, unknown>) => {
     if (!currentAgentId) return;
-    intentAPI.respondToElicitation(currentAgentId, requestId, action, content);
+    whimAPI.respondToElicitation(currentAgentId, requestId, action, content);
     setMessages(prev => prev.map(m =>
       m.type === 'elicitation' && m.requestId === requestId
         ? { ...m, responded: true, action, content }
@@ -899,21 +899,21 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
   const handleModelSwitch = useCallback(async (modelId: string) => {
     setSelectedModel(modelId);
     setModelDropdownOpen(false);
-    if (currentAgentId) await intentAPI.setChatModel(currentAgentId, modelId);
+    if (currentAgentId) await whimAPI.setChatModel(currentAgentId, modelId);
   }, [currentAgentId]);
 
   const handleBrowseCwd = useCallback(async () => {
-    await intentAPI.selectWorkspace();
+    await whimAPI.selectWorkspace();
   }, []);
 
   const handleToggleYolo = useCallback(async () => {
     if (currentAgentId) {
-      await intentAPI.setAgentYolo(currentAgentId, !yoloEnabled);
+      await whimAPI.setAgentYolo(currentAgentId, !yoloEnabled);
     }
   }, [currentAgentId, yoloEnabled]);
 
   const handleAbort = useCallback(async () => {
-    if (currentAgentId) await intentAPI.abortAgent(currentAgentId);
+    if (currentAgentId) await whimAPI.abortAgent(currentAgentId);
   }, [currentAgentId]);
 
   const statusIcon = status === 'new' ? '✦' :
@@ -943,8 +943,8 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
               ◼ Stop
             </button>
           )}
-          {intentId && onOpenCanvas && (
-            <button className="header-icon-btn" onClick={() => onOpenCanvas(intentId)} title="Open canvas">
+          {spaceId && onOpenCanvas && (
+            <button className="header-icon-btn" onClick={() => onOpenCanvas(spaceId)} title="Open canvas">
               📄
             </button>
           )}
@@ -972,7 +972,7 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
         {cwd && (
           <button
             className="chat-status-bar-item"
-            onClick={() => intentAPI.openPath(cwd)}
+            onClick={() => whimAPI.openPath(cwd)}
             title="Open folder in file manager"
           >
             <span className="chat-status-bar-icon">↗</span>

@@ -1,26 +1,26 @@
 import { ipcMain } from 'electron';
-import { isInitialized, getIntent } from '../database';
+import { isInitialized, getSpace } from '../database';
 import { getConfigValue } from '../config';
 import { notifyAllWindows } from '../notify';
 
 export function registerAgentHandlers(): void {
-  ipcMain.handle('agent:launch', async (_event, intentId: string, selectedText: string, anchor: any, options?: { repo?: string; model?: string }) => {
+  ipcMain.handle('agent:launch', async (_event, spaceId: string, selectedText: string, anchor: any, options?: { repo?: string; model?: string }) => {
     const workspace = getConfigValue('workspace');
     if (!workspace || !isInitialized()) return { error: 'no_workspace' };
 
-    const intent = getIntent(intentId);
-    if (!intent || !intent.folder) return { error: 'intent_not_found' };
+    const space = getSpace(spaceId);
+    if (!space || !space.folder) return { error: 'space_not_found' };
 
     const { launchAgent } = await import('../agent-service');
-    return launchAgent(intentId, selectedText, anchor, workspace, intent.folder, options);
+    return launchAgent(spaceId, selectedText, anchor, workspace, space.folder, options);
   });
 
-  ipcMain.handle('agent:launch-from-comment', async (_event, intentId: string, commentBody: string, quotedText: string, anchor: any, personaHandle: string, threadIndex: number) => {
+  ipcMain.handle('agent:launch-from-comment', async (_event, spaceId: string, commentBody: string, quotedText: string, anchor: any, personaHandle: string, threadIndex: number) => {
     const workspace = getConfigValue('workspace');
     if (!workspace || !isInitialized()) return { error: 'no_workspace' };
 
-    const intent = getIntent(intentId);
-    if (!intent || !intent.folder) return { error: 'intent_not_found' };
+    const space = getSpace(spaceId);
+    if (!space || !space.folder) return { error: 'space_not_found' };
 
     const allPersonas = getConfigValue('personas') || [];
     const persona = allPersonas.find(p => p.handle === personaHandle);
@@ -44,7 +44,7 @@ export function registerAgentHandlers(): void {
       const now = new Date().toISOString();
       const { createAgentSession } = await import('../database');
       createAgentSession({
-        id: agentId, session_id: result.sessionId, intent_id: intentId,
+        id: agentId, session_id: result.sessionId, space_id: spaceId,
         prompt: commentBody, status: 'running', summary: `Cloud job ${result.jobId}`,
         working_dir: workspace, source: 'cloud' as any, persona_handle: persona.handle, created_at: now, updated_at: now,
       });
@@ -57,12 +57,12 @@ export function registerAgentHandlers(): void {
     }
 
     const { launchCommentAgent } = await import('../agent-service');
-    return launchCommentAgent(intentId, commentBody, quotedText, anchor, persona, threadIndex, workspace, intent.folder);
+    return launchCommentAgent(spaceId, commentBody, quotedText, anchor, persona, threadIndex, workspace, space.folder);
   });
 
-  ipcMain.handle('agent:list', async (_event, intentId: string) => {
+  ipcMain.handle('agent:list', async (_event, spaceId: string) => {
     const { listAgents } = await import('../agent-service');
-    return listAgents(intentId);
+    return listAgents(spaceId);
   });
 
   ipcMain.handle('agent:approve', async (_event, agentId: string, requestId: string, approved: boolean) => {
@@ -134,7 +134,7 @@ export function registerAgentHandlers(): void {
       createAgentSession({
         id: agentId,
         session_id: result.sessionId,
-        intent_id: null,
+        space_id: null,
         prompt,
         status: 'running',
         summary,
@@ -156,15 +156,15 @@ export function registerAgentHandlers(): void {
     return launchQuickAgent(prompt, workspace, persona ?? undefined);
   });
 
-  ipcMain.handle('agent:launch-document', async (_event, intentId: string) => {
+  ipcMain.handle('agent:launch-document', async (_event, spaceId: string) => {
     const workspace = getConfigValue('workspace');
     if (!workspace || !isInitialized()) return { error: 'no_workspace' };
 
-    const intent = getIntent(intentId);
-    if (!intent || !intent.folder) return { error: 'intent_not_found' };
+    const space = getSpace(spaceId);
+    if (!space || !space.folder) return { error: 'space_not_found' };
 
     const { launchDocumentAgent } = await import('../agent-service');
-    return launchDocumentAgent(intentId, workspace, intent.folder);
+    return launchDocumentAgent(spaceId, workspace, space.folder);
   });
 
   ipcMain.handle('agent:list-all', async () => {
@@ -186,7 +186,7 @@ export function registerAgentHandlers(): void {
   });
 
   // ── Cloud agent launch ────────────────────────────────────
-  ipcMain.handle('agent:launch-cloud', async (_event, intentId: string, prompt: string) => {
+  ipcMain.handle('agent:launch-cloud', async (_event, spaceId: string, prompt: string) => {
     const workspace = getConfigValue('workspace');
     if (!workspace) return { error: 'no_workspace' };
 
@@ -208,7 +208,7 @@ export function registerAgentHandlers(): void {
     createAgentSession({
       id: agentId,
       session_id: result.sessionId,
-      intent_id: intentId || null,
+      space_id: spaceId || null,
       prompt,
       status: 'running',
       summary: `Cloud job ${result.jobId}`,

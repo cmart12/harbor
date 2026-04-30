@@ -5,7 +5,7 @@ const handleHandlers = new Map<string, Function>();
 const onHandlers = new Map<string, Function>();
 
 vi.mock('electron', () => ({
-  app: { getPath: () => '/mock/intent-test' },
+  app: { getPath: () => '/mock/space-test' },
   ipcMain: {
     handle: vi.fn((channel: string, handler: Function) => {
       handleHandlers.set(channel, handler);
@@ -44,8 +44,8 @@ vi.mock('../config', () => ({
 
 vi.mock('../workspace', () => ({
   initWorkspace: vi.fn(),
-  getDbPath: vi.fn((dir: string) => `${dir}/.intent/intents.db`),
-  getLogPath: vi.fn((dir: string) => `${dir}/.intent/events.jsonl`),
+  getDbPath: vi.fn((dir: string) => `${dir}/.whim/spaces.db`),
+  getLogPath: vi.fn((dir: string) => `${dir}/.whim/events.jsonl`),
 }));
 
 vi.mock('../skill-watcher', () => ({

@@ -1,12 +1,12 @@
 import { ipcMain, shell } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
-import { isInitialized, listSkills, getSkill, upsertSkill, removeSkill, createIntent, assignIntentFolder } from '../database';
+import { isInitialized, listSkills, getSkill, upsertSkill, removeSkill, createSpace, assignSpaceFolder } from '../database';
 import { getConfigValue } from '../config';
 import { parseFrontmatter, serializeFrontmatter } from '../frontmatter';
 import { getSkillsDir, syncAllSkills } from '../skill-watcher';
 import { pickEmoji } from '../emoji-picker';
-import { createIntentFolder, scheduleAutoCommit } from '../workspace';
+import { createSpaceFolder, scheduleAutoCommit } from '../workspace';
 import type { SkillFrontmatter, Skill } from '../../shared/types';
 
 const SKILL_FILE = 'SKILL.md';
@@ -167,28 +167,28 @@ export function registerSkillHandlers(): void {
     return result;
   });
 
-  ipcMain.handle('skill:create-intent', (_event, skillId: string) => {
+  ipcMain.handle('skill:create-space', (_event, skillId: string) => {
     const workspace = getConfigValue('workspace');
     if (!workspace || !isInitialized()) return { error: 'no_workspace' };
 
     const skill = getSkill(skillId);
     if (!skill) return { error: 'not_found' };
 
-    // Create a new intent with the skill name as description, linked to the source skill
-    const intent = createIntent({ body: skill.name }, skillId);
+    // Create a new space with the skill name as description, linked to the source skill
+    const space = createSpace({ body: skill.name }, skillId);
 
-    // Create the intent folder
-    const folder = createIntentFolder(workspace, intent.id, skill.name);
-    assignIntentFolder(intent.id, folder);
-    intent.folder = folder;
+    // Create the space folder
+    const folder = createSpaceFolder(workspace, space.id, skill.name);
+    assignSpaceFolder(space.id, folder);
+    space.folder = folder;
 
-    // Copy skill folder contents to the intent folder
+    // Copy skill folder contents to the space folder
     const skillFolderPath = path.join(workspace, skill.folder);
     const intentFolderPath = path.join(workspace, folder);
 
     copyDirContents(skillFolderPath, intentFolderPath);
 
-    // Rename SKILL.md → canvas.md in the intent folder
+    // Rename SKILL.md → canvas.md in the space folder
     const skillMdPath = path.join(intentFolderPath, SKILL_FILE);
     const canvasMdPath = path.join(intentFolderPath, 'canvas.md');
     if (fs.existsSync(skillMdPath)) {
@@ -200,7 +200,7 @@ export function registerSkillHandlers(): void {
     }
 
     scheduleAutoCommit(workspace);
-    return intent;
+    return space;
   });
 
   ipcMain.handle('skill:launch', async (_event, skillId: string) => {
@@ -210,12 +210,12 @@ export function registerSkillHandlers(): void {
     const skill = getSkill(skillId);
     if (!skill) return { error: 'not_found' };
 
-    // Create the intent from the skill (same as skill:create-intent)
-    const intent = createIntent({ body: skill.name }, skillId);
+    // Create the space from the skill (same as skill:create-space)
+    const space = createSpace({ body: skill.name }, skillId);
 
-    const folder = createIntentFolder(workspace, intent.id, skill.name);
-    assignIntentFolder(intent.id, folder);
-    intent.folder = folder;
+    const folder = createSpaceFolder(workspace, space.id, skill.name);
+    assignSpaceFolder(space.id, folder);
+    space.folder = folder;
 
     const skillFolderPath = path.join(workspace, skill.folder);
     const intentFolderPath = path.join(workspace, folder);
@@ -233,11 +233,11 @@ export function registerSkillHandlers(): void {
 
     scheduleAutoCommit(workspace);
 
-    // Also launch a session on the new intent
+    // Also launch a session on the new space
     const { launchSession } = await import('../session');
-    launchSession(intent.id, workspace);
+    launchSession(space.id, workspace);
 
-    return intent;
+    return space;
   });
 }
 

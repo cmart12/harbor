@@ -24,20 +24,20 @@ import {
   getDatabase,
   isInitialized,
   closeDatabase,
-  createIntent,
-  getIntent,
-  listIntents,
-  updateIntent,
-  updateIntentCAS,
-  deleteIntent,
-  assignIntentFolder,
-  searchIntents,
+  createSpace,
+  getSpace,
+  listSpaces,
+  updateSpace,
+  updateSpaceCAS,
+  deleteSpace,
+  assignSpaceFolder,
+  searchSpaces,
   syncCanvasContent,
   updateCanvasContent,
   mergeSessionIds,
-  logIntentEvent,
-  listIntentEvents,
-  setIntentSessionId,
+  logSpaceEvent,
+  listSpaceEvents,
+  setSpaceSessionId,
   createCanvasAgent,
   updateCanvasAgentStatus,
   listCanvasAgents,
@@ -55,7 +55,7 @@ import type { CanvasAgent, AgentSession, Attachment } from '../shared/types';
 let testDir: string;
 
 function freshDb() {
-  testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'intent-db-test-'));
+  testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'space-db-test-'));
   const dbPath = path.join(testDir, 'test.db');
   const logPath = path.join(testDir, 'events.jsonl');
   initDatabase(dbPath, logPath);
@@ -74,15 +74,15 @@ afterEach(() => {
 
 // ── Helpers ───────────────────────────────────────────────
 
-function makeIntent(body = 'Test intent body') {
-  return createIntent({ body });
+function makeIntent(body = 'Test space body') {
+  return createSpace({ body });
 }
 
-function makeCanvasAgent(intentId: string, overrides: Partial<CanvasAgent> = {}): CanvasAgent {
+function makeCanvasAgent(spaceId: string, overrides: Partial<CanvasAgent> = {}): CanvasAgent {
   const now = new Date().toISOString();
   return {
     id: `agent-${Date.now()}`,
-    intent_id: intentId,
+    space_id: spaceId,
     selected_text: 'some text',
     session_id: 'sess-1',
     pid: null,
@@ -98,7 +98,7 @@ function makeAgentSession(overrides: Partial<AgentSession> = {}): AgentSession {
   return {
     id: `as-${Date.now()}`,
     session_id: 'sess-1',
-    intent_id: null,
+    space_id: null,
     prompt: 'Do something',
     status: 'running',
     summary: '',
@@ -120,59 +120,59 @@ describe('database', () => {
     });
   });
 
-  // ── Intent CRUD lifecycle ──────────────────────────────
+  // ── Space CRUD lifecycle ──────────────────────────────
 
-  describe('Intent CRUD lifecycle', () => {
-    it('creates, gets, lists, updates, and deletes an intent', () => {
-      const intent = makeIntent('Buy groceries');
-      expect(intent.id).toBeDefined();
-      expect(intent.description).toBe('Buy groceries');
-      expect(intent.body).toBe('Buy groceries');
-      expect(intent.status).toBe('captured');
+  describe('Space CRUD lifecycle', () => {
+    it('creates, gets, lists, updates, and deletes an space', () => {
+      const space = makeIntent('Buy groceries');
+      expect(space.id).toBeDefined();
+      expect(space.description).toBe('Buy groceries');
+      expect(space.body).toBe('Buy groceries');
+      expect(space.status).toBe('captured');
       expect(appendEvent).toHaveBeenCalledWith(
         expect.any(String),
-        'intent.create',
-        expect.objectContaining({ id: intent.id }),
+        'space.create',
+        expect.objectContaining({ id: space.id }),
       );
 
-      // getIntent
-      const fetched = getIntent(intent.id);
+      // getSpace
+      const fetched = getSpace(space.id);
       expect(fetched).not.toBeNull();
-      expect(fetched!.id).toBe(intent.id);
+      expect(fetched!.id).toBe(space.id);
 
-      // listIntents
-      const list = listIntents();
+      // listSpaces
+      const list = listSpaces();
       expect(list).toHaveLength(1);
-      expect(list[0].id).toBe(intent.id);
+      expect(list[0].id).toBe(space.id);
 
-      // updateIntent
-      const updated = updateIntent(intent.id, { description: 'Updated title', status: 'in_progress' });
+      // updateSpace
+      const updated = updateSpace(space.id, { description: 'Updated title', status: 'in_progress' });
       expect(updated).not.toBeNull();
       expect(updated!.description).toBe('Updated title');
       expect(updated!.status).toBe('in_progress');
       expect(appendEvent).toHaveBeenCalledWith(
         expect.any(String),
-        'intent.update',
-        expect.objectContaining({ id: intent.id }),
+        'space.update',
+        expect.objectContaining({ id: space.id }),
       );
 
-      // deleteIntent
-      const deleted = deleteIntent(intent.id);
+      // deleteSpace
+      const deleted = deleteSpace(space.id);
       expect(deleted).toBe(true);
-      expect(getIntent(intent.id)).toBeNull();
+      expect(getSpace(space.id)).toBeNull();
       expect(appendEvent).toHaveBeenCalledWith(
         expect.any(String),
-        'intent.delete',
-        expect.objectContaining({ id: intent.id }),
+        'space.delete',
+        expect.objectContaining({ id: space.id }),
       );
     });
 
-    it('deleteIntent returns false for non-existent id', () => {
-      expect(deleteIntent('nonexistent-id')).toBe(false);
+    it('deleteSpace returns false for non-existent id', () => {
+      expect(deleteSpace('nonexistent-id')).toBe(false);
     });
 
-    it('getIntent returns null for unknown id', () => {
-      expect(getIntent('nonexistent-id')).toBeNull();
+    it('getSpace returns null for unknown id', () => {
+      expect(getSpace('nonexistent-id')).toBeNull();
     });
   });
 
@@ -180,26 +180,26 @@ describe('database', () => {
 
   describe('placeholder title', () => {
     it('extracts the first line as the description', () => {
-      const intent = createIntent({ body: 'First line\nSecond line\nThird line' });
-      expect(intent.description).toBe('First line');
+      const space = createSpace({ body: 'First line\nSecond line\nThird line' });
+      expect(space.description).toBe('First line');
     });
 
     it('truncates long first lines to 80 chars with ellipsis', () => {
       const longLine = 'A'.repeat(100);
-      const intent = createIntent({ body: longLine });
-      expect(intent.description).toBe('A'.repeat(77) + '…');
-      expect(intent.description.length).toBe(78);
+      const space = createSpace({ body: longLine });
+      expect(space.description).toBe('A'.repeat(77) + '…');
+      expect(space.description.length).toBe(78);
     });
 
     it('preserves short first lines without truncation', () => {
-      const intent = createIntent({ body: 'Short title' });
-      expect(intent.description).toBe('Short title');
+      const space = createSpace({ body: 'Short title' });
+      expect(space.description).toBe('Short title');
     });
 
     it('uses exactly 80-char first line without truncation', () => {
       const line80 = 'B'.repeat(80);
-      const intent = createIntent({ body: line80 });
-      expect(intent.description).toBe(line80);
+      const space = createSpace({ body: line80 });
+      expect(space.description).toBe(line80);
     });
   });
 
@@ -207,78 +207,78 @@ describe('database', () => {
 
   describe('attachments round-trip', () => {
     it('serializes and deserializes attachments', () => {
-      const intent = makeIntent();
+      const space = makeIntent();
       const attachments: Attachment[] = [
         { type: 'url', name: 'Link', url: 'https://example.com' },
         { type: 'file', name: 'Doc', url: 'file://doc.pdf', relativePath: 'attachments/doc.pdf' },
       ];
-      const updated = updateIntent(intent.id, { attachments });
+      const updated = updateSpace(space.id, { attachments });
       expect(updated!.attachments).toEqual(attachments);
 
       // Re-fetch to confirm persistence
-      const fetched = getIntent(intent.id);
+      const fetched = getSpace(space.id);
       expect(fetched!.attachments).toEqual(attachments);
     });
 
     it('returns empty array for null/empty attachments', () => {
-      const intent = makeIntent();
-      expect(intent.attachments).toEqual([]);
+      const space = makeIntent();
+      expect(space.attachments).toEqual([]);
 
       // Manually set to null via raw DB
-      getDatabase().prepare('UPDATE intents SET attachments = NULL WHERE id = ?').run(intent.id);
-      const fetched = getIntent(intent.id);
+      getDatabase().prepare('UPDATE spaces SET attachments = NULL WHERE id = ?').run(space.id);
+      const fetched = getSpace(space.id);
       expect(fetched!.attachments).toEqual([]);
 
       // Manually set to invalid JSON
-      getDatabase().prepare("UPDATE intents SET attachments = 'not-json' WHERE id = ?").run(intent.id);
-      const fetched2 = getIntent(intent.id);
+      getDatabase().prepare("UPDATE spaces SET attachments = 'not-json' WHERE id = ?").run(space.id);
+      const fetched2 = getSpace(space.id);
       expect(fetched2!.attachments).toEqual([]);
     });
   });
 
-  // ── updateIntentCAS ────────────────────────────────────
+  // ── updateSpaceCAS ────────────────────────────────────
 
-  describe('updateIntentCAS', () => {
+  describe('updateSpaceCAS', () => {
     it('succeeds with matching version', () => {
-      const intent = makeIntent();
-      const result = updateIntentCAS(intent.id, intent.updated_at, { description: 'CAS updated' });
+      const space = makeIntent();
+      const result = updateSpaceCAS(space.id, space.updated_at, { description: 'CAS updated' });
       expect(result).not.toBeNull();
       expect(result!.description).toBe('CAS updated');
     });
 
     it('returns null with stale version', () => {
-      const intent = makeIntent();
-      const result = updateIntentCAS(intent.id, 'stale-version-string', { description: 'Should fail' });
+      const space = makeIntent();
+      const result = updateSpaceCAS(space.id, 'stale-version-string', { description: 'Should fail' });
       expect(result).toBeNull();
       // Verify original is untouched
-      const fetched = getIntent(intent.id);
-      expect(fetched!.description).toBe(intent.description);
+      const fetched = getSpace(space.id);
+      expect(fetched!.description).toBe(space.description);
     });
 
-    it('returns null for non-existent intent', () => {
-      const result = updateIntentCAS('nonexistent', '2024-01-01T00:00:00.000Z', { description: 'nope' });
+    it('returns null for non-existent space', () => {
+      const result = updateSpaceCAS('nonexistent', '2024-01-01T00:00:00.000Z', { description: 'nope' });
       expect(result).toBeNull();
     });
   });
 
-  // ── listIntents ordering ───────────────────────────────
+  // ── listSpaces ordering ───────────────────────────────
 
-  describe('listIntents ordering', () => {
+  describe('listSpaces ordering', () => {
     it('orders: done last, in_progress first, due dates ascending, then updated_at descending', () => {
-      // Create intents with controlled timestamps
-      const a = createIntent({ body: 'A - in_progress' });
-      const b = createIntent({ body: 'B - captured with due' });
-      const c = createIntent({ body: 'C - captured no due' });
-      const d = createIntent({ body: 'D - done' });
+      // Create spaces with controlled timestamps
+      const a = createSpace({ body: 'A - in_progress' });
+      const b = createSpace({ body: 'B - captured with due' });
+      const c = createSpace({ body: 'C - captured no due' });
+      const d = createSpace({ body: 'D - done' });
 
       // Set statuses and due dates via raw DB for precise control
       const db = getDatabase();
-      db.prepare("UPDATE intents SET status = 'in_progress', updated_at = '2024-06-01T00:00:00Z' WHERE id = ?").run(a.id);
-      db.prepare("UPDATE intents SET status = 'captured', due_at_utc = '2024-07-01T00:00:00Z', updated_at = '2024-05-01T00:00:00Z' WHERE id = ?").run(b.id);
-      db.prepare("UPDATE intents SET status = 'captured', updated_at = '2024-05-02T00:00:00Z' WHERE id = ?").run(c.id);
-      db.prepare("UPDATE intents SET status = 'done', updated_at = '2024-06-15T00:00:00Z' WHERE id = ?").run(d.id);
+      db.prepare("UPDATE spaces SET status = 'in_progress', updated_at = '2024-06-01T00:00:00Z' WHERE id = ?").run(a.id);
+      db.prepare("UPDATE spaces SET status = 'captured', due_at_utc = '2024-07-01T00:00:00Z', updated_at = '2024-05-01T00:00:00Z' WHERE id = ?").run(b.id);
+      db.prepare("UPDATE spaces SET status = 'captured', updated_at = '2024-05-02T00:00:00Z' WHERE id = ?").run(c.id);
+      db.prepare("UPDATE spaces SET status = 'done', updated_at = '2024-06-15T00:00:00Z' WHERE id = ?").run(d.id);
 
-      const list = listIntents();
+      const list = listSpaces();
       const ids = list.map(i => i.id);
 
       // in_progress first, then captured with due, then captured without due, then done
@@ -289,51 +289,51 @@ describe('database', () => {
     });
   });
 
-  // ── searchIntents ──────────────────────────────────────
+  // ── searchSpaces ──────────────────────────────────────
 
-  describe('searchIntents', () => {
+  describe('searchSpaces', () => {
     it('matches in description', () => {
-      const intent = makeIntent('search-term-unique');
-      const results = searchIntents('search-term-unique');
+      const space = makeIntent('search-term-unique');
+      const results = searchSpaces('search-term-unique');
       expect(results).toHaveLength(1);
-      expect(results[0].id).toBe(intent.id);
+      expect(results[0].id).toBe(space.id);
     });
 
     it('matches in body', () => {
-      const intent = createIntent({ body: 'Title\nBody has findme123 keyword' });
-      const results = searchIntents('findme123');
+      const space = createSpace({ body: 'Title\nBody has findme123 keyword' });
+      const results = searchSpaces('findme123');
       expect(results).toHaveLength(1);
-      expect(results[0].id).toBe(intent.id);
+      expect(results[0].id).toBe(space.id);
     });
 
     it('matches in canvas_content', () => {
-      const intent = makeIntent();
-      updateCanvasContent(intent.id, 'canvas-unique-content-xyz');
-      const results = searchIntents('canvas-unique-content-xyz');
+      const space = makeIntent();
+      updateCanvasContent(space.id, 'canvas-unique-content-xyz');
+      const results = searchSpaces('canvas-unique-content-xyz');
       expect(results).toHaveLength(1);
-      expect(results[0].id).toBe(intent.id);
+      expect(results[0].id).toBe(space.id);
     });
 
     it('returns no results for non-matching query', () => {
       makeIntent('Totally unrelated');
-      const results = searchIntents('zzz-nonexistent-zzz');
+      const results = searchSpaces('zzz-nonexistent-zzz');
       expect(results).toHaveLength(0);
     });
   });
 
-  // ── assignIntentFolder ─────────────────────────────────
+  // ── assignSpaceFolder ─────────────────────────────────
 
-  describe('assignIntentFolder', () => {
+  describe('assignSpaceFolder', () => {
     it('sets folder and logs event', () => {
-      const intent = makeIntent();
-      assignIntentFolder(intent.id, 'my-folder-abc1');
+      const space = makeIntent();
+      assignSpaceFolder(space.id, 'my-folder-abc1');
 
-      const fetched = getIntent(intent.id);
+      const fetched = getSpace(space.id);
       expect(fetched!.folder).toBe('my-folder-abc1');
       expect(appendEvent).toHaveBeenCalledWith(
         expect.any(String),
-        'intent.assign_folder',
-        expect.objectContaining({ id: intent.id, folder: 'my-folder-abc1' }),
+        'space.assign_folder',
+        expect.objectContaining({ id: space.id, folder: 'my-folder-abc1' }),
       );
     });
   });
@@ -341,28 +341,28 @@ describe('database', () => {
   // ── syncCanvasContent ──────────────────────────────────
 
   describe('syncCanvasContent', () => {
-    it('populates canvas_content from disk for intents with folders', () => {
-      const intent = makeIntent();
-      assignIntentFolder(intent.id, 'test-folder');
+    it('populates canvas_content from disk for spaces with folders', () => {
+      const space = makeIntent();
+      assignSpaceFolder(space.id, 'test-folder');
 
       vi.mocked(readCanvas).mockReturnValue('# Canvas Content\nHello world');
       syncCanvasContent('/fake/workspace');
 
-      // canvas_content isn't in the Intent type — verify via raw DB
-      const row = getDatabase().prepare('SELECT canvas_content FROM intents WHERE id = ?').get(intent.id) as any;
+      // canvas_content isn't in the Space type — verify via raw DB
+      const row = getDatabase().prepare('SELECT canvas_content FROM spaces WHERE id = ?').get(space.id) as any;
       expect(row.canvas_content).toBe('# Canvas Content\nHello world');
       expect(readCanvas).toHaveBeenCalledWith('/fake/workspace', 'test-folder');
     });
 
-    it('skips intents without folders', () => {
+    it('skips spaces without folders', () => {
       makeIntent(); // no folder
       syncCanvasContent('/fake/workspace');
       expect(readCanvas).not.toHaveBeenCalled();
     });
 
     it('handles readCanvas errors gracefully', () => {
-      const intent = makeIntent();
-      assignIntentFolder(intent.id, 'bad-folder');
+      const space = makeIntent();
+      assignSpaceFolder(space.id, 'bad-folder');
       vi.mocked(readCanvas).mockImplementation(() => { throw new Error('ENOENT'); });
 
       // Should not throw
@@ -373,12 +373,12 @@ describe('database', () => {
   // ── updateCanvasContent ────────────────────────────────
 
   describe('updateCanvasContent', () => {
-    it('updates the cached canvas content for an intent', () => {
-      const intent = makeIntent();
-      updateCanvasContent(intent.id, 'New canvas content');
+    it('updates the cached canvas content for an space', () => {
+      const space = makeIntent();
+      updateCanvasContent(space.id, 'New canvas content');
 
       const db = getDatabase();
-      const row = db.prepare('SELECT canvas_content FROM intents WHERE id = ?').get(intent.id) as any;
+      const row = db.prepare('SELECT canvas_content FROM spaces WHERE id = ?').get(space.id) as any;
       expect(row.canvas_content).toBe('New canvas content');
     });
   });
@@ -386,9 +386,9 @@ describe('database', () => {
   // ── Canvas Agents ──────────────────────────────────────
 
   describe('Canvas Agents', () => {
-    it('creates and lists canvas agents for an intent', () => {
-      const intent = makeIntent();
-      const agent = makeCanvasAgent(intent.id, { id: 'ca-1', session_id: 'sess-100' });
+    it('creates and lists canvas agents for an space', () => {
+      const space = makeIntent();
+      const agent = makeCanvasAgent(space.id, { id: 'ca-1', session_id: 'sess-100' });
       createCanvasAgent(agent);
 
       expect(appendEvent).toHaveBeenCalledWith(
@@ -397,20 +397,20 @@ describe('database', () => {
         expect.objectContaining({ id: 'ca-1' }),
       );
 
-      const agents = listCanvasAgents(intent.id);
+      const agents = listCanvasAgents(space.id);
       expect(agents).toHaveLength(1);
       expect(agents[0].id).toBe('ca-1');
       expect(agents[0].session_id).toBe('sess-100');
     });
 
     it('updateCanvasAgentStatus updates status', () => {
-      const intent = makeIntent();
-      const agent = makeCanvasAgent(intent.id, { id: 'ca-2' });
+      const space = makeIntent();
+      const agent = makeCanvasAgent(space.id, { id: 'ca-2' });
       createCanvasAgent(agent);
 
       updateCanvasAgentStatus('ca-2', 'completed');
 
-      const agents = listCanvasAgents(intent.id);
+      const agents = listCanvasAgents(space.id);
       expect(agents[0].status).toBe('completed');
       expect(appendEvent).toHaveBeenCalledWith(
         expect.any(String),
@@ -420,20 +420,20 @@ describe('database', () => {
     });
 
     it('updateCanvasAgentStatus updates pid when provided', () => {
-      const intent = makeIntent();
-      const agent = makeCanvasAgent(intent.id, { id: 'ca-3' });
+      const space = makeIntent();
+      const agent = makeCanvasAgent(space.id, { id: 'ca-3' });
       createCanvasAgent(agent);
 
       updateCanvasAgentStatus('ca-3', 'running', 12345);
 
-      const agents = listCanvasAgents(intent.id);
+      const agents = listCanvasAgents(space.id);
       expect(agents[0].pid).toBe(12345);
     });
 
     it('listAllRunningAgents returns only running agents', () => {
-      const intent = makeIntent();
-      const running = makeCanvasAgent(intent.id, { id: 'ca-running', status: 'running' });
-      const completed = makeCanvasAgent(intent.id, { id: 'ca-done', status: 'completed' });
+      const space = makeIntent();
+      const running = makeCanvasAgent(space.id, { id: 'ca-running', status: 'running' });
+      const completed = makeCanvasAgent(space.id, { id: 'ca-done', status: 'completed' });
       createCanvasAgent(running);
       createCanvasAgent(completed);
 
@@ -546,102 +546,102 @@ describe('database', () => {
   // ── mergeSessionIds ────────────────────────────────────
 
   describe('mergeSessionIds', () => {
-    it('injects session IDs into existing intents', () => {
-      const intent1 = makeIntent('Intent 1');
-      const intent2 = makeIntent('Intent 2');
+    it('injects session IDs into existing spaces', () => {
+      const intent1 = makeIntent('Space 1');
+      const intent2 = makeIntent('Space 2');
 
       mergeSessionIds({
         [intent1.id]: 'local-session-1',
         [intent2.id]: 'local-session-2',
       });
 
-      expect(getIntent(intent1.id)!.session_id).toBe('local-session-1');
-      expect(getIntent(intent2.id)!.session_id).toBe('local-session-2');
+      expect(getSpace(intent1.id)!.session_id).toBe('local-session-1');
+      expect(getSpace(intent2.id)!.session_id).toBe('local-session-2');
     });
 
-    it('ignores non-existent intent IDs without error', () => {
+    it('ignores non-existent space IDs without error', () => {
       expect(() => mergeSessionIds({ 'nonexistent': 'some-session' })).not.toThrow();
     });
   });
 
-  // ── logIntentEvent / listIntentEvents ──────────────────
+  // ── logSpaceEvent / listSpaceEvents ──────────────────
 
-  describe('logIntentEvent / listIntentEvents', () => {
+  describe('logSpaceEvent / listSpaceEvents', () => {
     it('logs events and retrieves them with joins', () => {
-      const intent = makeIntent('Event test');
+      const space = makeIntent('Event test');
 
-      logIntentEvent(intent.id, 'due_at.set', {
+      logSpaceEvent(space.id, 'due_at.set', {
         due_at: '2024-12-25',
         due_at_utc: '2024-12-25T00:00:00Z',
       });
 
-      logIntentEvent(intent.id, 'completed', {
+      logSpaceEvent(space.id, 'completed', {
         completed_at: '2024-12-20T10:00:00Z',
       });
 
       expect(appendEvent).toHaveBeenCalledWith(
         expect.any(String),
         'intent_event.log',
-        expect.objectContaining({ intent_id: intent.id, event_type: 'due_at.set' }),
+        expect.objectContaining({ space_id: space.id, event_type: 'due_at.set' }),
       );
 
-      const events = listIntentEvents();
+      const events = listSpaceEvents();
       expect(events).toHaveLength(2);
       const types = events.map(e => e.event_type).sort();
       expect(types).toEqual(['completed', 'due_at.set']);
-      // Join brings in intent data
-      expect(events[0].intent_description).toBe(intent.description);
+      // Join brings in space data
+      expect(events[0].space_description).toBe(space.description);
     });
 
     it('respects the limit parameter', () => {
-      const intent = makeIntent();
-      logIntentEvent(intent.id, 'event-1');
-      logIntentEvent(intent.id, 'event-2');
-      logIntentEvent(intent.id, 'event-3');
+      const space = makeIntent();
+      logSpaceEvent(space.id, 'event-1');
+      logSpaceEvent(space.id, 'event-2');
+      logSpaceEvent(space.id, 'event-3');
 
-      const events = listIntentEvents(2);
+      const events = listSpaceEvents(2);
       expect(events).toHaveLength(2);
     });
 
-    it('cascades delete — events removed when intent is deleted', () => {
-      const intent = makeIntent();
-      logIntentEvent(intent.id, 'some-event');
-      deleteIntent(intent.id);
+    it('cascades delete — events removed when space is deleted', () => {
+      const space = makeIntent();
+      logSpaceEvent(space.id, 'some-event');
+      deleteSpace(space.id);
 
       // ON DELETE CASCADE removes associated intent_events
-      const events = listIntentEvents();
+      const events = listSpaceEvents();
       expect(events).toHaveLength(0);
     });
   });
 
-  // ── setIntentSessionId ─────────────────────────────────
+  // ── setSpaceSessionId ─────────────────────────────────
 
-  describe('setIntentSessionId', () => {
-    it('updates session_id directly on an intent', () => {
-      const intent = makeIntent();
-      expect(intent.session_id).toBeNull();
+  describe('setSpaceSessionId', () => {
+    it('updates session_id directly on an space', () => {
+      const space = makeIntent();
+      expect(space.session_id).toBeNull();
 
-      setIntentSessionId(intent.id, 'direct-session-id');
+      setSpaceSessionId(space.id, 'direct-session-id');
 
-      const fetched = getIntent(intent.id);
+      const fetched = getSpace(space.id);
       expect(fetched!.session_id).toBe('direct-session-id');
     });
 
     it('does not log to event log (per-machine only)', () => {
-      const intent = makeIntent();
+      const space = makeIntent();
       vi.clearAllMocks();
 
-      setIntentSessionId(intent.id, 'sess-xyz');
+      setSpaceSessionId(space.id, 'sess-xyz');
       expect(appendEvent).not.toHaveBeenCalled();
     });
   });
 
-  // ── updateIntent field coverage ────────────────────────
+  // ── updateSpace field coverage ────────────────────────
 
-  describe('updateIntent field coverage', () => {
+  describe('updateSpace field coverage', () => {
     it('updates all supported fields', () => {
-      const intent = makeIntent();
-      const updated = updateIntent(intent.id, {
+      const space = makeIntent();
+      const updated = updateSpace(space.id, {
         description: 'New desc',
         body: 'New body',
         client: 'test-client',
@@ -664,9 +664,9 @@ describe('database', () => {
       expect(updated!.attachments).toHaveLength(1);
     });
 
-    it('returns null when updating non-existent intent', () => {
-      const result = updateIntent('nonexistent', { description: 'nope' });
-      // appendEvent is still called (log-first), but getIntent returns null
+    it('returns null when updating non-existent space', () => {
+      const result = updateSpace('nonexistent', { description: 'nope' });
+      // appendEvent is still called (log-first), but getSpace returns null
       expect(result).toBeNull();
     });
   });
@@ -696,9 +696,9 @@ describe('database', () => {
       expect(isInitialized()).toBe(true);
 
       // DB is functional after reinit
-      const intent = createIntent({ body: 'after reopen' });
-      expect(intent.id).toBeDefined();
-      expect(getIntent(intent.id)).not.toBeNull();
+      const space = createSpace({ body: 'after reopen' });
+      expect(space.id).toBeDefined();
+      expect(getSpace(space.id)).not.toBeNull();
     });
   });
 });

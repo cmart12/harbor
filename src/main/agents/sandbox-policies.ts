@@ -79,8 +79,8 @@ export function createSandboxPreToolHook() {
 /** System prompt prefix shared by all sandboxed sessions. */
 const SANDBOX_PROMPT_PREFIX = `\n\n[SANDBOX MODE] You are running in a sandboxed environment. You may read files and run read-only commands within the allowed scope but must NOT write files outside it, run installs, or execute destructive operations.`;
 
-/** System prompt suffix for sandboxed sessions scoped to an intent folder. */
-export const SANDBOX_SYSTEM_PROMPT = `${SANDBOX_PROMPT_PREFIX} Your scope is this intent's folder. Do not attempt to access sibling intent folders or the parent workspace.`;
+/** System prompt suffix for sandboxed sessions scoped to an space folder. */
+export const SANDBOX_SYSTEM_PROMPT = `${SANDBOX_PROMPT_PREFIX} Your scope is this space's folder. Do not attempt to access sibling space folders or the parent workspace.`;
 
 /** System prompt suffix for sandboxed sessions scoped to the workspace root. */
 export const SANDBOX_WORKSPACE_SYSTEM_PROMPT = `${SANDBOX_PROMPT_PREFIX} Your scope is the workspace root. Do not attempt to access paths outside the workspace.`;
@@ -90,35 +90,35 @@ export const SANDBOX_WORKSPACE_SYSTEM_PROMPT = `${SANDBOX_PROMPT_PREFIX} Your sc
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Resolved scope for a single agent: intent folder + extra paths from policy.
+ * Resolved scope for a single agent: space folder + extra paths from policy.
  * Constructed once at agent launch and reused on every path check.
  */
 export interface ResolvedPathPolicy {
-  scopeToIntentFolder: boolean;
+  scopeToSpaceFolder: boolean;
   intentFolder: string;          // absolute, normalized
-  readwritePaths: string[];      // absolute, normalized (includes intentFolder when scopeToIntentFolder)
+  readwritePaths: string[];      // absolute, normalized (includes intentFolder when scopeToSpaceFolder)
   readonlyPaths: string[];       // absolute, normalized
   deniedPaths: string[];         // absolute, normalized — checked first, wins over allow lists
 }
 
 /**
- * Resolve and normalize the policy paths against an intent folder. Best-effort
+ * Resolve and normalize the policy paths against an space folder. Best-effort
  * `realpath` to canonicalize symlinks/junctions; tolerates ENOENT for paths
  * that don't yet exist. Always returns absolute, OS-normalized paths.
  */
 export function resolvePathPolicy(
   intentFolder: string,
-  policy: Pick<SandboxPolicy, 'scopeToIntentFolder' | 'extraReadwritePaths' | 'extraReadonlyPaths' | 'extraDeniedPaths'>,
+  policy: Pick<SandboxPolicy, 'scopeToSpaceFolder' | 'extraReadwritePaths' | 'extraReadonlyPaths' | 'extraDeniedPaths'>,
 ): ResolvedPathPolicy {
   const norm = (p: string) => normalizePath(p);
-  const intent = norm(intentFolder);
+  const space = norm(intentFolder);
   const rw = policy.extraReadwritePaths.map(norm);
-  if (policy.scopeToIntentFolder && !rw.some(p => samePath(p, intent))) {
-    rw.unshift(intent);
+  if (policy.scopeToSpaceFolder && !rw.some(p => samePath(p, space))) {
+    rw.unshift(space);
   }
   return {
-    scopeToIntentFolder: policy.scopeToIntentFolder,
-    intentFolder: intent,
+    scopeToSpaceFolder: policy.scopeToSpaceFolder,
+    intentFolder: space,
     readwritePaths: rw,
     readonlyPaths: policy.extraReadonlyPaths.map(norm),
     deniedPaths: policy.extraDeniedPaths.map(norm),

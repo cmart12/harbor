@@ -4,7 +4,7 @@
  * Persists completed state to database so it survives app restart.
  *
  * Mirrors the github-tokens SubagentTracker but uses parentAgentId
- * (intent's session key) instead of panelId.
+ * (space's session key) instead of panelId.
  */
 import type {
   SubagentInfo,
@@ -175,10 +175,10 @@ export class SubagentTracker {
     // Don't notify on every delta — too noisy; the overlay polls when open
   }
 
-  trackIntent(parentAgentId: string, agentId: string, intent: string): void {
+  trackIntent(parentAgentId: string, agentId: string, space: string): void {
     const agent = this.ensureParent(parentAgentId).get(agentId);
     if (!agent) return;
-    agent.progress.currentIntent = intent;
+    agent.progress.currentIntent = space;
     this.notifyChange(parentAgentId);
   }
 

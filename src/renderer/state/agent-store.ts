@@ -16,14 +16,14 @@ export interface AgentStep {
 
 export interface AgentPresence {
   agentId: string;
-  intentId: string;
+  spaceId: string;
   persona: { name: string; handle: string; color?: string; imageUrl?: string };
 }
 
 export interface AgentState {
   agents: AgentListAllItem[];
-  processingIntents: Set<string>;
-  activeSessionIntents: Set<string>;
+  processingSpaces: Set<string>;
+  activeSessionSpaces: Set<string>;
   approvals: Map<string, AgentApproval>;
   steps: Map<string, AgentStep[]>;
   presence: Map<string, AgentPresence>;
@@ -34,8 +34,8 @@ type Listener = () => void;
 class AgentStore {
   private state: AgentState = {
     agents: [],
-    processingIntents: new Set(),
-    activeSessionIntents: new Set(),
+    processingSpaces: new Set(),
+    activeSessionSpaces: new Set(),
     approvals: new Map(),
     steps: new Map(),
     presence: new Map(),
@@ -51,26 +51,26 @@ class AgentStore {
     this.notify();
   }
 
-  // -- Processing intents ----------------------------------------------------
+  // -- Processing spaces ----------------------------------------------------
 
-  addProcessingIntent(intentId: string): void {
-    const next = new Set(this.state.processingIntents);
-    next.add(intentId);
-    this.state = { ...this.state, processingIntents: next };
+  addProcessingIntent(spaceId: string): void {
+    const next = new Set(this.state.processingSpaces);
+    next.add(spaceId);
+    this.state = { ...this.state, processingSpaces: next };
     this.notify();
   }
 
-  removeProcessingIntent(intentId: string): void {
-    const next = new Set(this.state.processingIntents);
-    next.delete(intentId);
-    this.state = { ...this.state, processingIntents: next };
+  removeProcessingIntent(spaceId: string): void {
+    const next = new Set(this.state.processingSpaces);
+    next.delete(spaceId);
+    this.state = { ...this.state, processingSpaces: next };
     this.notify();
   }
 
   // -- Active sessions -------------------------------------------------------
 
-  setActiveSessionIntents(intentIds: Set<string>): void {
-    this.state = { ...this.state, activeSessionIntents: new Set(intentIds) };
+  setActiveSessionIntents(spaceIds: Set<string>): void {
+    this.state = { ...this.state, activeSessionSpaces: new Set(spaceIds) };
     this.notify();
   }
 
@@ -133,13 +133,13 @@ class AgentStore {
 
   // -- Derived state helpers --------------------------------------------------
 
-  getAgentsForIntent(intentId: string): AgentListAllItem[] {
-    return this.state.agents.filter(a => a.intentId === intentId);
+  getAgentsForIntent(spaceId: string): AgentListAllItem[] {
+    return this.state.agents.filter(a => a.spaceId === spaceId);
   }
 
-  hasActiveAgent(intentId: string): boolean {
+  hasActiveAgent(spaceId: string): boolean {
     return this.state.agents.some(
-      a => a.intentId === intentId && (a.status === 'running' || a.status === 'waiting-approval'),
+      a => a.spaceId === spaceId && (a.status === 'running' || a.status === 'waiting-approval'),
     );
   }
 

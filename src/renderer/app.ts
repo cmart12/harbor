@@ -3,7 +3,7 @@
  * See src/renderer/MIGRATION.md for the migration plan.
  * New features should use:
  *   - src/renderer/ipc-client.ts (typed IPC)
- *   - src/renderer/state/ (intent-store, agent-store)
+ *   - src/renderer/state/ (space-store, agent-store)
  *   - src/renderer/views/ (React components)
  */
 
@@ -15,14 +15,14 @@ interface RecurrenceResult {
 }
 
 interface RecallMatch {
-  intent_id: string;
+  space_id: string;
   description: string;
   completed_at: string | null;
   confidence: number;
 }
 
 interface SandboxPolicy {
-  scopeToIntentFolder: boolean;
+  scopeToSpaceFolder: boolean;
   extraReadwritePaths: string[];
   extraReadonlyPaths: string[];
   extraDeniedPaths: string[];
@@ -34,7 +34,7 @@ interface SandboxPolicy {
 }
 
 const DEFAULT_SANDBOX_POLICY: SandboxPolicy = {
-  scopeToIntentFolder: true,
+  scopeToSpaceFolder: true,
   extraReadwritePaths: [],
   extraReadonlyPaths: [],
   extraDeniedPaths: [],
@@ -94,10 +94,10 @@ interface FolderCommit {
   filesChanged: string[];
 }
 
-interface IntentAPI {
-  create(input: { body: string }): Promise<Intent>;
-  list(): Promise<Intent[]>;
-  update(id: string, updates: Record<string, unknown>): Promise<Intent>;
+interface WhimAPI {
+  create(input: { body: string }): Promise<Space>;
+  list(): Promise<Space[]>;
+  update(id: string, updates: Record<string, unknown>): Promise<Space>;
   delete(id: string): Promise<boolean>;
   dismissRecurrence(id: string): Promise<boolean>;
   transcribe(audioData: number[]): Promise<string>;
@@ -122,36 +122,36 @@ interface IntentAPI {
   resolveSandboxBlock(agentId: string, requestId: string, decision: 'allow-once' | 'allow-for-session' | 'disable'): Promise<{ ok?: boolean; error?: string }>;
   listEvents(limit?: number): Promise<any[]>;
   resolveDate(dateText: string): Promise<{ due_at: string; due_at_utc: string | null }>;
-  classifyInput(text: string): Promise<{ type: 'intent' | 'query'; query_answer?: string }>;
-  launchSession(intentId: string): Promise<{ success: boolean; error?: string; sessionId?: string }>;
+  classifyInput(text: string): Promise<{ type: 'space' | 'query'; query_answer?: string }>;
+  launchSession(spaceId: string): Promise<{ success: boolean; error?: string; sessionId?: string }>;
   getActiveSessions(): Promise<string[]>;
   selectWorkspace(): Promise<{ selected: boolean; path: string | null }>;
   clearWorkspace(): Promise<{ ok: boolean }>;
   onWorkspaceChanged(callback: (path: string | null) => void): void;
-  readCanvas(intentId: string): Promise<{ content: string; error?: string }>;
-  writeCanvas(intentId: string, content: string): Promise<{ success?: boolean; error?: string }>;
-  closeCanvas(intentId: string, content: string): Promise<void>;
-  canvasHistory(intentId: string): Promise<{ commits: FolderCommit[]; error?: string }>;
-  canvasRestore(intentId: string, sha: string): Promise<{ success: boolean; error?: string }>;
-  canvasPreviewVersion(intentId: string, sha: string): Promise<{ content: string; error?: string }>;
-  searchIntents(query: string): Promise<Intent[]>;
-  unarchive(id: string): Promise<Intent | null>;
+  readCanvas(spaceId: string): Promise<{ content: string; error?: string }>;
+  writeCanvas(spaceId: string, content: string): Promise<{ success?: boolean; error?: string }>;
+  closeCanvas(spaceId: string, content: string): Promise<void>;
+  canvasHistory(spaceId: string): Promise<{ commits: FolderCommit[]; error?: string }>;
+  canvasRestore(spaceId: string, sha: string): Promise<{ success: boolean; error?: string }>;
+  canvasPreviewVersion(spaceId: string, sha: string): Promise<{ content: string; error?: string }>;
+  searchSpaces(query: string): Promise<Space[]>;
+  unarchive(id: string): Promise<Space | null>;
   summarizeTitle(canvasContent: string): Promise<{ title: string | null }>;
-  pasteFile(intentId: string, filename: string, dataArray: number[]): Promise<{ success?: boolean; relativePath?: string; filename?: string; error?: string }>;
-  openIntentFolder(intentId: string): Promise<void>;
-  listAgents(intentId: string): Promise<any[]>;
+  pasteFile(spaceId: string, filename: string, dataArray: number[]): Promise<{ success?: boolean; relativePath?: string; filename?: string; error?: string }>;
+  openSpaceFolder(spaceId: string): Promise<void>;
+  listAgents(spaceId: string): Promise<any[]>;
   quickLaunchAgent(prompt: string, personaHandle?: string): Promise<{ agentId?: string; sessionId?: string; error?: string }>;
   listAllAgents(): Promise<any[]>;
   deleteAgentSession(agentId: string): Promise<{ ok?: boolean; error?: string }>;
   setAgentYolo(agentId: string, enabled: boolean): Promise<{ ok?: boolean; error?: string }>;
-  launchCloudAgent(intentId: string, prompt: string): Promise<{ agentId?: string; sessionId?: string; jobId?: string; error?: string }>;
+  launchCloudAgent(spaceId: string, prompt: string): Promise<{ agentId?: string; sessionId?: string; jobId?: string; error?: string }>;
   getCloudJobStatus(agentId: string): Promise<any>;
   launchCliSession(): Promise<{ agentId?: string; sessionId?: string; error?: string }>;
   getAgentHistory(agentId: string): Promise<{ events?: any[]; error?: string }>;
   openAgentCli(agentId: string): Promise<{ error?: string }>;
   onChatEvent(agentId: string, callback: (event: any) => void): () => void;
-  launchAgent(intentId: string, selectedText: string, anchor: any, options?: { repo?: string; model?: string }): Promise<any>;
-  launchCommentAgent(intentId: string, commentBody: string, quotedText: string, anchor: any, personaHandle: string, threadIndex: number): Promise<{ agentId?: string; sessionId?: string; error?: string }>;
+  launchAgent(spaceId: string, selectedText: string, anchor: any, options?: { repo?: string; model?: string }): Promise<any>;
+  launchCommentAgent(spaceId: string, commentBody: string, quotedText: string, anchor: any, personaHandle: string, threadIndex: number): Promise<{ agentId?: string; sessionId?: string; error?: string }>;
   approveAgent(agentId: string, requestId: string, approved: boolean): Promise<void>;
   abortAgent(agentId: string): Promise<void>;
   hideWindow(): void;
@@ -166,17 +166,17 @@ interface IntentAPI {
   onCanvasWindowClosed(callback: () => void): void;
   notifyCanvasThemeChanged(theme: string): void;
   onCanvasThemeChanged(callback: (theme: string) => void): void;
-  openAgentChatInPanel(data: { agentId: string; agentPrompt: string; agentStatus: string; agentSource?: 'sdk' | 'cli'; intentId?: string }): void;
-  onOpenAgentChatInPanel(callback: (data: { agentId: string; agentPrompt: string; agentStatus: string; agentSource?: 'sdk' | 'cli'; intentId?: string }) => void): void;
+  openAgentChatInPanel(data: { agentId: string; agentPrompt: string; agentStatus: string; agentSource?: 'sdk' | 'cli'; spaceId?: string }): void;
+  onOpenAgentChatInPanel(callback: (data: { agentId: string; agentPrompt: string; agentStatus: string; agentSource?: 'sdk' | 'cli'; spaceId?: string }) => void): void;
   openSettingsWindow(): void;
   onWindowShown(callback: (data: { side: 'left' | 'right'; expanded: boolean }) => void): void;
   onWindowToggle(callback: () => void): void;
   onRequestHide(callback: () => void): void;
   onWorkspaceCommitted(callback: () => void): void;
-  onIntentProcessed(callback: (id: string) => void): void;
-  onRecurrenceResult(callback: (intentId: string, result: RecurrenceResult) => void): void;
-  onRecurrenceApplied(callback: (intentId: string) => void): void;
-  onRecallHint(callback: (intentId: string, match: RecallMatch) => void): void;
+  onSpaceProcessed(callback: (id: string) => void): void;
+  onRecurrenceResult(callback: (spaceId: string, result: RecurrenceResult) => void): void;
+  onRecurrenceApplied(callback: (spaceId: string) => void): void;
+  onRecallHint(callback: (spaceId: string, match: RecallMatch) => void): void;
   onAgentStatusChanged(callback: (data: any) => void): void;
   onAgentApprovalNeeded(callback: (data: any) => void): void;
   onAgentSandboxBlocked(callback: (data: {
@@ -193,10 +193,10 @@ interface IntentAPI {
   onAgentCompleted(callback: (data: any) => void): void;
   onAgentYoloChanged(callback: (data: { agentId: string; enabled: boolean }) => void): void;
   onNotificationApprovalClicked(callback: (data: { agentId: string }) => void): void;
-  onAgentPresenceStarted(callback: (data: { agentId: string; intentId: string; persona: { name: string; handle: string; color?: string; imageUrl?: string }; anchor: { prefix?: string; suffix?: string } }) => void): void;
-  onAgentPresenceEnded(callback: (data: { agentId: string; intentId: string }) => void): void;
-  onAgentReplyReady(callback: (data: { agentId: string; intentId: string; threadIndex: number; body: string }) => void): void;
-  onCanvasContentUpdated(callback: (data: { intentId: string; content: string }) => void): () => void;
+  onAgentPresenceStarted(callback: (data: { agentId: string; spaceId: string; persona: { name: string; handle: string; color?: string; imageUrl?: string }; anchor: { prefix?: string; suffix?: string } }) => void): void;
+  onAgentPresenceEnded(callback: (data: { agentId: string; spaceId: string }) => void): void;
+  onAgentReplyReady(callback: (data: { agentId: string; spaceId: string; threadIndex: number; body: string }) => void): void;
+  onCanvasContentUpdated(callback: (data: { spaceId: string; content: string }) => void): () => void;
   openPath(folderPath: string): Promise<void>;
   // ── Skills ──────────────────────────────────────────────
   listSkills(): Promise<any[]>;
@@ -206,7 +206,7 @@ interface IntentAPI {
   createSkillFromPrompt(description: string): Promise<{ agentId?: string; sessionId?: string; error?: string }>;
   deleteSkill(skillId: string): Promise<boolean>;
   openSkillFolder(skillId: string): Promise<void>;
-  createIntentFromSkill(skillId: string): Promise<any>;
+  createSpaceFromSkill(skillId: string): Promise<any>;
   launchSkill(skillId: string): Promise<any>;
   onSkillsChanged(callback: () => void): void;
   // ── Platform ─────────────────────────────────────────────
@@ -221,7 +221,7 @@ interface Attachment {
   mimeType?: string;
 }
 
-interface Intent {
+interface Space {
   id: string;
   description: string;
   body: string | null;
@@ -239,7 +239,7 @@ interface Intent {
   updated_at: string;
 }
 
-declare const intentAPI: IntentAPI;
+declare const whimAPI: WhimAPI;
 
 // ── Canvas window mode detection ────────────────────────
 const isCanvasMode = new URLSearchParams(window.location.search).get('mode') === 'canvas';
@@ -247,8 +247,8 @@ const isSettingsMode = new URLSearchParams(window.location.search).get('mode') =
 
 const descInput = document.getElementById('description-input') as HTMLTextAreaElement;
 const form = document.getElementById('capture-form') as HTMLFormElement;
-const listEl = document.getElementById('intent-list') as HTMLDivElement;
-const countEl = document.getElementById('intent-count') as HTMLSpanElement;
+const listEl = document.getElementById('space-list') as HTMLDivElement;
+const countEl = document.getElementById('space-count') as HTMLSpanElement;
 const statusBar = document.getElementById('status-bar') as HTMLDivElement;
 const settingsBtn = document.getElementById('settings-btn') as HTMLButtonElement;
 const settingsOverlay = document.getElementById('settings-overlay') as HTMLDivElement;
@@ -283,13 +283,13 @@ const welcomeModelCheck = document.getElementById('welcome-model-check') as HTML
 const welcomeStepModel = document.getElementById('welcome-step-model') as HTMLDivElement;
 const welcomeStartBtn = document.getElementById('welcome-start-btn') as HTMLButtonElement;
 
-let intents: Intent[] = [];
-// Track intents being processed by LLM
-const processingIntents = new Set<string>();
-// Track intents with active running terminal sessions
-let activeSessionIntents = new Set<string>();
-// Track agents per intent for Spaces view
-let agentsByIntent = new Map<string, Array<{ agentId: string; status: string; summary: string; selectedText: string; source?: string }>>();
+let spaces: Space[] = [];
+// Track spaces being processed by LLM
+const processingSpaces = new Set<string>();
+// Track spaces with active running terminal sessions
+let activeSessionSpaces = new Set<string>();
+// Track agents per space for Spaces view
+let agentsBySpace = new Map<string, Array<{ agentId: string; status: string; summary: string; selectedText: string; source?: string }>>();
 // Current filter
 let currentFilter: 'open' | 'agents' | 'skills' | 'closed' = 'open';
 const filterOrder: Array<'open' | 'agents' | 'skills' | 'closed'> = ['open', 'agents', 'skills', 'closed'];
@@ -304,10 +304,10 @@ const focusDesc = document.getElementById('focus-desc') as HTMLDivElement;
 const focusMeta = document.getElementById('focus-meta') as HTMLDivElement;
 const focusDone = document.getElementById('focus-done') as HTMLButtonElement;
 const focusClear = document.getElementById('focus-clear') as HTMLButtonElement;
-let focusedIntentId: string | null = null;
+let focusedSpaceId: string | null = null;
 let selectedIndex = -1;
-let displayedIntents: Intent[] = [];
-let searchResults: Intent[] | null = null;
+let displayedSpaces: Space[] = [];
+let searchResults: Space[] | null = null;
 let searchTimeout: ReturnType<typeof setTimeout> | null = null;
 let searchMode = false;
 let activeSearchQuery = '';
@@ -367,7 +367,7 @@ function slideIn(side: 'left' | 'right'): void {
 function slideOut(callback?: () => void): void {
   // If already hidden or the window is in canvas/expanded mode, hide immediately
   if (windowVisualState === 'hidden') {
-    intentAPI.hideWindow();
+    whimAPI.hideWindow();
     callback?.();
     return;
   }
@@ -382,7 +382,7 @@ function slideOut(callback?: () => void): void {
   const finish = (): void => {
     if (slideTransitionId !== myId) return;
     windowVisualState = 'hidden';
-    intentAPI.hideWindow();
+    whimAPI.hideWindow();
     callback?.();
   };
 
@@ -436,7 +436,7 @@ function getSearchPlaceholderForFilter(filter: typeof currentFilter): string {
   switch (filter) {
     case 'agents': return '🔍 Search agents...';
     case 'skills': return '🔍 Search skills...';
-    default: return '🔍 Search intents...';
+    default: return '🔍 Search spaces...';
   }
 }
 
@@ -452,7 +452,7 @@ function setFilter(filter: typeof currentFilter): void {
   const btn = filterBar.querySelector(`[data-filter="${filter}"]`) as HTMLElement;
   if (btn) btn.classList.add('active');
 
-  // Show capture form on Spaces, Workers, and Skills; hide on Past
+  // Show capture form on Spaces, Workers, and Skills; hide on History
   if (filter === 'closed') {
     form.style.display = 'none';
   } else {
@@ -548,7 +548,7 @@ newAgentBtn.addEventListener('keydown', (e) => {
 
 // ── Launch CLI button ───────────────────────────────────
 launchCliBtn.addEventListener('click', async () => {
-  const result = await intentAPI.launchCliSession();
+  const result = await whimAPI.launchCliSession();
   if (result && 'error' in result) {
     console.error('[app] CLI launch failed:', result.error);
   } else {
@@ -562,7 +562,7 @@ let settingsModalOpen = false;
 
 function showSettings(): void {
   // Open settings in a separate window
-  intentAPI.openSettingsWindow();
+  whimAPI.openSettingsWindow();
 }
 
 function hideSettings(): void {
@@ -580,18 +580,18 @@ settingsBackdrop.addEventListener('click', hideSettings);
 pinBtn.addEventListener('click', async () => {
   const current = pinBtn.classList.contains('active');
   const next = !current;
-  intentAPI.setPinned(next);
+  whimAPI.setPinned(next);
   pinBtn.classList.toggle('active', next);
   pinBtn.title = next ? 'Unpin window' : 'Pin window (keep visible)';
 });
 
-intentAPI.onPinnedChanged((pinned: boolean) => {
+whimAPI.onPinnedChanged((pinned: boolean) => {
   pinBtn.classList.toggle('active', pinned);
   pinBtn.title = pinned ? 'Unpin window' : 'Pin window (keep visible)';
 });
 
 async function loadPinState(): Promise<void> {
-  const pinned = await intentAPI.getPinned();
+  const pinned = await whimAPI.getPinned();
   pinBtn.classList.toggle('active', pinned);
   pinBtn.title = pinned ? 'Unpin window' : 'Pin window (keep visible)';
 }
@@ -599,16 +599,16 @@ async function loadPinState(): Promise<void> {
 modelSelect.addEventListener('change', async () => {
   const model = modelSelect.value;
   if (model) {
-    await intentAPI.setSetting('model', model);
+    await whimAPI.setSetting('model', model);
     showStatus(`✓ Model set to ${model}`);
     setTimeout(hideStatus, 2000);
   }
 });
 
 async function loadModels(): Promise<void> {
-  const currentModel = await intentAPI.getSetting('model');
+  const currentModel = await whimAPI.getSetting('model');
   try {
-    const models = await intentAPI.listModels();
+    const models = await whimAPI.listModels();
     modelSelect.innerHTML = '';
 
     if (models.length === 0) {
@@ -635,7 +635,7 @@ async function loadModels(): Promise<void> {
 
 async function loadSettings(): Promise<void> {
   // Apply saved theme on startup
-  const theme = await intentAPI.getSetting('theme');
+  const theme = await whimAPI.getSetting('theme');
   applyTheme(theme || 'light');
 }
 
@@ -647,24 +647,24 @@ function applyTheme(theme: string): void {
 }
 
 async function loadThemeSetting(): Promise<void> {
-  const theme = await intentAPI.getSetting('theme');
+  const theme = await whimAPI.getSetting('theme');
   applyTheme(theme || 'light');
 }
 
 themeLightBtn.addEventListener('click', async () => {
-  await intentAPI.setSetting('theme', 'light');
+  await whimAPI.setSetting('theme', 'light');
   applyTheme('light');
-  intentAPI.notifyCanvasThemeChanged('light');
+  whimAPI.notifyCanvasThemeChanged('light');
 });
 
 themeDarkBtn.addEventListener('click', async () => {
-  await intentAPI.setSetting('theme', 'dark');
+  await whimAPI.setSetting('theme', 'dark');
   applyTheme('dark');
-  intentAPI.notifyCanvasThemeChanged('dark');
+  whimAPI.notifyCanvasThemeChanged('dark');
 });
 
 async function loadWorkspaceSetting(): Promise<void> {
-  const ws = await intentAPI.getSetting('workspace_root');
+  const ws = await whimAPI.getSetting('workspace_root');
   updateWorkspaceDisplay(ws);
 }
 
@@ -691,13 +691,13 @@ function ensureDefaultAgent(): void {
       runLocation: 'local',
     });
     // Persist immediately so backend knows about it
-    intentAPI.savePersonas(personas);
+    whimAPI.savePersonas(personas);
   }
 }
 
 async function loadPersonas(): Promise<void> {
-  personas = await intentAPI.listPersonas() || [];
-  try { personaModels = await intentAPI.listModels(); } catch { personaModels = []; }
+  personas = await whimAPI.listPersonas() || [];
+  try { personaModels = await whimAPI.listModels(); } catch { personaModels = []; }
   ensureDefaultAgent();
   renderAgentsSidebar();
   // Auto-select @agent if nothing selected
@@ -899,7 +899,7 @@ function renderAgentEditor(persona: AgentPersona): void {
   locationRow.appendChild(locationSelect);
 
   // Sandbox checkbox (visible on all platforms, functional on Windows only)
-  const isWindows = intentAPI.getPlatform() === 'win32';
+  const isWindows = whimAPI.getPlatform() === 'win32';
   const sandboxRow = document.createElement('div');
   sandboxRow.className = 'persona-form-row persona-sandbox-row';
   if (persona.runLocation === 'cloud') {
@@ -972,7 +972,7 @@ function renderAgentEditor(persona: AgentPersona): void {
     if (isDefault) {
       // @agent reads/writes the global default sandbox policy
       try {
-        initial = await intentAPI.getSandboxDefaultPolicy() ?? DEFAULT_SANDBOX_POLICY;
+        initial = await whimAPI.getSandboxDefaultPolicy() ?? DEFAULT_SANDBOX_POLICY;
       } catch {
         initial = DEFAULT_SANDBOX_POLICY;
       }
@@ -980,7 +980,7 @@ function renderAgentEditor(persona: AgentPersona): void {
       initial = persona.sandboxPolicyOverride;
     } else {
       try {
-        initial = await intentAPI.getSandboxDefaultPolicy() ?? DEFAULT_SANDBOX_POLICY;
+        initial = await whimAPI.getSandboxDefaultPolicy() ?? DEFAULT_SANDBOX_POLICY;
       } catch {
         initial = DEFAULT_SANDBOX_POLICY;
       }
@@ -1020,7 +1020,7 @@ function renderAgentEditor(persona: AgentPersona): void {
   defaultRtOpt.value = '';
   defaultRtOpt.textContent = 'Default';
   runtimeSelect.appendChild(defaultRtOpt);
-  intentAPI.listRuntimes().then(runtimes => {
+  whimAPI.listRuntimes().then(runtimes => {
     for (const rt of runtimes) {
       const opt = document.createElement('option');
       opt.value = rt.id;
@@ -1056,7 +1056,7 @@ function renderAgentEditor(persona: AgentPersona): void {
     let sandboxOverride: SandboxPolicy | undefined;
     if (isDefault && sandboxed && personaPolicyApi) {
       const policy = personaPolicyApi.getPolicy();
-      await intentAPI.saveSandboxDefaultPolicy(policy);
+      await whimAPI.saveSandboxDefaultPolicy(policy);
       sandboxOverride = undefined; // @agent uses the global default
     } else if (sandboxed && !inheritCheck.checked && personaPolicyApi) {
       sandboxOverride = personaPolicyApi.getPolicy();
@@ -1096,7 +1096,7 @@ function renderAgentEditor(persona: AgentPersona): void {
       : p
     );
 
-    await intentAPI.savePersonas(personas);
+    await whimAPI.savePersonas(personas);
     renderAgentsSidebar();
     // Show brief save confirmation
     errorEl.textContent = 'Saved.';
@@ -1115,7 +1115,7 @@ function renderAgentEditor(persona: AgentPersona): void {
   deleteBtn.addEventListener('click', async () => {
     if (isDefault) return;
     personas = personas.filter(p => p.id !== persona.id);
-    await intentAPI.savePersonas(personas);
+    await whimAPI.savePersonas(personas);
     selectedAgentId = null;
     renderAgentsSidebar();
     // Select @agent after deletion
@@ -1154,7 +1154,7 @@ function renderAgentEditor(persona: AgentPersona): void {
       return;
     }
     const policy = personaPolicyApi.getPolicy();
-    const result = await intentAPI.openSandboxConfigPreview(policy);
+    const result = await whimAPI.openSandboxConfigPreview(policy);
     if (result?.ok) {
       errorEl.textContent = `Opened ${result.path}`;
       errorEl.style.color = '#2d8a3a';
@@ -1207,7 +1207,7 @@ const runtimeAddBtn = document.getElementById('runtime-add-btn') as HTMLButtonEl
 let cliRuntimes: CliRuntime[] = [];
 
 async function loadRuntimes(): Promise<void> {
-  cliRuntimes = await intentAPI.listRuntimes() || [];
+  cliRuntimes = await whimAPI.listRuntimes() || [];
   renderRuntimes();
 }
 
@@ -1253,7 +1253,7 @@ function createRuntimeCard(rt: CliRuntime): HTMLElement {
   delBtn.title = 'Delete';
   delBtn.addEventListener('click', async () => {
     cliRuntimes = cliRuntimes.filter(r => r.id !== rt.id);
-    await intentAPI.saveRuntimes(cliRuntimes);
+    await whimAPI.saveRuntimes(cliRuntimes);
     renderRuntimes();
   });
 
@@ -1321,7 +1321,7 @@ function showRuntimeForm(existing?: CliRuntime): void {
       cliRuntimes.push({ id: crypto.randomUUID(), label, path: rPath });
     }
 
-    const result = await intentAPI.saveRuntimes(cliRuntimes);
+    const result = await whimAPI.saveRuntimes(cliRuntimes);
     // Update local state with resolved paths from the backend
     if (result && result.runtimes) {
       cliRuntimes = result.runtimes;
@@ -1358,7 +1358,7 @@ let customMcpServers: CustomMcpServer[] = [];
 async function loadMcpServers(): Promise<void> {
   // Load discovered MCPs
   try {
-    const discovered: DiscoveredMcpServer[] = await intentAPI.listDiscoveredMcp();
+    const discovered: DiscoveredMcpServer[] = await whimAPI.listDiscoveredMcp();
     mcpDiscoveredList.innerHTML = '';
     for (const s of discovered) {
       mcpDiscoveredList.appendChild(createMcpCard(s, true));
@@ -1367,7 +1367,7 @@ async function loadMcpServers(): Promise<void> {
 
   // Load custom MCPs
   try {
-    customMcpServers = await intentAPI.listCustomMcp() || [];
+    customMcpServers = await whimAPI.listCustomMcp() || [];
     renderCustomMcpServers();
   } catch { customMcpServers = []; }
 }
@@ -1416,7 +1416,7 @@ function createMcpCard(server: DiscoveredMcpServer | CustomMcpServer, isDiscover
     delBtn.title = 'Remove';
     delBtn.addEventListener('click', async () => {
       customMcpServers = customMcpServers.filter(s => s.name !== (server as CustomMcpServer).name);
-      await intentAPI.saveCustomMcp(customMcpServers);
+      await whimAPI.saveCustomMcp(customMcpServers);
       renderCustomMcpServers();
     });
     card.appendChild(delBtn);
@@ -1527,7 +1527,7 @@ function showMcpForm(): void {
     };
 
     customMcpServers.push(entry);
-    await intentAPI.saveCustomMcp(customMcpServers);
+    await whimAPI.saveCustomMcp(customMcpServers);
     renderCustomMcpServers();
   });
 
@@ -1559,7 +1559,7 @@ let cliTools: CliToolDefinition[] = [];
 
 async function loadCliTools(): Promise<void> {
   try {
-    cliTools = await intentAPI.listCliTools() || [];
+    cliTools = await whimAPI.listCliTools() || [];
     renderCliTools();
   } catch { cliTools = []; }
 }
@@ -1604,7 +1604,7 @@ function createCliToolCard(tool: CliToolDefinition): HTMLElement {
   delBtn.title = 'Remove';
   delBtn.addEventListener('click', async () => {
     cliTools = cliTools.filter(t => t.name !== tool.name);
-    await intentAPI.saveCliTools(cliTools);
+    await whimAPI.saveCliTools(cliTools);
     renderCliTools();
   });
 
@@ -1676,7 +1676,7 @@ function showCliToolForm(existing?: CliToolDefinition): void {
       cliTools.push({ name, description });
     }
 
-    await intentAPI.saveCliTools(cliTools);
+    await whimAPI.saveCliTools(cliTools);
     renderCliTools();
   });
 
@@ -1821,7 +1821,7 @@ async function startRecording(): Promise<void> {
       try {
         const blob = new Blob(audioChunks, { type: 'audio/webm' });
         const float32 = await blobToFloat32(blob);
-        const text = await intentAPI.transcribe(Array.from(float32));
+        const text = await whimAPI.transcribe(Array.from(float32));
 
         if (text) {
           descInput.value = text;
@@ -2024,7 +2024,7 @@ async function maybeRefreshPersonas(): Promise<void> {
   mentionPersonasReloadAt = now;
   mentionPersonasReloadInflight = true;
   try {
-    const fresh = await intentAPI.listPersonas() || [];
+    const fresh = await whimAPI.listPersonas() || [];
     const changed = fresh.length !== personas.length
       || fresh.some((p, i) => p.handle !== personas[i]?.handle);
     if (changed) {
@@ -2141,7 +2141,7 @@ descInput.addEventListener('input', () => {
     } else if (currentFilter === 'skills') {
       renderSkillsList(query);
     } else {
-      searchResults = await intentAPI.searchIntents(query);
+      searchResults = await whimAPI.searchSpaces(query);
       selectedIndex = -1;
       render();
     }
@@ -2222,7 +2222,7 @@ descInput.addEventListener('keydown', (e) => {
 descInput.addEventListener('keydown', (e) => {
   // Shift+Tab: toggle search mode on Spaces, Workers, and Skills tabs
   if (e.key === 'Tab' && e.shiftKey) {
-    if (currentFilter === 'closed') return; // no search on Past tab
+    if (currentFilter === 'closed') return; // no search on History tab
     e.preventDefault();
     if (searchMode) exitSearchMode();
     else enterSearchMode();
@@ -2254,7 +2254,7 @@ descInput.addEventListener('keydown', (e) => {
         (items[0] as HTMLElement).focus();
         descInput.blur();
       }
-    } else if (displayedIntents.length > 0) {
+    } else if (displayedSpaces.length > 0) {
       selectedIndex = 0;
       updateSelection();
       descInput.blur();
@@ -2266,13 +2266,13 @@ descInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey && searchMode) {
     e.preventDefault();
     if (currentFilter === 'agents' && renderedAgents.length > 0) {
-      openAgentChat(renderedAgents[0].agentId, renderedAgents[0].selectedText, renderedAgents[0].status, (renderedAgents[0] as any).source, renderedAgents[0].intentId);
+      openAgentChat(renderedAgents[0].agentId, renderedAgents[0].selectedText, renderedAgents[0].status, (renderedAgents[0] as any).source, renderedAgents[0].spaceId);
     } else if (currentFilter === 'skills' && cachedSkills.length > 0) {
       const q = activeSearchQuery.toLowerCase();
       const match = q ? cachedSkills.find(s => s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q)) : cachedSkills[0];
       if (match) openSkillEditor(match.id);
-    } else if (displayedIntents.length > 0) {
-      openCanvas(displayedIntents[0].id);
+    } else if (displayedSpaces.length > 0) {
+      openCanvas(displayedSpaces[0].id);
     }
     return;
   }
@@ -2357,24 +2357,24 @@ function escapeHtmlChar(ch: string): string {
   return ch;
 }
 
-async function animateRefinement(intentId: string): Promise<void> {
-  const oldIntent = intents.find(i => i.id === intentId);
+async function animateRefinement(spaceId: string): Promise<void> {
+  const oldIntent = spaces.find(i => i.id === spaceId);
   const oldText = oldIntent?.description || '';
 
-  const updatedIntents = await intentAPI.list();
-  const newIntent = updatedIntents.find(i => i.id === intentId);
+  const updatedSpaces = await whimAPI.list();
+  const newSpace = updatedSpaces.find(i => i.id === spaceId);
 
-  if (!newIntent || oldText === newIntent.description) {
-    intents = updatedIntents;
+  if (!newSpace || oldText === newSpace.description) {
+    spaces = updatedSpaces;
     render();
     return;
   }
 
-  const itemEl = listEl.querySelector(`[data-id="${intentId}"]`);
-  const descEl = itemEl?.querySelector('.intent-desc') as HTMLElement | null;
+  const itemEl = listEl.querySelector(`[data-id="${spaceId}"]`);
+  const descEl = itemEl?.querySelector('.whim-desc') as HTMLElement | null;
 
   if (!descEl) {
-    intents = updatedIntents;
+    spaces = updatedSpaces;
     render();
     return;
   }
@@ -2383,38 +2383,38 @@ async function animateRefinement(intentId: string): Promise<void> {
   const badge = itemEl?.querySelector('.processing-badge');
   if (badge) badge.remove();
 
-  await animateTextReplace(descEl, oldText, newIntent.description);
+  await animateTextReplace(descEl, oldText, newSpace.description);
 
   // Fade in new meta
-  const metaEl = itemEl?.querySelector('.intent-meta') as HTMLElement | null;
+  const metaEl = itemEl?.querySelector('.whim-meta') as HTMLElement | null;
   if (metaEl) {
-    const dueInfo = formatDueDate(newIntent.due_at_utc, newIntent.due_at);
+    const dueInfo = formatDueDate(newSpace.due_at_utc, newSpace.due_at);
     const hasDue = dueInfo.text !== '';
-    const isRecurring = !!newIntent.recurrence;
+    const isRecurring = !!newSpace.recurrence;
     let metaHtml = '';
-    if (newIntent.client) metaHtml += `<span class="meta-fade-in">👤 ${escapeHtml(newIntent.client)}</span>`;
+    if (newSpace.client) metaHtml += `<span class="meta-fade-in">👤 ${escapeHtml(newSpace.client)}</span>`;
     if (hasDue) metaHtml += `<span class="meta-fade-in due-badge ${dueInfo.overdue ? 'overdue' : ''}">📅 ${escapeHtml(dueInfo.text)}</span>`;
     if (isRecurring) metaHtml += `<span class="meta-fade-in recurring-badge">↻</span>`;
-    metaHtml += `<span>${timeAgo(newIntent.updated_at)}</span>`;
+    metaHtml += `<span>${timeAgo(newSpace.updated_at)}</span>`;
     metaEl.innerHTML = metaHtml;
   }
 
-  intents = updatedIntents;
+  spaces = updatedSpaces;
 }
 
-// ── Intent CRUD ─────────────────────────────────────────
-async function loadIntents(): Promise<void> {
-  intents = await intentAPI.list();
-  activeSessionIntents = new Set(await intentAPI.getActiveSessions());
+// ── Space CRUD ─────────────────────────────────────────
+async function loadSpaces(): Promise<void> {
+  spaces = await whimAPI.list();
+  activeSessionSpaces = new Set(await whimAPI.getActiveSessions());
 
-  // Build agents-per-intent map for Spaces view
+  // Build agents-per-space map for Spaces view
   try {
-    const allAgents = await intentAPI.listAllAgents();
+    const allAgents = await whimAPI.listAllAgents();
     const map = new Map<string, Array<{ agentId: string; status: string; summary: string; selectedText: string; source?: string }>>();
     for (const agent of allAgents) {
-      if (!agent.intentId || agent.intentId === '__workspace__') continue;
-      if (!map.has(agent.intentId)) map.set(agent.intentId, []);
-      map.get(agent.intentId)!.push({
+      if (!agent.spaceId || agent.spaceId === '__workspace__') continue;
+      if (!map.has(agent.spaceId)) map.set(agent.spaceId, []);
+      map.get(agent.spaceId)!.push({
         agentId: agent.agentId,
         status: agent.status,
         summary: agent.summary,
@@ -2422,7 +2422,7 @@ async function loadIntents(): Promise<void> {
         source: agent.source,
       });
     }
-    agentsByIntent = map;
+    agentsBySpace = map;
   } catch { /* skip */ }
 
   updateFocusBanner();
@@ -2430,7 +2430,7 @@ async function loadIntents(): Promise<void> {
 }
 
 function render(): void {
-  let displayList: Intent[];
+  let displayList: Space[];
 
   if (searchResults !== null) {
     // Search mode on Spaces — show search results directly
@@ -2444,19 +2444,19 @@ function render(): void {
     renderSkillsList(searchMode ? activeSearchQuery || undefined : undefined);
     return;
   } else if (currentFilter === 'closed') {
-    // Past mode — render card-based combined view
-    renderPastView();
+    // History mode — render card-based combined view
+    renderHistoryView();
     return;
   } else {
     // Normal mode — open spaces
-    displayList = intents.filter(i => i.status !== 'done');
+    displayList = spaces.filter(i => i.status !== 'done');
   }
-  displayedIntents = displayList;
+  displayedSpaces = displayList;
 
-  countEl.textContent = String(intents.filter(i => i.status !== 'done').length);
+  countEl.textContent = String(spaces.filter(i => i.status !== 'done').length);
 
   if (displayList.length === 0) {
-    const emptyMsg = searchResults !== null ? 'No matching intents.' :
+    const emptyMsg = searchResults !== null ? 'No matching spaces.' :
                      currentFilter === 'open' ? 'No spaces yet. Type or speak one above.' :
                      'Nothing here.';
     listEl.innerHTML = `
@@ -2468,24 +2468,24 @@ function render(): void {
     return;
   }
 
-  listEl.innerHTML = displayList.map(intent => {
-    const isProcessing = processingIntents.has(intent.id);
-    const isRecurring = !!intent.recurrence;
-    const isRunning = activeSessionIntents.has(intent.id);
-    const dueInfo = formatDueDate(intent.due_at_utc, intent.due_at);
+  listEl.innerHTML = displayList.map(space => {
+    const isProcessing = processingSpaces.has(space.id);
+    const isRecurring = !!space.recurrence;
+    const isRunning = activeSessionSpaces.has(space.id);
+    const dueInfo = formatDueDate(space.due_at_utc, space.due_at);
     const hasDue = dueInfo.text !== '';
-    const isFocused = intent.id === focusedIntentId;
+    const isFocused = space.id === focusedSpaceId;
 
-    // Agent data for this intent
-    const intentAgents = agentsByIntent.get(intent.id) || [];
-    const hasRunningAgents = intentAgents.some(a => a.status === 'running');
-    const hasWaitingAgents = intentAgents.some(a => a.status === 'waiting-approval');
-    const hasFailedAgents = intentAgents.some(a => a.status === 'failed');
+    // Agent data for this space
+    const spaceAgents = agentsBySpace.get(space.id) || [];
+    const hasRunningAgents = spaceAgents.some(a => a.status === 'running');
+    const hasWaitingAgents = spaceAgents.some(a => a.status === 'waiting-approval');
+    const hasFailedAgents = spaceAgents.some(a => a.status === 'failed');
 
     // Build agent mini-cards
     let agentsHtml = '';
-    if (intentAgents.length > 0) {
-      const agentCards = intentAgents.map(agent => {
+    if (spaceAgents.length > 0) {
+      const agentCards = spaceAgents.map(agent => {
         const isCloud = agent.source === 'cloud';
         const aIcon = isCloud ? '☁️' :
                       agent.status === 'running' ? '⚡' :
@@ -2502,32 +2502,32 @@ function render(): void {
           + `<span class="mini-agent-label">${escapeHtml(aLabel || agent.summary || 'Agent')}</span>`
           + `</div>`;
       }).join('');
-      agentsHtml = `<div class="intent-agents">${agentCards}</div>`;
+      agentsHtml = `<div class="space-agents">${agentCards}</div>`;
     }
 
     return `
-    <div class="intent-item ${intent.status === 'done' ? 'done' : ''} ${isProcessing ? 'processing' : ''} ${isFocused ? 'focused' : ''} ${hasRunningAgents ? 'has-running-agents' : ''} ${hasWaitingAgents ? 'has-waiting-agents' : ''}" data-id="${intent.id}" onclick="openCanvas('${intent.id}', true)">
-      <div class="intent-check ${intent.status === 'done' ? 'checked' : ''}"
-           onclick="event.stopPropagation(); toggleStatus('${intent.id}')">${intent.status === 'done' ? '✓' : ''}</div>
-      <div class="intent-content">
-        <div class="intent-desc ${hasRunningAgents ? 'agent-active' : ''}">${escapeHtml(intent.description)}</div>
-        <div class="intent-meta">
-          ${intent.client ? `<span>👤 ${escapeHtml(intent.client)}</span>` : ''}
+    <div class="space-item ${space.status === 'done' ? 'done' : ''} ${isProcessing ? 'processing' : ''} ${isFocused ? 'focused' : ''} ${hasRunningAgents ? 'has-running-agents' : ''} ${hasWaitingAgents ? 'has-waiting-agents' : ''}" data-id="${space.id}" onclick="openCanvas('${space.id}', true)">
+      <div class="space-check ${space.status === 'done' ? 'checked' : ''}"
+           onclick="event.stopPropagation(); toggleStatus('${space.id}')">${space.status === 'done' ? '✓' : ''}</div>
+      <div class="space-content">
+        <div class="space-desc ${hasRunningAgents ? 'agent-active' : ''}">${escapeHtml(space.description)}</div>
+        <div class="space-meta">
+          ${space.client ? `<span>👤 ${escapeHtml(space.client)}</span>` : ''}
           ${hasDue ? `<span class="due-badge ${dueInfo.overdue ? 'overdue' : ''}">📅 ${escapeHtml(dueInfo.text)}</span>` : ''}
           ${isRecurring ? '<span class="recurring-badge">↻</span>' : ''}
-          ${isRunning ? '<span class="session-badge running">● running</span>' : intent.session_id ? '<span class="session-badge">○ session</span>' : ''}
-          ${hasRunningAgents ? `<span class="session-badge running">⚡ ${intentAgents.filter(a => a.status === 'running').length} working</span>` : ''}
+          ${isRunning ? '<span class="session-badge running">● running</span>' : space.session_id ? '<span class="session-badge">○ session</span>' : ''}
+          ${hasRunningAgents ? `<span class="session-badge running">⚡ ${spaceAgents.filter(a => a.status === 'running').length} working</span>` : ''}
           ${hasWaitingAgents ? '<span class="session-badge agent-attention">⏳ needs attention</span>' : ''}
           ${hasFailedAgents ? '<span class="session-badge agent-failed-badge">✗ failed</span>' : ''}
           ${isProcessing ? '<span class="processing-badge">refining...</span>' : ''}
-          <span>${timeAgo(intent.updated_at)}</span>
+          <span>${timeAgo(space.updated_at)}</span>
         </div>
         ${agentsHtml}
-        <div class="recall-hint hidden" data-recall-for="${intent.id}"></div>
+        <div class="recall-hint hidden" data-recall-for="${space.id}"></div>
       </div>
-      ${intent.status !== 'done' ? `<button class="intent-focus ${isFocused ? 'is-focused' : ''}" onclick="event.stopPropagation(); setFocus('${intent.id}')" title="${isFocused ? 'Unfocus' : 'Focus'}">🎯</button>` : ''}
-      <button class="intent-launch ${intent.session_id ? 'has-session' : ''} ${isRunning ? 'is-running' : ''}" onclick="event.stopPropagation(); launchSession('${intent.id}')" title="${isRunning ? 'Switch to session' : intent.session_id ? 'Resume session' : 'Start session'}">▶</button>
-      <button class="intent-delete" onclick="event.stopPropagation(); deleteIntent('${intent.id}')">✕</button>
+      ${space.status !== 'done' ? `<button class="space-focus ${isFocused ? 'is-focused' : ''}" onclick="event.stopPropagation(); setFocus('${space.id}')" title="${isFocused ? 'Unfocus' : 'Focus'}">🎯</button>` : ''}
+      <button class="space-launch ${space.session_id ? 'has-session' : ''} ${isRunning ? 'is-running' : ''}" onclick="event.stopPropagation(); launchSession('${space.id}')" title="${isRunning ? 'Switch to session' : space.session_id ? 'Resume session' : 'Start session'}">▶</button>
+      <button class="space-delete" onclick="event.stopPropagation(); deleteSpace('${space.id}')">✕</button>
     </div>
   `;
   }).join('');
@@ -2538,75 +2538,75 @@ function render(): void {
       e.stopPropagation();
       const agentId = (el as HTMLElement).dataset.agentId!;
       // Find the agent data
-      for (const [intentId, agents] of agentsByIntent.entries()) {
+      for (const [spaceId, agents] of agentsBySpace.entries()) {
         const agent = agents.find(a => a.agentId === agentId);
         if (agent) {
-          openAgentChat(agentId, agent.selectedText, agent.status, agent.source as any, intentId);
+          openAgentChat(agentId, agent.selectedText, agent.status, agent.source as any, spaceId);
           return;
         }
       }
     });
   });
 
-  if (selectedIndex >= displayedIntents.length) {
+  if (selectedIndex >= displayedSpaces.length) {
     selectedIndex = -1;
   }
   updateSelection();
 }
 
-async function renderPastView(): Promise<void> {
+async function renderHistoryView(): Promise<void> {
   const gen = ++renderGeneration;
-  displayedIntents = [];
-  countEl.textContent = String(intents.filter(i => i.status !== 'done').length);
+  displayedSpaces = [];
+  countEl.textContent = String(spaces.filter(i => i.status !== 'done').length);
 
-  const closedIntents = intents.filter(i => i.status === 'done');
+  const closedSpaces = spaces.filter(i => i.status === 'done');
 
   // Load timeline events
   let events: any[] = [];
   try {
-    events = await intentAPI.listEvents(200);
+    events = await whimAPI.listEvents(200);
   } catch { /* skip */ }
 
   if (gen !== renderGeneration) return;
 
-  // Build a map of events per intent
-  const eventsByIntent = new Map<string, any[]>();
+  // Build a map of events per space
+  const eventsBySpace = new Map<string, any[]>();
   for (const event of events) {
-    const id = event.intent_id;
+    const id = event.space_id;
     if (!id) continue;
-    if (!eventsByIntent.has(id)) eventsByIntent.set(id, []);
-    eventsByIntent.get(id)!.push(event);
+    if (!eventsBySpace.has(id)) eventsBySpace.set(id, []);
+    eventsBySpace.get(id)!.push(event);
   }
 
-  // Also gather orphan events (no matching closed intent)
-  const closedIds = new Set(closedIntents.map(i => i.id));
+  // Also gather orphan events (no matching closed space)
+  const closedIds = new Set(closedSpaces.map(i => i.id));
 
-  if (closedIntents.length === 0 && events.length === 0) {
+  if (closedSpaces.length === 0 && events.length === 0) {
     listEl.innerHTML = `
       <div class="empty-state">
         <span class="icon">📋</span>
-        <span>No past activity yet.</span>
+        <span>No history yet.</span>
       </div>
     `;
     return;
   }
 
-  // Sort closed intents newest first by completed_at or updated_at
-  const sorted = [...closedIntents].sort((a, b) =>
+  // Sort closed spaces newest first by completed_at or updated_at
+  const sorted = [...closedSpaces].sort((a, b) =>
     (b.completed_at || b.updated_at).localeCompare(a.completed_at || a.updated_at)
   );
 
   let html = '';
 
-  for (const intent of sorted) {
-    const intentEvents = eventsByIntent.get(intent.id) || [];
+  for (const space of sorted) {
+    const intentEvents = eventsBySpace.get(space.id) || [];
     // Sort events oldest first for step display
     intentEvents.sort((a: any, b: any) => a.created_at.localeCompare(b.created_at));
 
-    const hasSession = !!intent.session_id;
-    const typeIcon = hasSession ? '▶' : intent.recurrence ? '↻' : '✓';
-    const typeLabel = hasSession ? 'Session' : intent.recurrence ? 'Recurring' : 'Completed';
-    const completedAgo = intent.completed_at ? timeAgo(intent.completed_at) : timeAgo(intent.updated_at);
+    const hasSession = !!space.session_id;
+    const typeIcon = hasSession ? '▶' : space.recurrence ? '↻' : '✓';
+    const typeLabel = hasSession ? 'Session' : space.recurrence ? 'Recurring' : 'Completed';
+    const completedAgo = space.completed_at ? timeAgo(space.completed_at) : timeAgo(space.updated_at);
 
     // Build activity steps from events
     let stepsHtml = '';
@@ -2619,25 +2619,25 @@ async function renderPastView(): Promise<void> {
                         ev.event_type === 'recycled' ? 'Rescheduled' :
                         ev.event_type === 'recurrence_dismissed' ? 'Dismissed' :
                         ev.event_type;
-        return `<div class="past-card-step"><span class="past-step-icon">${evIcon}</span><span>${evLabel}</span></div>`;
+        return `<div class="history-card-step"><span class="history-step-icon">${evIcon}</span><span>${evLabel}</span></div>`;
       });
-      stepsHtml = `<div class="past-card-steps">${steps.join('<div class="past-step-connector"></div>')}</div>`;
+      stepsHtml = `<div class="history-card-steps">${steps.join('<div class="history-step-connector"></div>')}</div>`;
     }
 
     html += `
-      <div class="past-card" data-id="${intent.id}" onclick="openCanvas('${intent.id}', true)">
-        <button class="past-card-restore" onclick="event.stopPropagation(); unarchiveIntent('${intent.id}')" title="Restore to Spaces">↺</button>
-        <div class="past-card-type"><span class="past-type-icon">${typeIcon}</span> ${typeLabel}</div>
-        <div class="past-card-title">${escapeHtml(intent.description)}</div>
-        ${intent.client ? `<div class="past-card-client">👤 ${escapeHtml(intent.client)}</div>` : ''}
+      <div class="history-card" data-id="${space.id}" onclick="openCanvas('${space.id}', true)">
+        <button class="history-card-restore" onclick="event.stopPropagation(); unarchiveIntent('${space.id}')" title="Restore to Spaces">↺</button>
+        <div class="history-card-type"><span class="history-type-icon">${typeIcon}</span> ${typeLabel}</div>
+        <div class="history-card-title">${escapeHtml(space.description)}</div>
+        ${space.client ? `<div class="history-card-client">👤 ${escapeHtml(space.client)}</div>` : ''}
         ${stepsHtml}
-        <div class="past-card-meta">${completedAgo}</div>
+        <div class="history-card-meta">${completedAgo}</div>
       </div>
     `;
   }
 
-  // Add orphan timeline events not tied to a closed intent
-  const orphanEvents = events.filter(e => e.intent_id && !closedIds.has(e.intent_id));
+  // Add orphan timeline events not tied to a closed space
+  const orphanEvents = events.filter(e => e.space_id && !closedIds.has(e.space_id));
   if (orphanEvents.length > 0) {
     // Group by date for context
     const groups = new Map<string, typeof orphanEvents>();
@@ -2650,17 +2650,17 @@ async function renderPastView(): Promise<void> {
     }
 
     for (const [date, dateEvents] of groups) {
-      html += `<div class="past-date-label">${date}</div>`;
+      html += `<div class="history-date-label">${date}</div>`;
       for (const event of dateEvents) {
         const icon = event.event_type === 'completed' ? '✅' :
                      event.event_type === 'recycled' ? '↻' : '•';
-        const desc = event.intent_description ? escapeHtml(event.intent_description) : 'Unknown';
+        const desc = event.space_description ? escapeHtml(event.space_description) : 'Unknown';
         const time = new Date(event.created_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
         html += `
-          <div class="past-card past-card-mini">
-            <div class="past-card-type"><span class="past-type-icon">${icon}</span> ${escapeHtml(event.event_type)}</div>
-            <div class="past-card-title">${desc}</div>
-            <div class="past-card-meta">${time}</div>
+          <div class="history-card history-card-mini">
+            <div class="history-card-type"><span class="history-type-icon">${icon}</span> ${escapeHtml(event.event_type)}</div>
+            <div class="history-card-title">${desc}</div>
+            <div class="history-card-meta">${time}</div>
           </div>
         `;
       }
@@ -2674,9 +2674,9 @@ function renderAgentSummary(agents: Array<{ status: string; createdAt?: string }
   const running = agents.filter(a => a.status === 'running' || a.status === 'waiting-approval').length;
   const completed = agents.filter(a => a.status === 'completed').length;
   const failed = agents.filter(a => a.status !== 'running' && a.status !== 'waiting-approval' && a.status !== 'completed').length;
-  const openTasks = intents.filter(i => i.status !== 'done').length;
-  const scheduled = intents.filter(i => i.due_at_utc || i.due_at).length;
-  const recurring = intents.filter(i => i.recurrence).length;
+  const openTasks = spaces.filter(i => i.status !== 'done').length;
+  const scheduled = spaces.filter(i => i.due_at_utc || i.due_at).length;
+  const recurring = spaces.filter(i => i.recurrence).length;
 
   const lines: string[] = [];
 
@@ -2729,8 +2729,8 @@ function basename(filePath: string): string {
 function humanizeToolName(toolName: string, args?: Record<string, any>): string {
   const fileName = args?.path ? basename(args.path) : '';
 
-  if (toolName === 'report_intent' && args?.intent) {
-    return String(args.intent).slice(0, 80);
+  if (toolName === 'report_intent' && args?.whim) {
+    return String(args.whim).slice(0, 80);
   }
   if (toolName === 'edit' && fileName) return `Editing ${fileName}`;
   if (toolName === 'create' && fileName) return `Creating ${fileName}`;
@@ -2752,7 +2752,7 @@ function humanizeToolName(toolName: string, args?: Record<string, any>): string 
 
 function subscribeAgentChat(agentId: string): void {
   if (agentChatUnsubs.has(agentId)) return;
-  const unsub = intentAPI.onChatEvent(agentId, (event: any) => {
+  const unsub = whimAPI.onChatEvent(agentId, (event: any) => {
     if (event.type === 'tool.start') {
       const steps = agentSteps.get(agentId) || [];
       steps.push({
@@ -2864,7 +2864,7 @@ function updateAgentCardApproval(agentId: string): void {
       const aid = el.dataset.agentId!;
       const rid = el.dataset.requestId!;
       const approved = el.classList.contains('approve');
-      intentAPI.approveAgent(aid, rid, approved);
+      whimAPI.approveAgent(aid, rid, approved);
       agentApprovals.delete(aid);
       updateAgentCardApproval(aid);
     });
@@ -2887,7 +2887,7 @@ let cachedSkills: SkillData[] = [];
 
 async function loadSkills(): Promise<SkillData[]> {
   try {
-    cachedSkills = await intentAPI.listSkills();
+    cachedSkills = await whimAPI.listSkills();
     return cachedSkills;
   } catch {
     return cachedSkills;
@@ -2896,8 +2896,8 @@ async function loadSkills(): Promise<SkillData[]> {
 
 async function renderSkillsList(filterQuery?: string): Promise<void> {
   const gen = ++renderGeneration;
-  displayedIntents = [];
-  countEl.textContent = String(intents.filter(i => i.status !== 'done').length);
+  displayedSpaces = [];
+  countEl.textContent = String(spaces.filter(i => i.status !== 'done').length);
 
   let skills = await loadSkills();
 
@@ -2922,17 +2922,17 @@ async function renderSkillsList(filterQuery?: string): Promise<void> {
   }
 
   listEl.innerHTML = skills.map((skill, i) => `
-    <div class="intent-item skill-card" data-skill-id="${skill.id}" tabindex="0" data-skill-index="${i}">
+    <div class="space-item skill-card" data-skill-id="${skill.id}" tabindex="0" data-skill-index="${i}">
       <div class="skill-icon">${skill.emoji || '🧩'}</div>
-      <div class="intent-content">
-        <div class="intent-desc">${escapeHtml(skill.name)}</div>
-        <div class="intent-meta">
+      <div class="space-content">
+        <div class="space-desc">${escapeHtml(skill.name)}</div>
+        <div class="space-meta">
           <span>${escapeHtml(skill.description.length > 100 ? skill.description.slice(0, 97) + '...' : skill.description)}</span>
         </div>
       </div>
-      <button class="intent-launch" onclick="event.stopPropagation(); createIntentFromSkill('${skill.id}')" title="Launch as new space">▶</button>
-      <button class="intent-launch" onclick="event.stopPropagation(); openSkillFolder('${skill.id}')" title="Open folder">📁</button>
-      <button class="intent-delete" onclick="event.stopPropagation(); deleteSkill('${skill.id}')">✕</button>
+      <button class="space-launch" onclick="event.stopPropagation(); createSpaceFromSkill('${skill.id}')" title="Launch as new space">▶</button>
+      <button class="space-launch" onclick="event.stopPropagation(); openSkillFolder('${skill.id}')" title="Open folder">📁</button>
+      <button class="space-delete" onclick="event.stopPropagation(); deleteSkill('${skill.id}')">✕</button>
     </div>
   `).join('');
 
@@ -2964,7 +2964,7 @@ async function createNewSkill(): Promise<void> {
   const name = prompt('Skill name:');
   if (!name || !name.trim()) return;
 
-  const result = await intentAPI.createSkill(name.trim());
+  const result = await whimAPI.createSkill(name.trim());
   if ('error' in result) {
     showStatus(`Failed: ${result.error}`, true);
     return;
@@ -2980,17 +2980,17 @@ async function openSkillEditor(skillId: string): Promise<void> {
 
   // In main window, always pop out to separate canvas window
   if (!isCanvasMode) {
-    intentAPI.openCanvasWindow({ kind: 'skill', id: skillId, title: skill.name });
+    whimAPI.openCanvasWindow({ kind: 'skill', id: skillId, title: skill.name });
     return;
   }
 
   // ── Below runs only inside the canvas popout window ──
-  const result = await intentAPI.readSkill(skillId);
+  const result = await whimAPI.readSkill(skillId);
   if ('error' in result) {
     return;
   }
 
-  canvasIntentId = null;
+  canvasSpaceId = null;
   canvasSkillId = skillId;
 
   canvasTitle.textContent = skill.name;
@@ -3012,13 +3012,13 @@ async function openSkillEditor(skillId: string): Promise<void> {
   canvasView.classList.remove('hidden');
 
   const myGen = ++canvasMountGen;
-  const currentTheme = await intentAPI.getSetting('theme').then(t => (t || 'light') as 'light' | 'dark');
+  const currentTheme = await whimAPI.getSetting('theme').then(t => (t || 'light') as 'light' | 'dark');
 
   if (canvasMountGen !== myGen) return;
 
   // Pass frontmatter and body separately — canvas renders them independently
   mountCanvas(canvasRoot, {
-    intentId: '__skill__' + skillId,
+    spaceId: '__skill__' + skillId,
     content: result.body,
     frontmatter: result.frontmatter,
     theme: currentTheme,
@@ -3058,36 +3058,36 @@ async function saveSkillFromCanvas(skillId: string, content: string): Promise<vo
     body = fmMatch[2];
   }
 
-  await intentAPI.writeSkill(skillId, frontmatter, body);
+  await whimAPI.writeSkill(skillId, frontmatter, body);
 }
 
 async function openSkillFolder(skillId: string): Promise<void> {
-  await intentAPI.openSkillFolder(skillId);
+  await whimAPI.openSkillFolder(skillId);
 }
 
-async function createIntentFromSkill(skillId: string): Promise<void> {
-  const result = await intentAPI.createIntentFromSkill(skillId);
+async function createSpaceFromSkill(skillId: string): Promise<void> {
+  const result = await whimAPI.createSpaceFromSkill(skillId);
   if ('error' in result) {
     showStatus(`Failed: ${result.error}`, true);
     return;
   }
-  showStatus(`✓ Created intent from skill`);
+  showStatus(`✓ Created space from skill`);
   setTimeout(hideStatus, 2000);
   // Switch to Spaces tab first, then reload so render() uses the correct filter
   setFilter('open');
-  await loadIntents();
+  await loadSpaces();
 }
 
 async function deleteSkill(skillId: string): Promise<void> {
   const skill = cachedSkills.find(s => s.id === skillId);
   if (!confirm(`Delete skill "${skill?.name || skillId}"?`)) return;
 
-  await intentAPI.deleteSkill(skillId);
+  await whimAPI.deleteSkill(skillId);
   render();
 }
 
-async function launchSkillAsIntent(skillId: string): Promise<void> {
-  const result = await intentAPI.launchSkill(skillId);
+async function launchSkillAsSpace(skillId: string): Promise<void> {
+  const result = await whimAPI.launchSkill(skillId);
   if ('error' in result) {
     showStatus(`Failed: ${result.error}`, true);
     return;
@@ -3096,7 +3096,7 @@ async function launchSkillAsIntent(skillId: string): Promise<void> {
   setTimeout(hideStatus, 2000);
   // Switch to Spaces tab first, then reload so render() uses the correct filter
   setFilter('open');
-  await loadIntents();
+  await loadSpaces();
   // Close the skill editor canvas if open in a popout
   if (isCanvasMode) {
     window.close();
@@ -3104,7 +3104,7 @@ async function launchSkillAsIntent(skillId: string): Promise<void> {
 }
 
 // Wire up skills changed event
-intentAPI.onSkillsChanged(() => {
+whimAPI.onSkillsChanged(() => {
   if (currentFilter === 'skills') {
     renderSkillsList();
   }
@@ -3113,27 +3113,27 @@ intentAPI.onSkillsChanged(() => {
 // Expose skill functions to onclick handlers
 (window as any).createNewSkill = createNewSkill;
 (window as any).openSkillFolder = openSkillFolder;
-(window as any).createIntentFromSkill = createIntentFromSkill;
-(window as any).launchSkillAsIntent = launchSkillAsIntent;
+(window as any).createSpaceFromSkill = createSpaceFromSkill;
+(window as any).launchSkillAsSpace = launchSkillAsSpace;
 (window as any).deleteSkill = deleteSkill;
 
 async function renderAgentsList(filterQuery?: string): Promise<void> {
   const gen = ++renderGeneration;
-  displayedIntents = [];
-  countEl.textContent = String(intents.filter(i => i.status !== 'done').length);
+  displayedSpaces = [];
+  countEl.textContent = String(spaces.filter(i => i.status !== 'done').length);
 
   // Gather all agents (including workspace-level ones)
-  let allAgents: Array<{ agentId: string; sessionId: string; status: string; summary: string; selectedText: string; intentId: string; createdAt?: string; pendingApprovalId?: string | null; pendingPermissionKind?: string | null; source?: 'sdk' | 'cli' | 'cloud'; personaHandle?: string | null }> = [];
+  let allAgents: Array<{ agentId: string; sessionId: string; status: string; summary: string; selectedText: string; spaceId: string; createdAt?: string; pendingApprovalId?: string | null; pendingPermissionKind?: string | null; source?: 'sdk' | 'cli' | 'cloud'; personaHandle?: string | null }> = [];
 
   try {
-    allAgents = await intentAPI.listAllAgents();
+    allAgents = await whimAPI.listAllAgents();
   } catch {
-    // Fallback: iterate intents
-    for (const intent of intents) {
+    // Fallback: iterate spaces
+    for (const space of spaces) {
       try {
-        const agents = await intentAPI.listAgents(intent.id);
+        const agents = await whimAPI.listAgents(space.id);
         for (const agent of agents) {
-          allAgents.push({ ...agent, intentId: intent.id });
+          allAgents.push({ ...agent, spaceId: space.id });
         }
       } catch { /* skip */ }
     }
@@ -3171,8 +3171,8 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
   // Sort newest first (DB returns this order, but be explicit)
   allAgents.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
 
-  // Build intent description map for display
-  const intentMap = new Map(intents.map(i => [i.id, i.description]));
+  // Build space description map for display
+  const intentMap = new Map(spaces.map(i => [i.id, i.description]));
 
   // Populate approvals from API data
   for (const agent of allAgents) {
@@ -3210,9 +3210,9 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
       ? 'CLI Session'
       : agent.source === 'cloud'
         ? 'Cloud Agent'
-        : agent.intentId === '__workspace__'
+        : agent.spaceId === '__workspace__'
           ? 'Workspace'
-          : escapeHtml(intentMap.get(agent.intentId) || agent.intentId);
+          : escapeHtml(intentMap.get(agent.spaceId) || agent.spaceId);
 
     const title = agent.selectedText.length > 80
       ? agent.selectedText.slice(0, 77) + '...'
@@ -3257,8 +3257,8 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
     `;
     }
 
-    const canvasBtn = agent.intentId && agent.intentId !== '__workspace__' && agent.source !== 'cli'
-      ? `<button class="agent-card-canvas-btn" data-intent-id="${agent.intentId}" title="Open canvas">📄</button>`
+    const canvasBtn = agent.spaceId && agent.spaceId !== '__workspace__' && agent.source !== 'cli'
+      ? `<button class="agent-card-canvas-btn" data-space-id="${agent.spaceId}" title="Open canvas">📄</button>`
       : '';
 
     const isYolo = agentYoloState.get(agent.agentId) || false;
@@ -3297,7 +3297,7 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
       if (!agentId) return;
       const agent = allAgents.find(a => a.agentId === agentId);
       if (agent) {
-        openAgentChat(agentId, agent.selectedText, agent.status, agent.source, agent.intentId);
+        openAgentChat(agentId, agent.selectedText, agent.status, agent.source, agent.spaceId);
       }
     });
   });
@@ -3310,7 +3310,7 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
       const aid = el.dataset.agentId!;
       const rid = el.dataset.requestId!;
       const approved = el.classList.contains('approve');
-      intentAPI.approveAgent(aid, rid, approved);
+      whimAPI.approveAgent(aid, rid, approved);
       agentApprovals.delete(aid);
       updateAgentCardApproval(aid);
     });
@@ -3321,7 +3321,7 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
       const aid = (e.currentTarget as HTMLElement).dataset.agentId!;
-      await intentAPI.deleteAgentSession(aid);
+      await whimAPI.deleteAgentSession(aid);
       renderAgentsList();
     });
   });
@@ -3330,8 +3330,8 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
   listEl.querySelectorAll('.agent-card-canvas-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      const intentId = (e.currentTarget as HTMLElement).dataset.intentId!;
-      openCanvas(intentId, true);
+      const spaceId = (e.currentTarget as HTMLElement).dataset.spaceId!;
+      openCanvas(spaceId, true);
     });
   });
 
@@ -3341,7 +3341,7 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
       e.stopPropagation();
       const aid = (e.currentTarget as HTMLElement).dataset.agentId!;
       const current = agentYoloState.get(aid) || false;
-      intentAPI.setAgentYolo(aid, !current);
+      whimAPI.setAgentYolo(aid, !current);
     });
   });
 
@@ -3353,7 +3353,7 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
   }
 }
 
-let renderedAgents: Array<{ agentId: string; sessionId: string; status: string; summary: string; selectedText: string; intentId: string; createdAt?: string; source?: 'sdk' | 'cli' | 'cloud' }> = [];
+let renderedAgents: Array<{ agentId: string; sessionId: string; status: string; summary: string; selectedText: string; spaceId: string; createdAt?: string; source?: 'sdk' | 'cli' | 'cloud' }> = [];
 
 function updateAgentSelection(): void {
   const items = listEl.querySelectorAll('.agent-card');
@@ -3366,7 +3366,7 @@ function updateAgentSelection(): void {
 }
 
 function updateSelection(): void {
-  const items = listEl.querySelectorAll('.intent-item');
+  const items = listEl.querySelectorAll('.whim-item');
   items.forEach((item, i) => {
     item.classList.toggle('kb-selected', i === selectedIndex);
   });
@@ -3459,11 +3459,11 @@ form.addEventListener('submit', async (e) => {
     }
 
     showStatus(personaHandleArg ? `⚡ Launching @${personaHandleArg}...` : '⚡ Launching agent...');
-    const result = await intentAPI.quickLaunchAgent(promptText, personaHandleArg);
+    const result = await whimAPI.quickLaunchAgent(promptText, personaHandleArg);
     if ('error' in result && result.error) {
       if (result.error === 'no_workspace') {
         showStatus('Select a workspace directory first');
-        const ws = await intentAPI.selectWorkspace();
+        const ws = await whimAPI.selectWorkspace();
         if (ws.selected) updateWorkspaceDisplay(ws.path!);
       } else {
         showStatus(`Failed: ${result.error}`, true);
@@ -3484,11 +3484,11 @@ form.addEventListener('submit', async (e) => {
   if (currentFilter === 'skills') {
     if (!text) return; // require a description
     showStatus('✨ Creating skill...');
-    const result = await intentAPI.createSkillFromPrompt(text);
+    const result = await whimAPI.createSkillFromPrompt(text);
     if ('error' in result && result.error) {
       if (result.error === 'no_workspace') {
         showStatus('Select a workspace directory first');
-        const ws = await intentAPI.selectWorkspace();
+        const ws = await whimAPI.selectWorkspace();
         if (ws.selected) updateWorkspaceDisplay(ws.path!);
       } else {
         showStatus(`Failed: ${result.error}`, true);
@@ -3503,7 +3503,7 @@ form.addEventListener('submit', async (e) => {
     return;
   }
 
-  // ── Spaces tab: create an intent (original behavior) ──
+  // ── Spaces tab: create an space (original behavior) ──
   if (!text) return;
 
   descInput.value = '';
@@ -3511,57 +3511,57 @@ form.addEventListener('submit', async (e) => {
   descInput.focus();
   searchResults = null;
 
-  // Create as intent with body
+  // Create as space with body
   queryResult.classList.add('hidden');
   listEl.classList.remove('hidden');
-  const intent = await intentAPI.create({ body: text }) as any;
-  if (intent.error === 'no_workspace') {
+  const space = await whimAPI.create({ body: text }) as any;
+  if (space.error === 'no_workspace') {
     showStatus('Select a workspace directory first');
-    const ws = await intentAPI.selectWorkspace();
+    const ws = await whimAPI.selectWorkspace();
     if (ws.selected) {
       updateWorkspaceDisplay(ws.path!);
-      const retryIntent = await intentAPI.create({ body: text }) as any;
+      const retryIntent = await whimAPI.create({ body: text }) as any;
       if (retryIntent.error) {
-        showStatus('Failed to create intent', true);
+        showStatus('Failed to create space', true);
         return;
       }
-      processingIntents.add(retryIntent.id);
+      processingSpaces.add(retryIntent.id);
     } else {
       hideStatus();
       return;
     }
   } else {
-    processingIntents.add(intent.id);
+    processingSpaces.add(space.id);
   }
   hideStatus();
-  await loadIntents();
+  await loadSpaces();
 });
 
 // Listen for background LLM processing completion
-intentAPI.onIntentProcessed(async (id: string) => {
-  processingIntents.delete(id);
+whimAPI.onSpaceProcessed(async (id: string) => {
+  processingSpaces.delete(id);
   await animateRefinement(id);
 });
 
 // Listen for recurrence evaluation results
-intentAPI.onRecurrenceResult((intentId: string, result: RecurrenceResult) => {
+whimAPI.onRecurrenceResult((spaceId: string, result: RecurrenceResult) => {
   if (!result.should_recur) return;
 
   const dueText = result.next_due || result.next_due_utc || 'soon';
-  statusBar.innerHTML = `↻ Recurring — next due ${escapeHtml(dueText)} <button class="dismiss-recurrence" onclick="dismissRecurrence('${intentId}')">✕</button>`;
+  statusBar.innerHTML = `↻ Recurring — next due ${escapeHtml(dueText)} <button class="dismiss-recurrence" onclick="dismissRecurrence('${spaceId}')">✕</button>`;
   statusBar.classList.remove('hidden', 'error');
   statusBar.classList.add('recurrence');
 });
 
 // Listen for recurrence being applied (after undo window)
-intentAPI.onRecurrenceApplied(async (_intentId: string) => {
+whimAPI.onRecurrenceApplied(async (_intentId: string) => {
   hideStatus();
-  await loadIntents();
+  await loadSpaces();
 });
 
 // Listen for recall hints
-intentAPI.onRecallHint((intentId: string, match: RecallMatch) => {
-  const hintEl = listEl.querySelector(`[data-recall-for="${intentId}"]`) as HTMLElement | null;
+whimAPI.onRecallHint((spaceId: string, match: RecallMatch) => {
+  const hintEl = listEl.querySelector(`[data-recall-for="${spaceId}"]`) as HTMLElement | null;
   if (!hintEl) return;
 
   const ago = match.completed_at ? timeAgo(match.completed_at) : '';
@@ -3579,8 +3579,8 @@ intentAPI.onRecallHint((intentId: string, match: RecallMatch) => {
 });
 
 // @ts-ignore - called from onclick in status bar HTML
-async function dismissRecurrence(intentId: string): Promise<void> {
-  await intentAPI.dismissRecurrence(intentId);
+async function dismissRecurrence(spaceId: string): Promise<void> {
+  await whimAPI.dismissRecurrence(spaceId);
   hideStatus();
 }
 
@@ -3588,22 +3588,22 @@ async function dismissRecurrence(intentId: string): Promise<void> {
 
 // ── Session launch ──────────────────────────────────────
 // @ts-ignore - called from onclick in HTML
-async function launchSession(intentId: string): Promise<void> {
-  const result = await intentAPI.launchSession(intentId);
+async function launchSession(spaceId: string): Promise<void> {
+  const result = await whimAPI.launchSession(spaceId);
   if (result.success) {
-    intentAPI.hideWindow();
-    await loadIntents();
+    whimAPI.hideWindow();
+    await loadSpaces();
   } else if (result.error === 'no_workspace') {
     // Prompt to select workspace
     showStatus('Select a workspace directory first');
-    const ws = await intentAPI.selectWorkspace();
+    const ws = await whimAPI.selectWorkspace();
     if (ws.selected) {
       updateWorkspaceDisplay(ws.path!);
       // Retry launch
-      const retry = await intentAPI.launchSession(intentId);
+      const retry = await whimAPI.launchSession(spaceId);
       if (retry.success) {
-        intentAPI.hideWindow();
-        await loadIntents();
+        whimAPI.hideWindow();
+        await loadSpaces();
       } else {
         showStatus(retry.error || 'Launch failed', true);
       }
@@ -3641,21 +3641,21 @@ function updateWorkspaceDisplay(path: string | null): void {
 }
 
 workspaceBtn.addEventListener('click', async () => {
-  const result = await intentAPI.selectWorkspace();
+  const result = await whimAPI.selectWorkspace();
   if (result.selected) {
     updateWorkspaceDisplay(result.path);
   }
 });
 
 workspaceClearBtn.addEventListener('click', async () => {
-  await intentAPI.clearWorkspace();
+  await whimAPI.clearWorkspace();
   updateWorkspaceDisplay(null);
 });
 
 workspacePathEl.addEventListener('click', () => {
   const path = workspacePathEl.title;
   if (path) {
-    intentAPI.openPath(path);
+    whimAPI.openPath(path);
   }
 });
 
@@ -3665,8 +3665,8 @@ const cliPathClear = document.getElementById('cli-path-clear') as HTMLButtonElem
 const cliPathDetected = document.getElementById('cli-path-detected') as HTMLSpanElement;
 
 async function loadCliPathSetting(): Promise<void> {
-  const override = await intentAPI.getSetting('cli_path');
-  const info = await intentAPI.checkCliVersion();
+  const override = await whimAPI.getSetting('cli_path');
+  const info = await whimAPI.checkCliVersion();
 
   cliPathInput.value = override || '';
   cliPathClear.classList.toggle('hidden', !override);
@@ -3687,7 +3687,7 @@ async function loadCliPathSetting(): Promise<void> {
 }
 
 async function updateCliPathDetected(): Promise<void> {
-  const info = await intentAPI.checkCliVersion();
+  const info = await whimAPI.checkCliVersion();
   if (!info.path) {
     cliPathDetected.textContent = 'Not found';
     cliPathDetected.title = '';
@@ -3708,7 +3708,7 @@ cliPathInput.addEventListener('input', () => {
   if (cliPathDebounce) clearTimeout(cliPathDebounce);
   cliPathDebounce = setTimeout(async () => {
     const val = cliPathInput.value.trim();
-    const resolved = await intentAPI.setSetting('cli_path', val);
+    const resolved = await whimAPI.setSetting('cli_path', val);
     // Update input to show the resolved full path if it changed
     if (resolved && resolved !== val) {
       cliPathInput.value = resolved;
@@ -3721,7 +3721,7 @@ cliPathInput.addEventListener('input', () => {
 
 cliPathClear.addEventListener('click', async () => {
   cliPathInput.value = '';
-  await intentAPI.setSetting('cli_path', '');
+  await whimAPI.setSetting('cli_path', '');
   cliPathClear.classList.add('hidden');
   await updateCliPathDetected();
   await updateCliMxcIndicator();
@@ -3732,14 +3732,14 @@ const cliMxcIndicator = document.getElementById('cli-mxc-indicator') as HTMLSpan
 
 async function updateCliMxcIndicator(): Promise<void> {
   if (!cliMxcIndicator) return;
-  const platform = intentAPI.getPlatform();
+  const platform = whimAPI.getPlatform();
   if (platform !== 'win32') {
     cliMxcIndicator.textContent = 'unavailable on this platform';
     cliMxcIndicator.className = 'cli-mxc-indicator';
     return;
   }
   try {
-    const r = await intentAPI.checkCliMxcCapable();
+    const r = await whimAPI.checkCliMxcCapable();
     if (r.mxcCapable) {
       cliMxcIndicator.textContent = '✓ supported (this CLI build ships @microsoft/mxc-sdk)';
       cliMxcIndicator.className = 'cli-mxc-indicator ok';
@@ -3754,7 +3754,7 @@ async function updateCliMxcIndicator(): Promise<void> {
 }
 
 // ── Settings tabs ───────────────────────────────────────
-const SETTINGS_TAB_KEY = 'intent.settingsTab';
+const SETTINGS_TAB_KEY = 'whim.settingsTab';
 function initSettingsTabs(): void {
   const tabs = document.querySelectorAll<HTMLButtonElement>('.settings-tab-btn');
   const panels = document.querySelectorAll<HTMLElement>('.settings-tab-panel');
@@ -3858,9 +3858,9 @@ function renderSandboxPolicyForm(
 
   const scopeBox = checkbox(
     'scope',
-    'Read & write inside the intent folder',
-    initial.scopeToIntentFolder,
-    'When checked, the agent can read and write anywhere inside its intent folder. Recommended ON.',
+    'Read & write inside the space folder',
+    initial.scopeToSpaceFolder,
+    'When checked, the agent can read and write anywhere inside its space folder. Recommended ON.',
   );
   const rwArea = pathTextarea('rw', 'Extra read-write paths', initial.extraReadwritePaths,
     'Optional. Each line is an absolute path the agent may read AND write.');
@@ -3955,7 +3955,7 @@ function renderSandboxPolicyForm(
 
   function getPolicy(): SandboxPolicy {
     return {
-      scopeToIntentFolder: scopeBox.checked,
+      scopeToSpaceFolder: scopeBox.checked,
       extraReadwritePaths: textareaToPathList(rwArea.value),
       extraReadonlyPaths: textareaToPathList(roArea.value),
       extraDeniedPaths: textareaToPathList(denyArea.value),
@@ -3968,7 +3968,7 @@ function renderSandboxPolicyForm(
   }
 
   function setPolicy(p: SandboxPolicy): void {
-    scopeBox.checked = p.scopeToIntentFolder;
+    scopeBox.checked = p.scopeToSpaceFolder;
     rwArea.value = pathListToTextarea(p.extraReadwritePaths);
     roArea.value = pathListToTextarea(p.extraReadonlyPaths);
     denyArea.value = pathListToTextarea(p.extraDeniedPaths);
@@ -3994,11 +3994,11 @@ renderDefaultSandboxPolicyForm();
 
 // ── Inline editing ──────────────────────────────────────
 // @ts-ignore - called from onclick in HTML
-async function editDate(intentId: string): Promise<void> {
-  const intent = intents.find(i => i.id === intentId);
-  if (!intent) return;
+async function editDate(spaceId: string): Promise<void> {
+  const space = spaces.find(i => i.id === spaceId);
+  if (!space) return;
 
-  const itemEl = listEl.querySelector(`[data-id="${intentId}"]`);
+  const itemEl = listEl.querySelector(`[data-id="${spaceId}"]`);
   const badge = itemEl?.querySelector('.due-badge') as HTMLElement;
   if (!badge || badge.querySelector('input')) return;
 
@@ -4006,7 +4006,7 @@ async function editDate(intentId: string): Promise<void> {
   input.type = 'text';
   input.className = 'inline-edit-input inline-edit-date';
   input.placeholder = 'e.g. next Friday, May 1...';
-  input.value = intent.due_at || '';
+  input.value = space.due_at || '';
 
   badge.textContent = '';
   badge.appendChild(input);
@@ -4017,18 +4017,18 @@ async function editDate(intentId: string): Promise<void> {
     const dateText = input.value.trim();
     if (dateText) {
       badge.textContent = '📅 resolving...';
-      const resolved = await intentAPI.resolveDate(dateText);
-      await intentAPI.update(intentId, { due_at: resolved.due_at, due_at_utc: resolved.due_at_utc });
+      const resolved = await whimAPI.resolveDate(dateText);
+      await whimAPI.update(spaceId, { due_at: resolved.due_at, due_at_utc: resolved.due_at_utc });
     } else {
       // Clear the date
-      await intentAPI.update(intentId, { due_at: null, due_at_utc: null });
+      await whimAPI.update(spaceId, { due_at: null, due_at_utc: null });
     }
-    await loadIntents();
+    await loadSpaces();
   };
 
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); save(); }
-    if (e.key === 'Escape') { loadIntents(); }
+    if (e.key === 'Escape') { loadSpaces(); }
   });
   input.addEventListener('blur', save);
 }
@@ -4057,21 +4057,21 @@ function toggleBody(el: HTMLElement): void {
 
 (window as any).toggleBody = toggleBody;
 
-async function editBody(intentId: string): Promise<void> {
-  const intent = intents.find(i => i.id === intentId);
-  if (!intent || !intent.body) return;
+async function editBody(spaceId: string): Promise<void> {
+  const space = spaces.find(i => i.id === spaceId);
+  if (!space || !space.body) return;
 
-  const itemEl = listEl.querySelector(`[data-id="${intentId}"]`);
-  let bodyEl = itemEl?.querySelector('.intent-body') as HTMLElement | null;
+  const itemEl = listEl.querySelector(`[data-id="${spaceId}"]`);
+  let bodyEl = itemEl?.querySelector('.whim-body') as HTMLElement | null;
 
   // If no body element exists, create one
-  const contentEl = itemEl?.querySelector('.intent-content') as HTMLElement;
+  const contentEl = itemEl?.querySelector('.whim-content') as HTMLElement;
   if (!contentEl) return;
 
   if (!bodyEl) {
     bodyEl = document.createElement('div');
-    bodyEl.className = 'intent-body expanded';
-    const descEl = contentEl.querySelector('.intent-desc');
+    bodyEl.className = 'space-body expanded';
+    const descEl = contentEl.querySelector('.whim-desc');
     if (descEl) descEl.after(bodyEl);
     else contentEl.prepend(bodyEl);
   }
@@ -4080,8 +4080,8 @@ async function editBody(intentId: string): Promise<void> {
 
   const textarea = document.createElement('textarea');
   textarea.className = 'inline-edit-body';
-  textarea.value = intent.body;
-  textarea.rows = Math.min(intent.body.split('\n').length + 1, 8);
+  textarea.value = space.body;
+  textarea.rows = Math.min(space.body.split('\n').length + 1, 8);
 
   bodyEl.innerHTML = '';
   bodyEl.classList.remove('collapsed');
@@ -4091,15 +4091,15 @@ async function editBody(intentId: string): Promise<void> {
 
   const save = async () => {
     const newBody = textarea.value.trim();
-    if (newBody && newBody !== intent.body) {
-      await intentAPI.update(intentId, { body: newBody });
+    if (newBody && newBody !== space.body) {
+      await whimAPI.update(spaceId, { body: newBody });
     }
-    await loadIntents();
+    await loadSpaces();
   };
 
   textarea.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); save(); }
-    if (e.key === 'Escape') { loadIntents(); }
+    if (e.key === 'Escape') { loadSpaces(); }
   });
   textarea.addEventListener('blur', save);
 }
@@ -4107,12 +4107,12 @@ async function editBody(intentId: string): Promise<void> {
 (window as any).editBody = editBody;
 
 // ── Attachments ─────────────────────────────────────────
-async function addAttachment(intentId: string): Promise<void> {
-  const intent = intents.find(i => i.id === intentId);
-  if (!intent) return;
+async function addAttachment(spaceId: string): Promise<void> {
+  const space = spaces.find(i => i.id === spaceId);
+  if (!space) return;
 
-  const itemEl = listEl.querySelector(`[data-id="${intentId}"]`);
-  const contentEl = itemEl?.querySelector('.intent-content') as HTMLElement;
+  const itemEl = listEl.querySelector(`[data-id="${spaceId}"]`);
+  const contentEl = itemEl?.querySelector('.whim-content') as HTMLElement;
   if (!contentEl) return;
 
   // Check if already has an input open
@@ -4126,7 +4126,7 @@ async function addAttachment(intentId: string): Promise<void> {
   input.placeholder = 'Paste a URL...';
   row.appendChild(input);
 
-  const metaEl = contentEl.querySelector('.intent-meta');
+  const metaEl = contentEl.querySelector('.whim-meta');
   if (metaEl) metaEl.before(row);
   else contentEl.appendChild(row);
   input.focus();
@@ -4143,13 +4143,13 @@ async function addAttachment(intentId: string): Promise<void> {
       } catch {
         name = url.slice(0, 40);
       }
-      const attachments = [...(intent.attachments || []), { type: 'url' as const, name, url }];
-      await intentAPI.update(intentId, { attachments });
+      const attachments = [...(space.attachments || []), { type: 'url' as const, name, url }];
+      await whimAPI.update(spaceId, { attachments });
     } else if (url) {
       // Not a valid URL — just remove the input
     }
     row.remove();
-    await loadIntents();
+    await loadSpaces();
   };
 
   input.addEventListener('keydown', (e) => {
@@ -4159,13 +4159,13 @@ async function addAttachment(intentId: string): Promise<void> {
   input.addEventListener('blur', save);
 }
 
-async function removeAttachment(intentId: string, index: number): Promise<void> {
-  const intent = intents.find(i => i.id === intentId);
-  if (!intent) return;
-  const attachments = [...(intent.attachments || [])];
+async function removeAttachment(spaceId: string, index: number): Promise<void> {
+  const space = spaces.find(i => i.id === spaceId);
+  if (!space) return;
+  const attachments = [...(space.attachments || [])];
   attachments.splice(index, 1);
-  await intentAPI.update(intentId, { attachments });
-  await loadIntents();
+  await whimAPI.update(spaceId, { attachments });
+  await loadSpaces();
 }
 
 (window as any).addAttachment = addAttachment;
@@ -4179,58 +4179,58 @@ function dismissQuery(): void {
 (window as any).dismissQuery = dismissQuery;
 
 // ── Focus mode ──────────────────────────────────────────
-async function setFocus(intentId: string): Promise<void> {
-  if (focusedIntentId === intentId) {
+async function setFocus(spaceId: string): Promise<void> {
+  if (focusedSpaceId === spaceId) {
     // Toggle off
     clearFocus();
     return;
   }
-  focusedIntentId = intentId;
-  await intentAPI.setSetting('focused_intent', intentId);
+  focusedSpaceId = spaceId;
+  await whimAPI.setSetting('focused_intent', spaceId);
   updateFocusBanner();
   render();
 }
 
 function clearFocus(): void {
-  focusedIntentId = null;
-  intentAPI.setSetting('focused_intent', '');
+  focusedSpaceId = null;
+  whimAPI.setSetting('focused_intent', '');
   focusBanner.classList.add('hidden');
   render();
 }
 
 function updateFocusBanner(): void {
-  if (!focusedIntentId) {
+  if (!focusedSpaceId) {
     focusBanner.classList.add('hidden');
     return;
   }
-  const intent = intents.find(i => i.id === focusedIntentId);
-  if (!intent || intent.status === 'done') {
+  const space = spaces.find(i => i.id === focusedSpaceId);
+  if (!space || space.status === 'done') {
     clearFocus();
     return;
   }
 
-  const dueInfo = formatDueDate(intent.due_at_utc, intent.due_at);
-  focusDesc.textContent = intent.description;
+  const dueInfo = formatDueDate(space.due_at_utc, space.due_at);
+  focusDesc.textContent = space.description;
   let meta = '';
-  if (intent.client) meta += `👤 ${intent.client}  `;
+  if (space.client) meta += `👤 ${space.client}  `;
   if (dueInfo.text) meta += `📅 ${dueInfo.text}`;
   focusMeta.textContent = meta;
   focusBanner.classList.remove('hidden');
 }
 
 focusDone.addEventListener('click', async () => {
-  if (!focusedIntentId) return;
-  await intentAPI.update(focusedIntentId, { status: 'done' });
+  if (!focusedSpaceId) return;
+  await whimAPI.update(focusedSpaceId, { status: 'done' });
   clearFocus();
-  await loadIntents();
+  await loadSpaces();
 });
 
 focusClear.addEventListener('click', clearFocus);
 
 async function loadFocusState(): Promise<void> {
-  const saved = await intentAPI.getSetting('focused_intent');
+  const saved = await whimAPI.getSetting('focused_intent');
   if (saved) {
-    focusedIntentId = saved;
+    focusedSpaceId = saved;
     updateFocusBanner();
   }
 }
@@ -4255,7 +4255,7 @@ timelineBtn?.addEventListener('click', showTimeline);
 timelineBack.addEventListener('click', hideTimeline);
 
 async function loadTimeline(): Promise<void> {
-  const events = await intentAPI.listEvents(200);
+  const events = await whimAPI.listEvents(200);
 
   if (events.length === 0) {
     timelineContent.innerHTML = `
@@ -4292,7 +4292,7 @@ async function loadTimeline(): Promise<void> {
                     event.event_type === 'recycled' ? 'Rescheduled' :
                     event.event_type === 'recurrence_dismissed' ? 'Recurrence dismissed' :
                     event.event_type;
-      const desc = event.intent_description ? escapeHtml(event.intent_description) : 'Unknown intent';
+      const desc = event.space_description ? escapeHtml(event.space_description) : 'Unknown space';
       const sessionTag = event.session_id ? '<span class="timeline-session-tag">has session</span>' : '';
 
       html += `
@@ -4318,30 +4318,30 @@ async function loadTimeline(): Promise<void> {
 
 // @ts-ignore - called from onclick in HTML
 async function toggleStatus(id: string): Promise<void> {
-  const intent = intents.find(i => i.id === id);
-  if (!intent) return;
-  const newStatus = intent.status === 'done' ? 'captured' : 'done';
-  await intentAPI.update(id, { status: newStatus });
-  await loadIntents();
+  const space = spaces.find(i => i.id === id);
+  if (!space) return;
+  const newStatus = space.status === 'done' ? 'captured' : 'done';
+  await whimAPI.update(id, { status: newStatus });
+  await loadSpaces();
 }
 
 // @ts-ignore - called from onclick in HTML
-async function deleteIntent(id: string): Promise<void> {
+async function deleteSpace(id: string): Promise<void> {
   if (!confirm('Delete this space? Its folder and files will be permanently removed.')) return;
-  await intentAPI.delete(id);
-  await loadIntents();
+  await whimAPI.delete(id);
+  await loadSpaces();
 }
 
 (window as any).toggleStatus = toggleStatus;
-(window as any).deleteIntent = deleteIntent;
+(window as any).deleteSpace = deleteSpace;
 
 // @ts-ignore - called from onclick in HTML
 async function unarchiveIntent(id: string): Promise<void> {
-  const result = await intentAPI.unarchive(id);
+  const result = await whimAPI.unarchive(id);
   if (result) {
     showStatus('✓ Restored to Spaces');
     setTimeout(hideStatus, 2000);
-    await loadIntents();
+    await loadSpaces();
   }
 }
 
@@ -4374,7 +4374,7 @@ const modeToggleRaw = document.getElementById('mode-toggle-raw') as HTMLButtonEl
 const canvasAgentsPanel = document.getElementById('canvas-agents-panel') as HTMLDivElement;
 const canvasAgentsClose = document.getElementById('canvas-agents-close') as HTMLButtonElement;
 const canvasAgentsList = document.getElementById('canvas-agents-list') as HTMLDivElement;
-let canvasIntentId: string | null = null;
+let canvasSpaceId: string | null = null;
 let canvasSkillId: string | null = null;
 let canvasDirty = false;
 let canvasIsNewIntent = false;
@@ -4401,10 +4401,10 @@ async function commitTitleEdit(): Promise<void> {
   const newTitle = (canvasTitle.textContent || '').trim();
   if (!newTitle) {
     canvasTitle.textContent = titleBeforeEdit;
-  } else if (newTitle !== titleBeforeEdit && canvasIntentId) {
+  } else if (newTitle !== titleBeforeEdit && canvasSpaceId) {
     canvasTitle.textContent = newTitle;
-    await intentAPI.update(canvasIntentId, { description: newTitle });
-    await loadIntents();
+    await whimAPI.update(canvasSpaceId, { description: newTitle });
+    await loadSpaces();
   }
 }
 
@@ -4431,13 +4431,13 @@ canvasTitle.addEventListener('keydown', (e) => {
 });
 
 canvasTitleAI.addEventListener('click', async () => {
-  if (!canvasIntentId) return;
+  if (!canvasSpaceId) return;
   const content = getCanvasContent();
   if (!content.trim()) return;
   canvasTitleAI.disabled = true;
   canvasTitleAI.textContent = '⏳';
   try {
-    const result = await intentAPI.summarizeTitle(content);
+    const result = await whimAPI.summarizeTitle(content);
     if (result.title) {
       canvasTitle.textContent = result.title;
       canvasTitle.focus();
@@ -4448,40 +4448,40 @@ canvasTitleAI.addEventListener('click', async () => {
   }
 });
 
-// Create a new blank intent and immediately open it in the full canvas editor
+// Create a new blank space and immediately open it in the full canvas editor
 async function createAndOpenCanvas(): Promise<void> {
-  const intent = await intentAPI.create({ body: '' }) as any;
-  if (intent.error === 'no_workspace') {
+  const space = await whimAPI.create({ body: '' }) as any;
+  if (space.error === 'no_workspace') {
     showStatus('Select a workspace directory first');
-    const ws = await intentAPI.selectWorkspace();
+    const ws = await whimAPI.selectWorkspace();
     if (!ws.selected) { hideStatus(); return; }
     updateWorkspaceDisplay(ws.path!);
-    const retry = await intentAPI.create({ body: '' }) as any;
-    if (retry.error) { showStatus('Failed to create intent', true); return; }
-    await loadIntents();
+    const retry = await whimAPI.create({ body: '' }) as any;
+    if (retry.error) { showStatus('Failed to create space', true); return; }
+    await loadSpaces();
     openCanvas(retry.id, true);
     canvasIsNewIntent = true;
     return;
   }
-  await loadIntents();
-  openCanvas(intent.id, true);
+  await loadSpaces();
+  openCanvas(space.id, true);
   canvasIsNewIntent = true;
 }
 
-async function openCanvas(intentId: string, expanded = false): Promise<void> {
-  const intent = intents.find(i => i.id === intentId);
-  if (!intent) return;
+async function openCanvas(spaceId: string, expanded = false): Promise<void> {
+  const space = spaces.find(i => i.id === spaceId);
+  if (!space) return;
 
   // In main window, always pop out to separate canvas window
   if (!isCanvasMode) {
-    intentAPI.openCanvasWindow({ kind: 'intent', id: intentId, title: intent.description });
+    whimAPI.openCanvasWindow({ kind: 'space', id: spaceId, title: space.description });
     return;
   }
 
   // ── Below runs only inside the canvas popout window ──
-  canvasIntentId = intentId;
+  canvasSpaceId = spaceId;
   canvasSkillId = null;
-  canvasTitle.textContent = intent.description;
+  canvasTitle.textContent = space.description;
   canvasTitle.contentEditable = 'false';
   canvasTitle.classList.remove('editing');
   canvasTitleAI.classList.add('hidden');
@@ -4490,7 +4490,7 @@ async function openCanvas(intentId: string, expanded = false): Promise<void> {
   canvasSaveBtn.classList.add('hidden');
   updateModeToggleUI('rendered');
 
-  // Show intent-specific controls
+  // Show space-specific controls
   canvasLaunchBtn.classList.remove('hidden');
   canvasLaunchBtn.title = 'Start session';
   canvasAgentsBtn.classList.remove('hidden');
@@ -4503,12 +4503,12 @@ async function openCanvas(intentId: string, expanded = false): Promise<void> {
 
   // Load all data in parallel
   const [result, currentTheme, canvasPersonas] = await Promise.all([
-    intentAPI.readCanvas(intentId),
-    intentAPI.getSetting('theme').then(t => (t || 'light') as 'light' | 'dark'),
-    intentAPI.listPersonas().then(p => p || []),
+    whimAPI.readCanvas(spaceId),
+    whimAPI.getSetting('theme').then(t => (t || 'light') as 'light' | 'dark'),
+    whimAPI.listPersonas().then(p => p || []),
   ]);
 
-  // Abort if user already switched to another intent
+  // Abort if user already switched to another space
   if (canvasMountGen !== myGen) return;
 
   if (result.error === 'no_workspace') {
@@ -4517,7 +4517,7 @@ async function openCanvas(intentId: string, expanded = false): Promise<void> {
 
   // Mount Documint editor
   mountCanvas(canvasRoot, {
-    intentId,
+    spaceId,
     content: result.content || '',
     theme: currentTheme,
     personas: canvasPersonas,
@@ -4530,8 +4530,8 @@ async function openCanvas(intentId: string, expanded = false): Promise<void> {
     },
     onAgentMentioned: (event) => {
       for (const handle of event.handles) {
-        intentAPI.launchCommentAgent(
-          intentId,
+        whimAPI.launchCommentAgent(
+          spaceId,
           event.commentBody,
           event.quote,
           event.anchor,
@@ -4559,10 +4559,10 @@ async function closeCanvas(): Promise<void> {
   }
   closeHistoryPanel();
   closeAgentsPanel();
-  const intentId = canvasIntentId;
+  const spaceId = canvasSpaceId;
   const wasNewIntent = canvasIsNewIntent;
   const skillId = canvasSkillId;
-  canvasIntentId = null;
+  canvasSpaceId = null;
   canvasSkillId = null;
   canvasIsNewIntent = false;
   canvasClosing = true;
@@ -4574,17 +4574,17 @@ async function closeCanvas(): Promise<void> {
   if (skillId) {
     // Save skill content
     await saveSkillFromCanvas(skillId, finalContent);
-  } else if (intentId) {
-    await intentAPI.closeCanvas(intentId, finalContent);
+  } else if (spaceId) {
+    await whimAPI.closeCanvas(spaceId, finalContent);
 
-    // If this was a new intent created from Enter on empty input,
+    // If this was a new space created from Enter on empty input,
     // trigger AI refinement using the canvas content as the body
     if (wasNewIntent && finalContent.trim()) {
-      await intentAPI.update(intentId, { body: finalContent.trim() });
-      processingIntents.add(intentId);
+      await whimAPI.update(spaceId, { body: finalContent.trim() });
+      processingSpaces.add(spaceId);
     } else if (wasNewIntent && !finalContent.trim()) {
-      // Empty canvas — delete the blank intent
-      await intentAPI.delete(intentId);
+      // Empty canvas — delete the blank space
+      await whimAPI.delete(spaceId);
     }
   }
 
@@ -4602,21 +4602,21 @@ canvasSaveBtn.addEventListener('click', saveCanvas);
 canvasBack.addEventListener('click', closeCanvas);
 
 canvasOpenFolder.addEventListener('click', () => {
-  if (canvasIntentId) {
-    intentAPI.openIntentFolder(canvasIntentId);
+  if (canvasSpaceId) {
+    whimAPI.openSpaceFolder(canvasSpaceId);
   }
 });
 
 canvasLaunchBtn.addEventListener('click', async () => {
   if (canvasSkillId) {
-    // Skill mode: create intent from skill + launch session
-    await launchSkillAsIntent(canvasSkillId);
-  } else if (canvasIntentId) {
+    // Skill mode: create space from skill + launch session
+    await launchSkillAsSpace(canvasSkillId);
+  } else if (canvasSpaceId) {
     // Save any pending edits before launching
     await saveCanvasEditor();
 
     // Launch SDK agent with full document context and open chat
-    const result = await intentAPI.launchDocumentAgent(canvasIntentId);
+    const result = await whimAPI.launchDocumentAgent(canvasSpaceId);
     if ('error' in result) {
       showStatus(result.error || 'Launch failed', true);
       setTimeout(hideStatus, 3000);
@@ -4624,7 +4624,7 @@ canvasLaunchBtn.addEventListener('click', async () => {
     }
     // Close the canvas view and open the chat
     closeCanvas();
-    openAgentChat(result.agentId, 'Executing document...', 'running', 'sdk', canvasIntentId || undefined);
+    openAgentChat(result.agentId, 'Executing document...', 'running', 'sdk', canvasSpaceId || undefined);
   }
 });
 
@@ -4645,14 +4645,14 @@ function toggleHistoryPanel(): void {
 }
 
 async function openHistoryPanel(): Promise<void> {
-  if (!canvasIntentId) return;
+  if (!canvasSpaceId) return;
   closeAgentsPanel();
   canvasHistoryPanel.classList.remove('hidden');
   canvasHistoryBtn.classList.add('active');
   historyPanelOpen = true;
   canvasHistoryList.innerHTML = '<div class="history-loading">Loading history…</div>';
 
-  const result = await intentAPI.canvasHistory(canvasIntentId);
+  const result = await whimAPI.canvasHistory(canvasSpaceId);
   if (result.error || result.commits.length === 0) {
     canvasHistoryList.innerHTML = '<div class="history-empty">No history available</div>';
     return;
@@ -4714,12 +4714,12 @@ function createHistoryItem(commit: FolderCommit): HTMLElement {
   restoreBtn.title = `Restore to ${commit.shortSha}`;
   restoreBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
-    if (!canvasIntentId) return;
+    if (!canvasSpaceId) return;
 
     restoreBtn.disabled = true;
     restoreBtn.textContent = '…';
 
-    const result = await intentAPI.canvasRestore(canvasIntentId, commit.sha);
+    const result = await whimAPI.canvasRestore(canvasSpaceId, commit.sha);
     if (result.success) {
       // Exit preview mode if active (content is now the restored version)
       if (previewActive) {
@@ -4729,12 +4729,12 @@ function createHistoryItem(commit: FolderCommit): HTMLElement {
         canvasPreviewBanner.classList.add('hidden');
       }
       // Reload the canvas with restored content — re-mount in place
-      const readResult = await intentAPI.readCanvas(canvasIntentId!);
+      const readResult = await whimAPI.readCanvas(canvasSpaceId!);
       if (!readResult.error) {
-        const intentId = canvasIntentId!;
+        const spaceId = canvasSpaceId!;
         await unmountCanvas();
-        canvasIntentId = null;
-        await openCanvas(intentId);
+        canvasSpaceId = null;
+        await openCanvas(spaceId);
       }
       closeHistoryPanel();
     } else {
@@ -4761,7 +4761,7 @@ function createHistoryItem(commit: FolderCommit): HTMLElement {
 }
 
 async function enterPreview(commit: FolderCommit): Promise<void> {
-  if (!canvasIntentId) return;
+  if (!canvasSpaceId) return;
 
   // Save current content before first preview
   if (!previewActive) {
@@ -4781,14 +4781,14 @@ async function enterPreview(commit: FolderCommit): Promise<void> {
   });
 
   // Fetch version content and mount read-only
-  const result = await intentAPI.canvasPreviewVersion(canvasIntentId, commit.sha);
+  const result = await whimAPI.canvasPreviewVersion(canvasSpaceId, commit.sha);
   if (result.error) return;
 
-  const intentId = canvasIntentId!;
+  const spaceId = canvasSpaceId!;
   await unmountCanvas();
-  const currentTheme = await intentAPI.getSetting('theme').then(t => (t || 'light') as 'light' | 'dark');
+  const currentTheme = await whimAPI.getSetting('theme').then(t => (t || 'light') as 'light' | 'dark');
   mountCanvas(canvasRoot, {
-    intentId,
+    spaceId,
     content: result.content,
     theme: currentTheme,
     onDirtyChange: () => {},   // no-op: preview edits are not tracked
@@ -4797,7 +4797,7 @@ async function enterPreview(commit: FolderCommit): Promise<void> {
 }
 
 async function exitPreview(): Promise<void> {
-  if (!previewActive || !canvasIntentId) return;
+  if (!previewActive || !canvasSpaceId) return;
 
   const savedContent = previewSavedContent;
   previewActive = false;
@@ -4811,12 +4811,12 @@ async function exitPreview(): Promise<void> {
   });
 
   // Remount with the original content
-  const intentId = canvasIntentId!;
+  const spaceId = canvasSpaceId!;
   await unmountCanvas();
-  const currentTheme = await intentAPI.getSetting('theme').then(t => (t || 'light') as 'light' | 'dark');
-  const canvasPersonas = await intentAPI.listPersonas().then(p => p || []);
+  const currentTheme = await whimAPI.getSetting('theme').then(t => (t || 'light') as 'light' | 'dark');
+  const canvasPersonas = await whimAPI.listPersonas().then(p => p || []);
   mountCanvas(canvasRoot, {
-    intentId,
+    spaceId,
     content: savedContent || '',
     theme: currentTheme,
     personas: canvasPersonas,
@@ -4829,8 +4829,8 @@ async function exitPreview(): Promise<void> {
     },
     onAgentMentioned: (event) => {
       for (const handle of event.handles) {
-        intentAPI.launchCommentAgent(
-          intentId,
+        whimAPI.launchCommentAgent(
+          spaceId,
           event.commentBody,
           event.quote,
           event.anchor,
@@ -4843,25 +4843,25 @@ async function exitPreview(): Promise<void> {
 }
 
 async function restoreFromPreview(): Promise<void> {
-  if (!previewActive || !previewSha || !canvasIntentId) return;
+  if (!previewActive || !previewSha || !canvasSpaceId) return;
 
   const sha = previewSha;
   canvasPreviewRestore.disabled = true;
   canvasPreviewRestore.textContent = '…';
 
-  const result = await intentAPI.canvasRestore(canvasIntentId, sha);
+  const result = await whimAPI.canvasRestore(canvasSpaceId, sha);
   if (result.success) {
     previewActive = false;
     previewSha = null;
     previewSavedContent = null;
     canvasPreviewBanner.classList.add('hidden');
 
-    const readResult = await intentAPI.readCanvas(canvasIntentId!);
+    const readResult = await whimAPI.readCanvas(canvasSpaceId!);
     if (!readResult.error) {
-      const intentId = canvasIntentId!;
+      const spaceId = canvasSpaceId!;
       await unmountCanvas();
-      canvasIntentId = null;
-      await openCanvas(intentId);
+      canvasSpaceId = null;
+      await openCanvas(spaceId);
     }
     closeHistoryPanel();
   } else {
@@ -4880,8 +4880,8 @@ canvasHistoryBtn.addEventListener('click', toggleHistoryPanel);
 canvasHistoryClose.addEventListener('click', closeHistoryPanel);
 
 // Refresh history panel when a new auto-commit happens
-intentAPI.onWorkspaceCommitted(() => {
-  if (historyPanelOpen && canvasIntentId) {
+whimAPI.onWorkspaceCommitted(() => {
+  if (historyPanelOpen && canvasSpaceId) {
     openHistoryPanel();
   }
 });
@@ -4898,7 +4898,7 @@ function toggleAgentsPanel(): void {
 }
 
 async function openAgentsPanel(): Promise<void> {
-  if (!canvasIntentId) return;
+  if (!canvasSpaceId) return;
   closeHistoryPanel();
   canvasAgentsPanel.classList.remove('hidden');
   canvasAgentsBtn.classList.add('active');
@@ -4907,7 +4907,7 @@ async function openAgentsPanel(): Promise<void> {
 
   let agents: Array<{ agentId: string; sessionId: string; status: string; summary: string; selectedText: string; createdAt?: string }> = [];
   try {
-    agents = await intentAPI.listAgents(canvasIntentId);
+    agents = await whimAPI.listAgents(canvasSpaceId);
   } catch { /* skip */ }
 
   if (agents.length === 0) {
@@ -4951,9 +4951,9 @@ async function openAgentsPanel(): Promise<void> {
       if (agent) {
         if (isCanvasMode) {
           // Open the chat in the main panel so the canvas stays visible
-          intentAPI.openAgentChatInPanel({ agentId, agentPrompt: agent.selectedText, agentStatus: agent.status, intentId: canvasIntentId || undefined });
+          whimAPI.openAgentChatInPanel({ agentId, agentPrompt: agent.selectedText, agentStatus: agent.status, spaceId: canvasSpaceId || undefined });
         } else {
-          openAgentChat(agentId, agent.selectedText, agent.status, undefined, canvasIntentId || undefined);
+          openAgentChat(agentId, agent.selectedText, agent.status, undefined, canvasSpaceId || undefined);
         }
       }
     });
@@ -4994,7 +4994,7 @@ import { mountChat, unmountChat } from './chat/mount.tsx';
 const chatView = document.getElementById('chat-view') as HTMLDivElement;
 const chatRoot = document.getElementById('chat-root') as HTMLDivElement;
 
-async function openAgentChat(agentId: string | undefined, agentPrompt: string, agentStatus: string, agentSource?: 'sdk' | 'cli', intentId?: string): Promise<void> {
+async function openAgentChat(agentId: string | undefined, agentPrompt: string, agentStatus: string, agentSource?: 'sdk' | 'cli', spaceId?: string): Promise<void> {
   // Hide other views, show chat inline
   mainView.classList.add('hidden');
   hideSettings();
@@ -5010,15 +5010,15 @@ async function openAgentChat(agentId: string | undefined, agentPrompt: string, a
     agentPrompt,
     agentStatus,
     agentSource,
-    intentId,
+    spaceId,
     pendingApprovalId: approval?.requestId,
     pendingPermissionKind: approval?.permissionKind,
     onClose: () => closeAgentChat(),
-    onOpenCli: (id: string) => intentAPI.openAgentCli(id),
-    onOpenCanvas: intentId ? (id: string) => {
-      const intent = intents.find(i => i.id === id);
-      if (intent) {
-        intentAPI.openCanvasWindow({ kind: 'intent', id, title: intent.description });
+    onOpenCli: (id: string) => whimAPI.openAgentCli(id),
+    onOpenCanvas: spaceId ? (id: string) => {
+      const space = spaces.find(i => i.id === id);
+      if (space) {
+        whimAPI.openCanvasWindow({ kind: 'space', id, title: space.description });
       }
     } : undefined,
   });
@@ -5038,8 +5038,8 @@ function closeAgentChat(): void {
 
 // Listen for cross-window agent chat requests from canvas window
 if (!isCanvasMode) {
-  intentAPI.onOpenAgentChatInPanel((data) => {
-    openAgentChat(data.agentId, data.agentPrompt, data.agentStatus, data.agentSource, data.intentId);
+  whimAPI.onOpenAgentChatInPanel((data) => {
+    openAgentChat(data.agentId, data.agentPrompt, data.agentStatus, data.agentSource, data.spaceId);
   });
 }
 
@@ -5050,8 +5050,8 @@ function syncCanvasPresence(): void {
   updateCanvasPresence(Array.from(canvasAgentPresence.values()));
 }
 
-intentAPI.onAgentPresenceStarted((data) => {
-  if (data.intentId !== canvasIntentId) return;
+whimAPI.onAgentPresenceStarted((data) => {
+  if (data.spaceId !== canvasSpaceId) return;
   canvasAgentPresence.set(data.agentId, {
     userId: data.persona.handle,
     color: data.persona.color,
@@ -5060,27 +5060,27 @@ intentAPI.onAgentPresenceStarted((data) => {
   syncCanvasPresence();
 });
 
-intentAPI.onAgentPresenceEnded((data) => {
+whimAPI.onAgentPresenceEnded((data) => {
   if (!canvasAgentPresence.has(data.agentId)) return;
   canvasAgentPresence.delete(data.agentId);
   syncCanvasPresence();
 });
 
-intentAPI.onAgentReplyReady((data) => {
-  if (data.intentId !== canvasIntentId) return;
+whimAPI.onAgentReplyReady((data) => {
+  if (data.spaceId !== canvasSpaceId) return;
   addCanvasCommentReply(data.threadIndex, data.body);
 });
 
-intentAPI.onCanvasContentUpdated((data) => {
-  if (data.intentId !== canvasIntentId) return;
+whimAPI.onCanvasContentUpdated((data) => {
+  if (data.spaceId !== canvasSpaceId) return;
   replaceCanvasContent(data.content);
 });
 
 // ── Global agent status/approval listeners ─────────────
-intentAPI.onAgentStatusChanged((data: any) => {
+whimAPI.onAgentStatusChanged((data: any) => {
   if (currentFilter === 'agents') renderAgentsList();
   // Refresh Spaces view to update agent indicators
-  if (currentFilter === 'open') loadIntents();
+  if (currentFilter === 'open') loadSpaces();
   // Clear steps if agent restarted
   if (data.status === 'running' && !agentSteps.has(data.agentId)) {
     agentSteps.set(data.agentId, []);
@@ -5092,7 +5092,7 @@ intentAPI.onAgentStatusChanged((data: any) => {
   }
 });
 
-intentAPI.onAgentApprovalNeeded((data: any) => {
+whimAPI.onAgentApprovalNeeded((data: any) => {
   agentApprovals.set(data.agentId, {
     requestId: data.requestId,
     permissionKind: data.permissionKind || 'permission',
@@ -5105,12 +5105,12 @@ intentAPI.onAgentApprovalNeeded((data: any) => {
   updateWorkersBadge();
 });
 
-intentAPI.onAgentCompleted(() => {
+whimAPI.onAgentCompleted(() => {
   if (currentFilter === 'agents') renderAgentsList();
-  if (currentFilter === 'open') loadIntents();
+  if (currentFilter === 'open') loadSpaces();
 });
 
-intentAPI.onAgentYoloChanged((data: { agentId: string; enabled: boolean }) => {
+whimAPI.onAgentYoloChanged((data: { agentId: string; enabled: boolean }) => {
   agentYoloState.set(data.agentId, data.enabled);
   // Update the yolo button if visible
   const btn = document.querySelector(`.agent-card-yolo-btn[data-agent-id="${data.agentId}"]`) as HTMLElement | null;
@@ -5196,7 +5196,7 @@ function renderSandboxBlockBanner(data: {
     btn.className = 'sandbox-block-banner-btn';
     btn.textContent = labels[d];
     btn.addEventListener('click', async () => {
-      await intentAPI.resolveSandboxBlock(data.agentId, data.requestId, d);
+      await whimAPI.resolveSandboxBlock(data.agentId, data.requestId, d);
       banner.remove();
     });
     actions.appendChild(btn);
@@ -5208,7 +5208,7 @@ function renderSandboxBlockBanner(data: {
     ignoreBtn.textContent = 'Ignore';
     ignoreBtn.addEventListener('click', async () => {
       // Soft signal — resolve as allow-once just to drain the broker callback.
-      await intentAPI.resolveSandboxBlock(data.agentId, data.requestId, 'allow-once');
+      await whimAPI.resolveSandboxBlock(data.agentId, data.requestId, 'allow-once');
       banner.remove();
     });
     actions.appendChild(ignoreBtn);
@@ -5218,12 +5218,12 @@ function renderSandboxBlockBanner(data: {
   sandboxBlockContainer.appendChild(banner);
 }
 
-intentAPI.onAgentSandboxBlocked((data: any) => {
+whimAPI.onAgentSandboxBlocked((data: any) => {
   renderSandboxBlockBanner(data);
 });
 
 // When the user clicks an OS notification, switch to Workers tab
-intentAPI.onNotificationApprovalClicked(() => {
+whimAPI.onNotificationApprovalClicked(() => {
   setFilter('agents');
 });
 
@@ -5239,8 +5239,8 @@ window.addEventListener('beforeunload', () => {
   const content = getCanvasContent();
   if (canvasSkillId) {
     saveSkillFromCanvas(canvasSkillId, content);
-  } else if (canvasIntentId) {
-    intentAPI.closeCanvas(canvasIntentId, content);
+  } else if (canvasSpaceId) {
+    whimAPI.closeCanvas(canvasSpaceId, content);
   }
 });
 
@@ -5257,7 +5257,7 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
-  // Arrow/Enter navigation in the intent list
+  // Arrow/Enter navigation in the space list
   if (!mainView.classList.contains('hidden')) {
     // Agent list navigation
     if (currentFilter === 'agents') {
@@ -5286,15 +5286,15 @@ document.addEventListener('keydown', (e) => {
         e.preventDefault();
         const agent = renderedAgents[selectedIndex];
         if (agent) {
-          openAgentChat(agent.agentId, agent.selectedText, agent.status, agent.source, agent.intentId);
+          openAgentChat(agent.agentId, agent.selectedText, agent.status, agent.source, agent.spaceId);
         }
         return;
       }
     } else {
-      // Intent list navigation
+      // Space list navigation
       if (e.key === 'ArrowDown' && selectedIndex >= 0) {
         e.preventDefault();
-        if (selectedIndex < displayedIntents.length - 1) {
+        if (selectedIndex < displayedSpaces.length - 1) {
           selectedIndex++;
           updateSelection();
         }
@@ -5316,18 +5316,18 @@ document.addEventListener('keydown', (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
         e.preventDefault();
         const target = selectedIndex >= 0
-          ? displayedIntents[selectedIndex]
-          : displayedIntents[0];
+          ? displayedSpaces[selectedIndex]
+          : displayedSpaces[0];
         if (target) {
-          intentAPI.openNewCanvasWindow({ kind: 'intent', id: target.id, title: target.description });
+          whimAPI.openNewCanvasWindow({ kind: 'space', id: target.id, title: target.description });
         }
         return;
       }
-      // Enter: open full editor for selected intent
+      // Enter: open full editor for selected space
       if (e.key === 'Enter' && selectedIndex >= 0 && document.activeElement !== descInput) {
         e.preventDefault();
-        const intent = displayedIntents[selectedIndex];
-        if (intent) openCanvas(intent.id, true);
+        const space = displayedSpaces[selectedIndex];
+        if (space) openCanvas(space.id, true);
         return;
       }
     }
@@ -5351,7 +5351,7 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-intentAPI.onWindowShown((data) => {
+whimAPI.onWindowShown((data) => {
   selectedIndex = -1;
   searchResults = null;
   if (searchMode) exitSearchMode();
@@ -5361,7 +5361,7 @@ intentAPI.onWindowShown((data) => {
   descInput.select();
   hideStatus();
   // Refresh active session state when window reappears
-  loadIntents();
+  loadSpaces();
 
   // Slide in from the appropriate edge
   if (!data.expanded) {
@@ -5373,8 +5373,8 @@ intentAPI.onWindowShown((data) => {
   }
 });
 
-intentAPI.onWindowToggle(() => {
-  // If on a sub-view, navigate back to the intent list
+whimAPI.onWindowToggle(() => {
+  // If on a sub-view, navigate back to the space list
   if (!chatView.classList.contains('hidden')) {
     closeAgentChat();
     return;
@@ -5395,7 +5395,7 @@ intentAPI.onWindowToggle(() => {
   slideOut();
 });
 
-intentAPI.onRequestHide(() => {
+whimAPI.onRequestHide(() => {
   // Blur-triggered hide: check if we should stay visible
   const hasInput = descInput && descInput.value.trim().length > 0;
   const canvasOpen = !canvasView.classList.contains('hidden');
@@ -5418,7 +5418,7 @@ async function showWelcomeView(): Promise<void> {
   welcomeWorkspaceSelected = false;
 
   // Reset step states
-  welcomeWorkspaceHint.textContent = 'A folder where your intents, skills, and agent data will live.';
+  welcomeWorkspaceHint.textContent = 'A folder where your spaces, skills, and agent data will live.';
   welcomeWorkspaceBtn.textContent = 'Choose Folder…';
   welcomeWorkspaceCheck.classList.add('hidden');
   welcomeStepWorkspace.classList.remove('done');
@@ -5432,7 +5432,7 @@ async function showWelcomeView(): Promise<void> {
   updateWelcomeStartBtn();
 
   // Load saved CLI path override into input
-  const savedCliPath = await intentAPI.getSetting('cli_path');
+  const savedCliPath = await whimAPI.getSetting('cli_path');
   welcomeCliPath.value = savedCliPath || '';
 
   // Auto-detect CLI and check version compatibility, then load models
@@ -5445,7 +5445,7 @@ async function showWelcomeView(): Promise<void> {
 }
 
 async function loadWelcomeModels(retries = 5): Promise<void> {
-  const models = await intentAPI.listModels();
+  const models = await whimAPI.listModels();
   if (models.length === 0 && retries > 0) {
     welcomeModelSelect.innerHTML = '<option value="">Loading models…</option>';
     setTimeout(() => loadWelcomeModels(retries - 1), 2000);
@@ -5456,7 +5456,7 @@ async function loadWelcomeModels(retries = 5): Promise<void> {
     welcomeModelSelect.innerHTML = '<option value="">No models available</option>';
     return;
   }
-  const saved = await intentAPI.getSetting('model');
+  const saved = await whimAPI.getSetting('model');
   for (const m of models) {
     const opt = document.createElement('option');
     opt.value = m.id;
@@ -5485,7 +5485,7 @@ async function checkWelcomeCli(): Promise<boolean> {
   welcomeStepCli.classList.remove('done');
 
   const info: { path: string | null; version: string | null; compatible: boolean; minVersion: string } =
-    await intentAPI.checkCliVersion();
+    await whimAPI.checkCliVersion();
 
   if (!info.path) {
     welcomeCliStatus.textContent = 'Not found — install the Copilot CLI or provide a path below.';
@@ -5507,13 +5507,13 @@ async function checkWelcomeCli(): Promise<boolean> {
 // Save CLI path override from welcome screen input (save only, no re-check)
 welcomeCliPath.addEventListener('change', async () => {
   const val = welcomeCliPath.value.trim();
-  await intentAPI.setSetting('cli_path', val);
+  await whimAPI.setSetting('cli_path', val);
 });
 
 // Refresh button re-checks CLI after user upgrades or changes path
 welcomeCliRefresh.addEventListener('click', async () => {
   const val = welcomeCliPath.value.trim();
-  await intentAPI.setSetting('cli_path', val);
+  await whimAPI.setSetting('cli_path', val);
   const cliOk = await checkWelcomeCli();
   // Reload models since CLI may have changed
   welcomeModelSelect.innerHTML = '<option value="">Loading models…</option>';
@@ -5527,7 +5527,7 @@ welcomeCliRefresh.addEventListener('click', async () => {
 });
 
 welcomeWorkspaceBtn.addEventListener('click', async () => {
-  const result = await intentAPI.selectWorkspace();
+  const result = await whimAPI.selectWorkspace();
   if (result.selected && result.path) {
     welcomeWorkspaceSelected = true;
     welcomeWorkspaceHint.textContent = result.path;
@@ -5556,21 +5556,21 @@ welcomeStartBtn.addEventListener('click', async () => {
   // Save model selection
   const model = welcomeModelSelect.value;
   if (model) {
-    await intentAPI.setSetting('model', model);
+    await whimAPI.setSetting('model', model);
   }
 
   hideWelcomeView();
-  loadIntents();
+  loadSpaces();
   loadSkills();
 });
 
 // ── Init ────────────────────────────────────────────────
 // Check if workspace is set — show welcome or main view
-intentAPI.getSetting('workspace_root').then(ws => {
+whimAPI.getSetting('workspace_root').then(ws => {
   if (!ws && !isCanvasMode && !isSettingsMode) {
     showWelcomeView();
   } else if (!isSettingsMode) {
-    loadIntents();
+    loadSpaces();
   }
 });
 
@@ -5580,20 +5580,20 @@ if (!isCanvasMode && !isSettingsMode) {
   loadPersonas().catch(() => { /* leaves personas[] empty */ });
 }
 
-// Refresh the intent list when the canvas popout window is closed
-intentAPI.onCanvasWindowClosed(() => {
-  if (!isCanvasMode) loadIntents();
+// Refresh the space list when the canvas popout window is closed
+whimAPI.onCanvasWindowClosed(() => {
+  if (!isCanvasMode) loadSpaces();
 });
 
 // Listen for theme changes from other windows (e.g. settings popout)
 if (!isCanvasMode && !isSettingsMode) {
-  intentAPI.onCanvasThemeChanged((theme: string) => {
+  whimAPI.onCanvasThemeChanged((theme: string) => {
     applyTheme(theme);
   });
 }
 
 // Reload all data when workspace changes (select or clear)
-intentAPI.onWorkspaceChanged((path: string | null) => {
+whimAPI.onWorkspaceChanged((path: string | null) => {
   if (isCanvasMode || isSettingsMode) {
     // In canvas/settings window, close it — the workspace changed underneath
     window.close();
@@ -5602,11 +5602,11 @@ intentAPI.onWorkspaceChanged((path: string | null) => {
   updateWorkspaceDisplay(path);
   hideSettings();
   if (path) {
-    loadIntents();
+    loadSpaces();
     loadSkills();
   } else {
     // Workspace cleared — show welcome view
-    intents = [];
+    spaces = [];
     cachedSkills = [];
     render();
     showWelcomeView();
@@ -5621,44 +5621,44 @@ if (isCanvasMode) {
   document.body.classList.add('canvas-window');
 
   // Apply theme
-  intentAPI.getSetting('theme').then(t => {
+  whimAPI.getSetting('theme').then(t => {
     if (t === 'dark') document.body.classList.add('dark');
   });
 
   // Listen for theme changes from main window
-  intentAPI.onCanvasThemeChanged((theme: string) => {
+  whimAPI.onCanvasThemeChanged((theme: string) => {
     document.body.classList.toggle('dark', theme === 'dark');
   });
 
-  // Save and unmount the current canvas target (intent or skill)
+  // Save and unmount the current canvas target (space or skill)
   async function saveAndUnmountCurrent(): Promise<void> {
     const finalContent = getCanvasContent();
     await unmountCanvas();
     if (canvasSkillId) {
       await saveSkillFromCanvas(canvasSkillId, finalContent);
       canvasSkillId = null;
-    } else if (canvasIntentId) {
-      await intentAPI.closeCanvas(canvasIntentId, finalContent);
-      canvasIntentId = null;
+    } else if (canvasSpaceId) {
+      await whimAPI.closeCanvas(canvasSpaceId, finalContent);
+      canvasSpaceId = null;
     }
     canvasAgentPresence.clear();
   }
 
   // Listen for target to load (from main process)
-  intentAPI.onLoadCanvasTarget(async (target: { kind: string; id: string; title: string }) => {
+  whimAPI.onLoadCanvasTarget(async (target: { kind: string; id: string; title: string }) => {
     // If a canvas is already open, save and close it first
-    if (canvasIntentId || canvasSkillId) {
+    if (canvasSpaceId || canvasSkillId) {
       await saveAndUnmountCurrent();
     }
 
     if (target.kind === 'skill') {
       // Load skills list so openSkillEditor can find the skill
-      cachedSkills = await intentAPI.listSkills();
+      cachedSkills = await whimAPI.listSkills();
       await openSkillEditor(target.id);
     } else {
-      // Populate intent data so openCanvas() can find it
-      if (!intents.find(i => i.id === target.id)) {
-        intents.push({
+      // Populate space data so openCanvas() can find it
+      if (!spaces.find(i => i.id === target.id)) {
+        spaces.push({
           id: target.id,
           description: target.title,
           body: null, raw_text: null, client: null,
@@ -5670,7 +5670,7 @@ if (isCanvasMode) {
           updated_at: new Date().toISOString(),
         });
       } else {
-        const existing = intents.find(i => i.id === target.id)!;
+        const existing = spaces.find(i => i.id === target.id)!;
         existing.description = target.title;
       }
 
@@ -5678,9 +5678,9 @@ if (isCanvasMode) {
     }
   });
 
-  // Also load full intents and skills in background for metadata
-  intentAPI.list().then(list => { intents = list; });
-  intentAPI.listSkills().then(list => { cachedSkills = list; });
+  // Also load full spaces and skills in background for metadata
+  whimAPI.list().then(list => { spaces = list; });
+  whimAPI.listSkills().then(list => { cachedSkills = list; });
 }
 
 // ── Settings popout window mode ─────────────────────────
@@ -5695,12 +5695,12 @@ if (isSettingsMode) {
   settingsModalOpen = true;
 
   // Apply theme
-  intentAPI.getSetting('theme').then(t => {
+  whimAPI.getSetting('theme').then(t => {
     if (t === 'dark') document.body.classList.add('dark');
   });
 
   // Listen for theme changes from main window
-  intentAPI.onCanvasThemeChanged((theme: string) => {
+  whimAPI.onCanvasThemeChanged((theme: string) => {
     document.body.classList.toggle('dark', theme === 'dark');
   });
 

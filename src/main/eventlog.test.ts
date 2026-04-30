@@ -11,7 +11,7 @@ let db: Database.Database;
 
 function createSchema(db: Database.Database): void {
   db.exec(`
-    CREATE TABLE intents (
+    CREATE TABLE spaces (
       id TEXT PRIMARY KEY,
       description TEXT NOT NULL,
       body TEXT,
@@ -35,14 +35,14 @@ function createSchema(db: Database.Database): void {
   db.exec(`
     CREATE TABLE canvas_agents (
       id TEXT PRIMARY KEY,
-      intent_id TEXT NOT NULL,
+      space_id TEXT NOT NULL,
       selected_text TEXT NOT NULL,
       session_id TEXT NOT NULL,
       pid INTEGER,
       status TEXT NOT NULL DEFAULT 'running',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
-      FOREIGN KEY (intent_id) REFERENCES intents(id) ON DELETE CASCADE
+      FOREIGN KEY (space_id) REFERENCES spaces(id) ON DELETE CASCADE
     )
   `);
 
@@ -50,7 +50,7 @@ function createSchema(db: Database.Database): void {
     CREATE TABLE agent_sessions (
       id TEXT PRIMARY KEY,
       session_id TEXT NOT NULL,
-      intent_id TEXT,
+      space_id TEXT,
       prompt TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'running',
       summary TEXT DEFAULT '',
@@ -62,16 +62,16 @@ function createSchema(db: Database.Database): void {
   `);
 
   db.exec(`
-    CREATE TABLE intent_events (
+    CREATE TABLE space_events (
       id TEXT PRIMARY KEY,
-      intent_id TEXT NOT NULL,
+      space_id TEXT NOT NULL,
       event_type TEXT NOT NULL,
       due_at TEXT,
       due_at_utc TEXT,
       completed_at TEXT,
       recurrence_json TEXT,
       created_at TEXT NOT NULL,
-      FOREIGN KEY (intent_id) REFERENCES intents(id) ON DELETE CASCADE
+      FOREIGN KEY (space_id) REFERENCES spaces(id) ON DELETE CASCADE
     )
   `);
 }
@@ -82,12 +82,12 @@ function writeLog(lines: object[]): void {
   fs.writeFileSync(logPath, content, 'utf-8');
 }
 
-function getIntent(id: string): any {
-  return db.prepare('SELECT * FROM intents WHERE id = ?').get(id);
+function getSpace(id: string): any {
+  return db.prepare('SELECT * FROM spaces WHERE id = ?').get(id);
 }
 
-function allIntents(): any[] {
-  return db.prepare('SELECT * FROM intents').all();
+function allSpaces(): any[] {
+  return db.prepare('SELECT * FROM spaces').all();
 }
 
 beforeEach(() => {
@@ -106,19 +106,19 @@ afterEach(() => {
 
 describe('appendEvent', () => {
   it('writes a JSON line with ts, op, and data fields', () => {
-    appendEvent(logPath, 'intent.create', { id: 'abc' });
+    appendEvent(logPath, 'space.create', { id: 'abc' });
 
     const content = fs.readFileSync(logPath, 'utf-8');
     const parsed = JSON.parse(content.trim());
     expect(parsed).toHaveProperty('ts');
-    expect(parsed.op).toBe('intent.create');
+    expect(parsed.op).toBe('space.create');
     expect(parsed.data).toEqual({ id: 'abc' });
     expect(new Date(parsed.ts).toISOString()).toBe(parsed.ts);
   });
 
   it('appends to existing file content without overwriting', () => {
-    appendEvent(logPath, 'intent.create', { id: '1' });
-    appendEvent(logPath, 'intent.create', { id: '2' });
+    appendEvent(logPath, 'space.create', { id: '1' });
+    appendEvent(logPath, 'space.create', { id: '2' });
 
     const lines = fs.readFileSync(logPath, 'utf-8').trim().split('\n');
     expect(lines).toHaveLength(2);
@@ -127,7 +127,7 @@ describe('appendEvent', () => {
   });
 
   it('ends each line with a newline', () => {
-    appendEvent(logPath, 'intent.create', { id: '1' });
+    appendEvent(logPath, 'space.create', { id: '1' });
 
     const content = fs.readFileSync(logPath, 'utf-8');
     expect(content.endsWith('\n')).toBe(true);
@@ -151,24 +151,24 @@ describe('replayLog', () => {
   it('handles missing log file gracefully', () => {
     const missing = path.join(tmpDir, 'does-not-exist.jsonl');
     expect(() => replayLog(missing, db)).not.toThrow();
-    expect(allIntents()).toHaveLength(0);
+    expect(allSpaces()).toHaveLength(0);
   });
 
   it('handles empty log file gracefully', () => {
     fs.writeFileSync(logPath, '', 'utf-8');
     expect(() => replayLog(logPath, db)).not.toThrow();
-    expect(allIntents()).toHaveLength(0);
+    expect(allSpaces()).toHaveLength(0);
   });
 
-  // ── intent.create ─────────────────────────────────────
+  // ── space.create ─────────────────────────────────────
 
-  describe('intent.create', () => {
-    it('inserts an intent into the database', () => {
+  describe('space.create', () => {
+    it('inserts an space into the database', () => {
       writeLog([{
         ts: '2024-01-01T00:00:00.000Z',
-        op: 'intent.create',
+        op: 'space.create',
         data: {
-          id: 'i1', description: 'Test intent', body: 'Full body',
+          id: 'i1', description: 'Test space', body: 'Full body',
           raw_text: 'raw', client: 'web', due_at: null, due_at_utc: null,
           recurrence: null, completed_at: null, folder: null,
           attachments: '[]', status: 'captured',
@@ -178,18 +178,18 @@ describe('replayLog', () => {
       }]);
 
       replayLog(logPath, db);
-      const intent = getIntent('i1');
-      expect(intent).toBeTruthy();
-      expect(intent.description).toBe('Test intent');
-      expect(intent.body).toBe('Full body');
-      expect(intent.status).toBe('captured');
-      expect(intent.client).toBe('web');
+      const space = getSpace('i1');
+      expect(space).toBeTruthy();
+      expect(space.description).toBe('Test space');
+      expect(space.body).toBe('Full body');
+      expect(space.status).toBe('captured');
+      expect(space.client).toBe('web');
     });
 
     it('defaults status to "captured" when not provided', () => {
       writeLog([{
         ts: '2024-01-01T00:00:00.000Z',
-        op: 'intent.create',
+        op: 'space.create',
         data: {
           id: 'i2', description: 'No status',
           created_at: '2024-01-01T00:00:00.000Z',
@@ -198,13 +198,13 @@ describe('replayLog', () => {
       }]);
 
       replayLog(logPath, db);
-      expect(getIntent('i2').status).toBe('captured');
+      expect(getSpace('i2').status).toBe('captured');
     });
 
     it('backfills body from raw_text when body is missing', () => {
       writeLog([{
         ts: '2024-01-01T00:00:00.000Z',
-        op: 'intent.create',
+        op: 'space.create',
         data: {
           id: 'i3', description: 'Old event', raw_text: 'raw text value',
           created_at: '2024-01-01T00:00:00.000Z',
@@ -213,13 +213,13 @@ describe('replayLog', () => {
       }]);
 
       replayLog(logPath, db);
-      expect(getIntent('i3').body).toBe('raw text value');
+      expect(getSpace('i3').body).toBe('raw text value');
     });
 
     it('backfills body from description when body and raw_text are missing', () => {
       writeLog([{
         ts: '2024-01-01T00:00:00.000Z',
-        op: 'intent.create',
+        op: 'space.create',
         data: {
           id: 'i4', description: 'Just description',
           created_at: '2024-01-01T00:00:00.000Z',
@@ -228,13 +228,13 @@ describe('replayLog', () => {
       }]);
 
       replayLog(logPath, db);
-      expect(getIntent('i4').body).toBe('Just description');
+      expect(getSpace('i4').body).toBe('Just description');
     });
 
     it('sets body to empty string when body and raw_text are null and description is present', () => {
       writeLog([{
         ts: '2024-01-01T00:00:00.000Z',
-        op: 'intent.create',
+        op: 'space.create',
         data: {
           id: 'i5', description: 'Has description',
           body: null, raw_text: null,
@@ -245,17 +245,17 @@ describe('replayLog', () => {
 
       replayLog(logPath, db);
       // body ?? raw_text ?? description ?? '' → null ?? null ?? 'Has description' → 'Has description'
-      expect(getIntent('i5').body).toBe('Has description');
+      expect(getSpace('i5').body).toBe('Has description');
     });
   });
 
-  // ── intent.update ─────────────────────────────────────
+  // ── space.update ─────────────────────────────────────
 
-  describe('intent.update', () => {
+  describe('space.update', () => {
     beforeEach(() => {
       writeLog([{
         ts: '2024-01-01T00:00:00.000Z',
-        op: 'intent.create',
+        op: 'space.create',
         data: {
           id: 'u1', description: 'Original', body: 'Original body',
           status: 'captured',
@@ -266,11 +266,11 @@ describe('replayLog', () => {
       replayLog(logPath, db);
     });
 
-    it('updates allowed fields on an intent', () => {
+    it('updates allowed fields on an space', () => {
       writeLog([
         {
           ts: '2024-01-01T00:00:00.000Z',
-          op: 'intent.create',
+          op: 'space.create',
           data: {
             id: 'u1', description: 'Original', body: 'Original body',
             status: 'captured',
@@ -280,19 +280,19 @@ describe('replayLog', () => {
         },
         {
           ts: '2024-01-02T00:00:00.000Z',
-          op: 'intent.update',
+          op: 'space.update',
           data: { id: 'u1', fields: { description: 'Updated', status: 'in_progress' } },
         },
       ]);
 
       // Re-create DB for clean replay
-      db.exec('DELETE FROM intents');
+      db.exec('DELETE FROM spaces');
       replayLog(logPath, db);
 
-      const intent = getIntent('u1');
-      expect(intent.description).toBe('Updated');
-      expect(intent.status).toBe('in_progress');
-      expect(intent.body).toBe('Original body');
+      const space = getSpace('u1');
+      expect(space.description).toBe('Updated');
+      expect(space.status).toBe('in_progress');
+      expect(space.body).toBe('Original body');
     });
 
     it('skips unknown fields with a warning but does not crash', () => {
@@ -301,7 +301,7 @@ describe('replayLog', () => {
       writeLog([
         {
           ts: '2024-01-01T00:00:00.000Z',
-          op: 'intent.create',
+          op: 'space.create',
           data: {
             id: 'u1', description: 'Original', body: 'Body',
             status: 'captured',
@@ -311,7 +311,7 @@ describe('replayLog', () => {
         },
         {
           ts: '2024-01-02T00:00:00.000Z',
-          op: 'intent.update',
+          op: 'space.update',
           data: {
             id: 'u1',
             fields: { description: 'Updated', not_a_real_field: 'bad', another_fake: 123 },
@@ -319,11 +319,11 @@ describe('replayLog', () => {
         },
       ]);
 
-      db.exec('DELETE FROM intents');
+      db.exec('DELETE FROM spaces');
       expect(() => replayLog(logPath, db)).not.toThrow();
 
-      const intent = getIntent('u1');
-      expect(intent.description).toBe('Updated');
+      const space = getSpace('u1');
+      expect(space.description).toBe('Updated');
       expect(warnSpy).toHaveBeenCalledWith(
         expect.stringContaining('Skipping unknown field')
       );
@@ -337,7 +337,7 @@ describe('replayLog', () => {
       writeLog([
         {
           ts: '2024-01-01T00:00:00.000Z',
-          op: 'intent.create',
+          op: 'space.create',
           data: {
             id: 'u1', description: 'Original', body: 'Body',
             status: 'captured',
@@ -347,27 +347,27 @@ describe('replayLog', () => {
         },
         {
           ts: '2024-01-02T00:00:00.000Z',
-          op: 'intent.update',
+          op: 'space.update',
           data: { id: 'u1', fields: { totally_fake: 'nope' } },
         },
       ]);
 
-      db.exec('DELETE FROM intents');
+      db.exec('DELETE FROM spaces');
       expect(() => replayLog(logPath, db)).not.toThrow();
-      expect(getIntent('u1').description).toBe('Original');
+      expect(getSpace('u1').description).toBe('Original');
 
       warnSpy.mockRestore();
     });
   });
 
-  // ── intent.delete ─────────────────────────────────────
+  // ── space.delete ─────────────────────────────────────
 
-  describe('intent.delete', () => {
-    it('removes an intent from the database', () => {
+  describe('space.delete', () => {
+    it('removes an space from the database', () => {
       writeLog([
         {
           ts: '2024-01-01T00:00:00.000Z',
-          op: 'intent.create',
+          op: 'space.create',
           data: {
             id: 'd1', description: 'To delete', body: '',
             status: 'captured',
@@ -377,24 +377,24 @@ describe('replayLog', () => {
         },
         {
           ts: '2024-01-02T00:00:00.000Z',
-          op: 'intent.delete',
+          op: 'space.delete',
           data: { id: 'd1' },
         },
       ]);
 
       replayLog(logPath, db);
-      expect(getIntent('d1')).toBeUndefined();
+      expect(getSpace('d1')).toBeUndefined();
     });
   });
 
-  // ── intent.assign_folder ──────────────────────────────
+  // ── space.assign_folder ──────────────────────────────
 
-  describe('intent.assign_folder', () => {
+  describe('space.assign_folder', () => {
     it('updates folder and sets updated_at from event timestamp', () => {
       writeLog([
         {
           ts: '2024-01-01T00:00:00.000Z',
-          op: 'intent.create',
+          op: 'space.create',
           data: {
             id: 'f1', description: 'Folder test', body: '',
             status: 'captured',
@@ -404,15 +404,15 @@ describe('replayLog', () => {
         },
         {
           ts: '2024-06-15T12:00:00.000Z',
-          op: 'intent.assign_folder',
+          op: 'space.assign_folder',
           data: { id: 'f1', folder: '/workspace/projects/cool' },
         },
       ]);
 
       replayLog(logPath, db);
-      const intent = getIntent('f1');
-      expect(intent.folder).toBe('/workspace/projects/cool');
-      expect(intent.updated_at).toBe('2024-06-15T12:00:00.000Z');
+      const space = getSpace('f1');
+      expect(space.folder).toBe('/workspace/projects/cool');
+      expect(space.updated_at).toBe('2024-06-15T12:00:00.000Z');
     });
   });
 
@@ -423,7 +423,7 @@ describe('replayLog', () => {
       writeLog([
         {
           ts: '2024-01-01T00:00:00.000Z',
-          op: 'intent.create',
+          op: 'space.create',
           data: {
             id: 'ord1', description: 'Created', body: '',
             status: 'captured',
@@ -433,31 +433,31 @@ describe('replayLog', () => {
         },
         {
           ts: '2024-01-02T00:00:00.000Z',
-          op: 'intent.update',
+          op: 'space.update',
           data: { id: 'ord1', fields: { description: 'Updated', status: 'in_progress' } },
         },
         {
           ts: '2024-01-03T00:00:00.000Z',
-          op: 'intent.delete',
+          op: 'space.delete',
           data: { id: 'ord1' },
         },
       ]);
 
       replayLog(logPath, db);
-      expect(getIntent('ord1')).toBeUndefined();
-      expect(allIntents()).toHaveLength(0);
+      expect(getSpace('ord1')).toBeUndefined();
+      expect(allSpaces()).toHaveLength(0);
     });
   });
 
   // ── snapshot ──────────────────────────────────────────
 
   describe('snapshot', () => {
-    it('bulk-loads intents from snapshot', () => {
+    it('bulk-loads spaces from snapshot', () => {
       writeLog([{
         ts: '2024-01-01T00:00:00.000Z',
         op: 'snapshot',
         data: {
-          intents: [
+          spaces: [
             {
               id: 's1', description: 'Snap one', body: 'Body 1', status: 'captured',
               created_at: '2024-01-01T00:00:00.000Z',
@@ -473,29 +473,29 @@ describe('replayLog', () => {
       }]);
 
       replayLog(logPath, db);
-      expect(allIntents()).toHaveLength(2);
-      expect(getIntent('s1').description).toBe('Snap one');
-      expect(getIntent('s2').status).toBe('done');
+      expect(allSpaces()).toHaveLength(2);
+      expect(getSpace('s1').description).toBe('Snap one');
+      expect(getSpace('s2').status).toBe('done');
     });
 
-    it('bulk-loads intent_events from snapshot', () => {
+    it('bulk-loads space_events from snapshot', () => {
       writeLog([{
         ts: '2024-01-01T00:00:00.000Z',
         op: 'snapshot',
         data: {
-          intents: [{
+          spaces: [{
             id: 'si1', description: 'Parent', body: '', status: 'captured',
             created_at: '2024-01-01T00:00:00.000Z',
             updated_at: '2024-01-01T00:00:00.000Z',
           }],
-          intent_events: [
+          space_events: [
             {
-              id: 'ie1', intent_id: 'si1', event_type: 'due_date_set',
+              id: 'ie1', space_id: 'si1', event_type: 'due_date_set',
               due_at: '2024-02-01', due_at_utc: '2024-02-01T00:00:00Z',
               created_at: '2024-01-01T00:00:00.000Z',
             },
             {
-              id: 'ie2', intent_id: 'si1', event_type: 'completed',
+              id: 'ie2', space_id: 'si1', event_type: 'completed',
               completed_at: '2024-02-15T12:00:00Z',
               created_at: '2024-01-15T00:00:00.000Z',
             },
@@ -504,7 +504,7 @@ describe('replayLog', () => {
       }]);
 
       replayLog(logPath, db);
-      const events = db.prepare('SELECT * FROM intent_events ORDER BY created_at').all() as any[];
+      const events = db.prepare('SELECT * FROM space_events ORDER BY created_at').all() as any[];
       expect(events).toHaveLength(2);
       expect(events[0].id).toBe('ie1');
       expect(events[0].due_at).toBe('2024-02-01');
@@ -512,7 +512,7 @@ describe('replayLog', () => {
       expect(events[1].completed_at).toBe('2024-02-15T12:00:00Z');
     });
 
-    it('snapshot without intents or intent_events does not error', () => {
+    it('snapshot without spaces or space_events does not error', () => {
       writeLog([{
         ts: '2024-01-01T00:00:00.000Z',
         op: 'snapshot',
@@ -520,7 +520,7 @@ describe('replayLog', () => {
       }]);
 
       expect(() => replayLog(logPath, db)).not.toThrow();
-      expect(allIntents()).toHaveLength(0);
+      expect(allSpaces()).toHaveLength(0);
     });
   });
 
@@ -532,7 +532,7 @@ describe('replayLog', () => {
 
       const goodLine = JSON.stringify({
         ts: '2024-01-01T00:00:00.000Z',
-        op: 'intent.create',
+        op: 'space.create',
         data: {
           id: 'c1', description: 'Good', body: '',
           status: 'captured',
@@ -543,7 +543,7 @@ describe('replayLog', () => {
       fs.writeFileSync(logPath, goodLine + '\n' + '{corrupt json\n', 'utf-8');
 
       expect(() => replayLog(logPath, db)).not.toThrow();
-      expect(getIntent('c1')).toBeTruthy();
+      expect(getSpace('c1')).toBeTruthy();
       expect(warnSpy).toHaveBeenCalledWith(
         expect.stringContaining('Ignoring corrupt final line')
       );
@@ -554,7 +554,7 @@ describe('replayLog', () => {
     it('throws on corrupt line in the middle (with valid lines after)', () => {
       const goodLine1 = JSON.stringify({
         ts: '2024-01-01T00:00:00.000Z',
-        op: 'intent.create',
+        op: 'space.create',
         data: {
           id: 'c2', description: 'First', body: '',
           status: 'captured',
@@ -564,7 +564,7 @@ describe('replayLog', () => {
       });
       const goodLine2 = JSON.stringify({
         ts: '2024-01-02T00:00:00.000Z',
-        op: 'intent.create',
+        op: 'space.create',
         data: {
           id: 'c3', description: 'Third', body: '',
           status: 'captured',
@@ -586,11 +586,11 @@ describe('replayLog', () => {
   // ── intent_event.log ──────────────────────────────────
 
   describe('intent_event.log', () => {
-    it('inserts an intent event into intent_events table', () => {
+    it('inserts an space event into space_events table', () => {
       writeLog([
         {
           ts: '2024-01-01T00:00:00.000Z',
-          op: 'intent.create',
+          op: 'space.create',
           data: {
             id: 'ie-parent', description: 'Parent', body: '',
             status: 'captured',
@@ -602,7 +602,7 @@ describe('replayLog', () => {
           ts: '2024-01-02T00:00:00.000Z',
           op: 'intent_event.log',
           data: {
-            id: 'evt1', intent_id: 'ie-parent', event_type: 'due_date_set',
+            id: 'evt1', space_id: 'ie-parent', event_type: 'due_date_set',
             due_at: '2024-03-01', due_at_utc: '2024-03-01T00:00:00Z',
             completed_at: null, recurrence_json: null,
             created_at: '2024-01-02T00:00:00.000Z',
@@ -611,9 +611,9 @@ describe('replayLog', () => {
       ]);
 
       replayLog(logPath, db);
-      const evt = db.prepare('SELECT * FROM intent_events WHERE id = ?').get('evt1') as any;
+      const evt = db.prepare('SELECT * FROM space_events WHERE id = ?').get('evt1') as any;
       expect(evt).toBeTruthy();
-      expect(evt.intent_id).toBe('ie-parent');
+      expect(evt.space_id).toBe('ie-parent');
       expect(evt.event_type).toBe('due_date_set');
       expect(evt.due_at).toBe('2024-03-01');
       expect(evt.due_at_utc).toBe('2024-03-01T00:00:00Z');
@@ -627,7 +627,7 @@ describe('replayLog', () => {
       writeLog([
         {
           ts: '2024-01-01T00:00:00.000Z',
-          op: 'intent.create',
+          op: 'space.create',
           data: {
             id: 'ca-parent', description: 'Parent', body: '',
             status: 'captured',
@@ -639,7 +639,7 @@ describe('replayLog', () => {
           ts: '2024-01-02T00:00:00.000Z',
           op: 'canvas_agent.created',
           data: {
-            id: 'ca1', intent_id: 'ca-parent', selected_text: 'Fix the bug',
+            id: 'ca1', space_id: 'ca-parent', selected_text: 'Fix the bug',
             session_id: 'sess-1', pid: 12345, status: 'running',
             created_at: '2024-01-02T00:00:00.000Z',
             updated_at: '2024-01-02T00:00:00.000Z',
@@ -650,7 +650,7 @@ describe('replayLog', () => {
       replayLog(logPath, db);
       const agent = db.prepare('SELECT * FROM canvas_agents WHERE id = ?').get('ca1') as any;
       expect(agent).toBeTruthy();
-      expect(agent.intent_id).toBe('ca-parent');
+      expect(agent.space_id).toBe('ca-parent');
       expect(agent.selected_text).toBe('Fix the bug');
       expect(agent.session_id).toBe('sess-1');
       expect(agent.pid).toBe(12345);
@@ -661,7 +661,7 @@ describe('replayLog', () => {
       writeLog([
         {
           ts: '2024-01-01T00:00:00.000Z',
-          op: 'intent.create',
+          op: 'space.create',
           data: {
             id: 'ca-parent2', description: 'Parent', body: '',
             status: 'captured',
@@ -673,7 +673,7 @@ describe('replayLog', () => {
           ts: '2024-01-02T00:00:00.000Z',
           op: 'canvas_agent.created',
           data: {
-            id: 'ca2', intent_id: 'ca-parent2', selected_text: 'Some text',
+            id: 'ca2', space_id: 'ca-parent2', selected_text: 'Some text',
             session_id: 'sess-2', status: 'running',
             created_at: '2024-01-02T00:00:00.000Z',
             updated_at: '2024-01-02T00:00:00.000Z',
@@ -693,7 +693,7 @@ describe('replayLog', () => {
       writeLog([
         {
           ts: '2024-01-01T00:00:00.000Z',
-          op: 'intent.create',
+          op: 'space.create',
           data: {
             id: 'cau-parent', description: 'Parent', body: '',
             status: 'captured',
@@ -705,7 +705,7 @@ describe('replayLog', () => {
           ts: '2024-01-02T00:00:00.000Z',
           op: 'canvas_agent.created',
           data: {
-            id: 'cau1', intent_id: 'cau-parent', selected_text: 'Text',
+            id: 'cau1', space_id: 'cau-parent', selected_text: 'Text',
             session_id: 'sess-x', pid: null, status: 'running',
             created_at: '2024-01-02T00:00:00.000Z',
             updated_at: '2024-01-02T00:00:00.000Z',
@@ -760,7 +760,7 @@ describe('replayLog', () => {
         ts: '2024-01-01T00:00:00.000Z',
         op: 'agent_session.created',
         data: {
-          id: 'as1', session_id: 'sid-1', intent_id: 'some-intent',
+          id: 'as1', session_id: 'sid-1', space_id: 'some-space',
           prompt: 'Fix all bugs', status: 'running',
           summary: 'Fixing bugs', working_dir: '/home/user/project',
           created_at: '2024-01-01T00:00:00.000Z',
@@ -772,7 +772,7 @@ describe('replayLog', () => {
       const sess = db.prepare('SELECT * FROM agent_sessions WHERE id = ?').get('as1') as any;
       expect(sess).toBeTruthy();
       expect(sess.session_id).toBe('sid-1');
-      expect(sess.intent_id).toBe('some-intent');
+      expect(sess.space_id).toBe('some-space');
       expect(sess.prompt).toBe('Fix all bugs');
       expect(sess.status).toBe('running');
       expect(sess.summary).toBe('Fixing bugs');
@@ -794,7 +794,7 @@ describe('replayLog', () => {
       const sess = db.prepare('SELECT * FROM agent_sessions WHERE id = ?').get('as2') as any;
       expect(sess.summary).toBe('');
       expect(sess.working_dir).toBeNull();
-      expect(sess.intent_id).toBeNull();
+      expect(sess.space_id).toBeNull();
     });
   });
 
@@ -878,7 +878,7 @@ describe('replayLog', () => {
       writeLog([
         {
           ts: '2024-01-01T00:00:00.000Z',
-          op: 'intent.create',
+          op: 'space.create',
           data: {
             id: 'idem1', description: 'Idempotent', body: 'Test body',
             status: 'captured',
@@ -888,20 +888,20 @@ describe('replayLog', () => {
         },
         {
           ts: '2024-01-02T00:00:00.000Z',
-          op: 'intent.update',
+          op: 'space.update',
           data: { id: 'idem1', fields: { description: 'Updated idem' } },
         },
       ]);
 
       replayLog(logPath, db);
-      const first = getIntent('idem1');
+      const first = getSpace('idem1');
 
       // Replay again on same DB
       replayLog(logPath, db);
-      const second = getIntent('idem1');
+      const second = getSpace('idem1');
 
       expect(second).toEqual(first);
-      expect(allIntents()).toHaveLength(1);
+      expect(allSpaces()).toHaveLength(1);
     });
   });
 });

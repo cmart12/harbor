@@ -3,13 +3,13 @@ import type { AgentListAllItem } from '../../shared/ipc-contract';
 import { agentStore } from './agent-store';
 import type { AgentApproval, AgentStep, AgentPresence } from './agent-store';
 
-function makeAgent(overrides: Partial<AgentListAllItem> & { agentId: string; intentId: string }): AgentListAllItem {
+function makeAgent(overrides: Partial<AgentListAllItem> & { agentId: string; spaceId: string }): AgentListAllItem {
   return {
     sessionId: 'sess-1',
     status: 'running',
     summary: 'Test agent',
     selectedText: '',
-    anchor: { type: 'intent' } as AgentListAllItem['anchor'],
+    anchor: { type: 'space' } as AgentListAllItem['anchor'],
     createdAt: '2024-01-01T00:00:00Z',
     pendingApprovalId: null,
     pendingPermissionKind: null,
@@ -26,7 +26,7 @@ describe('AgentStore', () => {
     agentStore.setAgents([]);
     agentStore.setActiveSessionIntents(new Set());
     // Clear collections that have no bulk-reset method
-    for (const id of agentStore.getState().processingIntents) {
+    for (const id of agentStore.getState().processingSpaces) {
       agentStore.removeProcessingIntent(id);
     }
     for (const id of agentStore.getState().approvals.keys()) {
@@ -46,8 +46,8 @@ describe('AgentStore', () => {
   it('has correct initial state after reset', () => {
     const state = agentStore.getState();
     expect(state.agents).toEqual([]);
-    expect(state.processingIntents.size).toBe(0);
-    expect(state.activeSessionIntents.size).toBe(0);
+    expect(state.processingSpaces.size).toBe(0);
+    expect(state.activeSessionSpaces.size).toBe(0);
     expect(state.approvals.size).toBe(0);
     expect(state.steps.size).toBe(0);
     expect(state.presence.size).toBe(0);
@@ -59,7 +59,7 @@ describe('AgentStore', () => {
     const listener = vi.fn();
     const unsub = agentStore.subscribe(listener);
 
-    const agents = [makeAgent({ agentId: 'a1', intentId: 'i1' })];
+    const agents = [makeAgent({ agentId: 'a1', spaceId: 'i1' })];
     agentStore.setAgents(agents);
 
     expect(agentStore.getState().agents).toEqual(agents);
@@ -67,33 +67,33 @@ describe('AgentStore', () => {
     unsub();
   });
 
-  // -- Processing intents -----------------------------------------------------
+  // -- Processing spaces -----------------------------------------------------
 
   it('addProcessingIntent() / removeProcessingIntent() work correctly', () => {
-    agentStore.addProcessingIntent('intent-1');
-    expect(agentStore.getState().processingIntents.has('intent-1')).toBe(true);
+    agentStore.addProcessingIntent('space-1');
+    expect(agentStore.getState().processingSpaces.has('space-1')).toBe(true);
 
-    agentStore.addProcessingIntent('intent-2');
-    expect(agentStore.getState().processingIntents.size).toBe(2);
+    agentStore.addProcessingIntent('space-2');
+    expect(agentStore.getState().processingSpaces.size).toBe(2);
 
-    agentStore.removeProcessingIntent('intent-1');
-    expect(agentStore.getState().processingIntents.has('intent-1')).toBe(false);
-    expect(agentStore.getState().processingIntents.has('intent-2')).toBe(true);
+    agentStore.removeProcessingIntent('space-1');
+    expect(agentStore.getState().processingSpaces.has('space-1')).toBe(false);
+    expect(agentStore.getState().processingSpaces.has('space-2')).toBe(true);
   });
 
   it('removeProcessingIntent() is safe when id is not present', () => {
     agentStore.removeProcessingIntent('nonexistent');
-    expect(agentStore.getState().processingIntents.size).toBe(0);
+    expect(agentStore.getState().processingSpaces.size).toBe(0);
   });
 
-  // -- Active session intents -------------------------------------------------
+  // -- Active session spaces -------------------------------------------------
 
   it('setActiveSessionIntents() updates the set', () => {
     agentStore.setActiveSessionIntents(new Set(['i1', 'i2']));
     const state = agentStore.getState();
-    expect(state.activeSessionIntents.has('i1')).toBe(true);
-    expect(state.activeSessionIntents.has('i2')).toBe(true);
-    expect(state.activeSessionIntents.size).toBe(2);
+    expect(state.activeSessionSpaces.has('i1')).toBe(true);
+    expect(state.activeSessionSpaces.has('i2')).toBe(true);
+    expect(state.activeSessionSpaces.size).toBe(2);
   });
 
   // -- Approvals --------------------------------------------------------------
@@ -148,7 +148,7 @@ describe('AgentStore', () => {
   it('setPresence() / clearPresence() manage the presence map', () => {
     const presence: AgentPresence = {
       agentId: 'a1',
-      intentId: 'i1',
+      spaceId: 'i1',
       persona: { name: 'Agent Smith', handle: 'smith', color: '#ff0000' },
     };
 
@@ -197,9 +197,9 @@ describe('AgentStore', () => {
   // -- getAgentsForIntent() ---------------------------------------------------
 
   it('getAgentsForIntent() returns filtered agents', () => {
-    const a1 = makeAgent({ agentId: 'a1', intentId: 'i1' });
-    const a2 = makeAgent({ agentId: 'a2', intentId: 'i2' });
-    const a3 = makeAgent({ agentId: 'a3', intentId: 'i1' });
+    const a1 = makeAgent({ agentId: 'a1', spaceId: 'i1' });
+    const a2 = makeAgent({ agentId: 'a2', spaceId: 'i2' });
+    const a3 = makeAgent({ agentId: 'a3', spaceId: 'i1' });
     agentStore.setAgents([a1, a2, a3]);
 
     expect(agentStore.getAgentsForIntent('i1')).toEqual([a1, a3]);
@@ -210,27 +210,27 @@ describe('AgentStore', () => {
   // -- hasActiveAgent() -------------------------------------------------------
 
   it('hasActiveAgent() returns true for running agent', () => {
-    agentStore.setAgents([makeAgent({ agentId: 'a1', intentId: 'i1', status: 'running' })]);
+    agentStore.setAgents([makeAgent({ agentId: 'a1', spaceId: 'i1', status: 'running' })]);
     expect(agentStore.hasActiveAgent('i1')).toBe(true);
   });
 
   it('hasActiveAgent() returns true for waiting-approval agent', () => {
-    agentStore.setAgents([makeAgent({ agentId: 'a1', intentId: 'i1', status: 'waiting-approval' })]);
+    agentStore.setAgents([makeAgent({ agentId: 'a1', spaceId: 'i1', status: 'waiting-approval' })]);
     expect(agentStore.hasActiveAgent('i1')).toBe(true);
   });
 
   it('hasActiveAgent() returns false for completed agent', () => {
-    agentStore.setAgents([makeAgent({ agentId: 'a1', intentId: 'i1', status: 'completed' })]);
+    agentStore.setAgents([makeAgent({ agentId: 'a1', spaceId: 'i1', status: 'completed' })]);
     expect(agentStore.hasActiveAgent('i1')).toBe(false);
   });
 
   it('hasActiveAgent() returns false for failed agent', () => {
-    agentStore.setAgents([makeAgent({ agentId: 'a1', intentId: 'i1', status: 'failed' })]);
+    agentStore.setAgents([makeAgent({ agentId: 'a1', spaceId: 'i1', status: 'failed' })]);
     expect(agentStore.hasActiveAgent('i1')).toBe(false);
   });
 
-  it('hasActiveAgent() returns false when no agents match intent', () => {
-    agentStore.setAgents([makeAgent({ agentId: 'a1', intentId: 'other' })]);
+  it('hasActiveAgent() returns false when no agents match space', () => {
+    agentStore.setAgents([makeAgent({ agentId: 'a1', spaceId: 'other' })]);
     expect(agentStore.hasActiveAgent('i1')).toBe(false);
   });
 
@@ -242,7 +242,7 @@ describe('AgentStore', () => {
     const state2 = agentStore.getState();
 
     expect(state1).not.toBe(state2);
-    expect(state1.processingIntents.has('i1')).toBe(false);
-    expect(state2.processingIntents.has('i1')).toBe(true);
+    expect(state1.processingSpaces.has('i1')).toBe(false);
+    expect(state2.processingSpaces.has('i1')).toBe(true);
   });
 });

@@ -5,13 +5,13 @@ import * as fs from 'fs';
 // Mock electron before importing config
 vi.mock('electron', () => ({
   app: {
-    getPath: () => '/tmp/intent-test-config',
+    getPath: () => '/tmp/space-test-config',
   },
 }));
 
 import { loadConfig, getConfig, getConfigValue, setConfigValue, getSessionId, setSessionId, removeSession, saveConfig } from './config';
 
-const CONFIG_PATH = path.join('/tmp/intent-test-config', 'config.json');
+const CONFIG_PATH = path.join('/tmp/space-test-config', 'config.json');
 
 describe('config', () => {
   beforeEach(() => {
@@ -106,38 +106,38 @@ describe('config', () => {
   describe('getSessionId / setSessionId / removeSession', () => {
     it('stores and retrieves a session ID', () => {
       loadConfig();
-      setSessionId('intent-1', 'session-abc');
-      expect(getSessionId('intent-1')).toBe('session-abc');
+      setSessionId('space-1', 'session-abc');
+      expect(getSessionId('space-1')).toBe('session-abc');
     });
 
-    it('returns null for an unknown intent ID', () => {
+    it('returns null for an unknown space ID', () => {
       loadConfig();
       expect(getSessionId('nonexistent')).toBeNull();
     });
 
     it('removes a stored session ID', () => {
       loadConfig();
-      setSessionId('intent-2', 'session-xyz');
-      expect(getSessionId('intent-2')).toBe('session-xyz');
-      removeSession('intent-2');
-      expect(getSessionId('intent-2')).toBeNull();
+      setSessionId('space-2', 'session-xyz');
+      expect(getSessionId('space-2')).toBe('session-xyz');
+      removeSession('space-2');
+      expect(getSessionId('space-2')).toBeNull();
     });
 
     it('persists session IDs to disk', () => {
       loadConfig();
-      setSessionId('intent-3', 'session-disk');
+      setSessionId('space-3', 'session-disk');
 
       const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
-      expect(raw.sessions['intent-3']).toBe('session-disk');
+      expect(raw.sessions['space-3']).toBe('session-disk');
     });
 
     it('removes session ID from disk after removeSession', () => {
       loadConfig();
-      setSessionId('intent-4', 'session-temp');
-      removeSession('intent-4');
+      setSessionId('space-4', 'session-temp');
+      removeSession('space-4');
 
       const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
-      expect(raw.sessions['intent-4']).toBeUndefined();
+      expect(raw.sessions['space-4']).toBeUndefined();
     });
   });
 
@@ -187,8 +187,8 @@ describe('config', () => {
     it('setConfigValue for sessions persists the full sessions map', () => {
       loadConfig();
       const sessions: Record<string, string> = {
-        'intent-a': 'sess-1',
-        'intent-b': 'sess-2',
+        'space-a': 'sess-1',
+        'space-b': 'sess-2',
       };
       setConfigValue('sessions', sessions);
 

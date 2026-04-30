@@ -1244,7 +1244,7 @@ body.dark .sandbox-block-banner-btn:hover {
 
 /* ── Past view cards ──────────────────────────────────── */
 
-.past-card {
+.history-card {
   position: relative;
   background: var(--card-bg);
   border: var(--card-border);
@@ -1257,12 +1257,12 @@ body.dark .sandbox-block-banner-btn:hover {
   box-shadow: var(--card-shadow);
 }
 
-.past-card:hover {
+.history-card:hover {
   background: var(--card-hover-bg);
   box-shadow: var(--card-hover-shadow);
 }
 
-.past-card-restore {
+.history-card-restore {
   position: absolute;
   top: 10px;
   right: 10px;
@@ -1281,16 +1281,16 @@ body.dark .sandbox-block-banner-btn:hover {
   transition: opacity 0.15s ease, background 0.15s ease;
 }
 
-.past-card:hover .past-card-restore {
+.history-card:hover .history-card-restore {
   opacity: 1;
 }
 
-.past-card-restore:hover {
+.history-card-restore:hover {
   background: rgba(0, 0, 0, 0.12);
   color: rgba(0, 0, 0, 0.85);
 }
 
-.past-card-type {
+.history-card-type {
   display: flex;
   align-items: center;
   gap: 5px;
@@ -1299,11 +1299,11 @@ body.dark .sandbox-block-banner-btn:hover {
   margin-bottom: 8px;
 }
 
-.past-type-icon {
+.history-type-icon {
   font-size: 13px;
 }
 
-.past-card-title {
+.history-card-title {
   font-size: 14px;
   font-weight: 600;
   color: #1d1d1f;
@@ -1311,20 +1311,20 @@ body.dark .sandbox-block-banner-btn:hover {
   margin-bottom: 4px;
 }
 
-.past-card-client {
+.history-card-client {
   font-size: 12px;
   color: rgba(0, 0, 0, 0.6);
   margin-bottom: 8px;
 }
 
-.past-card-steps {
+.history-card-steps {
   background: var(--card-inner-bg);
   border-radius: var(--card-inner-radius);
   padding: 10px 12px;
   margin: 8px 0;
 }
 
-.past-card-step {
+.history-card-step {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1333,12 +1333,12 @@ body.dark .sandbox-block-banner-btn:hover {
   padding: 4px 0;
 }
 
-.past-step-icon {
+.history-step-icon {
   font-size: 13px;
   flex-shrink: 0;
 }
 
-.past-step-connector {
+.history-step-connector {
   width: 1px;
   height: 8px;
   margin-left: 6px;
@@ -1346,22 +1346,22 @@ body.dark .sandbox-block-banner-btn:hover {
   border-radius: 1px;
 }
 
-.past-card-meta {
+.history-card-meta {
   font-size: 11px;
   color: rgba(0, 0, 0, 0.5);
   margin-top: 6px;
 }
 
-.past-card-mini {
+.history-card-mini {
   padding: 10px 14px;
 }
 
-.past-card-mini .past-card-title {
+.history-card-mini .history-card-title {
   font-size: 13px;
   font-weight: 500;
 }
 
-.past-date-label {
+.history-date-label {
   font-size: 11px;
   font-weight: 600;
   color: rgba(0, 0, 0, 0.5);
@@ -1776,9 +1776,9 @@ body.dark .workers-badge {
   color: rgba(0, 0, 0, 0.85);
 }
 
-/* Focus button on intent items */
+/* Focus button on space items */
 
-.intent-focus {
+.space-focus {
   opacity: 0;
   background: none;
   border: none;
@@ -1790,20 +1790,20 @@ body.dark .workers-badge {
   flex-shrink: 0;
 }
 
-.intent-item:hover .intent-focus {
+.space-item:hover .space-focus {
   opacity: 1;
 }
 
-.intent-focus:hover {
+.space-focus:hover {
   background: rgba(124, 102, 220, 0.08);
 }
 
-.intent-focus.is-focused {
+.space-focus.is-focused {
   opacity: 1;
 }
 
-/* Highlight focused intent in list */
-.intent-item.focused {
+/* Highlight focused space in list */
+.space-item.focused {
   border-color: rgba(66, 133, 244, 0.2);
   background: rgba(66, 133, 244, 0.04);
 }
@@ -1861,13 +1861,13 @@ body.dark .workers-badge {
   color: rgba(0, 0, 0, 0.7);
 }
 
-#intent-list.hidden {
+#space-list.hidden {
   display: none;
 }
 
-/* ── Intent list ───────────────────────────────────────── */
+/* ── Space list ───────────────────────────────────────── */
 
-#intent-list {
+#space-list {
   flex: 1;
   overflow-y: auto;
   display: flex;
@@ -1878,7 +1878,7 @@ body.dark .workers-badge {
   scrollbar-color: rgba(0,0,0,0.08) transparent;
 }
 
-.intent-item {
+.space-item {
   background: var(--card-bg);
   border: var(--card-border);
   border-radius: var(--card-radius);
@@ -1897,30 +1897,30 @@ body.dark .workers-badge {
   to { opacity: 1; transform: translateY(0); }
 }
 
-.intent-item:hover {
+.space-item:hover {
   background: var(--card-hover-bg);
   box-shadow: var(--card-hover-shadow);
 }
 
-.intent-item.kb-selected {
+.space-item.kb-selected {
   background: rgba(225, 235, 250, 0.9);
   box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.3);
 }
 
-.intent-item.done {
+.space-item.done {
   opacity: 0.45;
 }
 
-.intent-item.done .intent-desc {
+.space-item.done .space-desc {
   text-decoration: line-through;
   color: rgba(0, 0, 0, 0.35);
 }
 
-.intent-item.processing .intent-desc {
+.space-item.processing .space-desc {
   color: rgba(0, 0, 0, 0.4);
 }
 
-.intent-check {
+.space-check {
   width: 18px;
   height: 18px;
   border-radius: 50%;
@@ -1936,29 +1936,29 @@ body.dark .workers-badge {
   color: #ffffff;
 }
 
-.intent-check:hover {
+.space-check:hover {
   border-color: #7c66dc;
   background: rgba(124, 102, 220, 0.08);
 }
 
-.intent-check.checked {
+.space-check.checked {
   border-color: #7c66dc;
   background: #7c66dc;
 }
 
-.intent-content {
+.space-content {
   flex: 1;
   min-width: 0;
 }
 
-.intent-desc {
+.space-desc {
   font-size: 13px;
   line-height: 1.4;
   color: #2c2c3a;
   word-break: break-word;
 }
 
-.intent-meta {
+.space-meta {
   display: flex;
   gap: 8px;
   margin-top: 4px;
@@ -1966,15 +1966,15 @@ body.dark .workers-badge {
   color: rgba(0, 0, 0, 0.65);
 }
 
-.intent-meta span {
+.space-meta span {
   display: flex;
   align-items: center;
   gap: 3px;
 }
 
-/* ── Intent body (collapsible) ───────────────────────── */
+/* ── Space body (collapsible) ───────────────────────── */
 
-.intent-body {
+.space-body {
   font-size: 12px;
   color: rgba(0, 0, 0, 0.65);
   margin-top: 4px;
@@ -1988,28 +1988,28 @@ body.dark .workers-badge {
   word-break: break-word;
 }
 
-.intent-body.collapsed {
+.space-body.collapsed {
   max-height: 38px;
   overflow: hidden;
 }
 
-.intent-body.expanded {
+.space-body.expanded {
   max-height: none;
 }
 
-.intent-body:hover {
+.space-body:hover {
   background: rgba(0, 0, 0, 0.04);
 }
 
-.intent-body .body-preview {
+.space-body .body-preview {
   display: inline;
 }
 
-.intent-body .body-full {
+.space-body .body-full {
   display: inline;
 }
 
-.intent-body .hidden {
+.space-body .hidden {
   display: none !important;
 }
 
@@ -2031,9 +2031,9 @@ body.dark .workers-badge {
   min-height: 60px;
 }
 
-/* ── Intent attachments ──────────────────────────────── */
+/* ── Space attachments ──────────────────────────────── */
 
-.intent-attachments {
+.space-attachments {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
@@ -2083,9 +2083,9 @@ body.dark .workers-badge {
   padding: 4px 6px;
 }
 
-/* ── Intent action row (add link, edit body) ─────────── */
+/* ── Space action row (add link, edit body) ─────────── */
 
-.intent-actions-row {
+.space-actions-row {
   display: flex;
   gap: 4px;
   margin-top: 2px;
@@ -2093,12 +2093,12 @@ body.dark .workers-badge {
   transition: opacity 0.15s ease;
 }
 
-.intent-item:hover .intent-actions-row {
+.space-item:hover .space-actions-row {
   opacity: 1;
 }
 
-.intent-add-link,
-.intent-edit-body {
+.space-add-link,
+.space-edit-body {
   background: none;
   border: none;
   font-size: 11px;
@@ -2109,8 +2109,8 @@ body.dark .workers-badge {
   opacity: 0.7;
 }
 
-.intent-add-link:hover,
-.intent-edit-body:hover {
+.space-add-link:hover,
+.space-edit-body:hover {
   background: rgba(0, 0, 0, 0.04);
   opacity: 1;
 }
@@ -2139,7 +2139,7 @@ body.dark .workers-badge {
   opacity: 0.3;
 }
 
-.intent-desc.refined {
+.space-desc.refined {
   animation: refinedSettle 0.6s ease forwards;
 }
 
@@ -2157,7 +2157,7 @@ body.dark .workers-badge {
   to { opacity: 1; transform: translateY(0); }
 }
 
-.intent-delete {
+.space-delete {
   opacity: 0;
   background: none;
   border: none;
@@ -2169,17 +2169,17 @@ body.dark .workers-badge {
   flex-shrink: 0;
 }
 
-.intent-item:hover .intent-delete {
+.space-item:hover .space-delete {
   opacity: 1;
 }
 
-.intent-delete:hover {
+.space-delete:hover {
   color: #dc2626;
 }
 
 /* ── Launch session button ────────────────────────────── */
 
-.intent-launch {
+.space-launch {
   opacity: 0;
   background: none;
   border: none;
@@ -2192,21 +2192,21 @@ body.dark .workers-badge {
   flex-shrink: 0;
 }
 
-.intent-item:hover .intent-launch {
+.space-item:hover .space-launch {
   opacity: 1;
 }
 
-.intent-launch:hover {
+.space-launch:hover {
   color: #7c66dc;
   background: rgba(124, 102, 220, 0.08);
 }
 
-.intent-launch.has-session {
+.space-launch.has-session {
   opacity: 1;
   color: #7c66dc;
 }
 
-.intent-item:hover .intent-launch.has-session {
+.space-item:hover .space-launch.has-session {
   color: #6a52c9;
 }
 
@@ -2222,8 +2222,8 @@ body.dark .workers-badge {
   flex-shrink: 0;
 }
 
-.skill-card .intent-launch,
-.skill-card .intent-delete {
+.skill-card .space-launch,
+.skill-card .space-delete {
   font-size: 13px;
   padding: 2px 4px;
   line-height: 1;
@@ -2258,9 +2258,9 @@ body.dark .workers-badge {
   font-weight: 500;
 }
 
-/* ── Agent-active shimmer on intent title ────────────── */
+/* ── Agent-active shimmer on space title ────────────── */
 
-.intent-desc.agent-active {
+.space-desc.agent-active {
   background: linear-gradient(90deg, #2c2c3a 0%, #7c66dc 50%, #2c2c3a 100%);
   background-size: 200% 100%;
   -webkit-background-clip: text;
@@ -2274,15 +2274,15 @@ body.dark .workers-badge {
   100% { background-position: -100% 0; }
 }
 
-/* ── Intent has waiting agents ───────────────────────── */
+/* ── Space has waiting agents ───────────────────────── */
 
-.intent-item.has-waiting-agents {
+.space-item.has-waiting-agents {
   border-color: rgba(245, 158, 11, 0.25);
 }
 
-/* ── Mini-agent cards in intent ──────────────────────── */
+/* ── Mini-agent cards in space ──────────────────────── */
 
-.intent-agents {
+.space-agents {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
@@ -2357,12 +2357,12 @@ body.dark .workers-badge {
 
 /* ── Launch button running state ─────────────────────── */
 
-.intent-launch.is-running {
+.space-launch.is-running {
   opacity: 1;
   color: #16a34a;
 }
 
-.intent-launch.is-running:hover {
+.space-launch.is-running:hover {
   color: #15803d;
   background: rgba(22, 163, 74, 0.08);
 }
@@ -2892,9 +2892,9 @@ body.dark .emoji-picker-popup {
   color: #dc2626;
 }
 
-/* ── Overdue intent item tint ─────────────────────────── */
+/* ── Overdue space item tint ─────────────────────────── */
 
-.intent-item:has(.due-badge.overdue):not(.done) {
+.space-item:has(.due-badge.overdue):not(.done) {
   border-color: rgba(220, 38, 38, 0.1);
   background: rgba(220, 38, 38, 0.02);
 }
@@ -3766,8 +3766,8 @@ body.dark .emoji-picker-popup {
   background: rgba(255, 255, 255, 0.04);
 }
 
-/* Make intent items clickable */
-.intent-item {
+/* Make space items clickable */
+.space-item {
   cursor: pointer;
 }
 
@@ -4186,9 +4186,9 @@ body.dark .badge { background: rgba(124, 102, 220, 0.2); color: #a594e8; }
 body.dark .status-bar { background: rgba(124, 102, 220, 0.1); color: #a594e8; }
 body.dark .status-bar.error { background: rgba(239, 68, 68, 0.1); color: #f87171; }
 
-body.dark .intent-item { background: var(--card-bg); border-color: rgba(255, 255, 255, 0.06); box-shadow: var(--card-shadow); }
-body.dark .intent-item:hover { background: var(--card-hover-bg); box-shadow: var(--card-hover-shadow); }
-body.dark .intent-item.kb-selected { background: rgba(66, 133, 244, 0.1); box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.3); }
+body.dark .space-item { background: var(--card-bg); border-color: rgba(255, 255, 255, 0.06); box-shadow: var(--card-shadow); }
+body.dark .space-item:hover { background: var(--card-hover-bg); box-shadow: var(--card-hover-shadow); }
+body.dark .space-item.kb-selected { background: rgba(66, 133, 244, 0.1); box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.3); }
 body.dark .agent-card { background: var(--card-bg); border-color: rgba(255, 255, 255, 0.06); box-shadow: var(--card-shadow); }
 body.dark .agent-card:hover { background: var(--card-hover-bg); box-shadow: var(--card-hover-shadow); }
 body.dark .agent-card.kb-selected { background: rgba(66, 133, 244, 0.1); box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.3); }
@@ -4204,23 +4204,23 @@ body.dark .approval-label { color: #fbbf24; }
 body.dark .approval-kind { color: #e0e0e0; }
 body.dark .approval-detail { color: #9ca3af; }
 body.dark .approval-btn.deny { background: rgba(255, 255, 255, 0.06); color: #e0e0e0; border-color: rgba(255, 255, 255, 0.1); }
-body.dark .intent-item.done .intent-desc { color: rgba(255, 255, 255, 0.35); }
-body.dark .intent-desc { color: #e0e0e0; }
-body.dark .intent-meta { color: rgba(255, 255, 255, 0.55); }
-body.dark .intent-check { border-color: rgba(255, 255, 255, 0.2); }
-body.dark .intent-delete { color: rgba(255, 255, 255, 0.5); }
-body.dark .intent-launch { color: rgba(255, 255, 255, 0.5); }
+body.dark .space-item.done .space-desc { color: rgba(255, 255, 255, 0.35); }
+body.dark .space-desc { color: #e0e0e0; }
+body.dark .space-meta { color: rgba(255, 255, 255, 0.55); }
+body.dark .space-check { border-color: rgba(255, 255, 255, 0.2); }
+body.dark .space-delete { color: rgba(255, 255, 255, 0.5); }
+body.dark .space-launch { color: rgba(255, 255, 255, 0.5); }
 body.dark .processing-badge { color: #a594e8; background: rgba(124, 102, 220, 0.15); }
 body.dark .session-badge { color: rgba(255, 255, 255, 0.5); }
 body.dark .session-badge.agent-attention { color: #f59e0b; }
 body.dark .session-badge.agent-failed-badge { color: #f87171; }
-body.dark .intent-desc.agent-active { background: linear-gradient(90deg, #e0e0e0 0%, #a594e8 50%, #e0e0e0 100%); background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; animation: titleShimmer 3s ease-in-out infinite; }
+body.dark .space-desc.agent-active { background: linear-gradient(90deg, #e0e0e0 0%, #a594e8 50%, #e0e0e0 100%); background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; animation: titleShimmer 3s ease-in-out infinite; }
 body.dark .mini-agent-running { background: rgba(22, 163, 74, 0.12); color: #4ade80; border-color: rgba(74, 222, 128, 0.2); }
 body.dark .mini-agent-waiting { background: rgba(245, 158, 11, 0.1); color: #fbbf24; border-color: rgba(251, 191, 36, 0.2); }
 body.dark .mini-agent-completed { background: rgba(255, 255, 255, 0.04); color: rgba(255, 255, 255, 0.55); border-color: rgba(255, 255, 255, 0.08); }
 body.dark .mini-agent-failed { background: rgba(220, 38, 38, 0.1); color: #f87171; border-color: rgba(248, 113, 113, 0.2); }
 body.dark .mini-agent-cloud { background: rgba(59, 130, 246, 0.1); color: #60a5fa; border-color: rgba(96, 165, 250, 0.2); }
-body.dark .intent-item.has-waiting-agents { border-color: rgba(245, 158, 11, 0.2); }
+body.dark .space-item.has-waiting-agents { border-color: rgba(245, 158, 11, 0.2); }
 body.dark .agent-card-delete-btn, body.dark .agent-card-canvas-btn { color: rgba(255, 255, 255, 0.5); }
 body.dark .agent-card-delete-btn:hover { color: #f87171; background: rgba(248, 113, 113, 0.1); }
 body.dark .agent-card-canvas-btn:hover { color: #a594e8; background: rgba(165, 148, 232, 0.1); }
@@ -4230,7 +4230,7 @@ body.dark .chat-yolo-btn.active { background: rgba(245, 158, 11, 0.15); }
 body.dark .chat-yolo-btn.active .chat-status-bar-text { color: #fbbf24; }
 
 body.dark .letter-glow { color: #c7d2fe; text-shadow: 0 0 8px rgba(165, 148, 232, 0.8), 0 0 2px rgba(199, 210, 254, 0.6); }
-body.dark .intent-desc.refined { animation: refinedSettleDark 0.6s ease forwards; }
+body.dark .space-desc.refined { animation: refinedSettleDark 0.6s ease forwards; }
 @keyframes refinedSettleDark { 0% { color: #c7d2fe; } 100% { color: #e0e0e0; } }
 
 body.dark .empty-state { color: rgba(255, 255, 255, 0.4); }
@@ -4239,7 +4239,7 @@ body.dark .due-badge.overdue { color: #f87171; }
 body.dark .dismiss-recurrence { color: rgba(255, 255, 255, 0.55); }
 body.dark .status-bar.recurrence { background: rgba(124, 102, 220, 0.15); color: #b8a8ef; }
 
-body.dark #intent-list { scrollbar-color: rgba(255, 255, 255, 0.1) transparent; }
+body.dark #space-list { scrollbar-color: rgba(255, 255, 255, 0.1) transparent; }
 
 /* Dark agent cards */
 body.dark .agent-add-btn { border-color: rgba(255, 255, 255, 0.1); color: rgba(255, 255, 255, 0.5); }
@@ -4251,18 +4251,18 @@ body.dark .agent-summary-header { color: #a594e8; }
 body.dark .agent-summary-body { color: #e0e0e0; }
 
 /* Dark past cards */
-body.dark .past-card { background: var(--card-bg); border-color: rgba(255, 255, 255, 0.06); box-shadow: var(--card-shadow); }
-body.dark .past-card:hover { background: var(--card-hover-bg); box-shadow: var(--card-hover-shadow); }
-body.dark .past-card-restore { background: rgba(255, 255, 255, 0.08); color: rgba(255, 255, 255, 0.65); }
-body.dark .past-card-restore:hover { background: rgba(255, 255, 255, 0.15); color: rgba(255, 255, 255, 0.9); }
-body.dark .past-card-type { color: rgba(255, 255, 255, 0.6); }
-body.dark .past-card-title { color: #e0e0e0; }
-body.dark .past-card-client { color: rgba(255, 255, 255, 0.55); }
-body.dark .past-card-steps { background: var(--card-inner-bg); }
-body.dark .past-card-step { color: #d0d0d0; }
-body.dark .past-step-connector { background: rgba(255, 255, 255, 0.08); }
-body.dark .past-card-meta { color: rgba(255, 255, 255, 0.45); }
-body.dark .past-date-label { color: rgba(255, 255, 255, 0.5); }
+body.dark .history-card { background: var(--card-bg); border-color: rgba(255, 255, 255, 0.06); box-shadow: var(--card-shadow); }
+body.dark .history-card:hover { background: var(--card-hover-bg); box-shadow: var(--card-hover-shadow); }
+body.dark .history-card-restore { background: rgba(255, 255, 255, 0.08); color: rgba(255, 255, 255, 0.65); }
+body.dark .history-card-restore:hover { background: rgba(255, 255, 255, 0.15); color: rgba(255, 255, 255, 0.9); }
+body.dark .history-card-type { color: rgba(255, 255, 255, 0.6); }
+body.dark .history-card-title { color: #e0e0e0; }
+body.dark .history-card-client { color: rgba(255, 255, 255, 0.55); }
+body.dark .history-card-steps { background: var(--card-inner-bg); }
+body.dark .history-card-step { color: #d0d0d0; }
+body.dark .history-step-connector { background: rgba(255, 255, 255, 0.08); }
+body.dark .history-card-meta { color: rgba(255, 255, 255, 0.45); }
+body.dark .history-date-label { color: rgba(255, 255, 255, 0.5); }
 
 /* Dark settings */
 body.dark .settings-modal { background: #1c1c20; box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5), 0 8px 24px rgba(0, 0, 0, 0.3); }
@@ -4347,8 +4347,8 @@ body.dark .focus-desc { color: #e0e0e0; }
 body.dark .focus-meta { color: rgba(255, 255, 255, 0.55); }
 body.dark .focus-action { color: rgba(255, 255, 255, 0.55); }
 body.dark .focus-action:hover { background: rgba(255, 255, 255, 0.06); color: rgba(255, 255, 255, 0.9); }
-body.dark .intent-focus:hover { background: rgba(124, 102, 220, 0.12); }
-body.dark .intent-item.focused { border-color: rgba(66, 133, 244, 0.25); background: rgba(66, 133, 244, 0.06); }
+body.dark .space-focus:hover { background: rgba(124, 102, 220, 0.12); }
+body.dark .space-item.focused { border-color: rgba(66, 133, 244, 0.25); background: rgba(66, 133, 244, 0.06); }
 
 /* Dark textarea */
 body.dark #description-input {
@@ -4377,13 +4377,13 @@ body.dark .mention-item-handle { color: #a594e8; }
 body.dark .mention-item-instructions { color: rgba(255, 255, 255, 0.55); }
 
 /* Dark body & attachments */
-body.dark .intent-body { color: rgba(255, 255, 255, 0.6); background: rgba(255, 255, 255, 0.03); }
-body.dark .intent-body:hover { background: rgba(255, 255, 255, 0.06); }
+body.dark .space-body { color: rgba(255, 255, 255, 0.6); background: rgba(255, 255, 255, 0.03); }
+body.dark .space-body:hover { background: rgba(255, 255, 255, 0.06); }
 body.dark .inline-edit-body { background: rgba(255, 255, 255, 0.08); border-color: rgba(124, 102, 220, 0.5); color: #e0e0e0; }
 body.dark .attachment-link { color: #a594e8; background: rgba(124, 102, 220, 0.12); }
 body.dark .attachment-link:hover { background: rgba(124, 102, 220, 0.2); }
 body.dark .attachment-remove { color: rgba(255, 255, 255, 0.5); }
-body.dark .intent-add-link:hover, body.dark .intent-edit-body:hover { background: rgba(255, 255, 255, 0.06); }
+body.dark .space-add-link:hover, body.dark .space-edit-body:hover { background: rgba(255, 255, 255, 0.06); }
 
 /* Dark canvas */
 body.dark .canvas-view header h1:hover { background: rgba(255, 255, 255, 0.05); }

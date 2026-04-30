@@ -2,7 +2,7 @@ export interface Attachment {
   type: 'url' | 'file';
   name: string;
   url: string;
-  /** Relative path within the intent folder (for type: 'file') */
+  /** Relative path within the space folder (for type: 'file') */
   relativePath?: string;
   /** MIME type of the file */
   mimeType?: string;
@@ -10,7 +10,7 @@ export interface Attachment {
 
 export interface CanvasAgent {
   id: string;
-  intent_id: string;
+  space_id: string;
   selected_text: string;
   session_id: string;
   pid: number | null;
@@ -22,7 +22,7 @@ export interface CanvasAgent {
 export interface AgentSession {
   id: string;
   session_id: string;
-  intent_id: string | null;
+  space_id: string | null;
   prompt: string;
   status: 'running' | 'waiting-approval' | 'completed' | 'failed';
   summary: string;
@@ -47,7 +47,7 @@ export interface LinkPreviewMeta {
   favicon: string | null;
 }
 
-export interface Intent {
+export interface Space {
   id: string;
   description: string;
   body: string | null;
@@ -66,7 +66,7 @@ export interface Intent {
   updated_at: string;
 }
 
-export interface CreateIntentInput {
+export interface CreateSpaceInput {
   body: string;
 }
 
@@ -78,7 +78,7 @@ export interface RecurrenceResult {
 }
 
 export interface RecallMatch {
-  intent_id: string;
+  space_id: string;
   description: string;
   completed_at: string | null;
   confidence: number;
@@ -87,7 +87,7 @@ export interface RecallMatch {
 // ── Canvas target (popout window) ───────────────────────
 
 export type CanvasTarget =
-  | { kind: 'intent'; id: string; title: string }
+  | { kind: 'space'; id: string; title: string }
   | { kind: 'skill'; id: string; title: string };
 
 // ── Skills ──────────────────────────────────────────────
