@@ -3366,7 +3366,7 @@ function updateAgentSelection(): void {
 }
 
 function updateSelection(): void {
-  const items = listEl.querySelectorAll('.whim-item');
+  const items = listEl.querySelectorAll('.space-item');
   items.forEach((item, i) => {
     item.classList.toggle('kb-selected', i === selectedIndex);
   });
