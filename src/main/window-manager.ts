@@ -208,6 +208,22 @@ export function registerWindowIpcHandlers(preloadPath: string): void {
     });
   });
 
+  // Toggle always-on-top for the calling canvas window
+  ipcMain.on('canvas-window:set-always-on-top', (event, pinned: boolean) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win && !win.isDestroyed()) {
+      win.setAlwaysOnTop(pinned);
+    }
+  });
+
+  ipcMain.handle('canvas-window:get-always-on-top', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win && !win.isDestroyed()) {
+      return win.isAlwaysOnTop();
+    }
+    return false;
+  });
+
   // Forward theme changes to all windows
   ipcMain.on('canvas-window:theme-changed', (_event, theme: string) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
