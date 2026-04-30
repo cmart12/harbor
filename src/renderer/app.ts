@@ -5334,6 +5334,13 @@ document.addEventListener('keydown', (e) => {
     }
   }
 
+  // Stop voice recording with Space from anywhere (descInput is hidden during recording)
+  if (e.key === ' ' && isRecording) {
+    e.preventDefault();
+    stopRecording();
+    return;
+  }
+
   if (e.key === 'Escape') {
     if (isRecording) stopRecording();
     if (!chatView.classList.contains('hidden')) {
