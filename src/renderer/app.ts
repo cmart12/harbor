@@ -4368,6 +4368,7 @@ const canvasPreviewLabel = document.getElementById('canvas-preview-label') as HT
 const canvasPreviewRestore = document.getElementById('canvas-preview-restore') as HTMLButtonElement;
 const canvasPreviewBack = document.getElementById('canvas-preview-back') as HTMLButtonElement;
 const canvasAgentsBtn = document.getElementById('canvas-agents-btn') as HTMLButtonElement;
+const canvasPinTopBtn = document.getElementById('canvas-pin-top') as HTMLButtonElement;
 const canvasOpenFolder = document.getElementById('canvas-open-folder') as HTMLButtonElement;
 const modeToggleRendered = document.getElementById('mode-toggle-rendered') as HTMLButtonElement;
 const modeToggleRaw = document.getElementById('mode-toggle-raw') as HTMLButtonElement;
@@ -5619,6 +5620,31 @@ if (isCanvasMode) {
   mainView.classList.add('hidden');
   canvasView.classList.remove('hidden');
   document.body.classList.add('canvas-window');
+
+  // ── Always-on-top toggle ────────────────────────────────
+  async function toggleCanvasOnTop(): Promise<void> {
+    const current = await whimAPI.getCanvasAlwaysOnTop();
+    const next = !current;
+    whimAPI.setCanvasAlwaysOnTop(next);
+    canvasPinTopBtn.classList.toggle('active', next);
+    canvasPinTopBtn.title = next ? 'Remove from top (⌘⇧T)' : 'Keep on top (⌘⇧T)';
+  }
+
+  canvasPinTopBtn.addEventListener('click', toggleCanvasOnTop);
+
+  // Cmd+Shift+T keyboard shortcut
+  window.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 't') {
+      e.preventDefault();
+      toggleCanvasOnTop();
+    }
+  });
+
+  // Sync initial state
+  whimAPI.getCanvasAlwaysOnTop().then(pinned => {
+    canvasPinTopBtn.classList.toggle('active', pinned);
+    canvasPinTopBtn.title = pinned ? 'Remove from top (⌘⇧T)' : 'Keep on top (⌘⇧T)';
+  });
 
   // Apply theme
   whimAPI.getSetting('theme').then(t => {
