@@ -289,7 +289,7 @@ const processingSpaces = new Set<string>();
 // Track spaces with active running terminal sessions
 let activeSessionSpaces = new Set<string>();
 // Track agents per space for Spaces view
-let agentsBySpace = new Map<string, Array<{ agentId: string; status: string; summary: string; selectedText: string; source?: string }>>();
+let agentsBySpace = new Map<string, Array<{ agentId: string; status: string; summary: string; selectedText: string; quotedText?: string; source?: string }>>();
 // Current filter
 let currentFilter: 'open' | 'agents' | 'skills' | 'closed' = 'open';
 const filterOrder: Array<'open' | 'agents' | 'skills' | 'closed'> = ['open', 'agents', 'skills', 'closed'];
@@ -2410,7 +2410,7 @@ async function loadSpaces(): Promise<void> {
   // Build agents-per-space map for Spaces view
   try {
     const allAgents = await whimAPI.listAllAgents();
-    const map = new Map<string, Array<{ agentId: string; status: string; summary: string; selectedText: string; source?: string }>>();
+    const map = new Map<string, Array<{ agentId: string; status: string; summary: string; selectedText: string; quotedText?: string; source?: string }>>();
     for (const agent of allAgents) {
       if (!agent.spaceId || agent.spaceId === '__workspace__') continue;
       if (!map.has(agent.spaceId)) map.set(agent.spaceId, []);
@@ -2419,6 +2419,7 @@ async function loadSpaces(): Promise<void> {
         status: agent.status,
         summary: agent.summary,
         selectedText: agent.selectedText,
+        quotedText: agent.quotedText,
         source: agent.source,
       });
     }
@@ -2497,7 +2498,10 @@ function render(): void {
                        agent.status === 'completed' ? 'mini-agent-completed' :
                        'mini-agent-failed';
         const aLabel = agent.selectedText.length > 50 ? agent.selectedText.slice(0, 47) + '...' : agent.selectedText;
-        return `<div class="mini-agent ${aClass}" data-agent-id="${agent.agentId}" title="${escapeHtml(agent.selectedText)}">`
+        const aTooltip = agent.quotedText
+          ? `${agent.selectedText}\n\nOn: "${agent.quotedText}"`
+          : agent.selectedText;
+        return `<div class="mini-agent ${aClass}" data-agent-id="${agent.agentId}" title="${escapeHtml(aTooltip)}">`
           + `<span class="mini-agent-icon">${aIcon}</span>`
           + `<span class="mini-agent-label">${escapeHtml(aLabel || agent.summary || 'Agent')}</span>`
           + `</div>`;
@@ -3123,7 +3127,7 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
   countEl.textContent = String(spaces.filter(i => i.status !== 'done').length);
 
   // Gather all agents (including workspace-level ones)
-  let allAgents: Array<{ agentId: string; sessionId: string; status: string; summary: string; selectedText: string; spaceId: string; createdAt?: string; pendingApprovalId?: string | null; pendingPermissionKind?: string | null; source?: 'sdk' | 'cli' | 'cloud'; personaHandle?: string | null }> = [];
+  let allAgents: Array<{ agentId: string; sessionId: string; status: string; summary: string; selectedText: string; quotedText?: string; spaceId: string; createdAt?: string; pendingApprovalId?: string | null; pendingPermissionKind?: string | null; source?: 'sdk' | 'cli' | 'cloud'; personaHandle?: string | null }> = [];
 
   try {
     allAgents = await whimAPI.listAllAgents();
@@ -3283,6 +3287,7 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
           </div>
         </div>
         <div class="agent-card-title">${personaEmoji ? `<span class="agent-card-persona-emoji">${personaEmoji}</span> ` : ''}${escapeHtml(title)}</div>
+        ${agent.quotedText ? `<div class="agent-card-snippet" title="${escapeHtml(agent.quotedText)}">${escapeHtml(agent.quotedText)}</div>` : ''}
         ${stepsHtml ? `<div class="agent-card-steps">${stepsHtml}</div>` : ''}
         ${showSummary ? `<div class="agent-card-summary">${escapeHtml(agent.summary)}</div>` : ''}
         ${approvalHtml}

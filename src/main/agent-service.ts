@@ -136,7 +136,7 @@ export function getAgentSessionId(agentId: string): string | null {
   return registry.get(agentId)?.sessionId ?? null;
 }
 
-export function listAllAgents(): Array<{ agentId: string; sessionId: string; status: import('./agents/agent-registry').AgentStatus; summary: string; selectedText: string; spaceId: string; createdAt: string; pendingApprovalId: string | null; pendingPermissionKind: string | null; pendingIntention: string | null; pendingPath: string | null; source: 'sdk' | 'cli' | 'cloud'; personaHandle: string | null; yoloMode: boolean }> {
+export function listAllAgents(): Array<{ agentId: string; sessionId: string; status: import('./agents/agent-registry').AgentStatus; summary: string; selectedText: string; quotedText: string; spaceId: string; createdAt: string; pendingApprovalId: string | null; pendingPermissionKind: string | null; pendingIntention: string | null; pendingPath: string | null; source: 'sdk' | 'cli' | 'cloud'; personaHandle: string | null; yoloMode: boolean }> {
   // Read persisted sessions from DB (sorted newest first)
   let persisted: AgentSession[] = [];
   try {
@@ -145,7 +145,7 @@ export function listAllAgents(): Array<{ agentId: string; sessionId: string; sta
 
   // Build result: overlay live in-memory state on top of DB records
   const seen = new Set<string>();
-  const result: Array<{ agentId: string; sessionId: string; status: import('./agents/agent-registry').AgentStatus; summary: string; selectedText: string; spaceId: string; createdAt: string; pendingApprovalId: string | null; pendingPermissionKind: string | null; pendingIntention: string | null; pendingPath: string | null; source: 'sdk' | 'cli' | 'cloud'; personaHandle: string | null; yoloMode: boolean }> = [];
+  const result: Array<{ agentId: string; sessionId: string; status: import('./agents/agent-registry').AgentStatus; summary: string; selectedText: string; quotedText: string; spaceId: string; createdAt: string; pendingApprovalId: string | null; pendingPermissionKind: string | null; pendingIntention: string | null; pendingPath: string | null; source: 'sdk' | 'cli' | 'cloud'; personaHandle: string | null; yoloMode: boolean }> = [];
 
   for (const row of persisted) {
     seen.add(row.id);
@@ -157,6 +157,7 @@ export function listAllAgents(): Array<{ agentId: string; sessionId: string; sta
       status: (live?.status ?? row.status) as import('./agents/agent-registry').AgentStatus,
       summary: live?.summary ?? row.summary,
       selectedText: live?.selectedText ?? row.prompt,
+      quotedText: live?.commentContext?.quotedText ?? row.quoted_text ?? '',
       spaceId: live?.spaceId ?? row.space_id ?? '__workspace__',
       createdAt: row.created_at,
       pendingApprovalId: live?.pendingApprovalId ?? null,
@@ -179,6 +180,7 @@ export function listAllAgents(): Array<{ agentId: string; sessionId: string; sta
         status: a.status,
         summary: a.summary,
         selectedText: a.selectedText,
+        quotedText: a.commentContext?.quotedText ?? '',
         spaceId: a.spaceId,
         createdAt: '',
         pendingApprovalId: a.pendingApprovalId,

@@ -50,6 +50,7 @@ export interface AgentListAllItem extends AgentListItem {
   source: 'sdk' | 'cli' | 'cloud';
   personaHandle: string | null;
   yoloMode: boolean;
+  quotedText: string;
 }
 
 export interface CanvasCommit {

@@ -104,6 +104,8 @@ function makeAgentSession(overrides: Partial<AgentSession> = {}): AgentSession {
     summary: '',
     working_dir: null,
     source: 'sdk',
+    persona_handle: null,
+    quoted_text: null,
     created_at: now,
     updated_at: now,
     ...overrides,

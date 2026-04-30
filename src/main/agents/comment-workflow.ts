@@ -160,6 +160,7 @@ If you make changes to the document, clearly describe what you changed.${cliTool
       working_dir: workingDir,
       source: 'sdk',
       persona_handle: persona.handle,
+      quoted_text: quotedText || null,
       created_at: now,
       updated_at: now,
     });

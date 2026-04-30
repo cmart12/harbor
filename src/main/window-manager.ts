@@ -22,6 +22,7 @@ let settingsWindow: BrowserWindow | null = null;
 let isExpanded = false;
 let isSnapping = false;
 let showTimestamp = 0;
+let unpinTimestamp = 0;
 let blurHideTimer: ReturnType<typeof setTimeout> | null = null;
 
 // ── Public API ───────────────────────────────────────────
@@ -158,6 +159,9 @@ export function registerWindowIpcHandlers(preloadPath: string): void {
     if (mainWindow && !isExpanded) {
       // When unpinning, snap back to full-height edge position
       if (!pinned) {
+        unpinTimestamp = Date.now();
+        isSnapping = true;
+
         const bounds = mainWindow.getBounds();
         const centerX = bounds.x + bounds.width / 2;
         const centerY = bounds.y + bounds.height / 2;
@@ -173,6 +177,7 @@ export function registerWindowIpcHandlers(preloadPath: string): void {
 
         setConfigValue('snapPosition', snap);
         mainWindow.setBounds({ x: winX, y: winY, width: winWidth, height: winHeight }, false);
+        setTimeout(() => { isSnapping = false; }, 500);
       }
     }
     // Notify all windows so UI can update
@@ -305,6 +310,9 @@ function attachBlurHide(win: BrowserWindow): void {
   win.on('blur', () => {
     // Ignore blur if window was just shown (e.g. from tray menu click)
     if (Date.now() - showTimestamp < 300) return;
+
+    // Ignore blur caused by setBounds repositioning after unpin
+    if (Date.now() - unpinTimestamp < 500) return;
 
     // Never hide when pinned
     if (getConfigValue('pinned')) return;

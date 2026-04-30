@@ -57,6 +57,7 @@ export async function launchCliSession(
     working_dir: workspaceRoot,
     source: 'cli',
     persona_handle: null,
+    quoted_text: null,
     created_at: now,
     updated_at: now,
   });

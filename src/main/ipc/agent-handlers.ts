@@ -46,7 +46,8 @@ export function registerAgentHandlers(): void {
       createAgentSession({
         id: agentId, session_id: result.sessionId, space_id: spaceId,
         prompt: commentBody, status: 'running', summary: `Cloud job ${result.jobId}`,
-        working_dir: workspace, source: 'cloud' as any, persona_handle: persona.handle, created_at: now, updated_at: now,
+        working_dir: workspace, source: 'cloud' as any, persona_handle: persona.handle,
+        quoted_text: quotedText || null, created_at: now, updated_at: now,
       });
 
       const { startCloudJobPoller } = await import('../cloud-agent-poller');
@@ -141,8 +142,10 @@ export function registerAgentHandlers(): void {
         working_dir: workspace,
         source: 'cloud' as any,
         persona_handle: persona.handle,
+        quoted_text: null,
         created_at: now,
         updated_at: now,
+      });
       });
 
       const { startCloudJobPoller } = await import('../cloud-agent-poller');
@@ -215,6 +218,7 @@ export function registerAgentHandlers(): void {
       working_dir: workspace,
       source: 'cloud' as any,
       persona_handle: null,
+      quoted_text: null,
       created_at: now,
       updated_at: now,
     });

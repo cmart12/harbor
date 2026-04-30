@@ -29,6 +29,7 @@ export interface AgentSession {
   working_dir: string | null;
   source: 'sdk' | 'cli' | 'cloud';
   persona_handle: string | null;
+  quoted_text: string | null;
   created_at: string;
   updated_at: string;
 }
