@@ -29,10 +29,12 @@ interface ChatViewProps {
   agentPrompt: string;
   agentStatus: string;
   agentSource?: 'sdk' | 'cli';
+  intentId?: string;
   pendingApprovalId?: string;
   pendingPermissionKind?: string;
   onClose: () => void;
   onOpenCli: (agentId: string) => void;
+  onOpenCanvas?: (intentId: string) => void;
 }
 
 let nextMsgId = 1;
@@ -330,7 +332,7 @@ function replayBufferedEvents(msgs: ChatMessage[], events: ChatEvent[]): ChatMes
   return result;
 }
 
-export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: initialStatus, agentSource, pendingApprovalId, pendingPermissionKind, onClose, onOpenCli }: ChatViewProps) {
+export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: initialStatus, agentSource, intentId, pendingApprovalId, pendingPermissionKind, onClose, onOpenCli, onOpenCanvas }: ChatViewProps) {
   const [currentAgentId, setCurrentAgentId] = useState<string | null>(initialAgentId || null);
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     // For CLI sessions or sessions with history, don't seed — history will load
@@ -939,6 +941,11 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
           {isBusy && (
             <button className="chat-abort-btn" onClick={handleAbort} title="Stop agent">
               ◼ Stop
+            </button>
+          )}
+          {intentId && onOpenCanvas && (
+            <button className="header-icon-btn" onClick={() => onOpenCanvas(intentId)} title="Open canvas">
+              📄
             </button>
           )}
           {currentAgentId && (

@@ -135,10 +135,13 @@ export interface IntentAPI {
 
   // ── Canvas popout window ─────────────────────────────────
   openCanvasWindow(target: CanvasTarget): void;
+  openNewCanvasWindow(target: CanvasTarget): void;
   onLoadCanvasTarget(callback: (target: CanvasTarget) => void): void;
   onCanvasWindowClosed(callback: () => void): void;
   notifyCanvasThemeChanged(theme: string): void;
   onCanvasThemeChanged(callback: (theme: string) => void): void;
+  openAgentChatInPanel(data: { agentId: string; agentPrompt: string; agentStatus: string; agentSource?: 'sdk' | 'cli'; intentId?: string }): void;
+  onOpenAgentChatInPanel(callback: (data: { agentId: string; agentPrompt: string; agentStatus: string; agentSource?: 'sdk' | 'cli'; intentId?: string }) => void): void;
 
   // ── Settings popout window ──────────────────────────────
   openSettingsWindow(): void;
@@ -347,6 +350,7 @@ const api: IntentAPI = {
 
   // ── Canvas popout window ─────────────────────────────────
   openCanvasWindow: (target) => ipcRenderer.send('canvas-window:open', target),
+  openNewCanvasWindow: (target) => ipcRenderer.send('canvas-window:open-new', target),
   onLoadCanvasTarget: (callback) => {
     ipcRenderer.on('canvas-window:load-target', (_event: unknown, target: CanvasTarget) => callback(target));
   },
@@ -356,6 +360,10 @@ const api: IntentAPI = {
   notifyCanvasThemeChanged: (theme) => ipcRenderer.send('canvas-window:theme-changed', theme),
   onCanvasThemeChanged: (callback) => {
     ipcRenderer.on('canvas-window:theme-changed', (_event: unknown, theme: string) => callback(theme));
+  },
+  openAgentChatInPanel: (data) => ipcRenderer.send('main-window:open-agent-chat', data),
+  onOpenAgentChatInPanel: (callback) => {
+    ipcRenderer.on('main-window:open-agent-chat', (_event: unknown, data: { agentId: string; agentPrompt: string; agentStatus: string; agentSource?: 'sdk' | 'cli'; intentId?: string }) => callback(data));
   },
 
   // ── Settings popout window ──────────────────────────────

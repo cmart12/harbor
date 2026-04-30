@@ -161,10 +161,13 @@ interface IntentAPI {
   setPinned(pinned: boolean): void;
   onPinnedChanged(callback: (pinned: boolean) => void): void;
   openCanvasWindow(target: { kind: string; id: string; title: string }): void;
+  openNewCanvasWindow(target: { kind: string; id: string; title: string }): void;
   onLoadCanvasTarget(callback: (target: { kind: string; id: string; title: string }) => void): void;
   onCanvasWindowClosed(callback: () => void): void;
   notifyCanvasThemeChanged(theme: string): void;
   onCanvasThemeChanged(callback: (theme: string) => void): void;
+  openAgentChatInPanel(data: { agentId: string; agentPrompt: string; agentStatus: string; agentSource?: 'sdk' | 'cli'; intentId?: string }): void;
+  onOpenAgentChatInPanel(callback: (data: { agentId: string; agentPrompt: string; agentStatus: string; agentSource?: 'sdk' | 'cli'; intentId?: string }) => void): void;
   openSettingsWindow(): void;
   onWindowShown(callback: (data: { side: 'left' | 'right'; expanded: boolean }) => void): void;
   onWindowToggle(callback: () => void): void;
@@ -2263,7 +2266,7 @@ descInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey && searchMode) {
     e.preventDefault();
     if (currentFilter === 'agents' && renderedAgents.length > 0) {
-      openAgentChat(renderedAgents[0].agentId, renderedAgents[0].selectedText, renderedAgents[0].status, (renderedAgents[0] as any).source);
+      openAgentChat(renderedAgents[0].agentId, renderedAgents[0].selectedText, renderedAgents[0].status, (renderedAgents[0] as any).source, renderedAgents[0].intentId);
     } else if (currentFilter === 'skills' && cachedSkills.length > 0) {
       const q = activeSearchQuery.toLowerCase();
       const match = q ? cachedSkills.find(s => s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q)) : cachedSkills[0];
@@ -2535,10 +2538,10 @@ function render(): void {
       e.stopPropagation();
       const agentId = (el as HTMLElement).dataset.agentId!;
       // Find the agent data
-      for (const agents of agentsByIntent.values()) {
+      for (const [intentId, agents] of agentsByIntent.entries()) {
         const agent = agents.find(a => a.agentId === agentId);
         if (agent) {
-          openAgentChat(agentId, agent.selectedText, agent.status, agent.source as any);
+          openAgentChat(agentId, agent.selectedText, agent.status, agent.source as any, intentId);
           return;
         }
       }
@@ -3294,7 +3297,7 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
       if (!agentId) return;
       const agent = allAgents.find(a => a.agentId === agentId);
       if (agent) {
-        openAgentChat(agentId, agent.selectedText, agent.status, agent.source);
+        openAgentChat(agentId, agent.selectedText, agent.status, agent.source, agent.intentId);
       }
     });
   });
@@ -3350,7 +3353,7 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
   }
 }
 
-let renderedAgents: Array<{ agentId: string; sessionId: string; status: string; summary: string; selectedText: string; intentId: string; createdAt?: string }> = [];
+let renderedAgents: Array<{ agentId: string; sessionId: string; status: string; summary: string; selectedText: string; intentId: string; createdAt?: string; source?: 'sdk' | 'cli' | 'cloud' }> = [];
 
 function updateAgentSelection(): void {
   const items = listEl.querySelectorAll('.agent-card');
@@ -4621,7 +4624,7 @@ canvasLaunchBtn.addEventListener('click', async () => {
     }
     // Close the canvas view and open the chat
     closeCanvas();
-    openAgentChat(result.agentId, 'Executing document...', 'running', 'sdk');
+    openAgentChat(result.agentId, 'Executing document...', 'running', 'sdk', canvasIntentId || undefined);
   }
 });
 
@@ -4946,7 +4949,12 @@ async function openAgentsPanel(): Promise<void> {
       if (!agentId) return;
       const agent = agents.find(a => a.agentId === agentId);
       if (agent) {
-        openAgentChat(agentId, agent.selectedText, agent.status);
+        if (isCanvasMode) {
+          // Open the chat in the main panel so the canvas stays visible
+          intentAPI.openAgentChatInPanel({ agentId, agentPrompt: agent.selectedText, agentStatus: agent.status, intentId: canvasIntentId || undefined });
+        } else {
+          openAgentChat(agentId, agent.selectedText, agent.status, undefined, canvasIntentId || undefined);
+        }
       }
     });
   });
@@ -4986,7 +4994,7 @@ import { mountChat, unmountChat } from './chat/mount.tsx';
 const chatView = document.getElementById('chat-view') as HTMLDivElement;
 const chatRoot = document.getElementById('chat-root') as HTMLDivElement;
 
-async function openAgentChat(agentId: string | undefined, agentPrompt: string, agentStatus: string, agentSource?: 'sdk' | 'cli'): Promise<void> {
+async function openAgentChat(agentId: string | undefined, agentPrompt: string, agentStatus: string, agentSource?: 'sdk' | 'cli', intentId?: string): Promise<void> {
   // Hide other views, show chat inline
   mainView.classList.add('hidden');
   hideSettings();
@@ -5002,10 +5010,17 @@ async function openAgentChat(agentId: string | undefined, agentPrompt: string, a
     agentPrompt,
     agentStatus,
     agentSource,
+    intentId,
     pendingApprovalId: approval?.requestId,
     pendingPermissionKind: approval?.permissionKind,
     onClose: () => closeAgentChat(),
     onOpenCli: (id: string) => intentAPI.openAgentCli(id),
+    onOpenCanvas: intentId ? (id: string) => {
+      const intent = intents.find(i => i.id === id);
+      if (intent) {
+        intentAPI.openCanvasWindow({ kind: 'intent', id, title: intent.description });
+      }
+    } : undefined,
   });
 }
 
@@ -5020,6 +5035,13 @@ function closeAgentChat(): void {
 }
 
 (window as any).openAgentChat = openAgentChat;
+
+// Listen for cross-window agent chat requests from canvas window
+if (!isCanvasMode) {
+  intentAPI.onOpenAgentChatInPanel((data) => {
+    openAgentChat(data.agentId, data.agentPrompt, data.agentStatus, data.agentSource, data.intentId);
+  });
+}
 
 // ── Agent Presence Management ──────────────────────────
 const canvasAgentPresence = new Map<string, DocumentPresence>();
@@ -5264,7 +5286,7 @@ document.addEventListener('keydown', (e) => {
         e.preventDefault();
         const agent = renderedAgents[selectedIndex];
         if (agent) {
-          openAgentChat(agent.agentId, agent.selectedText, agent.status, agent.source);
+          openAgentChat(agent.agentId, agent.selectedText, agent.status, agent.source, agent.intentId);
         }
         return;
       }
@@ -5290,13 +5312,15 @@ document.addEventListener('keydown', (e) => {
         }
         return;
       }
-      // Cmd+Enter: open small canvas (summary view) for selected intent
+      // Cmd+Enter: open canvas in a new window (even if one is already open)
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
         e.preventDefault();
         const target = selectedIndex >= 0
           ? displayedIntents[selectedIndex]
           : displayedIntents[0];
-        if (target) openCanvas(target.id);
+        if (target) {
+          intentAPI.openNewCanvasWindow({ kind: 'intent', id: target.id, title: target.description });
+        }
         return;
       }
       // Enter: open full editor for selected intent

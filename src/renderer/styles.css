@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;1,9..144,400;1,9..144,500&display=swap');
+
 * {
   margin: 0;
   padding: 0;
@@ -442,18 +444,14 @@ header {
 }
 
 header h1 {
-  font-size: 15px;
-  font-weight: 600;
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: 17px;
+  font-weight: 500;
+  font-style: italic;
   color: #2c2c3a;
-  letter-spacing: 0.3px;
+  letter-spacing: 0.5px;
   display: flex;
   align-items: center;
-  gap: 6px;
-}
-
-.header-logo {
-  border-radius: 4px;
-  flex-shrink: 0;
 }
 
 .header-actions {

@@ -9,10 +9,12 @@ export interface MountChatOptions {
   agentPrompt: string;
   agentStatus: string;
   agentSource?: 'sdk' | 'cli';
+  intentId?: string;
   pendingApprovalId?: string;
   pendingPermissionKind?: string;
   onClose: () => void;
   onOpenCli: (agentId: string) => void;
+  onOpenCanvas?: (intentId: string) => void;
 }
 
 export function mountChat(container: HTMLElement, options: MountChatOptions): void {
@@ -27,10 +29,12 @@ export function mountChat(container: HTMLElement, options: MountChatOptions): vo
       agentPrompt={options.agentPrompt}
       agentStatus={options.agentStatus}
       agentSource={options.agentSource}
+      intentId={options.intentId}
       pendingApprovalId={options.pendingApprovalId}
       pendingPermissionKind={options.pendingPermissionKind}
       onClose={options.onClose}
       onOpenCli={options.onOpenCli}
+      onOpenCanvas={options.onOpenCanvas}
     />
   );
 }

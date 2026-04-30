@@ -13,7 +13,7 @@ import {
   type DocumintState,
   type DocumentUser,
   type DocumentPresence,
-  type CommentChangedEvent,
+  type CommentChange,
   type DocumintStorage,
 } from 'documint';
 import { FrontmatterEditor } from './FrontmatterEditor';
@@ -296,7 +296,7 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
       }
     }, [onDirtyChange, onSaveStatus, scheduleSave, hasFrontmatter]);
 
-    const handleCommentChanged = useCallback((event: CommentChangedEvent) => {
+    const handleCommentChanged = useCallback((event: CommentChange) => {
       if (!onAgentMentioned) return;
       if (event.kind === 'deleted') return;
       if (event.mentionedUserIds.length === 0) return;

@@ -1,4 +1,4 @@
-import { BrowserWindow, screen, ipcMain } from 'electron';
+import { BrowserWindow, screen, ipcMain, shell } from 'electron';
 import { getConfigValue, setConfigValue, type SnapPosition } from './config';
 
 // ── Geometry constants ───────────────────────────────────
@@ -17,6 +17,7 @@ const SETTINGS_HEIGHT = 700;
 // ── Module state ─────────────────────────────────────────
 let mainWindow: BrowserWindow | null = null;
 let canvasWindow: BrowserWindow | null = null;
+const canvasWindows = new Set<BrowserWindow>();
 let settingsWindow: BrowserWindow | null = null;
 let isExpanded = false;
 let isSnapping = false;
@@ -56,6 +57,7 @@ export function createMainWindow(options: WindowManagerOptions): BrowserWindow {
   win.loadURL('copilot-intent://app/renderer/index.html');
   attachBlurHide(win);
   attachResizePersist(win);
+  attachExternalLinkHandler(win);
 
   mainWindow = win;
 
@@ -195,13 +197,26 @@ export function registerWindowIpcHandlers(preloadPath: string): void {
     }
   });
 
+  // Open a new canvas window (even if one already exists)
+  ipcMain.on('canvas-window:open-new', (_event, target: { kind: string; id: string; title: string }) => {
+    const win = createCanvasWindow(preloadPath);
+    // Track as the "primary" canvas for default reuse
+    canvasWindow = win;
+    win.webContents.once('did-finish-load', () => {
+      win.webContents.send('canvas-window:load-target', target);
+      win.show();
+    });
+  });
+
   // Forward theme changes to all windows
   ipcMain.on('canvas-window:theme-changed', (_event, theme: string) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('canvas-window:theme-changed', theme);
     }
-    if (canvasWindow && !canvasWindow.isDestroyed()) {
-      canvasWindow.webContents.send('canvas-window:theme-changed', theme);
+    for (const win of canvasWindows) {
+      if (!win.isDestroyed()) {
+        win.webContents.send('canvas-window:theme-changed', theme);
+      }
     }
     if (settingsWindow && !settingsWindow.isDestroyed()) {
       settingsWindow.webContents.send('canvas-window:theme-changed', theme);
@@ -219,9 +234,40 @@ export function registerWindowIpcHandlers(preloadPath: string): void {
       });
     }
   });
+
+  // ── Cross-window agent chat ────────────────────────────
+  // Canvas window requests opening an agent chat in the main panel
+  ipcMain.on('main-window:open-agent-chat', (_event, data: { agentId: string; agentPrompt: string; agentStatus: string; agentSource?: 'sdk' | 'cli'; intentId?: string }) => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+
+    // Show the main window if hidden
+    if (!mainWindow.isVisible()) {
+      mainWindow.show();
+    }
+    mainWindow.focus();
+
+    mainWindow.webContents.send('main-window:open-agent-chat', data);
+  });
 }
 
 // ── Internal helpers ─────────────────────────────────────
+
+/** Open external links in the user's default browser instead of inside Electron. */
+function attachExternalLinkHandler(win: BrowserWindow): void {
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      shell.openExternal(url);
+    }
+    return { action: 'deny' };
+  });
+
+  win.webContents.on('will-navigate', (event, url) => {
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      event.preventDefault();
+      shell.openExternal(url);
+    }
+  });
+}
 
 /** Persist the user's preferred width when they resize the window. */
 function attachResizePersist(win: BrowserWindow): void {
@@ -362,7 +408,6 @@ function createCanvasWindow(preloadPath: string): BrowserWindow {
     x: Math.round(x + (width - CANVAS_WIDTH) / 2),
     y: Math.round(y + (height - CANVAS_HEIGHT) / 2),
     show: false,
-    alwaysOnTop: true,
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 16 },
     vibrancy: 'under-window',
@@ -375,9 +420,12 @@ function createCanvasWindow(preloadPath: string): BrowserWindow {
   });
 
   win.loadURL('copilot-intent://app/renderer/index.html?mode=canvas');
+  attachExternalLinkHandler(win);
 
+  canvasWindows.add(win);
   win.on('closed', () => {
-    canvasWindow = null;
+    canvasWindows.delete(win);
+    if (canvasWindow === win) canvasWindow = null;
     mainWindow?.webContents.send('canvas-window:closed');
   });
 
@@ -414,6 +462,7 @@ function createSettingsWindow(preloadPath: string): BrowserWindow {
   });
 
   win.loadURL('copilot-intent://app/renderer/index.html?mode=settings');
+  attachExternalLinkHandler(win);
 
   win.on('closed', () => {
     settingsWindow = null;
