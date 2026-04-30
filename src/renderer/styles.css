@@ -1696,29 +1696,57 @@ body.dark .waveform-canvas {
 }
 
 .workers-badge {
+  --badge-ring: rgba(255, 255, 255, 0.5);
+  --badge-glow: rgba(245, 158, 11, 0.35);
+  --badge-glow-bright: rgba(245, 158, 11, 0.45);
   position: absolute;
   top: 3px;
-  right: 6px;
-  width: 7px;
-  height: 7px;
+  right: 5px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  background: #f59e0b;
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.45);
-  animation: badge-pulse 2s ease-in-out infinite;
+  background: radial-gradient(circle at 35% 35%, #fcd34d, #f59e0b);
+  box-shadow: 0 0 0 2px var(--badge-ring),
+              0 0 6px var(--badge-glow);
+  animation: badge-enter 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards,
+             badge-glow 2.5s ease-in-out 0.4s infinite;
 }
 
 .workers-badge.hidden {
   display: none;
 }
 
-@keyframes badge-pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.6; transform: scale(0.85); }
+@keyframes badge-enter {
+  0%   { transform: scale(0); opacity: 0; }
+  60%  { transform: scale(1.25); opacity: 1; }
+  80%  { transform: scale(0.92); }
+  100% { transform: scale(1); }
+}
+
+@keyframes badge-glow {
+  0%, 100% {
+    box-shadow: 0 0 0 2px var(--badge-ring),
+                0 0 6px var(--badge-glow);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 0 2.5px var(--badge-ring),
+                0 0 8px var(--badge-glow-bright);
+    transform: scale(0.92);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workers-badge {
+    animation: none;
+  }
 }
 
 body.dark .workers-badge {
-  background: #fbbf24;
-  box-shadow: 0 0 0 2px rgba(28, 28, 32, 0.8);
+  --badge-ring: rgba(28, 28, 32, 0.8);
+  --badge-glow: rgba(251, 191, 36, 0.4);
+  --badge-glow-bright: rgba(251, 191, 36, 0.5);
+  background: radial-gradient(circle at 35% 35%, #fde68a, #fbbf24);
 }
 
 /* ── Focus banner ─────────────────────────────────────── */
