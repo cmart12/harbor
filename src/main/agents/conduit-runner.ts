@@ -1,0 +1,654 @@
+/**
+ * Conduit agent runner — launches and manages agents running inside Conduit sessions.
+ *
+ * Follows the same DI + event-forwarding pattern as sdk-runner.ts, but uses
+ * the lightweight Conduit client (conduit-client.ts) instead of @github/copilot-sdk.
+ */
+import { v4 as uuid } from 'uuid';
+import * as path from 'path';
+import { getConfigValue, type AgentPersona } from '../config';
+import {
+  getConduitHostClient,
+  connectConduitSession,
+  type ConduitAgentSession,
+} from '../conduit-client';
+import { AgentRegistry, truncate } from './agent-registry';
+import type { AgentRecord } from './agent-registry';
+import { AgentNotifier } from './agent-notifier';
+import { AgentPersistence } from './agent-persistence';
+import { InteractionBroker } from './interaction-broker';
+import { appendSpaceActivity } from '../space-eventlog';
+
+/** Shared dependencies injected from agent-service at init time. */
+let registry: AgentRegistry;
+let notifier: AgentNotifier;
+let persistence: AgentPersistence;
+let broker: InteractionBroker;
+
+export function initConduitRunner(deps: {
+  registry: AgentRegistry;
+  notifier: AgentNotifier;
+  persistence: AgentPersistence;
+  broker: InteractionBroker;
+}): void {
+  registry = deps.registry;
+  notifier = deps.notifier;
+  persistence = deps.persistence;
+  broker = deps.broker;
+}
+
+// ── Agent lifecycle ────────────────────────────────────────────────
+
+/**
+ * Launch an agent via Conduit. Creates a session on the Conduit host,
+ * connects over WebSocket, and submits the initial prompt.
+ */
+export async function launchConduitAgent(
+  spaceId: string | null,
+  prompt: string,
+  workspaceRoot: string,
+  spaceFolder: string,
+  persona?: AgentPersona,
+): Promise<{ agentId: string; sessionId: string } | { error: string }> {
+  const hostClient = getConduitHostClient();
+  if (!hostClient) {
+    return { error: 'Conduit host URL not configured (set conduitHostUrl in settings)' };
+  }
+
+  const reachable = await hostClient.isReachable();
+  if (!reachable) {
+    return { error: `Cannot reach Conduit host at ${hostClient.baseUrl} — is it running?` };
+  }
+
+  const agentId = uuid();
+  const workingDir = path.join(workspaceRoot, spaceFolder);
+
+  try {
+    // Create and connect a session
+    const profile = getConfigValue('conduitProfile') || undefined;
+    const connectResult = await hostClient.createAndConnect({
+      workspacePath: workingDir,
+      orphanPolicy: 'timeout',
+      orphanTimeoutSeconds: 300,
+      ...(profile ? { profile } : {}),
+    });
+
+    const conduitSessionId = connectResult.connection.sessionId;
+    const conduitSession = await connectConduitSession(connectResult.connection);
+
+    const now = new Date().toISOString();
+
+    // We create a stub CopilotSession-compatible object so the AgentRecord
+    // type is satisfied. The real interaction goes through conduitSession.
+    const stubSession = createStubCopilotSession(conduitSessionId);
+
+    const record: AgentRecord = {
+      agentId,
+      sessionId: conduitSessionId,
+      session: stubSession,
+      spaceId: spaceId || '__workspace__',
+      selectedText: prompt,
+      anchor: { quote: '', prefix: '', suffix: '' },
+      status: 'running',
+      pendingApprovalId: null,
+      pendingPermissionKind: null,
+      pendingApprovals: new Map(),
+      summary: 'Starting (Conduit)...',
+      conduitSession,
+    };
+    registry.set(agentId, record);
+
+    // Persist to DB
+    persistence.createAgentSessionRecord({
+      id: agentId,
+      session_id: conduitSessionId,
+      space_id: spaceId,
+      prompt: truncate(prompt, 500),
+      status: 'running',
+      summary: 'Starting (Conduit)...',
+      working_dir: workingDir,
+      source: 'conduit',
+      persona_handle: persona?.handle ?? null,
+      quoted_text: null,
+      created_at: now,
+      updated_at: now,
+    });
+
+    // Set up event listeners (maps Conduit notifications → Intent chat events)
+    setupConduitEventListeners(conduitSession, record);
+
+    // Log activity
+    logConduitActivity(record, 'agent.launched', {
+      sessionId: conduitSessionId,
+      prompt: truncate(prompt, 200),
+      cwd: workingDir,
+      source: 'conduit',
+    });
+
+    // Submit initial prompt — prepend persona instructions if configured
+    const effectivePrompt = persona?.instructions
+      ? `${persona.instructions}\n\n${prompt}`
+      : prompt;
+    conduitSession.agentSubmit({ prompt: effectivePrompt }).catch((err: any) => {
+      record.status = 'failed';
+      record.summary = `Error: ${err.message || 'Unknown'}`;
+      persistence.updateStatus(record);
+      notifier.notifyRenderer(`chat:event:${agentId}`, {
+        type: 'session.error',
+        message: err.message || 'Failed to submit to Conduit agent',
+      });
+    });
+
+    return { agentId, sessionId: conduitSessionId };
+  } catch (err: any) {
+    return { error: err.message || 'Failed to launch Conduit agent' };
+  }
+}
+
+/**
+ * Connect to an existing running Conduit session and register it as an agent.
+ */
+export async function joinConduitSession(
+  conduitSessionId: string,
+  spaceId: string,
+): Promise<{ agentId: string; sessionId: string } | { error: string }> {
+  const hostClient = getConduitHostClient();
+  if (!hostClient) {
+    return { error: 'Conduit host URL not configured' };
+  }
+
+  try {
+    const joinResult = await hostClient.joinSession(conduitSessionId);
+    const conduitSession = await connectConduitSession(joinResult);
+
+    const agentId = uuid();
+    const now = new Date().toISOString();
+    const stubSession = createStubCopilotSession(conduitSessionId);
+
+    const record: AgentRecord = {
+      agentId,
+      sessionId: conduitSessionId,
+      session: stubSession,
+      spaceId,
+      selectedText: '',
+      anchor: { quote: '', prefix: '', suffix: '' },
+      status: 'running',
+      pendingApprovalId: null,
+      pendingPermissionKind: null,
+      pendingApprovals: new Map(),
+      summary: 'Connected to Conduit session',
+      conduitSession,
+    };
+    registry.set(agentId, record);
+
+    persistence.createAgentSessionRecord({
+      id: agentId,
+      session_id: conduitSessionId,
+      space_id: spaceId,
+      prompt: '(joined existing session)',
+      status: 'running',
+      summary: 'Connected to Conduit session',
+      working_dir: null,
+      source: 'conduit',
+      persona_handle: null,
+      quoted_text: null,
+      created_at: now,
+      updated_at: now,
+    });
+
+    setupConduitEventListeners(conduitSession, record);
+
+    return { agentId, sessionId: conduitSessionId };
+  } catch (err: any) {
+    return { error: err.message || 'Failed to join Conduit session' };
+  }
+}
+
+/** Send a follow-up message to an active Conduit agent. */
+export async function sendConduitChatMessage(
+  agentId: string,
+  prompt: string,
+): Promise<{ error?: string }> {
+  const record = registry.get(agentId);
+  if (!record) return { error: 'Agent not found' };
+  if (!record.conduitSession) return { error: 'Not a Conduit agent' };
+
+  if (record.status !== 'running' && record.status !== 'completed') {
+    return { error: `Agent is ${record.status}, cannot send message` };
+  }
+
+  // Reactivate for multi-turn
+  record.status = 'running';
+  persistence.updateStatus(record);
+  notifier.notifyRenderer('agent:status-changed', {
+    agentId,
+    status: 'running',
+    summary: record.summary,
+  });
+
+  try {
+    await record.conduitSession.agentSubmit({ prompt });
+    return {};
+  } catch (err: any) {
+    return { error: err.message || 'Failed to send message' };
+  }
+}
+
+/** Abort a running Conduit agent. */
+export async function abortConduitAgent(agentId: string): Promise<void> {
+  const record = registry.get(agentId);
+  if (!record?.conduitSession) return;
+
+  try {
+    await record.conduitSession.agentAbort();
+  } catch {
+    // ignore — might already be idle
+  }
+
+  record.status = 'failed';
+  record.summary = 'Aborted by user';
+  persistence.updateStatus(record);
+  notifier.notifyRenderer('agent:status-changed', {
+    agentId,
+    status: 'failed',
+    summary: 'Aborted',
+  });
+}
+
+/** Disconnect from a Conduit session and clean up. */
+export async function disconnectConduitAgent(agentId: string): Promise<void> {
+  const record = registry.get(agentId);
+  if (!record?.conduitSession) return;
+
+  record._intentionalDisconnect = true;
+  await record.conduitSession.close();
+  record.conduitSession = undefined;
+}
+
+/** Get conversation history from a Conduit agent session. */
+export async function getConduitAgentHistory(agentId: string): Promise<any[] | null> {
+  const record = registry.get(agentId);
+  if (!record?.conduitSession) return null;
+
+  try {
+    const result = await record.conduitSession.agentHistory();
+    return result.messages ?? [];
+  } catch {
+    return null;
+  }
+}
+
+/** List running sessions on the configured Conduit host. */
+export async function listConduitSessions(): Promise<
+  Array<{ id: string; status: string; summary?: string; createdAt: string }> | { error: string }
+> {
+  const hostClient = getConduitHostClient();
+  if (!hostClient) return { error: 'Conduit host URL not configured' };
+
+  try {
+    const sessions = await hostClient.listSessions('running');
+    return sessions.map(s => ({
+      id: s.id,
+      status: s.status,
+      summary: s.summary,
+      createdAt: s.createdAt,
+    }));
+  } catch (err: any) {
+    return { error: err.message || 'Failed to list sessions' };
+  }
+}
+
+/** Check connectivity to the configured Conduit host. */
+export async function getConduitHostStatus(): Promise<{
+  configured: boolean;
+  connected: boolean;
+  url: string | null;
+}> {
+  const url = getConfigValue('conduitHostUrl');
+  if (!url) return { configured: false, connected: false, url: null };
+
+  const hostClient = getConduitHostClient();
+  const connected = hostClient ? await hostClient.isReachable() : false;
+  return { configured: true, connected, url };
+}
+
+// ── Event mapping ──────────────────────────────────────────────────
+
+/**
+ * Map Conduit agent notifications to Intent's chat event format.
+ *
+ * Conduit emits JSON-RPC notifications with methods like:
+ *   agent.task_completed, agent.permission_request, agent.assistant_message, etc.
+ *
+ * Intent expects events on `chat:event:{agentId}` with types like:
+ *   session.idle, assistant.message, tool.start, tool.complete, etc.
+ */
+function setupConduitEventListeners(
+  conduitSession: ConduitAgentSession,
+  record: AgentRecord,
+): void {
+  const agentId = record.agentId;
+  const chatChannel = `chat:event:${agentId}`;
+
+  conduitSession.on('notification', (method: string, params: any) => {
+    switch (method) {
+      // ── Assistant messages ──────────────────────────────
+      case 'agent.assistant_message': {
+        const content = params?.content || params?.message || '';
+        const delta = params?.deltaContent ?? params?.delta;
+        if (delta !== undefined) {
+          notifier.notifyRenderer(chatChannel, {
+            type: 'assistant.message_delta',
+            delta,
+          });
+        } else {
+          record.summary = truncate(content || 'Agent responded', 100);
+          persistence.persistSummary(record);
+          notifier.notifyRenderer('agent:status-changed', {
+            agentId, status: record.status, summary: record.summary,
+          });
+          notifier.notifyRenderer(chatChannel, {
+            type: 'assistant.message',
+            content,
+          });
+        }
+        break;
+      }
+
+      case 'agent.assistant_turn_end': {
+        // Turn ended — no direct Intent equivalent, but useful as a signal
+        break;
+      }
+
+      // ── Tool execution ─────────────────────────────────
+      case 'agent.tool_execution_start': {
+        const toolName = params?.toolName || 'tool';
+        record.summary = `Using ${toolName}...`;
+        notifier.notifyRenderer('agent:status-changed', {
+          agentId, status: record.status, summary: record.summary,
+        });
+        notifier.notifyRenderer(chatChannel, {
+          type: 'tool.start',
+          toolCallId: params?.toolCallId ?? '',
+          toolName,
+          args: params?.arguments ?? params?.toolArgs ?? {},
+        });
+        logConduitActivity(record, 'agent.tool_start', {
+          toolName,
+          toolCallId: params?.toolCallId ?? '',
+        });
+        break;
+      }
+
+      case 'agent.tool_execution_end': {
+        const rawResult = params?.result;
+        const result = typeof rawResult === 'string'
+          ? rawResult
+          : rawResult?.detailedContent ?? rawResult?.content ?? '';
+        const success = params?.success !== false;
+        const errorMessage = params?.error?.message ?? undefined;
+        notifier.notifyRenderer(chatChannel, {
+          type: 'tool.complete',
+          toolCallId: params?.toolCallId ?? '',
+          result,
+          success,
+          ...(errorMessage ? { error: errorMessage } : {}),
+        });
+        logConduitActivity(record, 'agent.tool_complete', {
+          toolName: params?.toolName ?? '',
+          toolCallId: params?.toolCallId ?? '',
+          success,
+        });
+        break;
+      }
+
+      // ── Lifecycle ──────────────────────────────────────
+      case 'agent.session.idle':
+      case 'agent.session_idle': {
+        if (record.status === 'running') {
+          record.status = 'completed';
+          record.summary = 'Completed';
+          persistence.updateStatus(record);
+          notifier.notifyRenderer('agent:completed', { agentId, summary: record.summary });
+          notifier.notifyRenderer(chatChannel, { type: 'session.idle' });
+          logConduitActivity(record, 'agent.completed', { summary: record.summary });
+        }
+        break;
+      }
+
+      case 'agent.task_started': {
+        record.summary = params?.message || 'Working...';
+        notifier.notifyRenderer('agent:status-changed', {
+          agentId, status: record.status, summary: record.summary,
+        });
+        break;
+      }
+
+      case 'agent.task_completed': {
+        // task_completed is a lifecycle signal, not a message event.
+        // The content was already streamed via agent.assistant_message.
+        // Only update summary/status to avoid duplicate rendering.
+        const content = params?.content || '';
+        record.summary = truncate(content || 'Task completed', 100);
+        persistence.persistSummary(record);
+        notifier.notifyRenderer('agent:status-changed', {
+          agentId, status: record.status, summary: record.summary,
+        });
+        break;
+      }
+
+      case 'agent.error': {
+        record.status = 'failed';
+        record.summary = `Error: ${params?.message || 'Unknown error'}`;
+        persistence.updateStatus(record);
+        notifier.notifyRenderer('agent:status-changed', {
+          agentId, status: 'failed', summary: record.summary,
+        });
+        notifier.notifyRenderer(chatChannel, {
+          type: 'session.error',
+          message: params?.message || 'Unknown error',
+        });
+        logConduitActivity(record, 'agent.failed', { error: params?.message || 'Unknown' });
+        break;
+      }
+
+      // ── Permission / user input ────────────────────────
+      case 'agent.permission_request': {
+        const requestId = params?.requestId;
+        const kind = params?.kind || 'unknown';
+        if (requestId) {
+          record.status = 'waiting-approval';
+          record.pendingApprovalId = requestId;
+          record.pendingPermissionKind = kind;
+          record.pendingApprovals.set(requestId, {
+            permissionKind: kind,
+            intention: params?.toolName,
+            path: params?.path,
+          });
+          persistence.updateStatus(record);
+
+          notifier.notifyRenderer('agent:approval-needed', {
+            agentId,
+            requestId,
+            permissionKind: kind,
+            toolName: params?.toolName,
+            command: params?.command,
+            path: params?.path,
+            url: params?.url,
+          });
+          notifier.notifyRenderer('agent:status-changed', {
+            agentId, status: 'waiting-approval', summary: `Needs approval: ${kind}`,
+          });
+          // Also emit on the chat channel so the chat UI can display it
+          notifier.notifyRenderer(chatChannel, {
+            type: 'approval.needed',
+            requestId,
+            permissionKind: kind,
+            toolName: params?.toolName,
+            command: params?.command,
+            path: params?.path,
+          });
+
+          // Auto-approve if yolo mode is enabled
+          if (record.yoloMode) {
+            approveConduitPermission(agentId, requestId, true);
+          }
+        }
+        break;
+      }
+
+      case 'agent.user_input_request': {
+        const requestId = params?.requestId;
+        if (requestId) {
+          notifier.notifyRenderer('agent:user-input-needed', {
+            agentId,
+            requestId,
+            prompt: params?.prompt || 'Agent needs your input',
+          });
+          // Also emit on the chat channel so the chat UI can display it
+          notifier.notifyRenderer(chatChannel, {
+            type: 'user_input.requested',
+            requestId,
+            prompt: params?.prompt || 'Agent needs your input',
+          });
+        }
+        break;
+      }
+
+      // ── Usage / metrics ────────────────────────────────
+      case 'agent.assistant_usage':
+      case 'agent.session_usage_info': {
+        // Forward token usage if renderer wants it
+        notifier.notifyRenderer(chatChannel, {
+          type: 'assistant.usage',
+          inputTokens: params?.inputTokens ?? params?.input_tokens ?? 0,
+          outputTokens: params?.outputTokens ?? params?.output_tokens ?? 0,
+        });
+        break;
+      }
+
+      // ── Initialized ────────────────────────────────────
+      case 'agent.initialized': {
+        record.summary = 'Agent ready';
+        notifier.notifyRenderer('agent:status-changed', {
+          agentId, status: record.status, summary: record.summary,
+        });
+        break;
+      }
+
+      default:
+        // Unknown notification — log for debugging
+        console.log(`[conduit-runner] Unhandled notification: ${method}`, params);
+    }
+  });
+
+  // Handle WebSocket disconnection
+  conduitSession.on('disconnected', () => {
+    // Intentional disconnects (user-initiated) should not mark as failed
+    if (record._intentionalDisconnect) return;
+
+    if (record.status === 'running' || record.status === 'waiting-approval') {
+      record.status = 'failed';
+      record.summary = 'Conduit session disconnected';
+      persistence.updateStatus(record);
+      notifier.notifyRenderer('agent:status-changed', {
+        agentId, status: 'failed', summary: record.summary,
+      });
+      notifier.notifyRenderer(chatChannel, {
+        type: 'session.error',
+        message: 'Connection to Conduit session lost',
+      });
+    }
+  });
+}
+
+// ── Permission handling ────────────────────────────────────────────
+
+/**
+ * Approve or deny a pending Conduit permission request.
+ */
+export function approveConduitPermission(
+  agentId: string,
+  requestId: string,
+  approved: boolean,
+): void {
+  const record = registry.get(agentId);
+  if (!record?.conduitSession) return;
+
+  record.conduitSession.agentPermissionResponse({
+    requestId,
+    result: approved ? 'allow' : 'deny',
+  }).then(() => {
+    // Clear local state only after successful ACK
+    record.pendingApprovals.delete(requestId);
+    record.pendingApprovalId = null;
+    record.pendingPermissionKind = null;
+
+    if (record.pendingApprovals.size === 0 && record.status === 'waiting-approval') {
+      record.status = 'running';
+      persistence.updateStatus(record);
+      notifier.notifyRenderer('agent:status-changed', {
+        agentId, status: 'running', summary: record.summary,
+      });
+    }
+
+    // Emit resolution on chat channel
+    notifier.notifyRenderer(`chat:event:${agentId}`, {
+      type: 'approval.resolved',
+      requestId,
+      approved,
+    });
+  }).catch((err: any) => {
+    console.error(`[conduit-runner] Failed to send permission response: ${err.message}`);
+  });
+}
+
+/**
+ * Respond to a Conduit user input request.
+ */
+export function respondToConduitUserInput(
+  agentId: string,
+  requestId: string,
+  answer: string,
+): void {
+  const record = registry.get(agentId);
+  if (!record?.conduitSession) return;
+
+  record.conduitSession.agentUserInputResponse({
+    requestId,
+    answer,
+  }).catch((err: any) => {
+    console.error(`[conduit-runner] Failed to send user input response: ${err.message}`);
+  });
+}
+
+// ── Helpers ────────────────────────────────────────────────────────
+
+function logConduitActivity(record: AgentRecord, event: string, data: Record<string, unknown>): void {
+  if (!record.spaceId || record.spaceId === '__workspace__') return;
+  const workspace = getConfigValue('workspace');
+  if (!workspace) return;
+  try {
+    const { getSpace } = require('../database');
+    const space = getSpace(record.spaceId);
+    if (!space?.folder) return;
+    appendSpaceActivity(workspace, space.folder, event, {
+      agentId: record.agentId,
+      ...data,
+    });
+  } catch { /* non-fatal */ }
+}
+
+/**
+ * Create a minimal stub that satisfies the CopilotSession type in AgentRecord.
+ * For conduit agents, the real interaction goes through conduitSession.
+ */
+function createStubCopilotSession(sessionId: string): any {
+  return {
+    sessionId,
+    send: () => Promise.reject(new Error('Use conduitSession for Conduit agents')),
+    abort: () => Promise.reject(new Error('Use conduitSession for Conduit agents')),
+    on: () => {},
+    off: () => {},
+  };
+}

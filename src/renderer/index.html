@@ -71,6 +71,9 @@
         <h1>mona</h1>
         <div class="header-actions">
           <button id="pin-btn" class="header-icon-btn" title="Pin window (keep visible)">📌</button>
+          <div id="conduit-status" class="conduit-status hidden" title="Conduit host">
+            <span class="conduit-dot"></span>
+          </div>
           <button id="settings-btn" class="header-icon-btn" title="Settings">⚙</button>
         </div>
       </header>
@@ -193,6 +196,23 @@
               <div class="settings-hint">Register alternative CLI binaries for use with different agents.</div>
               <div id="runtimes-list" class="personas-list"></div>
               <button id="runtime-add-btn" class="persona-add-btn" type="button">+ Add Runtime</button>
+            </div>
+
+            <div class="settings-group">
+              <div class="settings-group-title">Conduit</div>
+              <div class="settings-row">
+                <div class="cli-path-display">
+                  <input id="conduit-host-input" class="cli-path-input" type="text" placeholder="http://localhost:8080" spellcheck="false" />
+                  <span id="conduit-host-status-dot" class="conduit-settings-dot" title="Not configured"></span>
+                </div>
+              </div>
+              <div class="settings-hint">URL of the Conduit host. Leave empty to disable. <span id="conduit-host-status-text">Not configured.</span></div>
+              <div class="settings-row" style="margin-top: 8px;">
+                <div class="cli-path-display">
+                  <input id="conduit-profile-input" class="cli-path-input" type="text" placeholder="(default profile)" spellcheck="false" />
+                </div>
+              </div>
+              <div class="settings-hint">Optional Conduit profile name for agent sessions.</div>
             </div>
           </div>
 

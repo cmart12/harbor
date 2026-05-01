@@ -13,7 +13,7 @@ export interface AgentPersona {
   handle: string;       // @mention name (stored lowercase, no @ prefix)
   instructions: string;
   model: string;        // model ID
-  runLocation: 'local' | 'cloud';  // where to execute the agent
+  runLocation: 'local' | 'cloud' | 'conduit';  // where to execute the agent
   sandboxed?: boolean;  // Windows-only; ignored on other platforms
   emoji?: string;       // emoji avatar for presence and worker tabs
   cliRuntime?: string;  // id of a CliRuntime; null/empty = use default cliPath
@@ -59,6 +59,8 @@ export interface AppConfig {
   cliTools: CliToolDefinition[];
   mcpServers: CustomMcpServer[];   // user-added MCP servers
   sandboxDefaultPolicy: SandboxPolicy;  // default policy for sandboxed personas
+  conduitHostUrl: string | null;    // URL of the Conduit host (e.g. "http://localhost:8080")
+  conduitProfile: string | null;    // optional Conduit profile name for agent sessions
 }
 
 const CONFIG_PATH = path.join(app.getPath('userData'), 'config.json');
@@ -77,6 +79,8 @@ const DEFAULT_CONFIG: AppConfig = {
   cliTools: [],
   mcpServers: [],
   sandboxDefaultPolicy: { ...DEFAULT_SANDBOX_POLICY },
+  conduitHostUrl: null,
+  conduitProfile: null,
 };
 
 let config: AppConfig = { ...DEFAULT_CONFIG };

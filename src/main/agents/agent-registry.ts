@@ -2,6 +2,7 @@ import type { CopilotSession } from '@github/copilot-sdk';
 import type { AgentAnchor } from '../../shared/types';
 import type { ResolvedPathPolicy } from './sandbox-policies';
 import type { SandboxConfigDirs } from '../ai';
+import type { ConduitAgentSession } from '../conduit-client';
 
 export type AgentStatus = 'running' | 'waiting-approval' | 'completed' | 'failed';
 
@@ -63,6 +64,10 @@ export interface AgentRecord {
   sandbox?: SandboxRuntimeState;
   /** When true, all permission requests are auto-approved without user interaction. Session-only. */
   yoloMode?: boolean;
+  /** Conduit session handle — present when source is 'conduit'. */
+  conduitSession?: ConduitAgentSession;
+  /** Set when the user intentionally disconnects a conduit session. */
+  _intentionalDisconnect?: boolean;
 }
 
 export class AgentRegistry {

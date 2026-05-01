@@ -284,6 +284,23 @@ export interface IpcCommands {
   'agent:get-history': { args: [agentId: string]; result: { events: unknown[]; restarted?: boolean } | { error: string } };
   'agent:set-yolo': { args: [agentId: string, enabled: boolean]; result: { ok: true } | { error: string } };
 
+  // ── Conduit ──────────────────────────────────────────────
+  'conduit:host-status': { args: []; result: { configured: boolean; connected: boolean; url: string | null } };
+  'conduit:list-sessions': { args: []; result: Array<{ id: string; status: string; summary?: string; createdAt: string }> | { error: string } };
+  'conduit:launch-agent': {
+    args: [spaceId: string, prompt: string, personaHandle?: string];
+    result: { agentId: string; sessionId: string } | { error: string };
+  };
+  'conduit:join-session': {
+    args: [conduitSessionId: string, spaceId: string];
+    result: { agentId: string; sessionId: string } | { error: string };
+  };
+  'conduit:send-message': { args: [agentId: string, prompt: string]; result: { error?: string } };
+  'conduit:abort-agent': { args: [agentId: string]; result: { ok: true } };
+  'conduit:disconnect-agent': { args: [agentId: string]; result: { ok: true } };
+  'conduit:approve-permission': { args: [agentId: string, requestId: string, approved: boolean]; result: { ok: true } };
+  'conduit:respond-input': { args: [agentId: string, requestId: string, answer: string]; result: { ok: true } };
+
   // ── CLI session ──────────────────────────────────────────
   'cli:launch-session': { args: []; result: { agentId: string; sessionId: string } | { error: string } };
 

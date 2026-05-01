@@ -114,6 +114,15 @@ export interface WhimAPI {
   getAgentWorkingDir(agentId: string): Promise<string | null>;
   setAgentYolo(agentId: string, enabled: boolean): Promise<IpcCommandResult<'agent:set-yolo'>>;
 
+  // ── Conduit ─────────────────────────────────────────────
+  getConduitHostStatus(): Promise<IpcCommandResult<'conduit:host-status'>>;
+  listConduitSessions(): Promise<IpcCommandResult<'conduit:list-sessions'>>;
+  launchConduitAgent(spaceId: string, prompt: string, personaHandle?: string): Promise<IpcCommandResult<'conduit:launch-agent'>>;
+  joinConduitSession(conduitSessionId: string, spaceId: string): Promise<IpcCommandResult<'conduit:join-session'>>;
+  sendConduitMessage(agentId: string, prompt: string): Promise<IpcCommandResult<'conduit:send-message'>>;
+  abortConduitAgent(agentId: string): Promise<IpcCommandResult<'conduit:abort-agent'>>;
+  disconnectConduitAgent(agentId: string): Promise<IpcCommandResult<'conduit:disconnect-agent'>>;
+
   // ── CLI session ──────────────────────────────────────────
   launchCliSession(): Promise<IpcCommandResult<'cli:launch-session'>>;
 
@@ -142,8 +151,8 @@ export interface WhimAPI {
   getCanvasAlwaysOnTop(): Promise<boolean>;
   notifyCanvasThemeChanged(theme: string): void;
   onCanvasThemeChanged(callback: (theme: string) => void): void;
-  openAgentChatInPanel(data: { agentId: string; agentPrompt: string; agentStatus: string; agentSource?: 'sdk' | 'cli'; spaceId?: string }): void;
-  onOpenAgentChatInPanel(callback: (data: { agentId: string; agentPrompt: string; agentStatus: string; agentSource?: 'sdk' | 'cli'; spaceId?: string }) => void): void;
+  openAgentChatInPanel(data: { agentId: string; agentPrompt: string; agentStatus: string; agentSource?: 'sdk' | 'cli' | 'conduit'; spaceId?: string }): void;
+  onOpenAgentChatInPanel(callback: (data: { agentId: string; agentPrompt: string; agentStatus: string; agentSource?: 'sdk' | 'cli' | 'conduit'; spaceId?: string }) => void): void;
 
   // ── Settings popout window ──────────────────────────────
   openSettingsWindow(): void;
@@ -303,6 +312,22 @@ const api: WhimAPI = {
     ipcRenderer.invoke('agent:get-working-dir', agentId),
   setAgentYolo: (agentId, enabled) =>
     ipcRenderer.invoke('agent:set-yolo', agentId, enabled),
+
+  // ── Conduit ─────────────────────────────────────────────
+  getConduitHostStatus: () =>
+    ipcRenderer.invoke('conduit:host-status'),
+  listConduitSessions: () =>
+    ipcRenderer.invoke('conduit:list-sessions'),
+  launchConduitAgent: (spaceId, prompt, personaHandle?) =>
+    ipcRenderer.invoke('conduit:launch-agent', spaceId, prompt, personaHandle),
+  joinConduitSession: (conduitSessionId, spaceId) =>
+    ipcRenderer.invoke('conduit:join-session', conduitSessionId, spaceId),
+  sendConduitMessage: (agentId, prompt) =>
+    ipcRenderer.invoke('conduit:send-message', agentId, prompt),
+  abortConduitAgent: (agentId) =>
+    ipcRenderer.invoke('conduit:abort-agent', agentId),
+  disconnectConduitAgent: (agentId) =>
+    ipcRenderer.invoke('conduit:disconnect-agent', agentId),
 
   // ── CLI session ──────────────────────────────────────────
   launchCliSession: () =>

@@ -9,6 +9,7 @@ import { InteractionBroker } from './agents/interaction-broker';
 import { initSdkRunner, setupAgentEventListeners } from './agents/sdk-runner';
 import { initCliRunner } from './agents/cli-runner';
 import { initCommentWorkflow } from './agents/comment-workflow';
+import { initConduitRunner } from './agents/conduit-runner';
 
 export type { AgentStatus } from './agents/agent-registry';
 
@@ -29,6 +30,7 @@ subagentTracker.onChange((parentAgentId) => {
 initSdkRunner({ registry, notifier, persistence, broker, subagentTracker });
 initCliRunner({ registry, notifier, persistence });
 initCommentWorkflow({ registry, notifier, persistence, broker, setupAgentEventListeners });
+initConduitRunner({ registry, notifier, persistence, broker });
 
 // ── Re-exports from SDK runner ─────────────────────────
 export { buildCliToolsPrompt, launchAgent, launchQuickAgent, launchDocumentAgent, sendChatMessage, setAgentModel, getAgentHistory } from './agents/sdk-runner';
@@ -38,6 +40,20 @@ export { launchCliSession, startCliExitMonitor, stopCliExitMonitor, openAgentCli
 
 // ── Re-exports from comment workflow ───────────────────
 export { launchCommentAgent } from './agents/comment-workflow';
+
+// ── Re-exports from Conduit runner ─────────────────────
+export {
+  launchConduitAgent,
+  joinConduitSession,
+  sendConduitChatMessage,
+  abortConduitAgent,
+  disconnectConduitAgent,
+  listConduitSessions,
+  getConduitHostStatus,
+  getConduitAgentHistory,
+  approveConduitPermission,
+  respondToConduitUserInput,
+} from './agents/conduit-runner';
 
 // ── Interaction passthrough ────────────────────────────
 
@@ -136,7 +152,7 @@ export function getAgentSessionId(agentId: string): string | null {
   return registry.get(agentId)?.sessionId ?? null;
 }
 
-export function listAllAgents(): Array<{ agentId: string; sessionId: string; status: import('./agents/agent-registry').AgentStatus; summary: string; selectedText: string; quotedText: string; spaceId: string; createdAt: string; pendingApprovalId: string | null; pendingPermissionKind: string | null; pendingIntention: string | null; pendingPath: string | null; source: 'sdk' | 'cli' | 'cloud'; personaHandle: string | null; yoloMode: boolean }> {
+export function listAllAgents(): Array<{ agentId: string; sessionId: string; status: import('./agents/agent-registry').AgentStatus; summary: string; selectedText: string; quotedText: string; spaceId: string; createdAt: string; pendingApprovalId: string | null; pendingPermissionKind: string | null; pendingIntention: string | null; pendingPath: string | null; source: 'sdk' | 'cli' | 'cloud' | 'conduit'; personaHandle: string | null; yoloMode: boolean }> {
   // Read persisted sessions from DB (sorted newest first)
   let persisted: AgentSession[] = [];
   try {
@@ -145,7 +161,7 @@ export function listAllAgents(): Array<{ agentId: string; sessionId: string; sta
 
   // Build result: overlay live in-memory state on top of DB records
   const seen = new Set<string>();
-  const result: Array<{ agentId: string; sessionId: string; status: import('./agents/agent-registry').AgentStatus; summary: string; selectedText: string; quotedText: string; spaceId: string; createdAt: string; pendingApprovalId: string | null; pendingPermissionKind: string | null; pendingIntention: string | null; pendingPath: string | null; source: 'sdk' | 'cli' | 'cloud'; personaHandle: string | null; yoloMode: boolean }> = [];
+  const result: Array<{ agentId: string; sessionId: string; status: import('./agents/agent-registry').AgentStatus; summary: string; selectedText: string; quotedText: string; spaceId: string; createdAt: string; pendingApprovalId: string | null; pendingPermissionKind: string | null; pendingIntention: string | null; pendingPath: string | null; source: 'sdk' | 'cli' | 'cloud' | 'conduit'; personaHandle: string | null; yoloMode: boolean }> = [];
 
   for (const row of persisted) {
     seen.add(row.id);

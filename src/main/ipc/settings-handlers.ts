@@ -16,6 +16,8 @@ export function registerSettingsHandlers(): void {
       theme: 'theme',
       model: 'model',
       cli_path: 'cliPath',
+      conduit_host_url: 'conduitHostUrl',
+      conduit_profile: 'conduitProfile',
     };
     const configKey = configKeyMap[key];
     if (configKey) return getConfigValue(configKey);
@@ -40,6 +42,10 @@ export function registerSettingsHandlers(): void {
       // Reinitialize the SDK so it picks up the new CLI
       await reinitCopilot();
       return resolved;
+    } else if (key === 'conduit_host_url') {
+      setConfigValue('conduitHostUrl', value || null);
+    } else if (key === 'conduit_profile') {
+      setConfigValue('conduitProfile', value || null);
     }
   });
 

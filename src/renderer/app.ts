@@ -312,6 +312,8 @@ let searchTimeout: ReturnType<typeof setTimeout> | null = null;
 let searchMode = false;
 let activeSearchQuery = '';
 const workersBadge = document.getElementById('workers-badge') as HTMLSpanElement;
+const conduitStatusEl = document.getElementById('conduit-status') as HTMLDivElement;
+const conduitDotEl = conduitStatusEl?.querySelector('.conduit-dot') as HTMLSpanElement;
 
 // ── Platform detection ──────────────────────────────────
 // Set platform class on body for platform-adaptive styling
@@ -2488,12 +2490,14 @@ function render(): void {
     if (spaceAgents.length > 0) {
       const agentCards = spaceAgents.map(agent => {
         const isCloud = agent.source === 'cloud';
+        const isConduit = agent.source === 'conduit';
         const aIcon = isCloud ? '☁️' :
+                      isConduit ? '🔗' :
                       agent.status === 'running' ? '⚡' :
                       agent.status === 'waiting-approval' ? '⏳' :
                       agent.status === 'completed' ? '✓' :
                       '✗';
-        const aClass = agent.status === 'running' ? (isCloud ? 'mini-agent-cloud' : 'mini-agent-running') :
+        const aClass = agent.status === 'running' ? (isCloud ? 'mini-agent-cloud' : isConduit ? 'mini-agent-cloud' : 'mini-agent-running') :
                        agent.status === 'waiting-approval' ? 'mini-agent-waiting' :
                        agent.status === 'completed' ? 'mini-agent-completed' :
                        'mini-agent-failed';
@@ -3127,7 +3131,7 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
   countEl.textContent = String(spaces.filter(i => i.status !== 'done').length);
 
   // Gather all agents (including workspace-level ones)
-  let allAgents: Array<{ agentId: string; sessionId: string; status: string; summary: string; selectedText: string; quotedText?: string; spaceId: string; createdAt?: string; pendingApprovalId?: string | null; pendingPermissionKind?: string | null; source?: 'sdk' | 'cli' | 'cloud'; personaHandle?: string | null }> = [];
+  let allAgents: Array<{ agentId: string; sessionId: string; status: string; summary: string; selectedText: string; quotedText?: string; spaceId: string; createdAt?: string; pendingApprovalId?: string | null; pendingPermissionKind?: string | null; source?: 'sdk' | 'cli' | 'cloud' | 'conduit'; personaHandle?: string | null }> = [];
 
   try {
     allAgents = await whimAPI.listAllAgents();
@@ -3205,18 +3209,21 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
                        agent.status === 'completed' ? '<svg class="agent-icon-svg" width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="9" fill="#22c55e"/><path d="M5.5 9.5L7.8 11.8L12.5 6.5" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' :
                        '<svg class="agent-icon-svg" width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="9" fill="#ef4444"/><path d="M6 6L12 12M12 6L6 12" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>';
 
-    // Source label (cloud/cli/local)
+    // Source label (cloud/cli/conduit/local)
     const sourceLabel = agent.source === 'cloud' ? '<span class="agent-card-source">☁️ Cloud</span>'
       : agent.source === 'cli' ? '<span class="agent-card-source">🖥 CLI</span>'
+      : agent.source === 'conduit' ? '<span class="agent-card-source">🔗 Conduit</span>'
       : '';
 
     const intentLabel = agent.source === 'cli'
       ? 'CLI Session'
       : agent.source === 'cloud'
         ? 'Cloud Agent'
-        : agent.spaceId === '__workspace__'
-          ? 'Workspace'
-          : escapeHtml(intentMap.get(agent.spaceId) || agent.spaceId);
+        : agent.source === 'conduit'
+          ? 'Conduit Agent'
+          : agent.spaceId === '__workspace__'
+            ? 'Workspace'
+            : escapeHtml(intentMap.get(agent.spaceId) || agent.spaceId);
 
     const title = agent.selectedText.length > 80
       ? agent.selectedText.slice(0, 77) + '...'
@@ -3356,9 +3363,94 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
       subscribeAgentChat(agent.agentId);
     }
   }
+
+  // ── Conduit remote sessions section ─────────────────────
+  // Show joinable conduit sessions that aren't already represented as local agents
+  if (!filterQuery) {
+    renderConduitSessionsSection(allAgents);
+  }
 }
 
-let renderedAgents: Array<{ agentId: string; sessionId: string; status: string; summary: string; selectedText: string; spaceId: string; createdAt?: string; source?: 'sdk' | 'cli' | 'cloud' }> = [];
+let renderedAgents: Array<{ agentId: string; sessionId: string; status: string; summary: string; selectedText: string; spaceId: string; createdAt?: string; source?: 'sdk' | 'cli' | 'cloud' | 'conduit' }> = [];
+
+/**
+ * Render a "Conduit Sessions" panel at the bottom of the Workers tab,
+ * showing running sessions on the host that the user can join.
+ */
+async function renderConduitSessionsSection(
+  localAgents: Array<{ sessionId: string; source?: string }>,
+): Promise<void> {
+  // Only show if conduit is configured
+  let status: { configured: boolean; connected: boolean; url: string | null };
+  try {
+    status = await whimAPI.getConduitHostStatus();
+  } catch { return; }
+  if (!status.configured || !status.connected) return;
+
+  // Fetch remote sessions
+  let sessions: Array<{ id: string; status: string; summary?: string; createdAt: string }>;
+  try {
+    const result = await whimAPI.listConduitSessions();
+    if ('error' in result) return;
+    sessions = result;
+  } catch { return; }
+
+  // Filter out sessions already tracked locally
+  const localSessionIds = new Set(
+    localAgents.filter(a => a.source === 'conduit').map(a => a.sessionId),
+  );
+  const remoteSessions = sessions.filter(s => !localSessionIds.has(s.id));
+
+  // Build the section HTML
+  const sectionEl = document.createElement('div');
+  sectionEl.className = 'conduit-sessions-section';
+
+  const itemsHtml = remoteSessions.length > 0
+    ? remoteSessions.map(s => {
+        const shortId = s.id.length > 16 ? s.id.slice(0, 14) + '…' : s.id;
+        const summaryText = s.summary ? escapeHtml(s.summary) : '';
+        return `<div class="conduit-session-item" data-session-id="${escapeHtml(s.id)}">
+          <span class="session-id" title="${escapeHtml(s.id)}">${shortId}</span>
+          ${summaryText ? `<span class="session-summary" title="${summaryText}">${summaryText}</span>` : ''}
+          <button class="session-join-btn" data-session-id="${escapeHtml(s.id)}">Join</button>
+        </div>`;
+      }).join('')
+    : '<div class="conduit-sessions-empty">No other sessions on host</div>';
+
+  const totalCount = remoteSessions.length + localSessionIds.size;
+
+  sectionEl.innerHTML = `
+    <div class="conduit-sessions-header">
+      <span class="conduit-sessions-dot"></span>
+      <span>Conduit Sessions</span>
+      <span class="conduit-sessions-count">${totalCount}</span>
+    </div>
+    ${itemsHtml}
+  `;
+
+  listEl.appendChild(sectionEl);
+
+  // Wire up join buttons
+  sectionEl.querySelectorAll('.session-join-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const sessionId = (e.currentTarget as HTMLElement).dataset.sessionId!;
+      (e.currentTarget as HTMLButtonElement).textContent = '…';
+      (e.currentTarget as HTMLButtonElement).disabled = true;
+      try {
+        const result = await whimAPI.joinConduitSession(sessionId, '__workspace__');
+        if ('error' in result) {
+          showStatus(`Join failed: ${result.error}`, true);
+          return;
+        }
+        // Refresh the list to show the newly joined agent
+        renderAgentsList();
+      } catch (err: any) {
+        showStatus(`Join failed: ${err.message}`, true);
+      }
+    });
+  });
+}
 
 function updateAgentSelection(): void {
   const items = listEl.querySelectorAll('.agent-card');
@@ -3756,6 +3848,107 @@ async function updateCliMxcIndicator(): Promise<void> {
     cliMxcIndicator.textContent = '?';
     cliMxcIndicator.className = 'cli-mxc-indicator';
   }
+}
+
+// ── Conduit host settings ────────────────────────────────
+const conduitHostInput = document.getElementById('conduit-host-input') as HTMLInputElement | null;
+const conduitProfileInput = document.getElementById('conduit-profile-input') as HTMLInputElement | null;
+const conduitHostStatusDot = document.getElementById('conduit-host-status-dot') as HTMLSpanElement | null;
+const conduitHostStatusText = document.getElementById('conduit-host-status-text') as HTMLSpanElement | null;
+
+let conduitPollTimer: ReturnType<typeof setInterval> | null = null;
+
+async function loadConduitSettings(): Promise<void> {
+  if (conduitHostInput) {
+    const url = await whimAPI.getSetting('conduit_host_url');
+    conduitHostInput.value = url || '';
+  }
+  if (conduitProfileInput) {
+    const profile = await whimAPI.getSetting('conduit_profile');
+    conduitProfileInput.value = profile || '';
+  }
+  await pollConduitStatus();
+}
+
+async function pollConduitStatus(): Promise<void> {
+  try {
+    const status = await whimAPI.getConduitHostStatus();
+    updateConduitIndicator(status);
+  } catch {
+    updateConduitIndicator({ configured: false, connected: false, url: null });
+  }
+}
+
+function updateConduitIndicator(status: { configured: boolean; connected: boolean; url: string | null }): void {
+  if (!status.configured) {
+    conduitStatusEl?.classList.add('hidden');
+    if (conduitHostStatusDot) {
+      conduitHostStatusDot.className = 'conduit-settings-dot';
+      conduitHostStatusDot.title = 'Not configured';
+    }
+    if (conduitHostStatusText) conduitHostStatusText.textContent = 'Not configured.';
+    return;
+  }
+
+  conduitStatusEl?.classList.remove('hidden');
+
+  if (status.connected) {
+    conduitStatusEl?.classList.remove('disconnected', 'checking');
+    conduitStatusEl?.classList.add('connected');
+    if (conduitStatusEl) conduitStatusEl.title = `Conduit: connected (${status.url})`;
+    if (conduitHostStatusDot) {
+      conduitHostStatusDot.className = 'conduit-settings-dot connected';
+      conduitHostStatusDot.title = 'Connected';
+    }
+    if (conduitHostStatusText) conduitHostStatusText.textContent = `Connected to ${status.url}`;
+  } else {
+    conduitStatusEl?.classList.remove('connected', 'checking');
+    conduitStatusEl?.classList.add('disconnected');
+    if (conduitStatusEl) conduitStatusEl.title = `Conduit: cannot reach ${status.url}`;
+    if (conduitHostStatusDot) {
+      conduitHostStatusDot.className = 'conduit-settings-dot disconnected';
+      conduitHostStatusDot.title = 'Disconnected';
+    }
+    if (conduitHostStatusText) conduitHostStatusText.textContent = `Cannot reach ${status.url}`;
+  }
+}
+
+// Start periodic conduit polling
+function startConduitPoll(): void {
+  if (conduitPollTimer) return;
+  pollConduitStatus();
+  conduitPollTimer = setInterval(pollConduitStatus, 15_000);
+}
+
+function stopConduitPoll(): void {
+  if (conduitPollTimer) {
+    clearInterval(conduitPollTimer);
+    conduitPollTimer = null;
+  }
+}
+
+if (conduitHostInput) {
+  let conduitDebounce: ReturnType<typeof setTimeout> | null = null;
+  conduitHostInput.addEventListener('input', () => {
+    if (conduitDebounce) clearTimeout(conduitDebounce);
+    conduitDebounce = setTimeout(async () => {
+      const val = conduitHostInput.value.trim();
+      await whimAPI.setSetting('conduit_host_url', val);
+      conduitStatusEl?.classList.remove('connected', 'disconnected');
+      conduitStatusEl?.classList.add('checking');
+      await pollConduitStatus();
+    }, 600);
+  });
+}
+
+if (conduitProfileInput) {
+  let profileDebounce: ReturnType<typeof setTimeout> | null = null;
+  conduitProfileInput.addEventListener('input', () => {
+    if (profileDebounce) clearTimeout(profileDebounce);
+    profileDebounce = setTimeout(async () => {
+      await whimAPI.setSetting('conduit_profile', conduitProfileInput.value.trim());
+    }, 600);
+  });
 }
 
 // ── Settings tabs ───────────────────────────────────────
@@ -5591,6 +5784,7 @@ whimAPI.getSetting('workspace_root').then(ws => {
 // tab has data.  (Settings popout has its own loadPersonas() call.)
 if (!isCanvasMode && !isSettingsMode) {
   loadPersonas().catch(() => { /* leaves personas[] empty */ });
+  startConduitPoll();
 }
 
 // Refresh the space list when the canvas popout window is closed
@@ -5751,6 +5945,7 @@ if (isSettingsMode) {
   loadCliPathSetting();
   loadMcpServers();
   loadCliTools();
+  loadConduitSettings();
 
   // Close button closes the window
   settingsClose.addEventListener('click', () => window.close());
