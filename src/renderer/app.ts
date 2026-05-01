@@ -5568,6 +5568,8 @@ whimAPI.onWindowShown((data) => {
   hideStatus();
   // Refresh active session state when window reappears
   loadSpaces();
+  // Re-check conduit status (settings may have changed)
+  pollConduitStatus();
 
   // Slide in from the appropriate edge
   if (!data.expanded) {

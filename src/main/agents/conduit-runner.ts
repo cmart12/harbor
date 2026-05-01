@@ -305,10 +305,14 @@ export async function getConduitHostStatus(): Promise<{
   url: string | null;
 }> {
   const url = getConfigValue('conduitHostUrl');
-  if (!url) return { configured: false, connected: false, url: null };
+  if (!url) {
+    console.log('[conduit] Host status: not configured');
+    return { configured: false, connected: false, url: null };
+  }
 
   const hostClient = getConduitHostClient();
   const connected = hostClient ? await hostClient.isReachable() : false;
+  console.log(`[conduit] Host status: ${connected ? 'connected' : 'unreachable'} (${url})`);
   return { configured: true, connected, url };
 }
 
