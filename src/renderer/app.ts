@@ -297,6 +297,7 @@ let renderGeneration = 0;
 const filterBar = document.getElementById('filter-bar') as HTMLDivElement;
 const newAgentBtn = document.getElementById('new-agent-btn') as HTMLButtonElement;
 const launchCliBtn = document.getElementById('launch-cli-btn') as HTMLButtonElement;
+const launchConduitBtn = document.getElementById('launch-conduit-btn') as HTMLButtonElement;
 const agentSummaryEl = document.getElementById('agent-summary') as HTMLDivElement;
 const queryResult = document.getElementById('query-result') as HTMLDivElement;
 const focusBanner = document.getElementById('focus-banner') as HTMLDivElement;
@@ -472,6 +473,16 @@ function setFilter(filter: typeof currentFilter): void {
   // Old new-agent button is replaced by the prompt box
   newAgentBtn.classList.add('hidden');
   launchCliBtn.classList.add('hidden');
+  launchConduitBtn.classList.add('hidden');
+
+  // Show conduit button on Workers tab when conduit is ready
+  if (filter === 'agents' && launchConduitBtn) {
+    whimAPI.getConduitHostStatus().then(s => {
+      if (s.configured && s.connected && s.hasProfiles && s.profileId) {
+        launchConduitBtn.classList.remove('hidden');
+      }
+    }).catch(() => {});
+  }
 
   // Exit search mode when switching tabs
   if (searchMode) {
@@ -557,6 +568,15 @@ launchCliBtn.addEventListener('click', async () => {
     // Refresh agents list
     if (currentFilter === 'agents') renderAgentsList();
   }
+});
+
+launchConduitBtn.addEventListener('click', () => {
+  // Focus the prompt input so the user can type a task.
+  // The prompt will be sent to Conduit when submitted.
+  descInput.focus();
+  descInput.placeholder = '🔗 Describe a task for Conduit agent…';
+  // Set a flag so the submit handler routes to conduit
+  (window as any).__conduitLaunchMode = true;
 });
 
 // ── Settings modal ──────────────────────────────────────
@@ -3556,7 +3576,19 @@ form.addEventListener('submit', async (e) => {
     }
 
     showStatus(personaHandleArg ? `⚡ Launching @${personaHandleArg}...` : '⚡ Launching agent...');
-    const result = await whimAPI.quickLaunchAgent(promptText, personaHandleArg);
+
+    // If conduit launch mode is active (user clicked 🔗 button), route to conduit
+    const conduitMode = (window as any).__conduitLaunchMode === true;
+    (window as any).__conduitLaunchMode = false;
+    descInput.placeholder = getPlaceholderForFilter('agents');
+
+    let result: any;
+    if (conduitMode && !personaHandleArg) {
+      showStatus('🔗 Launching Conduit agent...');
+      result = await whimAPI.launchConduitAgent('__workspace__', promptText);
+    } else {
+      result = await whimAPI.quickLaunchAgent(promptText, personaHandleArg);
+    }
     if ('error' in result && result.error) {
       if (result.error === 'no_workspace') {
         showStatus('Select a workspace directory first');

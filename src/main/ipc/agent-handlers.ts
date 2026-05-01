@@ -292,8 +292,13 @@ export function registerAgentHandlers(): void {
     const workspace = getConfigValue('workspace');
     if (!workspace || !isInitialized()) return { error: 'no_workspace' };
 
-    const space = getSpace(spaceId);
-    if (!space || !space.folder) return { error: 'space_not_found' };
+    // Support workspace-level agents (no space folder)
+    let spaceFolder = '';
+    if (spaceId && spaceId !== '__workspace__') {
+      const space = getSpace(spaceId);
+      if (!space || !space.folder) return { error: 'space_not_found' };
+      spaceFolder = space.folder;
+    }
 
     let persona;
     if (personaHandle) {
@@ -302,7 +307,7 @@ export function registerAgentHandlers(): void {
     }
 
     const { launchConduitAgent } = await import('../agent-service');
-    return launchConduitAgent(spaceId, prompt, workspace, space.folder, persona);
+    return launchConduitAgent(spaceId, prompt, workspace, spaceFolder, persona);
   });
 
   ipcMain.handle('conduit:join-session', async (_event, conduitSessionId: string, spaceId: string) => {
