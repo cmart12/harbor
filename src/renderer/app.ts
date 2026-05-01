@@ -3852,7 +3852,10 @@ async function updateCliMxcIndicator(): Promise<void> {
 
 // ── Conduit host settings ────────────────────────────────
 const conduitHostInput = document.getElementById('conduit-host-input') as HTMLInputElement | null;
-const conduitProfileInput = document.getElementById('conduit-profile-input') as HTMLInputElement | null;
+const conduitProfileSelect = document.getElementById('conduit-profile-select') as HTMLSelectElement | null;
+const conduitProfileRow = document.getElementById('conduit-profile-row') as HTMLDivElement | null;
+const conduitProfileHint = document.getElementById('conduit-profile-hint') as HTMLDivElement | null;
+const conduitNoProfiles = document.getElementById('conduit-no-profiles') as HTMLDivElement | null;
 const conduitHostStatusDot = document.getElementById('conduit-host-status-dot') as HTMLSpanElement | null;
 const conduitHostStatusText = document.getElementById('conduit-host-status-text') as HTMLSpanElement | null;
 
@@ -3863,10 +3866,6 @@ async function loadConduitSettings(): Promise<void> {
     const url = await whimAPI.getSetting('conduit_host_url');
     conduitHostInput.value = url || '';
   }
-  if (conduitProfileInput) {
-    const profile = await whimAPI.getSetting('conduit_profile');
-    conduitProfileInput.value = profile || '';
-  }
   await pollConduitStatus();
 }
 
@@ -3875,42 +3874,106 @@ async function pollConduitStatus(): Promise<void> {
     const status = await whimAPI.getConduitHostStatus();
     updateConduitIndicator(status);
   } catch {
-    updateConduitIndicator({ configured: false, connected: false, url: null });
+    updateConduitIndicator({ configured: false, connected: false, url: null, hasProfiles: false, profileId: null, profileName: null });
   }
 }
 
-function updateConduitIndicator(status: { configured: boolean; connected: boolean; url: string | null }): void {
+function updateConduitIndicator(status: {
+  configured: boolean;
+  connected: boolean;
+  url: string | null;
+  hasProfiles: boolean;
+  profileId: string | null;
+  profileName: string | null;
+}): void {
+  // Header dot (main window only)
   if (!status.configured) {
     conduitStatusEl?.classList.add('hidden');
-    if (conduitHostStatusDot) {
-      conduitHostStatusDot.className = 'conduit-settings-dot';
-      conduitHostStatusDot.title = 'Not configured';
-    }
-    if (conduitHostStatusText) conduitHostStatusText.textContent = 'Not configured.';
-    return;
-  }
-
-  conduitStatusEl?.classList.remove('hidden');
-
-  if (status.connected) {
-    conduitStatusEl?.classList.remove('disconnected', 'checking');
+  } else if (status.connected && status.hasProfiles && status.profileId) {
+    conduitStatusEl?.classList.remove('hidden', 'disconnected', 'checking');
     conduitStatusEl?.classList.add('connected');
-    if (conduitStatusEl) conduitStatusEl.title = `Conduit: connected (${status.url})`;
-    if (conduitHostStatusDot) {
-      conduitHostStatusDot.className = 'conduit-settings-dot connected';
-      conduitHostStatusDot.title = 'Connected';
-    }
-    if (conduitHostStatusText) conduitHostStatusText.textContent = `Connected to ${status.url}`;
-  } else {
-    conduitStatusEl?.classList.remove('connected', 'checking');
+    if (conduitStatusEl) conduitStatusEl.title = `Conduit: ${status.profileName || status.profileId} (${status.url})`;
+  } else if (status.connected && !status.hasProfiles) {
+    conduitStatusEl?.classList.remove('hidden', 'connected', 'checking');
+    conduitStatusEl?.classList.add('disconnected');
+    if (conduitStatusEl) conduitStatusEl.title = `Conduit: no profiles — configure in Conduit`;
+  } else if (status.configured) {
+    conduitStatusEl?.classList.remove('hidden', 'connected', 'checking');
     conduitStatusEl?.classList.add('disconnected');
     if (conduitStatusEl) conduitStatusEl.title = `Conduit: cannot reach ${status.url}`;
-    if (conduitHostStatusDot) {
+  }
+
+  // Settings panel elements
+  if (conduitHostStatusDot) {
+    if (!status.configured) {
+      conduitHostStatusDot.className = 'conduit-settings-dot';
+      conduitHostStatusDot.title = 'Not configured';
+    } else if (status.connected && status.hasProfiles && status.profileId) {
+      conduitHostStatusDot.className = 'conduit-settings-dot connected';
+      conduitHostStatusDot.title = 'Connected';
+    } else if (status.connected) {
+      conduitHostStatusDot.className = 'conduit-settings-dot disconnected';
+      conduitHostStatusDot.title = 'No profile selected';
+    } else {
       conduitHostStatusDot.className = 'conduit-settings-dot disconnected';
       conduitHostStatusDot.title = 'Disconnected';
     }
-    if (conduitHostStatusText) conduitHostStatusText.textContent = `Cannot reach ${status.url}`;
   }
+  if (conduitHostStatusText) {
+    if (!status.configured) {
+      conduitHostStatusText.textContent = 'Not configured.';
+    } else if (!status.connected) {
+      conduitHostStatusText.textContent = `Cannot reach ${status.url}`;
+    } else if (!status.hasProfiles) {
+      conduitHostStatusText.textContent = 'Connected — no profiles found.';
+    } else if (status.profileId) {
+      conduitHostStatusText.textContent = `Connected — profile: ${status.profileName || status.profileId}`;
+    } else {
+      conduitHostStatusText.textContent = 'Connected — select a profile.';
+    }
+  }
+
+  // Profile row visibility
+  const showProfileRow = status.configured && status.connected;
+  conduitProfileRow?.classList.toggle('hidden', !showProfileRow);
+  conduitNoProfiles?.classList.toggle('hidden', !showProfileRow || status.hasProfiles);
+  conduitProfileHint?.classList.toggle('hidden', !showProfileRow || !status.hasProfiles);
+
+  // Load profiles into dropdown when connected
+  if (showProfileRow && status.hasProfiles) {
+    loadConduitProfiles(status.profileId);
+  }
+}
+
+async function loadConduitProfiles(selectedId: string | null): Promise<void> {
+  if (!conduitProfileSelect) return;
+
+  try {
+    const result = await whimAPI.listConduitProfiles();
+    if ('error' in result) return;
+
+    const enabledProfiles = result.filter(p => p.enabled);
+    conduitProfileSelect.innerHTML = '';
+
+    if (enabledProfiles.length === 0) {
+      conduitProfileSelect.innerHTML = '<option value="">No profiles available</option>';
+      return;
+    }
+
+    for (const p of enabledProfiles) {
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = p.name + (p.agentAdapter ? ` (${p.agentAdapter})` : '');
+      if (p.id === selectedId) opt.selected = true;
+      conduitProfileSelect.appendChild(opt);
+    }
+
+    // If nothing was selected but we have profiles, select the first
+    if (!selectedId && enabledProfiles.length > 0) {
+      conduitProfileSelect.value = enabledProfiles[0]!.id;
+      await whimAPI.setConduitProfile(enabledProfiles[0]!.id);
+    }
+  } catch { /* ignore */ }
 }
 
 // Start periodic conduit polling
@@ -3941,13 +4004,11 @@ if (conduitHostInput) {
   });
 }
 
-if (conduitProfileInput) {
-  let profileDebounce: ReturnType<typeof setTimeout> | null = null;
-  conduitProfileInput.addEventListener('input', () => {
-    if (profileDebounce) clearTimeout(profileDebounce);
-    profileDebounce = setTimeout(async () => {
-      await whimAPI.setSetting('conduit_profile', conduitProfileInput.value.trim());
-    }, 600);
+if (conduitProfileSelect) {
+  conduitProfileSelect.addEventListener('change', async () => {
+    const val = conduitProfileSelect.value;
+    await whimAPI.setConduitProfile(val);
+    await pollConduitStatus();
   });
 }
 

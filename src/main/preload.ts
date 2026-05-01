@@ -117,6 +117,8 @@ export interface WhimAPI {
   // ── Conduit ─────────────────────────────────────────────
   getConduitHostStatus(): Promise<IpcCommandResult<'conduit:host-status'>>;
   listConduitSessions(): Promise<IpcCommandResult<'conduit:list-sessions'>>;
+  listConduitProfiles(): Promise<IpcCommandResult<'conduit:list-profiles'>>;
+  setConduitProfile(profileId: string): Promise<IpcCommandResult<'conduit:set-profile'>>;
   launchConduitAgent(spaceId: string, prompt: string, personaHandle?: string): Promise<IpcCommandResult<'conduit:launch-agent'>>;
   joinConduitSession(conduitSessionId: string, spaceId: string): Promise<IpcCommandResult<'conduit:join-session'>>;
   sendConduitMessage(agentId: string, prompt: string): Promise<IpcCommandResult<'conduit:send-message'>>;
@@ -318,6 +320,10 @@ const api: WhimAPI = {
     ipcRenderer.invoke('conduit:host-status'),
   listConduitSessions: () =>
     ipcRenderer.invoke('conduit:list-sessions'),
+  listConduitProfiles: () =>
+    ipcRenderer.invoke('conduit:list-profiles'),
+  setConduitProfile: (profileId) =>
+    ipcRenderer.invoke('conduit:set-profile', profileId),
   launchConduitAgent: (spaceId, prompt, personaHandle?) =>
     ipcRenderer.invoke('conduit:launch-agent', spaceId, prompt, personaHandle),
   joinConduitSession: (conduitSessionId, spaceId) =>

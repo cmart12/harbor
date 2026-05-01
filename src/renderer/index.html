@@ -207,12 +207,14 @@
                 </div>
               </div>
               <div class="settings-hint">URL of the Conduit host. Leave empty to disable. <span id="conduit-host-status-text">Not configured.</span></div>
-              <div class="settings-row" style="margin-top: 8px;">
-                <div class="cli-path-display">
-                  <input id="conduit-profile-input" class="cli-path-input" type="text" placeholder="(default profile)" spellcheck="false" />
-                </div>
+              <div id="conduit-profile-row" class="settings-row hidden" style="margin-top: 8px;">
+                <label style="font-size: 12px; white-space: nowrap;">Profile</label>
+                <select id="conduit-profile-select" style="flex: 1;">
+                  <option value="">Loading…</option>
+                </select>
               </div>
-              <div class="settings-hint">Optional Conduit profile name for agent sessions.</div>
+              <div id="conduit-profile-hint" class="settings-hint hidden">Select a profile to enable Conduit agents.</div>
+              <div id="conduit-no-profiles" class="settings-hint hidden" style="color: #d29922;">⚠ No profiles found on the host. Create one in Conduit before using agents.</div>
             </div>
           </div>
 

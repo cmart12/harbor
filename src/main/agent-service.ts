@@ -49,6 +49,7 @@ export {
   abortConduitAgent,
   disconnectConduitAgent,
   listConduitSessions,
+  listConduitProfiles,
   getConduitHostStatus,
   getConduitAgentHistory,
   approveConduitPermission,

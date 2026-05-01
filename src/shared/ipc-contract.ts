@@ -285,8 +285,10 @@ export interface IpcCommands {
   'agent:set-yolo': { args: [agentId: string, enabled: boolean]; result: { ok: true } | { error: string } };
 
   // ── Conduit ──────────────────────────────────────────────
-  'conduit:host-status': { args: []; result: { configured: boolean; connected: boolean; url: string | null } };
+  'conduit:host-status': { args: []; result: { configured: boolean; connected: boolean; url: string | null; hasProfiles: boolean; profileId: string | null; profileName: string | null } };
   'conduit:list-sessions': { args: []; result: Array<{ id: string; status: string; summary?: string; createdAt: string }> | { error: string } };
+  'conduit:list-profiles': { args: []; result: Array<{ id: string; name: string; description?: string; enabled: boolean; agentAdapter?: string }> | { error: string } };
+  'conduit:set-profile': { args: [profileId: string]; result: { ok: true } };
   'conduit:launch-agent': {
     args: [spaceId: string, prompt: string, personaHandle?: string];
     result: { agentId: string; sessionId: string } | { error: string };

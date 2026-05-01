@@ -337,6 +337,17 @@ export function registerAgentHandlers(): void {
     return getConduitHostStatus();
   });
 
+  ipcMain.handle('conduit:list-profiles', async () => {
+    const { listConduitProfiles } = await import('../agent-service');
+    return listConduitProfiles();
+  });
+
+  ipcMain.handle('conduit:set-profile', async (_event, profileId: string) => {
+    const { setConfigValue: scv } = await import('../config');
+    scv('conduitProfile', profileId || null);
+    return { ok: true };
+  });
+
   ipcMain.handle('conduit:approve-permission', async (_event, agentId: string, requestId: string, approved: boolean) => {
     const { approveConduitPermission } = await import('../agent-service');
     approveConduitPermission(agentId, requestId, approved);

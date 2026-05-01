@@ -116,6 +116,18 @@ export interface AgentUserInputResponseParams {
   wasFreeform?: boolean;
 }
 
+export interface ConduitProfileInfo {
+  id: string;
+  name: string;
+  description?: string;
+  providerIds: string[];
+  artifactIds: string[];
+  agentAdapter?: string;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ── ConduitHostClient ──────────────────────────────────────────────
 
 export class ConduitHostClient {
@@ -169,6 +181,18 @@ export class ConduitHostClient {
 
   async createAndConnect(req: ConduitCreateSessionRequest): Promise<ConduitConnectResult> {
     return this._request<ConduitConnectResult>('POST', '/api/sessions/connect', req);
+  }
+
+  async listProfiles(): Promise<ConduitProfileInfo[]> {
+    return this._request<ConduitProfileInfo[]>('GET', '/api/profiles');
+  }
+
+  async getDefaultProfile(): Promise<{ defaultProfileId: string | null; profile?: ConduitProfileInfo }> {
+    return this._request<{ defaultProfileId: string | null; profile?: ConduitProfileInfo }>('GET', '/api/profiles/default');
+  }
+
+  async setDefaultProfile(profileId: string): Promise<void> {
+    await this._request<unknown>('PUT', `/api/profiles/default`, { defaultProfileId: profileId });
   }
 
   private async _request<T>(method: string, path: string, body?: unknown): Promise<T> {

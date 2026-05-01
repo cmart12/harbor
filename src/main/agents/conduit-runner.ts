@@ -6,7 +6,7 @@
  */
 import { v4 as uuid } from 'uuid';
 import * as path from 'path';
-import { getConfigValue, type AgentPersona } from '../config';
+import { getConfigValue, setConfigValue, type AgentPersona } from '../config';
 import {
   getConduitHostClient,
   connectConduitSession,
@@ -64,13 +64,16 @@ export async function launchConduitAgent(
   const workingDir = path.join(workspaceRoot, spaceFolder);
 
   try {
-    // Create and connect a session
+    // Require a profile — sessions need one for inference
     const profile = getConfigValue('conduitProfile') || undefined;
+    if (!profile) {
+      return { error: 'No Conduit profile selected. Open Settings → Conduit and select a profile.' };
+    }
     const connectResult = await hostClient.createAndConnect({
       workspacePath: workingDir,
       orphanPolicy: 'timeout',
       orphanTimeoutSeconds: 300,
-      ...(profile ? { profile } : {}),
+      profile,
     });
 
     const conduitSessionId = connectResult.connection.sessionId;
@@ -303,17 +306,88 @@ export async function getConduitHostStatus(): Promise<{
   configured: boolean;
   connected: boolean;
   url: string | null;
+  hasProfiles: boolean;
+  profileId: string | null;
+  profileName: string | null;
 }> {
   const url = getConfigValue('conduitHostUrl');
   if (!url) {
     console.log('[conduit] Host status: not configured');
-    return { configured: false, connected: false, url: null };
+    return { configured: false, connected: false, url: null, hasProfiles: false, profileId: null, profileName: null };
   }
 
   const hostClient = getConduitHostClient();
   const connected = hostClient ? await hostClient.isReachable() : false;
   console.log(`[conduit] Host status: ${connected ? 'connected' : 'unreachable'} (${url})`);
-  return { configured: true, connected, url };
+
+  let hasProfiles = false;
+  let profileId: string | null = getConfigValue('conduitProfile') || null;
+  let profileName: string | null = null;
+
+  if (connected && hostClient) {
+    try {
+      const profiles = await hostClient.listProfiles();
+      hasProfiles = profiles.filter(p => p.enabled).length > 0;
+
+      // If we have a stored profile, resolve its name
+      if (profileId) {
+        const match = profiles.find(p => p.id === profileId);
+        profileName = match?.name ?? null;
+        // If stored profile no longer exists, clear it
+        if (!match) {
+          profileId = null;
+          setConfigValue('conduitProfile', null);
+        }
+      }
+
+      // If no profile selected but there's a default, use it
+      if (!profileId && hasProfiles) {
+        try {
+          const def = await hostClient.getDefaultProfile();
+          if (def.defaultProfileId && def.profile?.enabled) {
+            profileId = def.defaultProfileId;
+            profileName = def.profile.name;
+            setConfigValue('conduitProfile', profileId);
+          }
+        } catch { /* ignore */ }
+      }
+
+      // Last resort: pick the first enabled profile
+      if (!profileId && hasProfiles) {
+        const first = profiles.find(p => p.enabled);
+        if (first) {
+          profileId = first.id;
+          profileName = first.name;
+          setConfigValue('conduitProfile', profileId);
+        }
+      }
+    } catch (err: any) {
+      console.warn(`[conduit] Failed to fetch profiles: ${err.message}`);
+    }
+  }
+
+  return { configured: true, connected, url, hasProfiles, profileId, profileName };
+}
+
+/** List available profiles from the Conduit host. */
+export async function listConduitProfiles(): Promise<
+  Array<{ id: string; name: string; description?: string; enabled: boolean; agentAdapter?: string }> | { error: string }
+> {
+  const hostClient = getConduitHostClient();
+  if (!hostClient) return { error: 'Conduit host URL not configured' };
+
+  try {
+    const profiles = await hostClient.listProfiles();
+    return profiles.map(p => ({
+      id: p.id,
+      name: p.name,
+      description: p.description,
+      enabled: p.enabled,
+      agentAdapter: p.agentAdapter,
+    }));
+  } catch (err: any) {
+    return { error: err.message || 'Failed to list profiles' };
+  }
 }
 
 // ── Event mapping ──────────────────────────────────────────────────
