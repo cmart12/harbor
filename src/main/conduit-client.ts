@@ -476,8 +476,18 @@ export class ConduitAgentSession extends EventEmitter {
     // Server notification (no id)
     if (msg.id === undefined || msg.id === null) {
       if (msg.method) {
+        // Conduit wraps all session events inside "session.event" notifications:
+        //   { method: "session.event", params: { index, type: "agent.assistant.message", data: {...} } }
+        // Unwrap these so listeners can match on the actual event type.
+        if (msg.method === 'session.event' && msg.params?.type) {
+          const eventType = msg.params.type as string;
+          const eventData = msg.params.data ?? {};
+          this.emit('notification', eventType, eventData);
+          this.emit(eventType, eventData);
+          return;
+        }
+
         this.emit('notification', msg.method, msg.params);
-        // Also emit typed event: 'agent.task_completed' → emit('agent.task_completed', params)
         this.emit(msg.method, msg.params);
       }
       return;

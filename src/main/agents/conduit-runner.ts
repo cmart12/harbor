@@ -410,35 +410,40 @@ function setupConduitEventListeners(
 
   conduitSession.on('notification', (method: string, params: any) => {
     switch (method) {
-      // ── Assistant messages ──────────────────────────────
-      case 'agent.assistant_message': {
-        const content = params?.content || params?.message || '';
-        const delta = params?.deltaContent ?? params?.delta;
-        if (delta !== undefined) {
+      // ── Assistant messages (dot and underscore variants) ──
+      case 'agent.assistant.message_delta': {
+        const delta = params?.deltaContent ?? params?.delta ?? '';
+        if (delta) {
           notifier.notifyRenderer(chatChannel, {
             type: 'assistant.message_delta',
             delta,
-          });
-        } else {
-          record.summary = truncate(content || 'Agent responded', 100);
-          persistence.persistSummary(record);
-          notifier.notifyRenderer('agent:status-changed', {
-            agentId, status: record.status, summary: record.summary,
-          });
-          notifier.notifyRenderer(chatChannel, {
-            type: 'assistant.message',
-            content,
           });
         }
         break;
       }
 
+      case 'agent.assistant.message':
+      case 'agent.assistant_message': {
+        const content = params?.content || params?.message || '';
+        record.summary = truncate(content || 'Agent responded', 100);
+        persistence.persistSummary(record);
+        notifier.notifyRenderer('agent:status-changed', {
+          agentId, status: record.status, summary: record.summary,
+        });
+        notifier.notifyRenderer(chatChannel, {
+          type: 'assistant.message',
+          content,
+        });
+        break;
+      }
+
+      case 'agent.assistant.turn_end':
       case 'agent.assistant_turn_end': {
-        // Turn ended — no direct Intent equivalent, but useful as a signal
         break;
       }
 
       // ── Tool execution ─────────────────────────────────
+      case 'agent.tool.execution_start':
       case 'agent.tool_execution_start': {
         const toolName = params?.toolName || 'tool';
         record.summary = `Using ${toolName}...`;
@@ -458,6 +463,7 @@ function setupConduitEventListeners(
         break;
       }
 
+      case 'agent.tool.execution_complete':
       case 'agent.tool_execution_end': {
         const rawResult = params?.result;
         const result = typeof rawResult === 'string'
@@ -531,6 +537,7 @@ function setupConduitEventListeners(
       }
 
       // ── Permission / user input ────────────────────────
+      case 'agent.permission.request':
       case 'agent.permission_request': {
         const requestId = params?.requestId;
         const kind = params?.kind || 'unknown';
@@ -575,6 +582,7 @@ function setupConduitEventListeners(
         break;
       }
 
+      case 'agent.user_input.request':
       case 'agent.user_input_request': {
         const requestId = params?.requestId;
         if (requestId) {
@@ -594,7 +602,9 @@ function setupConduitEventListeners(
       }
 
       // ── Usage / metrics ────────────────────────────────
+      case 'agent.assistant.usage':
       case 'agent.assistant_usage':
+      case 'agent.session.usage_info':
       case 'agent.session_usage_info': {
         // Forward token usage if renderer wants it
         notifier.notifyRenderer(chatChannel, {
@@ -614,9 +624,15 @@ function setupConduitEventListeners(
         break;
       }
 
-      default:
-        // Unknown notification — log for debugging
-        console.log(`[conduit-runner] Unhandled notification: ${method}`, params);
+      default: {
+        // Suppress known-harmless events
+        const ignored = ['client.joined', 'client.disconnected', 'agent.user.message',
+          'agent.pending_messages.modified', 'agent.session.tools_updated',
+          'agent.assistant.turn_start', 'agent.assistant.streaming_delta'];
+        if (!ignored.includes(method)) {
+          console.log(`[conduit-runner] Unhandled notification: ${method}`);
+        }
+      }
     }
   });
 
