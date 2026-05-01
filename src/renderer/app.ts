@@ -3334,7 +3334,7 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
       if (!agentId) return;
       const agent = allAgents.find(a => a.agentId === agentId);
       if (agent) {
-        openAgentChat(agentId, agent.selectedText, agent.status, agent.source, agent.spaceId);
+        openAgentChat(agentId, agent.selectedText, agent.status, agent.source as any, agent.spaceId, agent.source === 'conduit' ? agent.sessionId : undefined);
       }
     });
   });
@@ -3610,7 +3610,13 @@ form.addEventListener('submit', async (e) => {
     hideMentionDropdown();
     descInput.focus();
     hideStatus();
-    renderAgentsList();
+
+    // Open chat for newly launched conduit agents
+    if (conduitMode && result.agentId) {
+      openAgentChat(result.agentId, promptText, 'running', 'conduit', undefined, result.sessionId);
+    } else {
+      renderAgentsList();
+    }
     return;
   }
 
@@ -5287,11 +5293,13 @@ modeToggleRaw.addEventListener('click', () => {
 
 // ── Agent Chat View ────────────────────────────────────
 import { mountChat, unmountChat } from './chat/mount.tsx';
+import { mountConduitChat, unmountConduitChat } from './chat/conduit-mount.tsx';
 
 const chatView = document.getElementById('chat-view') as HTMLDivElement;
 const chatRoot = document.getElementById('chat-root') as HTMLDivElement;
+let activeConduitChat = false;
 
-async function openAgentChat(agentId: string | undefined, agentPrompt: string, agentStatus: string, agentSource?: 'sdk' | 'cli', spaceId?: string): Promise<void> {
+async function openAgentChat(agentId: string | undefined, agentPrompt: string, agentStatus: string, agentSource?: 'sdk' | 'cli' | 'conduit', spaceId?: string, conduitSessionId?: string): Promise<void> {
   // Hide other views, show chat inline
   mainView.classList.add('hidden');
   hideSettings();
@@ -5302,6 +5310,22 @@ async function openAgentChat(agentId: string | undefined, agentPrompt: string, a
   // Look up pending approval info if agent is waiting
   const approval = agentId ? agentApprovals.get(agentId) : undefined;
 
+  if (agentSource === 'conduit') {
+    activeConduitChat = true;
+    mountConduitChat(chatRoot, {
+      agentId,
+      conduitSessionId,
+      agentPrompt,
+      agentStatus,
+      spaceId,
+      pendingApprovalId: approval?.requestId,
+      pendingPermissionKind: approval?.permissionKind,
+      onClose: () => closeAgentChat(),
+    });
+    return;
+  }
+
+  activeConduitChat = false;
   mountChat(chatRoot, {
     agentId,
     agentPrompt,
@@ -5322,7 +5346,12 @@ async function openAgentChat(agentId: string | undefined, agentPrompt: string, a
 }
 
 function closeAgentChat(): void {
-  unmountChat();
+  if (activeConduitChat) {
+    unmountConduitChat();
+    activeConduitChat = false;
+  } else {
+    unmountChat();
+  }
 
   chatView.classList.add('hidden');
   mainView.classList.remove('hidden');

@@ -119,6 +119,10 @@ export interface WhimAPI {
   listConduitSessions(): Promise<IpcCommandResult<'conduit:list-sessions'>>;
   listConduitProfiles(): Promise<IpcCommandResult<'conduit:list-profiles'>>;
   setConduitProfile(profileId: string): Promise<IpcCommandResult<'conduit:set-profile'>>;
+  listConduitProfileModels(profileId: string): Promise<IpcCommandResult<'conduit:list-profile-models'>>;
+  getConduitSessionSettings(sessionId: string): Promise<IpcCommandResult<'conduit:get-session-settings'>>;
+  updateConduitSessionSettings(sessionId: string, settings: Record<string, unknown>): Promise<IpcCommandResult<'conduit:update-session-settings'>>;
+  updateConduitSessionProfile(sessionId: string, profileId: string): Promise<IpcCommandResult<'conduit:update-session-profile'>>;
   launchConduitAgent(spaceId: string, prompt: string, personaHandle?: string): Promise<IpcCommandResult<'conduit:launch-agent'>>;
   joinConduitSession(conduitSessionId: string, spaceId: string): Promise<IpcCommandResult<'conduit:join-session'>>;
   sendConduitMessage(agentId: string, prompt: string): Promise<IpcCommandResult<'conduit:send-message'>>;
@@ -324,6 +328,14 @@ const api: WhimAPI = {
     ipcRenderer.invoke('conduit:list-profiles'),
   setConduitProfile: (profileId) =>
     ipcRenderer.invoke('conduit:set-profile', profileId),
+  listConduitProfileModels: (profileId) =>
+    ipcRenderer.invoke('conduit:list-profile-models', profileId),
+  getConduitSessionSettings: (sessionId) =>
+    ipcRenderer.invoke('conduit:get-session-settings', sessionId),
+  updateConduitSessionSettings: (sessionId, settings) =>
+    ipcRenderer.invoke('conduit:update-session-settings', sessionId, settings),
+  updateConduitSessionProfile: (sessionId, profileId) =>
+    ipcRenderer.invoke('conduit:update-session-profile', sessionId, profileId),
   launchConduitAgent: (spaceId, prompt, personaHandle?) =>
     ipcRenderer.invoke('conduit:launch-agent', spaceId, prompt, personaHandle),
   joinConduitSession: (conduitSessionId, spaceId) =>

@@ -195,6 +195,22 @@ export class ConduitHostClient {
     await this._request<unknown>('PUT', `/api/profiles/default`, { defaultProfileId: profileId });
   }
 
+  async listProfileModels(profileId: string): Promise<Array<{ providerId: string; providerName: string; models: Array<{ id: string; name?: string }> }>> {
+    return this._request('GET', `/api/profiles/${profileId}/models`);
+  }
+
+  async getSessionSettings<T = Record<string, unknown>>(sessionId: string): Promise<T> {
+    return this._request<T>('GET', `/api/sessions/${sessionId}/settings`);
+  }
+
+  async updateSessionSettings(sessionId: string, settings: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return this._request('PATCH', `/api/sessions/${sessionId}/settings`, settings);
+  }
+
+  async updateSessionProfile(sessionId: string, profileId: string): Promise<void> {
+    await this._request<unknown>('PUT', `/api/sessions/${sessionId}/profile`, { profile: profileId });
+  }
+
   private async _request<T>(method: string, path: string, body?: unknown): Promise<T> {
     const url = `${this.baseUrl}${path}`;
     const headers: Record<string, string> = {};

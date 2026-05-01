@@ -353,6 +353,59 @@ export function registerAgentHandlers(): void {
     return { ok: true };
   });
 
+  ipcMain.handle('conduit:list-profile-models', async (_event, profileId: string) => {
+    const { getConduitHostClient } = await import('../conduit-client');
+    const client = getConduitHostClient();
+    if (!client) return { error: 'Conduit not configured' };
+    try {
+      const result = await client.listProfileModels(profileId);
+      // Flatten to a simple model list
+      const models: Array<{ id: string; name?: string; provider?: string }> = [];
+      for (const group of result) {
+        for (const m of group.models) {
+          models.push({ id: m.id, name: m.name, provider: group.providerName });
+        }
+      }
+      return models;
+    } catch (err: any) {
+      return { error: err.message };
+    }
+  });
+
+  ipcMain.handle('conduit:get-session-settings', async (_event, conduitSessionId: string) => {
+    const { getConduitHostClient } = await import('../conduit-client');
+    const client = getConduitHostClient();
+    if (!client) return { error: 'Conduit not configured' };
+    try {
+      return await client.getSessionSettings(conduitSessionId);
+    } catch (err: any) {
+      return { error: err.message };
+    }
+  });
+
+  ipcMain.handle('conduit:update-session-settings', async (_event, conduitSessionId: string, settings: Record<string, unknown>) => {
+    const { getConduitHostClient } = await import('../conduit-client');
+    const client = getConduitHostClient();
+    if (!client) return { error: 'Conduit not configured' };
+    try {
+      return await client.updateSessionSettings(conduitSessionId, settings);
+    } catch (err: any) {
+      return { error: err.message };
+    }
+  });
+
+  ipcMain.handle('conduit:update-session-profile', async (_event, conduitSessionId: string, profileId: string) => {
+    const { getConduitHostClient } = await import('../conduit-client');
+    const client = getConduitHostClient();
+    if (!client) return { error: 'Conduit not configured' };
+    try {
+      await client.updateSessionProfile(conduitSessionId, profileId);
+      return { ok: true };
+    } catch (err: any) {
+      return { error: err.message };
+    }
+  });
+
   ipcMain.handle('conduit:approve-permission', async (_event, agentId: string, requestId: string, approved: boolean) => {
     const { approveConduitPermission } = await import('../agent-service');
     approveConduitPermission(agentId, requestId, approved);

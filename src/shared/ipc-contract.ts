@@ -302,6 +302,10 @@ export interface IpcCommands {
   'conduit:disconnect-agent': { args: [agentId: string]; result: { ok: true } };
   'conduit:approve-permission': { args: [agentId: string, requestId: string, approved: boolean]; result: { ok: true } };
   'conduit:respond-input': { args: [agentId: string, requestId: string, answer: string]; result: { ok: true } };
+  'conduit:list-profile-models': { args: [profileId: string]; result: Array<{ id: string; name?: string; provider?: string }> | { error: string } };
+  'conduit:get-session-settings': { args: [conduitSessionId: string]; result: Record<string, unknown> | { error: string } };
+  'conduit:update-session-settings': { args: [conduitSessionId: string, settings: Record<string, unknown>]; result: Record<string, unknown> | { error: string } };
+  'conduit:update-session-profile': { args: [conduitSessionId: string, profileId: string]; result: { ok: true } | { error: string } };
 
   // ── CLI session ──────────────────────────────────────────
   'cli:launch-session': { args: []; result: { agentId: string; sessionId: string } | { error: string } };
