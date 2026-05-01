@@ -6,6 +6,11 @@
   box-sizing: border-box;
 }
 
+/* ── Generic utility ───────────────────────────────────── */
+.hidden {
+  display: none !important;
+}
+
 /* ── Design tokens ─────────────────────────────────────── */
 /* Neutral baseline (also used on Linux) */
 :root {

@@ -50,7 +50,7 @@ interface AgentPersona {
   handle: string;
   instructions: string;
   model: string;
-  runLocation: 'local' | 'cloud';
+  runLocation: 'local' | 'cloud' | 'conduit';
   sandboxed?: boolean;
   emoji?: string;
   cliRuntime?: string;
@@ -914,9 +914,14 @@ function renderAgentEditor(persona: AgentPersona): void {
   const cloudOpt = document.createElement('option');
   cloudOpt.value = 'cloud';
   cloudOpt.textContent = '☁️ Cloud (GitHub CCA)';
+  const conduitOpt = document.createElement('option');
+  conduitOpt.value = 'conduit';
+  conduitOpt.textContent = '🔗 Conduit';
   locationSelect.appendChild(localOpt);
   locationSelect.appendChild(cloudOpt);
+  locationSelect.appendChild(conduitOpt);
   if (persona.runLocation === 'cloud') cloudOpt.selected = true;
+  else if (persona.runLocation === 'conduit') conduitOpt.selected = true;
   locationRow.appendChild(locationLabel);
   locationRow.appendChild(locationSelect);
 
@@ -924,7 +929,7 @@ function renderAgentEditor(persona: AgentPersona): void {
   const isWindows = whimAPI.getPlatform() === 'win32';
   const sandboxRow = document.createElement('div');
   sandboxRow.className = 'persona-form-row persona-sandbox-row';
-  if (persona.runLocation === 'cloud') {
+  if (persona.runLocation === 'cloud' || persona.runLocation === 'conduit') {
     sandboxRow.style.display = 'none';
   }
   const sandboxLabel = document.createElement('label');
@@ -949,7 +954,7 @@ function renderAgentEditor(persona: AgentPersona): void {
   sandboxRow.appendChild(sandboxLabel);
 
   locationSelect.addEventListener('change', () => {
-    if (locationSelect.value === 'cloud') {
+    if (locationSelect.value === 'cloud' || locationSelect.value === 'conduit') {
       sandboxRow.style.display = 'none';
       sandboxCheck.checked = false;
       sandboxOverrideRow.style.display = 'none';
@@ -1069,7 +1074,7 @@ function renderAgentEditor(persona: AgentPersona): void {
     const rawHandle = isDefault ? DEFAULT_AGENT_HANDLE : handleInput.value.trim().replace(/^@/, '').toLowerCase();
     const instructions = instrInput.value.trim();
     const model = modelSelect.value;
-    const runLocation = locationSelect.value as 'local' | 'cloud';
+    const runLocation = locationSelect.value as 'local' | 'cloud' | 'conduit';
     const sandboxed = sandboxCheck.checked && runLocation === 'local';
     const emoji = selectedEmoji;
     const cliRuntime = runtimeSelect.value;
