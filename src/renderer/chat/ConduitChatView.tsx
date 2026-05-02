@@ -264,7 +264,16 @@ export function ConduitChatView({
           if (currentAssistantId.current) {
             setMessages(prev => prev.map(m => m.id === currentAssistantId.current && m.type === 'assistant' ? { ...m, isStreaming: false, content: event.content || m.content } : m));
           } else {
-            setMessages(prev => [...prev, { id: genId(), type: 'assistant', content: event.content, isStreaming: false, timestamp: new Date().toISOString() } as AssistantMsgType]);
+            // currentAssistantId may have been cleared by session.idle arriving first.
+            // Try to finalize the last streaming assistant message instead of duplicating.
+            setMessages(prev => {
+              const lastStreamingIdx = prev.findLastIndex(m => m.type === 'assistant' && (m as AssistantMsgType).isStreaming);
+              if (lastStreamingIdx >= 0) {
+                return prev.map((m, i) => i === lastStreamingIdx && m.type === 'assistant'
+                  ? { ...m, isStreaming: false, content: event.content || m.content } : m);
+              }
+              return [...prev, { id: genId(), type: 'assistant', content: event.content, isStreaming: false, timestamp: new Date().toISOString() } as AssistantMsgType];
+            });
           }
           currentAssistantId.current = null;
           break;
@@ -300,6 +309,20 @@ export function ConduitChatView({
         case 'session.idle': {
           setIsBusy(false);
           setStatus('completed');
+          // Finalize any active streaming message before resetting refs.
+          // Conduit may send session.idle before assistant.message arrives.
+          if (currentAssistantId.current) {
+            const finalId = currentAssistantId.current;
+            setMessages(prev => prev.map(m =>
+              m.id === finalId && m.type === 'assistant' ? { ...m, isStreaming: false } : m
+            ));
+          }
+          if (currentReasoningId.current) {
+            const finalRId = currentReasoningId.current;
+            setMessages(prev => prev.map(m =>
+              m.type === 'reasoning' && m.reasoningId === finalRId ? { ...m, isStreaming: false } : m
+            ));
+          }
           currentAssistantId.current = null;
           currentReasoningId.current = null;
           break;
@@ -307,6 +330,12 @@ export function ConduitChatView({
         case 'session.error': {
           setIsBusy(false);
           setStatus('failed');
+          if (currentAssistantId.current) {
+            const finalId = currentAssistantId.current;
+            setMessages(prev => prev.map(m =>
+              m.id === finalId && m.type === 'assistant' ? { ...m, isStreaming: false } : m
+            ));
+          }
           currentAssistantId.current = null;
           currentReasoningId.current = null;
           setMessages(prev => [...prev, { id: genId(), type: 'session_event', eventType: 'error', message: event.message, timestamp: new Date().toISOString() } as SessionEventMessage]);
