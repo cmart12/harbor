@@ -316,13 +316,11 @@ export async function getConduitHostStatus(): Promise<{
 }> {
   const url = getConfigValue('conduitHostUrl');
   if (!url) {
-    console.log('[conduit] Host status: not configured');
     return { configured: false, connected: false, url: null, hasProfiles: false, profileId: null, profileName: null };
   }
 
   const hostClient = getConduitHostClient();
   const connected = hostClient ? await hostClient.isReachable() : false;
-  console.log(`[conduit] Host status: ${connected ? 'connected' : 'unreachable'} (${url})`);
 
   let hasProfiles = false;
   let profileId: string | null = getConfigValue('conduitProfile') || null;
@@ -628,6 +626,19 @@ function setupConduitEventListeners(
         break;
       }
 
+      // ── Model change ───────────────────────────────────
+      case 'agent.session.model_change':
+      case 'agent.model_changed': {
+        const model = params?.model || params?.modelId;
+        if (model) {
+          notifier.notifyRenderer(chatChannel, {
+            type: 'model.changed',
+            model,
+          });
+        }
+        break;
+      }
+
       // ── Client roster ──────────────────────────────────
       case 'client.roster': {
         const clients = params?.clients ?? [];
@@ -662,10 +673,40 @@ function setupConduitEventListeners(
       }
 
       default: {
-        // Suppress known-harmless events
-        const ignored = ['agent.user.message',
-          'agent.pending_messages.modified', 'agent.session.tools_updated',
-          'agent.assistant.turn_start', 'agent.assistant.streaming_delta'];
+        // Suppress known-harmless lifecycle / internal events.
+        // Mirrors the IGNORED_EVENT_TYPES from the conduit agent-tui.
+        const ignored = [
+          // User echo & task lifecycle
+          'agent.user.message', 'agent.task_started', 'agent.task_completed',
+          // Streaming variants handled elsewhere
+          'agent.assistant.turn_start', 'agent.assistant.turn_end',
+          'agent.assistant.streaming_delta',
+          // Session lifecycle & config
+          'agent.session.tools_updated', 'agent.session.skills_loaded',
+          'agent.session.custom_agents_updated', 'agent.session.mcp_servers_loaded',
+          'agent.session.mcp_server_status_changed', 'agent.session.extensions_loaded',
+          'agent.session.background_tasks_changed', 'agent.session.shutdown',
+          'agent.session.title_changed', 'agent.session.context_changed',
+          'agent.session.mode_changed', 'agent.session.plan_changed',
+          'agent.session.workspace_file_changed', 'agent.session.start',
+          'agent.session.resume',
+          // System & provider housekeeping
+          'agent.system.message', 'agent.pending_messages.modified',
+          'agent.profile_changed', 'agent.provider_changed',
+          'agent.mcps_changed', 'agent.skills_changed',
+          'agent.agents_changed', 'agent.tools_changed',
+          'agent.restored',
+          // Permission completion (request is handled above)
+          'agent.permission.completed', 'agent.permission_completed',
+          // User input / elicitation completion
+          'agent.user_input.completed', 'agent.user_input_completed',
+          'agent.elicitation.requested', 'agent.elicitation.completed',
+          'agent.exit_plan_mode.requested', 'agent.exit_plan_mode.completed',
+          // Skill / hook lifecycle
+          'agent.skill.invoked', 'agent.hook.start', 'agent.hook.end',
+          // Tool progress (handled via tool.start/complete)
+          'agent.tool.execution_progress', 'agent.tool.start', 'agent.tool.end',
+        ];
         if (!ignored.includes(method)) {
           console.log(`[conduit-runner] Unhandled notification: ${method}`);
         }

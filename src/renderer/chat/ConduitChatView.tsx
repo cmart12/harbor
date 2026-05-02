@@ -383,6 +383,19 @@ export function ConduitChatView({
           }
           break;
         }
+        case 'model.changed': {
+          const model = (event as any).model;
+          if (model) {
+            setSelectedModel(model);
+            // Refresh model list in case the model came from a new provider
+            if (selectedProfileId) {
+              whimAPI.listConduitProfileModels(selectedProfileId).then(result => {
+                if (!('error' in result)) setModels(result);
+              }).catch(() => {});
+            }
+          }
+          break;
+        }
       }
     });
     return () => unsubscribe();
