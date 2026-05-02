@@ -644,7 +644,9 @@ export function ConduitChatView({
       )}
 
       <MessageList
-        messages={messages}
+        messages={isBusy ? messages : messages.map(m =>
+          m.type === 'assistant' && (m as AssistantMsgType).isStreaming ? { ...m, isStreaming: false } : m
+        )}
         onApprovalRespond={handleApprovalRespond}
         onUserInputRespond={handleUserInputRespond}
         onElicitationRespond={handleElicitationRespond}
