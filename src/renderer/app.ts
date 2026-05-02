@@ -2762,8 +2762,12 @@ function basename(filePath: string): string {
 function humanizeToolName(toolName: string, args?: Record<string, any>): string {
   const fileName = args?.path ? basename(args.path) : '';
 
-  if (toolName === 'report_intent' && args?.whim) {
-    return String(args.whim).slice(0, 80);
+  if (toolName === 'report_intent' && args?.intent) {
+    return String(args.intent).slice(0, 80);
+  }
+  if (toolName === 'bash' && args?.command) {
+    const cmd = String(args.command);
+    return cmd.length > 80 ? cmd.slice(0, 77) + '…' : cmd;
   }
   if (toolName === 'edit' && fileName) return `Editing ${fileName}`;
   if (toolName === 'create' && fileName) return `Creating ${fileName}`;

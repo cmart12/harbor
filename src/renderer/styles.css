@@ -4013,6 +4013,7 @@ body.dark .emoji-picker-popup {
   align-items: center;
   gap: 8px;
   padding: 3px 0;
+  overflow: hidden;
 }
 
 .step-icon {
@@ -4053,6 +4054,7 @@ body.dark .emoji-picker-popup {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
 }
 
 .step-connector {
