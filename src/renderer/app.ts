@@ -3413,7 +3413,7 @@ async function renderConduitSessionsSection(
   if (!status.configured || !status.connected) return;
 
   // Fetch remote sessions
-  let sessions: Array<{ id: string; status: string; summary?: string; createdAt: string }>;
+  let sessions: Array<{ id: string; status: string; summary?: string; createdAt: string; clientCount?: number }>;
   try {
     const result = await whimAPI.listConduitSessions();
     if ('error' in result) return;
@@ -3434,8 +3434,10 @@ async function renderConduitSessionsSection(
     ? remoteSessions.map(s => {
         const shortId = s.id.length > 16 ? s.id.slice(0, 14) + '…' : s.id;
         const summaryText = s.summary ? escapeHtml(s.summary) : '';
+        const clientsBadge = s.clientCount != null ? `<span class="session-clients-badge" title="${s.clientCount} connected client${s.clientCount !== 1 ? 's' : ''}">👥 ${s.clientCount}</span>` : '';
         return `<div class="conduit-session-item" data-session-id="${escapeHtml(s.id)}">
           <span class="session-id" title="${escapeHtml(s.id)}">${shortId}</span>
+          ${clientsBadge}
           ${summaryText ? `<span class="session-summary" title="${summaryText}">${summaryText}</span>` : ''}
           <button class="session-join-btn" data-session-id="${escapeHtml(s.id)}">Join</button>
         </div>`;

@@ -11,6 +11,7 @@ import {
   getConduitHostClient,
   connectConduitSession,
   type ConduitAgentSession,
+  type ConduitClientInfo,
 } from '../conduit-client';
 import { AgentRegistry, truncate } from './agent-registry';
 import type { AgentRecord } from './agent-registry';
@@ -74,10 +75,12 @@ export async function launchConduitAgent(
       orphanPolicy: 'timeout',
       orphanTimeoutSeconds: 300,
       profile,
+      clientName: persona?.handle ?? 'whim',
     });
 
     const conduitSessionId = connectResult.connection.sessionId;
-    const conduitSession = await connectConduitSession(connectResult.connection);
+    const clientDisplayName = persona?.handle ?? 'whim';
+    const conduitSession = await connectConduitSession(connectResult.connection, clientDisplayName);
 
     const now = new Date().toISOString();
 
@@ -161,8 +164,8 @@ export async function joinConduitSession(
   }
 
   try {
-    const joinResult = await hostClient.joinSession(conduitSessionId);
-    const conduitSession = await connectConduitSession(joinResult);
+    const joinResult = await hostClient.joinSession(conduitSessionId, 'whim');
+    const conduitSession = await connectConduitSession(joinResult, 'whim');
 
     const agentId = uuid();
     const now = new Date().toISOString();
@@ -283,7 +286,7 @@ export async function getConduitAgentHistory(agentId: string): Promise<any[] | n
 
 /** List running sessions on the configured Conduit host. */
 export async function listConduitSessions(): Promise<
-  Array<{ id: string; status: string; summary?: string; createdAt: string }> | { error: string }
+  Array<{ id: string; status: string; summary?: string; createdAt: string; clientCount?: number }> | { error: string }
 > {
   const hostClient = getConduitHostClient();
   if (!hostClient) return { error: 'Conduit host URL not configured' };
@@ -295,6 +298,7 @@ export async function listConduitSessions(): Promise<
       status: s.status,
       summary: s.summary,
       createdAt: s.createdAt,
+      clientCount: s.clientCount,
     }));
   } catch (err: any) {
     return { error: err.message || 'Failed to list sessions' };
@@ -624,9 +628,42 @@ function setupConduitEventListeners(
         break;
       }
 
+      // ── Client roster ──────────────────────────────────
+      case 'client.roster': {
+        const clients = params?.clients ?? [];
+        record.connectedClients = clients;
+        notifier.notifyRenderer(chatChannel, {
+          type: 'client.roster',
+          clients,
+        });
+        break;
+      }
+
+      case 'client.joined': {
+        const name = params?.clientName || 'unnamed';
+        notifier.notifyRenderer(chatChannel, {
+          type: 'client.joined',
+          clientId: params?.clientId,
+          clientName: name,
+          connectedAt: params?.connectedAt,
+        });
+        break;
+      }
+
+      case 'client.left':
+      case 'client.disconnected': {
+        const name = params?.clientName || 'unnamed';
+        notifier.notifyRenderer(chatChannel, {
+          type: 'client.left',
+          clientId: params?.clientId,
+          clientName: name,
+        });
+        break;
+      }
+
       default: {
         // Suppress known-harmless events
-        const ignored = ['client.joined', 'client.disconnected', 'agent.user.message',
+        const ignored = ['agent.user.message',
           'agent.pending_messages.modified', 'agent.session.tools_updated',
           'agent.assistant.turn_start', 'agent.assistant.streaming_delta'];
         if (!ignored.includes(method)) {

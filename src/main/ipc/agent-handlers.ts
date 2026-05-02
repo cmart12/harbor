@@ -417,4 +417,15 @@ export function registerAgentHandlers(): void {
     respondToConduitUserInput(agentId, requestId, answer);
     return { ok: true };
   });
+
+  ipcMain.handle('conduit:get-session-clients', async (_event, sessionId: string) => {
+    const { getConduitHostClient } = await import('../conduit-client');
+    const client = getConduitHostClient();
+    if (!client) return { error: 'Conduit not configured' };
+    try {
+      return await client.getSessionClients(sessionId);
+    } catch (err: any) {
+      return { error: err.message };
+    }
+  });
 }

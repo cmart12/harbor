@@ -286,7 +286,7 @@ export interface IpcCommands {
 
   // ── Conduit ──────────────────────────────────────────────
   'conduit:host-status': { args: []; result: { configured: boolean; connected: boolean; url: string | null; hasProfiles: boolean; profileId: string | null; profileName: string | null } };
-  'conduit:list-sessions': { args: []; result: Array<{ id: string; status: string; summary?: string; createdAt: string }> | { error: string } };
+  'conduit:list-sessions': { args: []; result: Array<{ id: string; status: string; summary?: string; createdAt: string; clientCount?: number }> | { error: string } };
   'conduit:list-profiles': { args: []; result: Array<{ id: string; name: string; description?: string; enabled: boolean; agentAdapter?: string }> | { error: string } };
   'conduit:set-profile': { args: [profileId: string]; result: { ok: true } };
   'conduit:launch-agent': {
@@ -306,6 +306,7 @@ export interface IpcCommands {
   'conduit:get-session-settings': { args: [conduitSessionId: string]; result: Record<string, unknown> | { error: string } };
   'conduit:update-session-settings': { args: [conduitSessionId: string, settings: Record<string, unknown>]; result: Record<string, unknown> | { error: string } };
   'conduit:update-session-profile': { args: [conduitSessionId: string, profileId: string]; result: { ok: true } | { error: string } };
+  'conduit:get-session-clients': { args: [sessionId: string]; result: { clientCount: number; clients: Array<{ clientId: string; clientName: string; connectedAt: string }> } | { error: string } };
 
   // ── CLI session ──────────────────────────────────────────
   'cli:launch-session': { args: []; result: { agentId: string; sessionId: string } | { error: string } };

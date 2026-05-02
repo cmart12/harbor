@@ -61,6 +61,7 @@ export interface ConduitSessionInfo {
   workspace?: string;
   workspacePath?: string;
   summary?: string;
+  clients?: ConduitClientInfo[];
   updatedAt?: string;
   cwd?: string;
   repository?: string;
@@ -73,6 +74,7 @@ export interface ConduitJoinResult {
   transport: ConduitTransport;
   endpoint: string;
   clientId: string;
+  clientName?: string;
   endpoints?: ConduitEndpointInfo[];
 }
 
@@ -94,6 +96,13 @@ export interface ConduitCreateSessionRequest {
   compute?: string;
   command?: string;
   token?: string;
+  clientName?: string;
+}
+
+export interface ConduitClientInfo {
+  clientId: string;
+  clientName: string;
+  connectedAt: string;
 }
 
 // Agent service types
@@ -171,8 +180,9 @@ export class ConduitHostClient {
     return this._request<ConduitSessionInfo>('POST', `/api/sessions/${id}/suspend`);
   }
 
-  async joinSession(id: string): Promise<ConduitJoinResult> {
-    return this._request<ConduitJoinResult>('POST', `/api/sessions/${id}/join`);
+  async joinSession(id: string, clientName?: string): Promise<ConduitJoinResult> {
+    const body = clientName ? { clientName } : undefined;
+    return this._request<ConduitJoinResult>('POST', `/api/sessions/${id}/join`, body);
   }
 
   async connectSession(id: string, opts?: { profile?: string; compute?: string; settings?: Record<string, unknown> }): Promise<ConduitConnectResult> {
@@ -211,6 +221,10 @@ export class ConduitHostClient {
     await this._request<unknown>('PUT', `/api/sessions/${sessionId}/profile`, { profile: profileId });
   }
 
+  async getSessionClients(id: string): Promise<{ clientCount: number; clients: ConduitClientInfo[] }> {
+    return this._request<{ clientCount: number; clients: ConduitClientInfo[] }>('GET', `/api/sessions/${id}/clients`);
+  }
+
   private async _request<T>(method: string, path: string, body?: unknown): Promise<T> {
     const url = `${this.baseUrl}${path}`;
     const headers: Record<string, string> = {};
@@ -247,6 +261,7 @@ interface PendingRequest {
 export class ConduitAgentSession extends EventEmitter {
   readonly sessionId: string;
   readonly clientId: string;
+  readonly clientName?: string;
   private _ws: WebSocket | null = null;
   private _connected = false;
   private _nextId = 1;
@@ -256,11 +271,13 @@ export class ConduitAgentSession extends EventEmitter {
   constructor(opts: {
     sessionId: string;
     clientId: string;
+    clientName?: string;
     endpoints: ConduitEndpointInfo[];
   }) {
     super();
     this.sessionId = opts.sessionId;
     this.clientId = opts.clientId;
+    this.clientName = opts.clientName;
     this._endpoints = opts.endpoints;
   }
 
@@ -358,6 +375,13 @@ export class ConduitAgentSession extends EventEmitter {
 
   async agentUserInputResponse(params: AgentUserInputResponseParams): Promise<void> {
     await this.call('agent.user_input_response', params);
+  }
+
+  /** Send session.attach RPC to register clientId and optional clientName. */
+  async sessionAttach(clientName?: string): Promise<void> {
+    const params: Record<string, string> = { clientId: this.clientId };
+    if (clientName) params.clientName = clientName;
+    await this.call('session.attach', params);
   }
 
   /** Close the connection. */
@@ -526,9 +550,11 @@ export function getConduitHostClient(): ConduitHostClient | null {
 
 /**
  * Create a connected ConduitAgentSession from a JoinResult.
+ * If clientName is provided, sends session.attach RPC after connecting.
  */
 export async function connectConduitSession(
   joinResult: ConduitJoinResult,
+  clientName?: string,
 ): Promise<ConduitAgentSession> {
   const endpoints = joinResult.endpoints ?? [{
     url: joinResult.endpoint,
@@ -538,8 +564,15 @@ export async function connectConduitSession(
   const session = new ConduitAgentSession({
     sessionId: joinResult.sessionId,
     clientId: joinResult.clientId,
+    clientName,
     endpoints,
   });
   await session.connect();
+
+  // Register client identity with the session host
+  if (clientName) {
+    await session.sessionAttach(clientName);
+  }
+
   return session;
 }

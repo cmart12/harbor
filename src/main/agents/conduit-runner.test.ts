@@ -136,6 +136,76 @@ describe('ConduitHostClient', () => {
     expect(result.endpoints).toHaveLength(1);
   });
 
+  it('joinSession passes clientName in request body', async () => {
+    const mockJoin: ConduitJoinResult = {
+      sessionId: 'ses_123',
+      transport: 'websocket',
+      endpoint: 'ws://localhost:9000',
+      clientId: 'cli_456',
+      clientName: 'whim',
+    };
+
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(mockJoin), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
+    const result = await client.joinSession('ses_123', 'whim');
+    expect(result.clientName).toBe('whim');
+
+    const fetchCall = vi.mocked(fetch).mock.calls[0]!;
+    const body = JSON.parse((fetchCall[1] as any).body);
+    expect(body.clientName).toBe('whim');
+  });
+
+  it('joinSession omits body when no clientName', async () => {
+    const mockJoin: ConduitJoinResult = {
+      sessionId: 'ses_123',
+      transport: 'websocket',
+      endpoint: 'ws://localhost:9000',
+      clientId: 'cli_456',
+    };
+
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(mockJoin), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
+    await client.joinSession('ses_123');
+
+    const fetchCall = vi.mocked(fetch).mock.calls[0]!;
+    expect((fetchCall[1] as any).body).toBeUndefined();
+  });
+
+  it('getSessionClients sends GET to /api/sessions/:id/clients', async () => {
+    const mockClients = {
+      clientCount: 2,
+      clients: [
+        { clientId: 'cli_1', clientName: 'whim', connectedAt: '2025-01-01T00:00:00Z' },
+        { clientId: 'cli_2', clientName: 'agent-tui', connectedAt: '2025-01-01T00:01:00Z' },
+      ],
+    };
+
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(mockClients), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
+    const result = await client.getSessionClients('ses_123');
+    expect(result.clientCount).toBe(2);
+    expect(result.clients).toHaveLength(2);
+    expect(result.clients[0]!.clientName).toBe('whim');
+
+    const url = vi.mocked(fetch).mock.calls[0]![0] as string;
+    expect(url).toBe('http://localhost:8080/api/sessions/ses_123/clients');
+  });
+
   it('createAndConnect sends POST to /api/sessions/connect', async () => {
     const mockResult: ConduitConnectResult = {
       session: {
@@ -195,7 +265,19 @@ describe('ConduitAgentSession', () => {
 
     expect(session.sessionId).toBe('ses_123');
     expect(session.clientId).toBe('cli_456');
+    expect(session.clientName).toBeUndefined();
     expect(session.connected).toBe(false);
+  });
+
+  it('stores clientName when provided', () => {
+    const session = new ConduitAgentSession({
+      sessionId: 'ses_123',
+      clientId: 'cli_456',
+      clientName: 'whim',
+      endpoints: [{ url: 'ws://localhost:9000', transport: 'websocket' }],
+    });
+
+    expect(session.clientName).toBe('whim');
   });
 
   it('throws when calling call() while disconnected', async () => {

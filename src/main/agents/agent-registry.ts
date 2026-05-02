@@ -2,7 +2,7 @@ import type { CopilotSession } from '@github/copilot-sdk';
 import type { AgentAnchor } from '../../shared/types';
 import type { ResolvedPathPolicy } from './sandbox-policies';
 import type { SandboxConfigDirs } from '../ai';
-import type { ConduitAgentSession } from '../conduit-client';
+import type { ConduitAgentSession, ConduitClientInfo } from '../conduit-client';
 
 export type AgentStatus = 'running' | 'waiting-approval' | 'completed' | 'failed';
 
@@ -66,6 +66,8 @@ export interface AgentRecord {
   yoloMode?: boolean;
   /** Conduit session handle — present when source is 'conduit'. */
   conduitSession?: ConduitAgentSession;
+  /** Connected client roster — updated via client.roster notifications. */
+  connectedClients?: ConduitClientInfo[];
   /** Set when the user intentionally disconnects a conduit session. */
   _intentionalDisconnect?: boolean;
 }

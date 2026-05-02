@@ -28,6 +28,7 @@ declare const whimAPI: {
   getConduitSessionSettings: (sessionId: string) => Promise<Record<string, unknown> | { error: string }>;
   updateConduitSessionSettings: (sessionId: string, settings: Record<string, unknown>) => Promise<any>;
   updateConduitSessionProfile: (sessionId: string, profileId: string) => Promise<any>;
+  getConduitSessionClients: (sessionId: string) => Promise<{ clientCount: number; clients: Array<{ clientId: string; clientName: string; connectedAt: string }> } | { error: string }>;
   setAgentYolo: (agentId: string, enabled: boolean) => Promise<any>;
   // Fallback approval (in case conduit-specific isn't available)
   approveAgent: (agentId: string, requestId: string, approved: boolean) => Promise<void>;
@@ -127,6 +128,9 @@ export function ConduitChatView({
   const [selectedProfileName, setSelectedProfileName] = useState<string>('');
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const profileDropdownRef = useRef<HTMLDivElement>(null);
+  const [connectedClients, setConnectedClients] = useState<Array<{ clientId: string; clientName: string; connectedAt: string }>>([]);
+  const [clientsTooltipOpen, setClientsTooltipOpen] = useState(false);
+  const clientsRef = useRef<HTMLDivElement>(null);
 
   // Streaming state refs
   const currentAssistantId = useRef<string | null>(null);
@@ -167,9 +171,22 @@ export function ConduitChatView({
     })();
   }, [conduitSessionId]);
 
+  // ── Load initial client roster ─────────────────────────
+  useEffect(() => {
+    if (!conduitSessionId) return;
+    (async () => {
+      try {
+        const result = await whimAPI.getConduitSessionClients(conduitSessionId);
+        if (!('error' in result)) {
+          setConnectedClients(result.clients);
+        }
+      } catch { /* ignore */ }
+    })();
+  }, [conduitSessionId]);
+
   // ── Close dropdowns on outside click ───────────────────
   useEffect(() => {
-    if (!modelDropdownOpen && !profileDropdownOpen) return;
+    if (!modelDropdownOpen && !profileDropdownOpen && !clientsTooltipOpen) return;
     const handler = (e: MouseEvent) => {
       if (modelDropdownRef.current && !modelDropdownRef.current.contains(e.target as Node)) {
         setModelDropdownOpen(false);
@@ -177,10 +194,13 @@ export function ConduitChatView({
       if (profileDropdownRef.current && !profileDropdownRef.current.contains(e.target as Node)) {
         setProfileDropdownOpen(false);
       }
+      if (clientsRef.current && !clientsRef.current.contains(e.target as Node)) {
+        setClientsTooltipOpen(false);
+      }
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, [modelDropdownOpen, profileDropdownOpen]);
+  }, [modelDropdownOpen, profileDropdownOpen, clientsTooltipOpen]);
 
   // ── Yolo mode listener ─────────────────────────────────
   useEffect(() => {
@@ -326,6 +346,12 @@ export function ConduitChatView({
         }
         case 'elicitation.resolved': {
           setMessages(prev => prev.map(m => m.type === 'elicitation' && m.requestId === event.requestId ? { ...m, responded: true, action: event.action, content: event.content } : m));
+          break;
+        }
+        case 'client.roster': {
+          if ((event as any).clients) {
+            setConnectedClients((event as any).clients);
+          }
           break;
         }
       }
@@ -540,6 +566,35 @@ export function ConduitChatView({
             {yoloEnabled ? 'YOLO' : 'Yolo'}
           </span>
         </button>
+
+        {connectedClients.length > 0 && (
+          <>
+            <span className="chat-status-bar-divider">|</span>
+            <div className="chat-status-bar-dropdown" ref={clientsRef}>
+              <button
+                className="chat-status-bar-item"
+                onClick={() => setClientsTooltipOpen(!clientsTooltipOpen)}
+                title={connectedClients.map(c => c.clientName).join(', ')}
+              >
+                <span className="chat-status-bar-icon">👥</span>
+                <span className="chat-status-bar-text">
+                  {connectedClients.length} connected
+                </span>
+                <span className={`chat-status-bar-chevron ${clientsTooltipOpen ? 'open' : ''}`}>▾</span>
+              </button>
+
+              {clientsTooltipOpen && (
+                <div className="chat-model-dropdown">
+                  {connectedClients.map(c => (
+                    <div key={c.clientId} className="chat-model-dropdown-item" style={{ cursor: 'default' }}>
+                      <span className="chat-model-dropdown-name">{c.clientName || 'unnamed'}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
       </div>
 
       {isLoadingHistory && (
