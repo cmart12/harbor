@@ -424,6 +424,27 @@ function setupConduitEventListeners(
         break;
       }
 
+      case 'agent.assistant.reasoning_delta': {
+        const delta = params?.deltaContent ?? params?.delta ?? '';
+        if (delta) {
+          notifier.notifyRenderer(chatChannel, {
+            type: 'assistant.reasoning_delta',
+            reasoningId: params?.reasoningId ?? '',
+            delta,
+          });
+        }
+        break;
+      }
+
+      case 'agent.assistant.reasoning': {
+        notifier.notifyRenderer(chatChannel, {
+          type: 'assistant.reasoning',
+          reasoningId: params?.reasoningId ?? '',
+          content: params?.content ?? '',
+        });
+        break;
+      }
+
       case 'agent.assistant.message':
       case 'agent.assistant_message': {
         const content = params?.content || params?.message || '';
