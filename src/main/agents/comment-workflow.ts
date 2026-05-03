@@ -4,7 +4,6 @@ import * as fs from 'fs';
 import * as crypto from 'crypto';
 import { getCopilotClient } from '../ai';
 import { type AgentPersona } from '../config';
-import { updateCanvasContent } from '../database';
 import { AgentRegistry } from './agent-registry';
 import type { AgentRecord } from './agent-registry';
 import { AgentNotifier } from './agent-notifier';
@@ -207,23 +206,14 @@ export function handleCommentAgentCompletion(record: AgentRecord): void {
     spaceId: record.spaceId,
   });
 
-  // Detect if agent modified canvas.md
+  // Detect if agent modified canvas.md (for reply message only —
+  // the file watcher + sdk-runner fallback handle the actual content push)
   let documentChanged = false;
-  let newContent = '';
   try {
-    newContent = fs.readFileSync(ctx.canvasPath, 'utf-8');
+    const newContent = fs.readFileSync(ctx.canvasPath, 'utf-8');
     const currentHash = crypto.createHash('md5').update(newContent).digest('hex');
     documentChanged = ctx.canvasHashBefore !== '' && currentHash !== ctx.canvasHashBefore;
   } catch { /* non-fatal */ }
-
-  // If the document changed, sync DB and push live update to renderer
-  if (documentChanged) {
-    updateCanvasContent(record.spaceId, newContent);
-    notifier.notifyRenderer('canvas:content-updated', {
-      spaceId: record.spaceId,
-      content: newContent,
-    });
-  }
 
   // Send reply to renderer
   const replyBody = documentChanged

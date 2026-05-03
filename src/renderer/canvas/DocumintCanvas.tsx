@@ -17,6 +17,7 @@ import {
   type DocumintStorage,
 } from 'documint';
 import { FrontmatterEditor } from './FrontmatterEditor';
+import { merge3 } from '../../shared/text-merge';
 
 declare const whimAPI: {
   writeCanvas(spaceId: string, content: string): Promise<void>;
@@ -131,6 +132,7 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
     const [rawContent, setRawContent] = useState('');
     const [parseError, setParseError] = useState<string | null>(null);
     const lastSavedRef = useRef(hasFrontmatter ? serializeFm(initialFrontmatter!, initialContent) : initialContent);
+    const lastDiskContentRef = useRef(hasFrontmatter ? serializeFm(initialFrontmatter!, initialContent) : initialContent);
     const pendingSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const savingRef = useRef(false);
     const contentRef = useRef(content);
@@ -188,8 +190,17 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
 
       savingRef.current = true;
       try {
-        await whimAPI.writeCanvas(spaceId, fullContent);
-        lastSavedRef.current = fullContent;
+        const result = await whimAPI.writeCanvas(spaceId, fullContent);
+        // If the main process merged with disk changes, update to merged content
+        const savedContent = (result as any)?.content ?? fullContent;
+        lastSavedRef.current = savedContent;
+        lastDiskContentRef.current = savedContent;
+        if (savedContent !== fullContent) {
+          // Main process merged — update editor with merged result
+          const body = hasFrontmatter ? (tryParseFm(savedContent)?.body ?? savedContent) : savedContent;
+          setContent(body);
+          contentRef.current = body;
+        }
         onDirtyChange(getFullContent() !== lastSavedRef.current);
         onSaveStatus('✓');
         setTimeout(() => onSaveStatus(''), 1500);
@@ -199,7 +210,7 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
       } finally {
         savingRef.current = false;
       }
-    }, [spaceId, onDirtyChange, onSaveStatus, getFullContent]);
+    }, [spaceId, onDirtyChange, onSaveStatus, getFullContent, hasFrontmatter]);
 
     const scheduleSave = useCallback(() => {
       if (pendingSaveRef.current) clearTimeout(pendingSaveRef.current);
@@ -333,24 +344,73 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
           handleContentChange(updated);
         }
       },
-      replaceContent: (newContent: string) => {
-        // Cancel any pending autosave — the new content is already on disk
+      replaceContent: (newDiskContent: string) => {
+        // In raw mode, fall back to wholesale replace (no merge for textarea)
+        if (editorModeRef.current === 'raw') {
+          if (pendingSaveRef.current) {
+            clearTimeout(pendingSaveRef.current);
+            pendingSaveRef.current = null;
+          }
+          setRawContent(hasFrontmatter ? serializeFm(frontmatterRef.current, newDiskContent) : newDiskContent);
+          rawContentRef.current = hasFrontmatter ? serializeFm(frontmatterRef.current, newDiskContent) : newDiskContent;
+          setContent(newDiskContent);
+          contentRef.current = newDiskContent;
+          const fullContent = hasFrontmatter ? serializeFm(frontmatterRef.current, newDiskContent) : newDiskContent;
+          lastSavedRef.current = fullContent;
+          lastDiskContentRef.current = fullContent;
+          onDirtyChange(false);
+          return;
+        }
+
+        const currentContent = contentRef.current;
+        const base = lastDiskContentRef.current;
+
+        // Always update our record of what's on disk
+        const fullDisk = hasFrontmatter ? serializeFm(frontmatterRef.current, newDiskContent) : newDiskContent;
+        lastDiskContentRef.current = fullDisk;
+
+        // Fast path: no local changes since last disk sync — simple replace
+        const currentFull = hasFrontmatter ? serializeFm(frontmatterRef.current, currentContent) : currentContent;
+        if (currentFull === base) {
+          if (pendingSaveRef.current) {
+            clearTimeout(pendingSaveRef.current);
+            pendingSaveRef.current = null;
+          }
+          setContent(newDiskContent);
+          contentRef.current = newDiskContent;
+          lastSavedRef.current = fullDisk;
+          onDirtyChange(false);
+          return;
+        }
+
+        // Merge path: user has local edits — three-way merge
+        const baseBody = hasFrontmatter ? (tryParseFm(base)?.body ?? base) : base;
+        const { merged } = merge3(baseBody, currentContent, newDiskContent);
+
         if (pendingSaveRef.current) {
           clearTimeout(pendingSaveRef.current);
           pendingSaveRef.current = null;
         }
-        setContent(newContent);
-        contentRef.current = newContent;
-        const fullContent = hasFrontmatter ? serializeFm(frontmatterRef.current, newContent) : newContent;
-        lastSavedRef.current = fullContent;
-        onDirtyChange(false);
-        // Keep raw mode in sync if active
-        if (editorModeRef.current === 'raw') {
-          setRawContent(fullContent);
-          rawContentRef.current = fullContent;
+
+        setContent(merged);
+        contentRef.current = merged;
+
+        // Do NOT update lastSavedRef here — the merged content hasn't been
+        // persisted yet.  doSave() compares getFullContent() with lastSavedRef
+        // and would exit early if they matched.  We leave lastSavedRef as-is
+        // so the upcoming save will detect the diff and write to disk.
+        const fullMerged = hasFrontmatter ? serializeFm(frontmatterRef.current, merged) : merged;
+
+        if (fullMerged !== fullDisk) {
+          onDirtyChange(true);
+          scheduleSave();
+        } else {
+          // Merged result matches disk — no save needed, update refs
+          lastSavedRef.current = fullMerged;
+          onDirtyChange(false);
         }
       },
-    }), [saveNow, handleContentChange]);
+    }), [saveNow, handleContentChange, scheduleSave, hasFrontmatter, onDirtyChange]);
 
     // Cmd+S handler
     useEffect(() => {

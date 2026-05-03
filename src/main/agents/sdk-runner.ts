@@ -1,6 +1,8 @@
 import { CopilotSession } from '@github/copilot-sdk';
 import { v4 as uuid } from 'uuid';
 import * as path from 'path';
+import * as fs from 'fs';
+import * as crypto from 'crypto';
 import { getCopilotClient } from '../ai';
 import { AgentAnchor } from '../../shared/types';
 import { getConfig, getConfigValue, type AgentPersona } from '../config';
@@ -15,6 +17,7 @@ import { getCustomTools } from '../tools';
 import { appendSpaceActivity } from '../space-eventlog';
 import { buildSandboxLaunchSetup } from './sandbox-launch';
 import { SANDBOX_WORKSPACE_SYSTEM_PROMPT } from './sandbox-policies';
+import { updateCanvasContent } from '../database';
 
 /** Shared dependencies injected from agent-service at init time. */
 let registry: AgentRegistry;
@@ -61,6 +64,14 @@ export async function launchAgent(
   const agentId = uuid();
   const workingDir = path.join(workspaceRoot, spaceFolder);
 
+  // Snapshot canvas hash for change detection on completion
+  const canvasPath = path.join(workingDir, 'canvas.md');
+  let canvasHashBefore = '';
+  try {
+    const canvasContent = fs.readFileSync(canvasPath, 'utf-8');
+    canvasHashBefore = crypto.createHash('md5').update(canvasContent).digest('hex');
+  } catch { /* file may not exist yet */ }
+
   try {
     const mcpServers = getAllMcpServers();
     const cliToolsPrompt = buildCliToolsPrompt();
@@ -94,6 +105,7 @@ export async function launchAgent(
       pendingPermissionKind: null,
       pendingApprovals: new Map(),
       summary: 'Starting...',
+      canvasSnapshot: { path: canvasPath, hashBefore: canvasHashBefore },
     };
     registry.set(agentId, record);
 
@@ -297,7 +309,6 @@ export async function launchDocumentAgent(
   const workingDir = path.join(workspaceRoot, spaceFolder);
 
   // Read the full canvas document
-  const fs = require('fs');
   const canvasPath = path.join(workingDir, 'canvas.md');
   let documentContent = '';
   try {
@@ -309,6 +320,9 @@ export async function launchDocumentAgent(
   if (!documentContent.trim()) {
     return { error: 'Canvas document is empty — add content before running' };
   }
+
+  // Snapshot canvas hash for change detection on completion
+  const canvasHashBefore = crypto.createHash('md5').update(documentContent).digest('hex');
 
   try {
     const mcpServers = getAllMcpServers();
@@ -343,6 +357,7 @@ export async function launchDocumentAgent(
       pendingPermissionKind: null,
       pendingApprovals: new Map(),
       summary: 'Executing document...',
+      canvasSnapshot: { path: canvasPath, hashBefore: canvasHashBefore },
     };
     registry.set(agentId, record);
 
@@ -853,6 +868,23 @@ export function setupAgentEventListeners(session: CopilotSession, record: AgentR
         // Dynamically import to avoid circular dependency
         const { handleCommentAgentCompletion } = require('./comment-workflow');
         handleCommentAgentCompletion(record);
+      }
+
+      // Fallback canvas change detection for ALL agent types.
+      // The file watcher handles real-time detection while the canvas is open,
+      // but this catches changes when the canvas was closed or the watcher missed something.
+      if (record.canvasSnapshot && !record.commentContext) {
+        try {
+          const newContent = fs.readFileSync(record.canvasSnapshot.path, 'utf-8');
+          const currentHash = crypto.createHash('md5').update(newContent).digest('hex');
+          if (record.canvasSnapshot.hashBefore && currentHash !== record.canvasSnapshot.hashBefore) {
+            updateCanvasContent(record.spaceId, newContent);
+            notifier.notifyRenderer('canvas:content-updated', {
+              spaceId: record.spaceId,
+              content: newContent,
+            });
+          }
+        } catch { /* non-fatal: file may not exist */ }
       }
     }
   });

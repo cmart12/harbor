@@ -58,6 +58,8 @@ export interface AgentRecord {
   pendingApprovals: Map<string, { permissionKind: string | null; intention?: string; path?: string }>;
   summary: string;
   commentContext?: CommentAgentContext;
+  /** Canvas hash snapshot taken before agent starts, for change detection on completion. */
+  canvasSnapshot?: { path: string; hashBefore: string };
   /** True when session was recreated after the original SDK session expired. */
   restarted?: boolean;
   /** Sandbox runtime state — present iff the agent was launched as sandboxed. */

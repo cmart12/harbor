@@ -1,12 +1,22 @@
-import { ipcMain, shell } from 'electron';
+import { ipcMain, shell, BrowserWindow } from 'electron';
 import { isInitialized, getSpace, getSkill, assignSpaceFolder, updateCanvasContent } from '../database';
 import { getConfigValue } from '../config';
 import { initSpaceCanvas, readCanvas, writeCanvas, scheduleAutoCommit, saveAttachment, resolveAttachmentPath, getMimeType, readSpaceFile, getSpaceHistory, restoreSpaceVersion, getSpaceVersionContent } from '../workspace';
 import { parseFrontmatter, serializeFrontmatter } from '../frontmatter';
 import { fetchLinkPreview } from '../services/link-preview';
+import { startWatching, stopWatching, markSelfWrite } from '../canvas-watcher';
+import { merge3 } from '../../shared/text-merge';
 import type { SkillFrontmatter } from '../../shared/types';
 import * as fs from 'fs';
 import * as path from 'path';
+
+const CANVAS_FILE = 'canvas.md';
+
+/**
+ * Track the last content the editor read/wrote for each space.
+ * Used to detect if an agent modified the file between editor saves.
+ */
+const lastEditorContent = new Map<string, string>();
 
 export function registerCanvasHandlers(): void {
   ipcMain.handle('canvas:read', (_event, spaceId: string) => {
@@ -23,7 +33,20 @@ export function registerCanvasHandlers(): void {
       assignSpaceFolder(spaceId, folder);
     }
 
-    return { content: readCanvas(workspace, folder) };
+    const content = readCanvas(workspace, folder);
+    lastEditorContent.set(spaceId, content);
+
+    // Start watching for external changes (e.g. from agents)
+    const canvasPath = path.join(workspace, folder, CANVAS_FILE);
+    startWatching(spaceId, canvasPath, (newContent: string) => {
+      lastEditorContent.set(spaceId, newContent);
+      updateCanvasContent(spaceId, newContent);
+      for (const win of BrowserWindow.getAllWindows()) {
+        win.webContents.send('canvas:content-updated', { spaceId, content: newContent });
+      }
+    });
+
+    return { content };
   });
 
   ipcMain.handle('canvas:write', (_event, spaceId: string, content: string) => {
@@ -54,15 +77,34 @@ export function registerCanvasHandlers(): void {
       assignSpaceFolder(spaceId, folder);
     }
 
-    writeCanvas(workspace, folder, content);
-    updateCanvasContent(spaceId, content);
-    return { success: true };
+    // Check if the file has been modified by an agent since the editor last synced.
+    // If so, merge the editor's content with the disk content before writing.
+    const canvasPath = path.join(workspace, folder, CANVAS_FILE);
+    let contentToWrite = content;
+    try {
+      const diskContent = fs.readFileSync(canvasPath, 'utf-8');
+      const lastKnown = lastEditorContent.get(spaceId);
+      if (lastKnown !== undefined && diskContent !== lastKnown && diskContent !== content) {
+        // Disk was modified externally — merge editor changes with disk changes
+        const { merged } = merge3(lastKnown, content, diskContent);
+        contentToWrite = merged;
+      }
+    } catch { /* file may not exist; proceed with editor content */ }
+
+    markSelfWrite(spaceId, contentToWrite);
+    writeCanvas(workspace, folder, contentToWrite);
+    updateCanvasContent(spaceId, contentToWrite);
+    lastEditorContent.set(spaceId, contentToWrite);
+    return { success: true, content: contentToWrite !== content ? contentToWrite : undefined };
   });
 
   // Save canvas + trigger a commit (called when leaving the canvas)
   ipcMain.handle('canvas:close', (_event, spaceId: string, content: string) => {
     const workspace = getConfigValue('workspace');
     if (!workspace || !isInitialized()) return;
+
+    // Stop watching — user is leaving this canvas
+    stopWatching(spaceId);
 
     const space = getSpace(spaceId);
     if (!space) return;
@@ -75,6 +117,7 @@ export function registerCanvasHandlers(): void {
 
     writeCanvas(workspace, folder, content);
     updateCanvasContent(spaceId, content);
+    lastEditorContent.delete(spaceId);
     scheduleAutoCommit(workspace);
   });
 
