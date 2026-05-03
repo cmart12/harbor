@@ -5614,6 +5614,18 @@ document.addEventListener('keydown', (e) => {
         }
         return;
       }
+      // Cmd+Enter: pop out agent chat in a new canvas window
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault();
+        const agent = selectedIndex >= 0
+          ? renderedAgents[selectedIndex]
+          : renderedAgents[0];
+        if (agent?.spaceId && agent.spaceId !== '__workspace__') {
+          const space = spaces.find(s => s.id === agent.spaceId);
+          whimAPI.openNewCanvasWindow({ kind: 'space', id: agent.spaceId, title: space?.description || agent.summary || 'Agent' });
+        }
+        return;
+      }
       if (e.key === 'Enter' && selectedIndex >= 0 && document.activeElement !== newAgentBtn) {
         e.preventDefault();
         const agent = renderedAgents[selectedIndex];
@@ -5691,6 +5703,12 @@ document.addEventListener('keydown', (e) => {
 });
 
 whimAPI.onWindowShown((data) => {
+  // Close any sub-views that were open when the window was hidden
+  if (!chatView.classList.contains('hidden')) closeAgentChat();
+  if (!canvasView.classList.contains('hidden')) closeCanvas();
+  if (settingsModalOpen) hideSettings();
+  if (!timelineView.classList.contains('hidden')) hideTimeline();
+
   selectedIndex = -1;
   searchResults = null;
   if (searchMode) exitSearchMode();
@@ -5715,24 +5733,7 @@ whimAPI.onWindowShown((data) => {
 });
 
 whimAPI.onWindowToggle(() => {
-  // If on a sub-view, navigate back to the space list
-  if (!chatView.classList.contains('hidden')) {
-    closeAgentChat();
-    return;
-  }
-  if (!canvasView.classList.contains('hidden')) {
-    closeCanvas();
-    return;
-  }
-  if (settingsModalOpen) {
-    hideSettings();
-    return;
-  }
-  if (!timelineView.classList.contains('hidden')) {
-    hideTimeline();
-    return;
-  }
-  // Already on the main view — animate out then hide
+  // Always hide the window immediately — Escape handles sub-view navigation
   slideOut();
 });
 

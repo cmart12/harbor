@@ -457,7 +457,7 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
     }, []);
 
     const documintTheme = theme === 'dark'
-      ? { ...darkTheme, background: '#1c1c20', leafBackground: '#1c1c20', selectionHandleBackground: '#1c1c20' }
+      ? { ...darkTheme, background: '#1c1c20', leafBackground: '#1c1c20', selectionHandleBackground: '#1c1c20', dividerRule: '#3a3a40' }
       : lightTheme;
 
     return (
