@@ -23,6 +23,8 @@ export interface AgentPersona {
    * `AppConfig.sandboxDefaultPolicy`. When set, this fully replaces the default.
    */
   sandboxPolicyOverride?: SandboxPolicy;
+  /** When true, agents launched with this persona automatically enable yolo mode. */
+  yolo?: boolean;
 }
 
 export interface CliRuntime {

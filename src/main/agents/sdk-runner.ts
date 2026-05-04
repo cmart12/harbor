@@ -256,8 +256,14 @@ export async function launchQuickAgent(
       pendingApprovals: new Map(),
       summary,
       ...(sandboxState ? { sandbox: sandboxState } : {}),
+      ...(persona?.yolo ? { yoloMode: true } : {}),
     };
     registry.set(agentId, record);
+
+    // Notify renderer of yolo mode if persona enables it
+    if (persona?.yolo) {
+      notifier.notifyRenderer('agent:yolo-changed', { agentId, enabled: true });
+    }
 
     persistence.createAgentSessionRecord({
       id: agentId,

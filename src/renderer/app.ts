@@ -55,6 +55,7 @@ interface AgentPersona {
   emoji?: string;
   cliRuntime?: string;
   sandboxPolicyOverride?: SandboxPolicy;
+  yolo?: boolean;
 }
 
 interface CliRuntime {
@@ -1059,6 +1060,18 @@ function renderAgentEditor(persona: AgentPersona): void {
   runtimeRow.appendChild(runtimeLabel);
   runtimeRow.appendChild(runtimeSelect);
 
+  // Yolo mode checkbox
+  const yoloRow = document.createElement('div');
+  yoloRow.className = 'persona-form-row persona-yolo-row';
+  const yoloLabel = document.createElement('label');
+  yoloLabel.className = 'persona-form-checkbox-label';
+  const yoloCheck = document.createElement('input');
+  yoloCheck.type = 'checkbox';
+  yoloCheck.checked = persona.yolo === true;
+  yoloLabel.appendChild(yoloCheck);
+  yoloLabel.appendChild(document.createTextNode(' 🔥 Auto-enable yolo mode (skip all permission prompts)'));
+  yoloRow.appendChild(yoloLabel);
+
   // Error display
   const errorEl = document.createElement('div');
   errorEl.className = 'persona-form-error hidden';
@@ -1119,6 +1132,7 @@ function renderAgentEditor(persona: AgentPersona): void {
           cliRuntime: cliRuntime || undefined,
           ...(sandboxed ? { sandboxed: true } : { sandboxed: undefined }),
           ...(sandboxOverride ? { sandboxPolicyOverride: sandboxOverride } : { sandboxPolicyOverride: undefined }),
+          ...(yoloCheck.checked ? { yolo: true } : { yolo: undefined }),
         }
       : p
     );
@@ -1208,6 +1222,7 @@ function renderAgentEditor(persona: AgentPersona): void {
   form.appendChild(sandboxRow);
   form.appendChild(sandboxOverrideRow);
   form.appendChild(runtimeRow);
+  form.appendChild(yoloRow);
   form.appendChild(errorEl);
   form.appendChild(btnRow);
 

@@ -125,6 +125,7 @@ export function registerSettingsHandlers(): void {
               return override ? { sandboxPolicyOverride: override } : {};
             })()
           : {}),
+        ...(raw.yolo === true ? { yolo: true } : {}),
       });
     }
 

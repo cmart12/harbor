@@ -136,6 +136,7 @@ If you make changes to the document, clearly describe what you changed.${cliTool
       pendingApprovals: new Map(),
       summary: 'Starting...',
       ...(sandboxState ? { sandbox: sandboxState } : {}),
+      ...(persona.yolo ? { yoloMode: true } : {}),
       commentContext: {
         threadIndex,
         personaHandle: persona.handle,
@@ -148,6 +149,10 @@ If you make changes to the document, clearly describe what you changed.${cliTool
       },
     };
     registry.set(agentId, record);
+
+    if (persona.yolo) {
+      notifier.notifyRenderer('agent:yolo-changed', { agentId, enabled: true });
+    }
 
     persistence.createAgentSessionRecord({
       id: agentId,

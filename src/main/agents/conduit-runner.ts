@@ -101,8 +101,13 @@ export async function launchConduitAgent(
       pendingApprovals: new Map(),
       summary: 'Starting (Conduit)...',
       conduitSession,
+      ...(persona?.yolo ? { yoloMode: true } : {}),
     };
     registry.set(agentId, record);
+
+    if (persona?.yolo) {
+      notifier.notifyRenderer('agent:yolo-changed', { agentId, enabled: true });
+    }
 
     // Persist to DB
     persistence.createAgentSessionRecord({

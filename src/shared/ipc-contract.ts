@@ -73,6 +73,8 @@ export interface AgentPersona {
   cliRuntime?: string;
   /** Optional per-persona override of the global sandbox policy. */
   sandboxPolicyOverride?: SandboxPolicy;
+  /** When true, agents launched with this persona automatically enable yolo mode (auto-approve all permissions). */
+  yolo?: boolean;
 }
 
 /** Sandbox policy applied to a sandboxed agent.  See docs/mxc-sandbox-schema.md. */
