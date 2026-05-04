@@ -105,7 +105,9 @@ export function registerSettingsHandlers(): void {
         ? raw.instructions.trim().slice(0, 2000)
         : '';
       const model = typeof raw.model === 'string' ? raw.model.trim() : '';
-      const runLocation = raw.runLocation === 'cloud' ? 'cloud' as const : 'local' as const;
+      const runLocation = raw.runLocation === 'cloud' ? 'cloud' as const
+        : raw.runLocation === 'conduit' ? 'conduit' as const
+        : 'local' as const;
 
       const emoji = typeof raw.emoji === 'string' ? raw.emoji.trim().slice(0, 8) : '';
       const cliRuntime = typeof raw.cliRuntime === 'string' ? raw.cliRuntime.trim() : '';
