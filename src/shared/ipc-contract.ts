@@ -318,7 +318,7 @@ export interface IpcCommands {
     args: [conduitSessionId: string, spaceId: string];
     result: { agentId: string; sessionId: string } | { error: string };
   };
-  'conduit:send-message': { args: [agentId: string, prompt: string]; result: { error?: string } };
+  'conduit:send-message': { args: [agentId: string, prompt: string, attachments?: Array<{ type: string; [key: string]: unknown }>]; result: { error?: string } };
   'conduit:abort-agent': { args: [agentId: string]; result: { ok: true } };
   'conduit:disconnect-agent': { args: [agentId: string]; result: { ok: true } };
   'conduit:approve-permission': { args: [agentId: string, requestId: string, approved: boolean]; result: { ok: true } };

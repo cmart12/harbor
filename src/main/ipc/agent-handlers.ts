@@ -112,6 +112,13 @@ export function registerAgentHandlers(): void {
   });
 
   ipcMain.handle('agent:open-cli', async (_event, agentId: string) => {
+    // Route conduit agents to conduit-specific CLI opener
+    const { getAgentSession } = await import('../database');
+    const session = getAgentSession(agentId);
+    if (session?.source === 'conduit') {
+      const { openConduitAgentCli } = await import('../agent-service');
+      return openConduitAgentCli(agentId);
+    }
     const { openAgentCli } = await import('../agent-service');
     return openAgentCli(agentId);
   });
@@ -315,9 +322,9 @@ export function registerAgentHandlers(): void {
     return joinConduitSession(conduitSessionId, spaceId);
   });
 
-  ipcMain.handle('conduit:send-message', async (_event, agentId: string, prompt: string) => {
+  ipcMain.handle('conduit:send-message', async (_event, agentId: string, prompt: string, attachments?: Array<{ type: string; [key: string]: unknown }>) => {
     const { sendConduitChatMessage } = await import('../agent-service');
-    return sendConduitChatMessage(agentId, prompt);
+    return sendConduitChatMessage(agentId, prompt, attachments);
   });
 
   ipcMain.handle('conduit:abort-agent', async (_event, agentId: string) => {

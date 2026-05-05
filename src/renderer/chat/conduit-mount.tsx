@@ -13,6 +13,7 @@ export interface MountConduitChatOptions {
   pendingApprovalId?: string;
   pendingPermissionKind?: string;
   onClose: () => void;
+  onOpenCli: (agentId: string) => void;
 }
 
 export function mountConduitChat(container: HTMLElement, options: MountConduitChatOptions): void {
@@ -31,6 +32,7 @@ export function mountConduitChat(container: HTMLElement, options: MountConduitCh
       pendingApprovalId={options.pendingApprovalId}
       pendingPermissionKind={options.pendingPermissionKind}
       onClose={options.onClose}
+      onOpenCli={options.onOpenCli}
     />
   );
 }

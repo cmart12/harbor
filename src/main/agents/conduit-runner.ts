@@ -6,7 +6,7 @@
  */
 import { v4 as uuid } from 'uuid';
 import * as path from 'path';
-import { getConfigValue, setConfigValue, type AgentPersona } from '../config';
+import { getConfig, getConfigValue, setConfigValue, type AgentPersona } from '../config';
 import {
   getConduitHostClient,
   connectConduitSession,
@@ -19,6 +19,7 @@ import { AgentNotifier } from './agent-notifier';
 import { AgentPersistence } from './agent-persistence';
 import { InteractionBroker } from './interaction-broker';
 import { appendSpaceActivity } from '../space-eventlog';
+import { launchSessionInTerminal } from '../session';
 
 /** Shared dependencies injected from agent-service at init time. */
 let registry: AgentRegistry;
@@ -219,6 +220,7 @@ export async function joinConduitSession(
 export async function sendConduitChatMessage(
   agentId: string,
   prompt: string,
+  attachments?: Array<{ type: string; [key: string]: unknown }>,
 ): Promise<{ error?: string }> {
   const record = registry.get(agentId);
   if (!record) return { error: 'Agent not found' };
@@ -238,7 +240,9 @@ export async function sendConduitChatMessage(
   });
 
   try {
-    await record.conduitSession.agentSubmit({ prompt });
+    const params: { prompt: string; attachments?: Array<{ type: string; [key: string]: unknown }> } = { prompt };
+    if (attachments && attachments.length > 0) params.attachments = attachments;
+    await record.conduitSession.agentSubmit(params);
     return {};
   } catch (err: any) {
     return { error: err.message || 'Failed to send message' };
@@ -818,6 +822,34 @@ export function respondToConduitUserInput(
   }).catch((err: any) => {
     console.error(`[conduit-runner] Failed to send user input response: ${err.message}`);
   });
+}
+
+/** Open an existing Conduit agent session in a new terminal (CLI). */
+export async function openConduitAgentCli(agentId: string): Promise<{ error?: string }> {
+  // Resolve CWD: live record → persisted DB → workspace root
+  const config = getConfig();
+  const workspaceRoot = config.workspace;
+
+  const record = registry.get(agentId);
+  let sessionId: string;
+  let cwd: string;
+
+  if (record) {
+    sessionId = record.sessionId;
+    cwd = workspaceRoot || '.';
+  } else {
+    const persisted = persistence.getSession(agentId);
+    if (!persisted) return { error: 'Agent not found' };
+    sessionId = persisted.session_id;
+    cwd = persisted.working_dir || workspaceRoot || '.';
+  }
+
+  try {
+    await launchSessionInTerminal(sessionId, cwd);
+    return {};
+  } catch (err: any) {
+    return { error: err.message || 'Failed to open CLI' };
+  }
 }
 
 // ── Helpers ────────────────────────────────────────────────────────

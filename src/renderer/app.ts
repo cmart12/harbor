@@ -5519,6 +5519,7 @@ async function openAgentChat(agentId: string | undefined, agentPrompt: string, a
       pendingApprovalId: approval?.requestId,
       pendingPermissionKind: approval?.permissionKind,
       onClose: () => closeAgentChat(),
+      onOpenCli: (id: string) => whimAPI.openAgentCli(id),
     });
     return;
   }

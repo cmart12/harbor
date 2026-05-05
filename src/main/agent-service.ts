@@ -54,6 +54,7 @@ export {
   getConduitAgentHistory,
   approveConduitPermission,
   respondToConduitUserInput,
+  openConduitAgentCli,
 } from './agents/conduit-runner';
 
 // ── Interaction passthrough ────────────────────────────

@@ -133,7 +133,7 @@ export interface WhimAPI {
   getConduitSessionClients(sessionId: string): Promise<IpcCommandResult<'conduit:get-session-clients'>>;
   launchConduitAgent(spaceId: string, prompt: string, personaHandle?: string): Promise<IpcCommandResult<'conduit:launch-agent'>>;
   joinConduitSession(conduitSessionId: string, spaceId: string): Promise<IpcCommandResult<'conduit:join-session'>>;
-  sendConduitMessage(agentId: string, prompt: string): Promise<IpcCommandResult<'conduit:send-message'>>;
+  sendConduitMessage(agentId: string, prompt: string, attachments?: Array<{ type: string; [key: string]: unknown }>): Promise<IpcCommandResult<'conduit:send-message'>>;
   abortConduitAgent(agentId: string): Promise<IpcCommandResult<'conduit:abort-agent'>>;
   disconnectConduitAgent(agentId: string): Promise<IpcCommandResult<'conduit:disconnect-agent'>>;
 
@@ -359,8 +359,8 @@ const api: WhimAPI = {
     ipcRenderer.invoke('conduit:launch-agent', spaceId, prompt, personaHandle),
   joinConduitSession: (conduitSessionId, spaceId) =>
     ipcRenderer.invoke('conduit:join-session', conduitSessionId, spaceId),
-  sendConduitMessage: (agentId, prompt) =>
-    ipcRenderer.invoke('conduit:send-message', agentId, prompt),
+  sendConduitMessage: (agentId, prompt, attachments?) =>
+    ipcRenderer.invoke('conduit:send-message', agentId, prompt, attachments),
   abortConduitAgent: (agentId) =>
     ipcRenderer.invoke('conduit:abort-agent', agentId),
   disconnectConduitAgent: (agentId) =>

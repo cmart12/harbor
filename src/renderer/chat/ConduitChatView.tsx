@@ -16,8 +16,9 @@ declare const whimAPI: {
   onChatEvent: (agentId: string, callback: (event: ChatEvent) => void) => () => void;
   getAgentHistory: (agentId: string) => Promise<{ events?: any[]; error?: string; restarted?: boolean }>;
   onAgentYoloChanged: (callback: (data: { agentId: string; enabled: boolean }) => void) => void;
+  openAgentCli: (agentId: string) => Promise<any>;
   // Conduit-specific
-  sendConduitMessage: (agentId: string, prompt: string) => Promise<{ error?: string }>;
+  sendConduitMessage: (agentId: string, prompt: string, attachments?: Array<{ type: string; [key: string]: unknown }>) => Promise<{ error?: string }>;
   abortConduitAgent: (agentId: string) => Promise<any>;
   launchConduitAgent: (spaceId: string, prompt: string) => Promise<{ agentId: string; sessionId: string } | { error: string }>;
   approveConduitPermission?: (agentId: string, requestId: string, approved: boolean) => Promise<any>;
@@ -46,6 +47,7 @@ export interface ConduitChatViewProps {
   pendingApprovalId?: string;
   pendingPermissionKind?: string;
   onClose: () => void;
+  onOpenCli: (agentId: string) => void;
 }
 
 let nextMsgId = 1;
@@ -85,6 +87,108 @@ function parseHistoryEvents(events: any[]): ChatMessage[] {
   return result;
 }
 
+/** Apply a completion event (tool.complete, approval.resolved, etc.) idempotently. */
+function applyCompletionEvent(msgs: ChatMessage[], event: ChatEvent): ChatMessage[] {
+  switch (event.type) {
+    case 'tool.complete':
+      return msgs.map(m => m.type === 'tool_call' && m.toolCallId === event.toolCallId
+        ? { ...m, completed: true, success: event.success, result: event.result, error: event.error } : m);
+    case 'approval.resolved':
+      return msgs.map(m => m.type === 'approval' && m.requestId === event.requestId
+        ? { ...m, responded: true, approved: event.approved } : m);
+    case 'user_input.resolved':
+      return msgs.map(m => m.type === 'user_input' && m.requestId === event.requestId
+        ? { ...m, responded: true, answer: event.answer, wasFreeform: event.wasFreeform } : m);
+    case 'elicitation.resolved':
+      return msgs.map(m => m.type === 'elicitation' && m.requestId === event.requestId
+        ? { ...m, responded: true, action: event.action, content: event.content } : m);
+    default:
+      return msgs;
+  }
+}
+
+/**
+ * Replay buffered events that arrived during history loading.
+ * Uses ID-based dedup to avoid duplicating messages already present from history.
+ */
+function replayBufferedEvents(msgs: ChatMessage[], events: ChatEvent[]): ChatMessage[] {
+  let result = [...msgs];
+
+  const existingToolCallIds = new Set<string>();
+  const existingApprovalIds = new Set<string>();
+  const existingUserInputIds = new Set<string>();
+  const existingElicitationIds = new Set<string>();
+
+  for (const m of result) {
+    if (m.type === 'tool_call') existingToolCallIds.add((m as ToolCallMessage).toolCallId);
+    else if (m.type === 'approval') existingApprovalIds.add((m as ApprovalMessage).requestId);
+    else if (m.type === 'user_input') existingUserInputIds.add((m as UserInputMessage).requestId);
+    else if (m.type === 'elicitation') existingElicitationIds.add((m as ElicitationMessage).requestId);
+  }
+
+  for (const event of events) {
+    switch (event.type) {
+      case 'tool.complete':
+      case 'approval.resolved':
+      case 'user_input.resolved':
+      case 'elicitation.resolved':
+        result = applyCompletionEvent(result, event);
+        break;
+
+      case 'tool.start':
+        if (!existingToolCallIds.has(event.toolCallId)) {
+          result.push({ id: genId(), type: 'tool_call', toolCallId: event.toolCallId, toolName: event.toolName, args: event.args, completed: false, timestamp: new Date().toISOString() } as ToolCallMessage);
+          existingToolCallIds.add(event.toolCallId);
+        }
+        break;
+
+      case 'approval.needed':
+        if (!existingApprovalIds.has(event.requestId)) {
+          result.push({ id: genId(), type: 'approval', requestId: event.requestId, agentId: event.agentId, permissionKind: event.permissionKind, intention: event.intention, path: event.path, responded: false, timestamp: new Date().toISOString() } as ApprovalMessage);
+          existingApprovalIds.add(event.requestId);
+        }
+        break;
+
+      case 'user_input.requested':
+        if (!existingUserInputIds.has(event.requestId)) {
+          result.push({ id: genId(), type: 'user_input', requestId: event.requestId, agentId: event.agentId, question: event.question, choices: event.choices, allowFreeform: event.allowFreeform, responded: false, timestamp: new Date().toISOString() } as UserInputMessage);
+          existingUserInputIds.add(event.requestId);
+        }
+        break;
+
+      case 'elicitation.requested':
+        if (!existingElicitationIds.has(event.requestId)) {
+          result.push({ id: genId(), type: 'elicitation', requestId: event.requestId, agentId: event.agentId, message: event.message, requestedSchema: event.requestedSchema, mode: event.mode, responded: false, timestamp: new Date().toISOString() } as ElicitationMessage);
+          existingElicitationIds.add(event.requestId);
+        }
+        break;
+
+      case 'session.error':
+        result.push({ id: genId(), type: 'session_event', eventType: 'error', message: event.message, timestamp: new Date().toISOString() } as SessionEventMessage);
+        break;
+
+      case 'subagent.started':
+        if (!existingToolCallIds.has(event.toolCallId)) {
+          result.push({ id: genId(), type: 'tool_call', toolCallId: event.toolCallId, toolName: '__subagent__', args: { name: event.name, displayName: event.displayName, description: event.description, agentType: event.name, agentId: event.agentId, completed: false }, completed: false, timestamp: new Date().toISOString() } as ToolCallMessage);
+          existingToolCallIds.add(event.toolCallId);
+        }
+        break;
+
+      case 'subagent.completed':
+        result = result.map(m => m.type === 'tool_call' && m.toolCallId === event.toolCallId
+          ? { ...m, completed: true, success: true, args: { ...m.args, completed: true, success: true, agentId: event.agentId ?? m.args.agentId, durationMs: event.durationMs, model: event.model, totalTokens: event.totalTokens, totalToolCalls: event.totalToolCalls } } : m);
+        break;
+
+      case 'subagent.failed':
+        result = result.map(m => m.type === 'tool_call' && m.toolCallId === event.toolCallId
+          ? { ...m, completed: true, success: false, args: { ...m.args, completed: true, success: false, error: event.error, agentId: event.agentId ?? m.args.agentId } } : m);
+        break;
+    }
+  }
+
+  return result;
+}
+
 export function ConduitChatView({
   agentId: initialAgentId,
   conduitSessionId: initialConduitSessionId,
@@ -94,6 +198,7 @@ export function ConduitChatView({
   pendingApprovalId,
   pendingPermissionKind,
   onClose,
+  onOpenCli,
 }: ConduitChatViewProps) {
   const [currentAgentId, setCurrentAgentId] = useState<string | null>(initialAgentId || null);
   const [conduitSessionId, setConduitSessionId] = useState<string | null>(initialConduitSessionId || null);
@@ -224,12 +329,46 @@ export function ConduitChatView({
               if (pendingApproval && !msgs.some(m => m.type === 'approval' && m.requestId === (pendingApproval as ApprovalMessage).requestId)) {
                 msgs = [...msgs, pendingApproval];
               }
-              return msgs;
+              const merged = replayBufferedEvents(msgs, pendingEvents.current);
+              pendingEvents.current = [];
+              return merged;
+            });
+          } else {
+            setMessages(prev => {
+              const merged = replayBufferedEvents(prev, pendingEvents.current);
+              pendingEvents.current = [];
+              return merged;
             });
           }
+        } else if ('error' in result && result.error) {
+          setMessages(prev => {
+            const errorMsg: ChatMessage = { id: genId(), type: 'session_event', eventType: 'error', message: result.error as string, timestamp: new Date().toISOString() };
+            const merged = replayBufferedEvents([...prev, errorMsg], pendingEvents.current);
+            pendingEvents.current = [];
+            return merged;
+          });
+        } else if (result.restarted) {
+          setMessages(prev => {
+            const restartMsg: ChatMessage = { id: genId(), type: 'session_event', eventType: 'info', message: 'Previous session expired — started a fresh session with context.', timestamp: new Date().toISOString() };
+            const merged = replayBufferedEvents([...prev, restartMsg], pendingEvents.current);
+            pendingEvents.current = [];
+            return merged;
+          });
+        } else {
+          setMessages(prev => {
+            const merged = replayBufferedEvents(prev, pendingEvents.current);
+            pendingEvents.current = [];
+            return merged;
+          });
         }
       } catch (err) {
         console.error('[ConduitChat] Failed to load history:', err);
+        setMessages(prev => {
+          const errorMsg: ChatMessage = { id: genId(), type: 'session_event', eventType: 'error', message: `Failed to load conversation history: ${err instanceof Error ? err.message : 'Unknown error'}`, timestamp: new Date().toISOString() };
+          const merged = replayBufferedEvents([...prev, errorMsg], pendingEvents.current);
+          pendingEvents.current = [];
+          return merged;
+        });
       } finally {
         historyLoadedRef.current = true;
         setIsLoadingHistory(false);
@@ -242,13 +381,16 @@ export function ConduitChatView({
   // Same event handling as ChatView — events are mapped identically by conduit-runner
   useEffect(() => {
     if (!currentAgentId) return;
-    const unsubscribe = whimAPI.onChatEvent(currentAgentId, (event: ChatEvent) => {
+    const unsubscribe = whimAPI.onChatEvent(currentAgentId, (rawEvent: ChatEvent) => {
+      // Conduit sends extra event types (client.roster, model.changed, session.restarted)
+      // not in the ChatEvent union, so widen the type for the switch.
+      const event = rawEvent as ChatEvent & Record<string, any>;
       if (!historyLoadedRef.current) {
-        pendingEvents.current.push(event);
+        pendingEvents.current.push(rawEvent);
         return;
       }
 
-      switch (event.type) {
+      switch (event.type as string) {
         case 'assistant.message_delta': {
           setMessages(prev => {
             if (!currentAssistantId.current) {
@@ -267,7 +409,10 @@ export function ConduitChatView({
             // currentAssistantId may have been cleared by session.idle arriving first.
             // Try to finalize the last streaming assistant message instead of duplicating.
             setMessages(prev => {
-              const lastStreamingIdx = prev.findLastIndex(m => m.type === 'assistant' && (m as AssistantMsgType).isStreaming);
+              let lastStreamingIdx = -1;
+              for (let i = prev.length - 1; i >= 0; i--) {
+                if (prev[i].type === 'assistant' && (prev[i] as AssistantMsgType).isStreaming) { lastStreamingIdx = i; break; }
+              }
               if (lastStreamingIdx >= 0) {
                 return prev.map((m, i) => i === lastStreamingIdx && m.type === 'assistant'
                   ? { ...m, isStreaming: false, content: event.content || m.content } : m);
@@ -396,6 +541,38 @@ export function ConduitChatView({
           }
           break;
         }
+        case 'session.restarted': {
+          setMessages(prev => [...prev, {
+            id: genId(), type: 'session_event', eventType: 'info',
+            message: (event as any).message || 'Previous session expired — started a fresh session with context.',
+            timestamp: new Date().toISOString(),
+          } as SessionEventMessage]);
+          break;
+        }
+        case 'subagent.started': {
+          setMessages(prev => [...prev, {
+            id: genId(), type: 'tool_call', toolCallId: event.toolCallId, toolName: '__subagent__',
+            args: { name: event.name, displayName: event.displayName, description: event.description, agentType: event.name, agentId: event.agentId, completed: false },
+            completed: false, timestamp: new Date().toISOString(),
+          } as ToolCallMessage]);
+          break;
+        }
+        case 'subagent.completed': {
+          setMessages(prev => prev.map(m =>
+            m.type === 'tool_call' && m.toolCallId === event.toolCallId
+              ? { ...m, completed: true, success: true, args: { ...m.args, completed: true, success: true, agentId: event.agentId ?? m.args.agentId, durationMs: event.durationMs, model: event.model, totalTokens: event.totalTokens, totalToolCalls: event.totalToolCalls } }
+              : m
+          ));
+          break;
+        }
+        case 'subagent.failed': {
+          setMessages(prev => prev.map(m =>
+            m.type === 'tool_call' && m.toolCallId === event.toolCallId
+              ? { ...m, completed: true, success: false, args: { ...m.args, completed: true, success: false, error: event.error, agentId: event.agentId ?? m.args.agentId } }
+              : m
+          ));
+          break;
+        }
       }
     });
     return () => unsubscribe();
@@ -403,8 +580,14 @@ export function ConduitChatView({
 
   // ── Handlers ───────────────────────────────────────────
 
-  const handleSend = useCallback(async (message: string) => {
-    setMessages(prev => [...prev, { id: genId(), type: 'user', content: message, timestamp: new Date().toISOString() }]);
+  const handleSend = useCallback(async (message: string, attachments?: Array<{ type: 'file'; name: string; path: string }>) => {
+    const chatAttachments: ChatAttachment[] | undefined = attachments?.map(a => ({
+      type: a.type,
+      name: a.name,
+      path: a.path,
+    }));
+
+    setMessages(prev => [...prev, { id: genId(), type: 'user', content: message, attachments: chatAttachments, timestamp: new Date().toISOString() }]);
     setIsBusy(true);
     setStatus('running');
 
@@ -423,7 +606,8 @@ export function ConduitChatView({
       return;
     }
 
-    const result = await whimAPI.sendConduitMessage(currentAgentId, message);
+    const conduitAttachments = attachments?.map(a => ({ type: a.type, name: a.name, path: a.path }));
+    const result = await whimAPI.sendConduitMessage(currentAgentId, message, conduitAttachments);
     if (result.error) {
       setMessages(prev => [...prev, { id: genId(), type: 'session_event', eventType: 'error', message: result.error!, timestamp: new Date().toISOString() } as SessionEventMessage]);
       setIsBusy(false);
@@ -449,7 +633,7 @@ export function ConduitChatView({
   const handleElicitationRespond = useCallback((requestId: string, action: 'accept' | 'decline' | 'cancel', content?: Record<string, unknown>) => {
     if (!currentAgentId) return;
     whimAPI.respondToElicitation(currentAgentId, requestId, action, content);
-    setMessages(prev => prev.map(m => m.type === 'elicitation' && m.requestId === requestId ? { ...m, responded: true, action, content } : m));
+    setMessages(prev => prev.map(m => m.type === 'elicitation' && m.requestId === requestId ? { ...m, responded: true, action, content: content as any } : m));
   }, [currentAgentId]);
 
   const handleModelSwitch = useCallback(async (modelId: string) => {
@@ -514,6 +698,11 @@ export function ConduitChatView({
           {isBusy && (
             <button className="chat-abort-btn" onClick={handleAbort} title="Stop agent">
               ◼ Stop
+            </button>
+          )}
+          {currentAgentId && (
+            <button className="header-icon-btn" onClick={() => onOpenCli(currentAgentId)} title="Open in CLI">
+              ⌨️
             </button>
           )}
         </div>
