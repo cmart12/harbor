@@ -46,6 +46,10 @@ vi.mock('../workspace', () => ({
   initWorkspace: vi.fn(),
   getDbPath: vi.fn((dir: string) => `${dir}/.whim/spaces.db`),
   getLogPath: vi.fn((dir: string) => `${dir}/.whim/events.jsonl`),
+  getGitSyncStatus: vi.fn(async () => ({ available: true, branch: 'main', ahead: 0, behind: 0 })),
+  gitFetchOrigin: vi.fn(async () => {}),
+  gitPush: vi.fn(async () => ({ ok: true })),
+  gitPull: vi.fn(async () => ({ ok: true })),
 }));
 
 vi.mock('../skill-watcher', () => ({
@@ -66,7 +70,7 @@ vi.mock('../voice', () => ({
 import { registerWorkspaceHandlers } from '../../main/ipc/workspace-handlers';
 import { closeDatabase, initDatabase, mergeSessionIds, syncCanvasContent } from '../database';
 import { setConfigValue, getConfig } from '../config';
-import { initWorkspace } from '../workspace';
+import { initWorkspace, getGitSyncStatus, gitPush, gitPull } from '../workspace';
 import { startSkillWatcher, stopSkillWatcher } from '../skill-watcher';
 import { dialog, BrowserWindow } from 'electron';
 
@@ -179,6 +183,42 @@ describe('workspace handlers', () => {
 
       expect(result).toEqual({ selected: false, path: null });
       expect(closeDatabase).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('workspace:git-status', () => {
+    it('returns sync status from workspace', async () => {
+      const result = await invoke('workspace:git-status');
+      expect(result).toEqual({ available: true, branch: 'main', ahead: 0, behind: 0 });
+      expect(getGitSyncStatus).toHaveBeenCalledWith('/mock/workspace');
+    });
+  });
+
+  describe('workspace:git-push', () => {
+    it('calls gitPush with workspace path', async () => {
+      const result = await invoke('workspace:git-push');
+      expect(result).toEqual({ ok: true });
+      expect(gitPush).toHaveBeenCalledWith('/mock/workspace');
+    });
+
+    it('returns error when push fails', async () => {
+      vi.mocked(gitPush).mockResolvedValueOnce({ error: 'Push rejected' });
+      const result = await invoke('workspace:git-push');
+      expect(result).toEqual({ error: 'Push rejected' });
+    });
+  });
+
+  describe('workspace:git-pull', () => {
+    it('calls gitPull with workspace path', async () => {
+      const result = await invoke('workspace:git-pull');
+      expect(result).toEqual({ ok: true });
+      expect(gitPull).toHaveBeenCalledWith('/mock/workspace');
+    });
+
+    it('returns conflict flag when branches diverged', async () => {
+      vi.mocked(gitPull).mockResolvedValueOnce({ error: 'diverged', conflict: true });
+      const result = await invoke('workspace:git-pull');
+      expect(result).toEqual({ error: 'diverged', conflict: true });
     });
   });
 });

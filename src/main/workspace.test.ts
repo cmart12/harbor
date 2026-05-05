@@ -24,6 +24,7 @@ import {
   getDbPath,
   archiveSpaceFolder,
   deleteSpaceFolder,
+  getGitSyncStatus,
 } from './workspace';
 
 let tmpDir: string;
@@ -483,5 +484,30 @@ describe('deleteSpaceFolder', () => {
 
   it('does nothing when folder is empty string', () => {
     expect(() => deleteSpaceFolder(tmpDir, '')).not.toThrow();
+  });
+});
+
+// ── Git sync status ─────────────────────────────────────
+
+describe('getGitSyncStatus', () => {
+  it('returns unavailable for non-git directory', async () => {
+    const result = await getGitSyncStatus(tmpDir);
+    expect(result.available).toBe(false);
+  });
+
+  it('returns branch name for a git repo', async () => {
+    const { execSync } = await import('child_process');
+    execSync('git init', { cwd: tmpDir });
+    execSync('git checkout -b main', { cwd: tmpDir });
+    // Need at least one commit for rev-parse to work
+    fs.writeFileSync(path.join(tmpDir, 'test.txt'), 'hello');
+    execSync('git add .', { cwd: tmpDir });
+    execSync('git commit -m "init" --no-verify', { cwd: tmpDir, env: { ...process.env, GIT_AUTHOR_NAME: 'Test', GIT_AUTHOR_EMAIL: 'test@test.com', GIT_COMMITTER_NAME: 'Test', GIT_COMMITTER_EMAIL: 'test@test.com' } });
+
+    const result = await getGitSyncStatus(tmpDir);
+    // No upstream configured, so should be unavailable with reason
+    expect(result.available).toBe(false);
+    expect(result.unavailableReason).toBe('no-upstream');
+    expect(result.branch).toBe('main');
   });
 });

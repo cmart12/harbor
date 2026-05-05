@@ -129,6 +129,10 @@ interface WhimAPI {
   selectWorkspace(): Promise<{ selected: boolean; path: string | null }>;
   clearWorkspace(): Promise<{ ok: boolean }>;
   onWorkspaceChanged(callback: (path: string | null) => void): void;
+  gitSyncStatus(): Promise<{ available: boolean; branch: string | null; ahead: number; behind: number; unavailableReason?: string }>;
+  gitPush(): Promise<{ ok: true } | { error: string }>;
+  gitPull(): Promise<{ ok: true } | { error: string; conflict?: boolean }>;
+  onGitSyncChanged(callback: (status: { available: boolean; branch: string | null; ahead: number; behind: number; unavailableReason?: string }) => void): void;
   readCanvas(spaceId: string): Promise<{ content: string; error?: string }>;
   writeCanvas(spaceId: string, content: string): Promise<{ success?: boolean; error?: string }>;
   closeCanvas(spaceId: string, content: string): Promise<void>;
@@ -298,7 +302,7 @@ let renderGeneration = 0;
 const filterBar = document.getElementById('filter-bar') as HTMLDivElement;
 const newAgentBtn = document.getElementById('new-agent-btn') as HTMLButtonElement;
 const launchCliBtn = document.getElementById('launch-cli-btn') as HTMLButtonElement;
-const launchConduitBtn = document.getElementById('launch-conduit-btn') as HTMLButtonElement;
+
 const agentSummaryEl = document.getElementById('agent-summary') as HTMLDivElement;
 const queryResult = document.getElementById('query-result') as HTMLDivElement;
 const focusBanner = document.getElementById('focus-banner') as HTMLDivElement;
@@ -316,6 +320,18 @@ let activeSearchQuery = '';
 const workersBadge = document.getElementById('workers-badge') as HTMLSpanElement;
 const conduitStatusEl = document.getElementById('conduit-status') as HTMLDivElement;
 const conduitDotEl = conduitStatusEl?.querySelector('.conduit-dot') as HTMLSpanElement;
+
+// ── Git sync bar refs ───────────────────────────────────
+const gitSyncBar = document.getElementById('git-sync-bar') as HTMLDivElement;
+const gitSyncBranch = document.getElementById('git-sync-branch') as HTMLSpanElement;
+const gitSyncStatusEl = document.getElementById('git-sync-status') as HTMLSpanElement;
+const gitSyncPullBtn = document.getElementById('git-sync-pull') as HTMLButtonElement;
+const gitSyncPushBtn = document.getElementById('git-sync-push') as HTMLButtonElement;
+const gitSyncBehindCount = document.getElementById('git-sync-behind-count') as HTMLSpanElement;
+const gitSyncAheadCount = document.getElementById('git-sync-ahead-count') as HTMLSpanElement;
+let lastGitSyncAhead = 0;
+let lastGitSyncBehind = 0;
+let gitSyncInitialized = false;
 
 // ── Platform detection ──────────────────────────────────
 // Set platform class on body for platform-adaptive styling
@@ -426,6 +442,128 @@ function updateWorkersBadge(): void {
   }
 }
 
+// ── Git sync bar ────────────────────────────────────────
+
+function updateGitSyncBar(status: { available: boolean; branch: string | null; ahead: number; behind: number; unavailableReason?: string }): void {
+  if (!status.available) {
+    gitSyncBar.classList.add('hidden');
+    return;
+  }
+
+  gitSyncBar.classList.remove('hidden');
+  gitSyncBranch.textContent = status.branch ? `⎇ ${status.branch}` : '';
+  gitSyncBehindCount.textContent = String(status.behind);
+  gitSyncAheadCount.textContent = String(status.ahead);
+
+  // Show/hide buttons based on counts
+  gitSyncPullBtn.classList.toggle('hidden', status.behind === 0);
+  gitSyncPushBtn.classList.toggle('hidden', status.ahead === 0);
+
+  // Status text
+  if (status.ahead === 0 && status.behind === 0) {
+    gitSyncStatusEl.textContent = '✓ synced';
+  } else {
+    gitSyncStatusEl.textContent = '';
+  }
+
+  // Blink animation when counts change (skip initial load)
+  if (gitSyncInitialized && (status.ahead !== lastGitSyncAhead || status.behind !== lastGitSyncBehind)) {
+    gitSyncBar.classList.remove('blink');
+    // Force reflow to restart animation
+    void gitSyncBar.offsetWidth;
+    gitSyncBar.classList.add('blink');
+    gitSyncBar.addEventListener('animationend', () => {
+      gitSyncBar.classList.remove('blink');
+    }, { once: true });
+  }
+
+  lastGitSyncAhead = status.ahead;
+  lastGitSyncBehind = status.behind;
+  gitSyncInitialized = true;
+}
+
+async function refreshGitSync(): Promise<void> {
+  try {
+    const status = await whimAPI.gitSyncStatus();
+    updateGitSyncBar(status);
+  } catch {
+    gitSyncBar.classList.add('hidden');
+  }
+}
+
+if (gitSyncPushBtn) {
+  gitSyncPushBtn.addEventListener('click', async () => {
+    gitSyncPushBtn.classList.add('loading');
+    gitSyncPushBtn.textContent = '↑ …';
+    try {
+      const result = await whimAPI.gitPush();
+      if ('error' in result) {
+        showStatus(result.error, true);
+        setTimeout(hideStatus, 4000);
+      } else {
+        showStatus('✓ Pushed');
+        setTimeout(hideStatus, 2000);
+      }
+    } catch (err: any) {
+      showStatus(`Push failed: ${err.message}`, true);
+      setTimeout(hideStatus, 4000);
+    } finally {
+      gitSyncPushBtn.classList.remove('loading');
+      refreshGitSync();
+    }
+  });
+}
+
+if (gitSyncPullBtn) {
+  gitSyncPullBtn.addEventListener('click', async () => {
+    gitSyncPullBtn.classList.add('loading');
+    gitSyncPullBtn.textContent = '↓ …';
+    try {
+      const result = await whimAPI.gitPull();
+      if ('error' in result) {
+        if ((result as any).conflict) {
+          showStatus('⚠ Branches diverged — launching agent to resolve…', true);
+          setTimeout(hideStatus, 4000);
+          // Launch a worker to resolve the conflict
+          try {
+            await whimAPI.quickLaunchAgent(
+              'The git workspace has diverging branches that cannot be fast-forwarded. ' +
+              'Please resolve the git merge conflict. Run `git pull --no-ff origin` to pull and merge, ' +
+              'then resolve any conflicts in the working directory and commit the result.'
+            );
+          } catch {
+            showStatus('Failed to launch conflict resolver', true);
+            setTimeout(hideStatus, 4000);
+          }
+        } else {
+          showStatus(result.error, true);
+          setTimeout(hideStatus, 4000);
+        }
+      } else {
+        showStatus('✓ Pulled');
+        setTimeout(hideStatus, 2000);
+        loadSpaces();
+      }
+    } catch (err: any) {
+      showStatus(`Pull failed: ${err.message}`, true);
+      setTimeout(hideStatus, 4000);
+    } finally {
+      gitSyncPullBtn.classList.remove('loading');
+      refreshGitSync();
+    }
+  });
+}
+
+// Listen for sync status changes from main process
+whimAPI.onGitSyncChanged((status: any) => {
+  updateGitSyncBar(status);
+});
+
+// Refresh sync on window focus / visibility change
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) refreshGitSync();
+});
+
 // ── Filter bar ──────────────────────────────────────────
 
 function getPlaceholderForFilter(filter: typeof currentFilter): string {
@@ -474,16 +612,6 @@ function setFilter(filter: typeof currentFilter): void {
   // Old new-agent button is replaced by the prompt box
   newAgentBtn.classList.add('hidden');
   launchCliBtn.classList.add('hidden');
-  launchConduitBtn.classList.add('hidden');
-
-  // Show conduit button on Workers tab when conduit is ready
-  if (filter === 'agents' && launchConduitBtn) {
-    whimAPI.getConduitHostStatus().then(s => {
-      if (s.configured && s.connected && s.hasProfiles && s.profileId) {
-        launchConduitBtn.classList.remove('hidden');
-      }
-    }).catch(() => {});
-  }
 
   // Exit search mode when switching tabs
   if (searchMode) {
@@ -569,15 +697,6 @@ launchCliBtn.addEventListener('click', async () => {
     // Refresh agents list
     if (currentFilter === 'agents') renderAgentsList();
   }
-});
-
-launchConduitBtn.addEventListener('click', () => {
-  // Focus the prompt input so the user can type a task.
-  // The prompt will be sent to Conduit when submitted.
-  descInput.focus();
-  descInput.placeholder = '🔗 Describe a task for Conduit agent…';
-  // Set a flag so the submit handler routes to conduit
-  (window as any).__conduitLaunchMode = true;
 });
 
 // ── Settings modal ──────────────────────────────────────
@@ -3600,18 +3719,7 @@ form.addEventListener('submit', async (e) => {
 
     showStatus(personaHandleArg ? `⚡ Launching @${personaHandleArg}...` : '⚡ Launching agent...');
 
-    // If conduit launch mode is active (user clicked 🔗 button), route to conduit
-    const conduitMode = (window as any).__conduitLaunchMode === true;
-    (window as any).__conduitLaunchMode = false;
-    descInput.placeholder = getPlaceholderForFilter('agents');
-
-    let result: any;
-    if (conduitMode && !personaHandleArg) {
-      showStatus('🔗 Launching Conduit agent...');
-      result = await whimAPI.launchConduitAgent('__workspace__', promptText);
-    } else {
-      result = await whimAPI.quickLaunchAgent(promptText, personaHandleArg);
-    }
+    const result = await whimAPI.quickLaunchAgent(promptText, personaHandleArg);
     if ('error' in result && result.error) {
       if (result.error === 'no_workspace') {
         showStatus('Select a workspace directory first');
@@ -3629,12 +3737,7 @@ form.addEventListener('submit', async (e) => {
     descInput.focus();
     hideStatus();
 
-    // Open chat for newly launched conduit agents
-    if (conduitMode && result.agentId) {
-      openAgentChat(result.agentId, promptText, 'running', 'conduit', undefined, result.sessionId);
-    } else {
-      renderAgentsList();
-    }
+    renderAgentsList();
     return;
   }
 
@@ -5813,6 +5916,7 @@ whimAPI.onWindowShown((data) => {
   hideStatus();
   // Refresh active session state when window reappears
   loadSpaces();
+  refreshGitSync();
   // Re-check conduit status (settings may have changed)
   pollConduitStatus();
 
@@ -5998,6 +6102,7 @@ welcomeStartBtn.addEventListener('click', async () => {
   hideWelcomeView();
   loadSpaces();
   loadSkills();
+  refreshGitSync();
 });
 
 // ── Init ────────────────────────────────────────────────
@@ -6007,6 +6112,7 @@ whimAPI.getSetting('workspace_root').then(ws => {
     showWelcomeView();
   } else if (!isSettingsMode) {
     loadSpaces();
+    refreshGitSync();
   }
 });
 
@@ -6041,12 +6147,15 @@ whimAPI.onWorkspaceChanged((path: string | null) => {
   if (path) {
     loadSpaces();
     loadSkills();
+    refreshGitSync();
   } else {
     // Workspace cleared — show welcome view
     spaces = [];
     cachedSkills = [];
     render();
     showWelcomeView();
+    gitSyncBar.classList.add('hidden');
+    gitSyncInitialized = false;
   }
 });
 

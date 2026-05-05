@@ -82,6 +82,12 @@ export interface WhimAPI {
   clearWorkspace(): Promise<IpcCommandResult<'workspace:clear'>>;
   openPath(folderPath: string): Promise<IpcCommandResult<'shell:openPath'>>;
 
+  // ── Git sync ────────────────────────────────────────────
+  gitSyncStatus(): Promise<IpcCommandResult<'workspace:git-status'>>;
+  gitPush(): Promise<IpcCommandResult<'workspace:git-push'>>;
+  gitPull(): Promise<IpcCommandResult<'workspace:git-pull'>>;
+  onGitSyncChanged(callback: (status: IpcEventPayload<'workspace:git-sync-changed'>) => void): void;
+
   // ── Canvas ───────────────────────────────────────────────
   readCanvas(spaceId: string): Promise<IpcCommandResult<'canvas:read'>>;
   writeCanvas(spaceId: string, content: string): Promise<IpcCommandResult<'canvas:write'>>;
@@ -266,6 +272,14 @@ const api: WhimAPI = {
   selectWorkspace: () => ipcRenderer.invoke('workspace:select'),
   clearWorkspace: () => ipcRenderer.invoke('workspace:clear'),
   openPath: (folderPath) => ipcRenderer.invoke('shell:openPath', folderPath),
+
+  // ── Git sync ────────────────────────────────────────────
+  gitSyncStatus: () => ipcRenderer.invoke('workspace:git-status'),
+  gitPush: () => ipcRenderer.invoke('workspace:git-push'),
+  gitPull: () => ipcRenderer.invoke('workspace:git-pull'),
+  onGitSyncChanged: (callback) => {
+    ipcRenderer.on('workspace:git-sync-changed', (_event: unknown, status: any) => callback(status));
+  },
 
   // ── Canvas ───────────────────────────────────────────────
   readCanvas: (spaceId) => ipcRenderer.invoke('canvas:read', spaceId),

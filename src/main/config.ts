@@ -57,6 +57,7 @@ export interface AppConfig {
   snapPosition: SnapPosition;
   windowWidth: number;
   personas: AgentPersona[];
+  personasSeeded: boolean;          // true after default personas have been injected once
   cliRuntimes: CliRuntime[];
   cliTools: CliToolDefinition[];
   mcpServers: CustomMcpServer[];   // user-added MCP servers

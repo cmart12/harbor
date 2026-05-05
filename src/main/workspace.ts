@@ -2,6 +2,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { execFile } from 'child_process';
 import { BrowserWindow } from 'electron';
+import type { GitSyncStatus } from '../shared/ipc-contract';
 
 const WHIM_DIR = '.whim';
 const LOG_FILE = 'events.jsonl';
@@ -261,44 +262,91 @@ function runGitOutput(workspaceRoot: string, args: string[]): Promise<string> {
   });
 }
 
-async function doCommit(workspaceRoot: string): Promise<void> {
-  if (commitInFlight) return;
-  commitInFlight = true;
-  try {
-    // Check if this is a git repo
-    await runGit(workspaceRoot, ['rev-parse', '--git-dir']);
-
-    // Stage the .whim/ dir (event log) and all tracked/new files (space folders)
-    await runGit(workspaceRoot, ['add', '-A']);
-
-    // Check if there's anything to commit
-    try {
-      await runGit(workspaceRoot, ['diff', '--cached', '--quiet']);
-      // No changes staged — nothing to commit
-      return;
-    } catch {
-      // diff --quiet exits non-zero when there ARE changes — that's what we want
-    }
-
-    const timestamp = new Date().toLocaleString('en-US', {
-      month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+/** Run a git command with longer timeout for network operations (fetch/push/pull). */
+function runGitNetwork(workspaceRoot: string, args: string[]): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile('git', args, {
+      cwd: workspaceRoot,
+      timeout: 60000,
+      maxBuffer: 1024 * 1024,
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+    }, (err, stdout) => {
+      if (err) reject(err);
+      else resolve(stdout);
     });
-    await runGit(workspaceRoot, ['commit', '-m', `space: auto-save ${timestamp}`, '--no-verify']);
-    console.log(`[workspace] Auto-committed at ${timestamp}`);
+  });
+}
 
-    // Notify renderer so history panel can refresh
-    for (const win of BrowserWindow.getAllWindows()) {
-      win.webContents.send('workspace:committed');
+// ── Git operation queue ─────────────────────────────────
+// Serializes all git operations to prevent .git/index.lock races.
+
+let gitQueuePromise = Promise.resolve<unknown>(undefined);
+
+function enqueueGitOp<T>(fn: () => Promise<T>): Promise<T> {
+  const p = gitQueuePromise.then(fn, fn);
+  gitQueuePromise = p.catch(() => {});
+  return p;
+}
+
+async function doCommit(workspaceRoot: string): Promise<void> {
+  return enqueueGitOp(async () => {
+    if (commitInFlight) return;
+    commitInFlight = true;
+    try {
+      // Check if this is a git repo
+      await runGit(workspaceRoot, ['rev-parse', '--git-dir']);
+
+      // Stage the .whim/ dir (event log) and all tracked/new files (space folders)
+      await runGit(workspaceRoot, ['add', '-A']);
+
+      // Large file guard: unstage files >50MB to avoid LFS issues
+      try {
+        const staged = await runGitOutput(workspaceRoot, ['diff', '--cached', '--name-only']);
+        const largeFiles: string[] = [];
+        for (const file of staged.split('\n').filter(f => f.trim())) {
+          const fullPath = path.join(workspaceRoot, file);
+          try {
+            const stat = fs.statSync(fullPath);
+            if (stat.size > 50 * 1024 * 1024) {
+              largeFiles.push(file);
+            }
+          } catch { /* file may have been deleted */ }
+        }
+        if (largeFiles.length > 0) {
+          await runGit(workspaceRoot, ['reset', 'HEAD', '--', ...largeFiles]);
+          console.warn(`[workspace] Skipped large files (>50MB): ${largeFiles.join(', ')}`);
+        }
+      } catch { /* non-critical — proceed with commit */ }
+
+      // Check if there's anything to commit
+      try {
+        await runGit(workspaceRoot, ['diff', '--cached', '--quiet']);
+        // No changes staged — nothing to commit
+        return;
+      } catch {
+        // diff --quiet exits non-zero when there ARE changes — that's what we want
+      }
+
+      const timestamp = new Date().toLocaleString('en-US', {
+        month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+      });
+      await runGit(workspaceRoot, ['commit', '-m', `space: auto-save ${timestamp}`, '--no-verify']);
+      console.log(`[workspace] Auto-committed at ${timestamp}`);
+
+      // Notify renderer so history panel can refresh
+      for (const win of BrowserWindow.getAllWindows()) {
+        win.webContents.send('workspace:committed');
+      }
+    } catch (err: any) {
+      // Silently skip if not a git repo or git not available
+      if (err?.message?.includes('not a git repository') || err?.code === 'ENOENT') {
+        return;
+      }
+      console.warn('[workspace] Auto-commit failed:', err?.message || err);
+    } finally {
+      commitInFlight = false;
     }
-  } catch (err: any) {
-    // Silently skip if not a git repo or git not available
-    if (err?.message?.includes('not a git repository') || err?.code === 'ENOENT') {
-      return;
-    }
-    console.warn('[workspace] Auto-commit failed:', err?.message || err);
-  } finally {
-    commitInFlight = false;
-  }
+  });
 }
 
 /**
@@ -324,6 +372,103 @@ export async function commitNow(workspaceRoot: string): Promise<void> {
     commitTimer = null;
   }
   await doCommit(workspaceRoot);
+}
+
+// ── Git sync ────────────────────────────────────────────
+
+const UNAVAILABLE: GitSyncStatus = { available: false, branch: null, ahead: 0, behind: 0 };
+
+/** Get sync status relative to the upstream tracking branch. */
+export async function getGitSyncStatus(workspaceRoot: string): Promise<GitSyncStatus> {
+  return enqueueGitOp(async () => {
+    try {
+      // Check if git repo
+      await runGit(workspaceRoot, ['rev-parse', '--git-dir']);
+    } catch (err: any) {
+      if (err?.code === 'ENOENT') return { ...UNAVAILABLE, unavailableReason: 'git-not-found' };
+      return { ...UNAVAILABLE, unavailableReason: 'not-a-repo' };
+    }
+
+    try {
+      // Get branch name
+      const branch = (await runGitOutput(workspaceRoot, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
+      if (branch === 'HEAD') {
+        return { ...UNAVAILABLE, unavailableReason: 'detached-head' };
+      }
+
+      // Check if upstream is configured
+      try {
+        await runGitOutput(workspaceRoot, ['rev-parse', '--abbrev-ref', `${branch}@{upstream}`]);
+      } catch {
+        return { ...UNAVAILABLE, unavailableReason: 'no-upstream', branch };
+      }
+
+      // Get ahead/behind counts
+      const output = (await runGitOutput(workspaceRoot, ['rev-list', '--count', '--left-right', `HEAD...${branch}@{upstream}`])).trim();
+      const [aheadStr, behindStr] = output.split(/\s+/);
+      const ahead = parseInt(aheadStr, 10) || 0;
+      const behind = parseInt(behindStr, 10) || 0;
+
+      return { available: true, branch, ahead, behind };
+    } catch {
+      return { ...UNAVAILABLE, unavailableReason: 'not-a-repo' };
+    }
+  });
+}
+
+/** Fetch from origin. */
+export async function gitFetchOrigin(workspaceRoot: string): Promise<void> {
+  return enqueueGitOp(async () => {
+    await runGitNetwork(workspaceRoot, ['fetch', 'origin', '--quiet']);
+  });
+}
+
+/** Push current branch to origin. Flushes pending auto-commit first. */
+export async function gitPush(workspaceRoot: string): Promise<{ ok: true } | { error: string }> {
+  // Flush pending auto-commit before pushing
+  await commitNow(workspaceRoot);
+
+  return enqueueGitOp(async () => {
+    try {
+      const branch = (await runGitOutput(workspaceRoot, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
+      await runGitNetwork(workspaceRoot, ['push', 'origin', branch]);
+      return { ok: true as const };
+    } catch (err: any) {
+      const msg = err?.message || 'Push failed';
+      if (msg.includes('rejected') || msg.includes('non-fast-forward')) {
+        return { error: 'Remote has new changes. Pull first, then push.' };
+      }
+      return { error: msg };
+    }
+  });
+}
+
+/** Pull from origin using fast-forward only. Returns conflict flag if diverged. */
+export async function gitPull(workspaceRoot: string): Promise<{ ok: true } | { error: string; conflict?: boolean }> {
+  // Flush pending auto-commit before pulling
+  await commitNow(workspaceRoot);
+
+  return enqueueGitOp(async () => {
+    try {
+      const branch = (await runGitOutput(workspaceRoot, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
+      await runGitNetwork(workspaceRoot, ['pull', '--ff-only', 'origin', branch]);
+
+      // Notify renderer so history/canvas can refresh
+      for (const win of BrowserWindow.getAllWindows()) {
+        win.webContents.send('workspace:committed');
+      }
+      return { ok: true as const };
+    } catch (err: any) {
+      const msg = err?.message || 'Pull failed';
+      if (msg.includes('Not possible to fast-forward') || msg.includes('divergent')) {
+        return { error: 'Branches have diverged. Resolve conflicts to continue.', conflict: true };
+      }
+      if (msg.includes('uncommitted changes') || msg.includes('overwritten by merge')) {
+        return { error: 'You have uncommitted changes. Commit or stash them first.' };
+      }
+      return { error: msg };
+    }
+  });
 }
 
 // ── Git history ─────────────────────────────────────────

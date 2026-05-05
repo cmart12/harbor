@@ -59,6 +59,18 @@ export interface CanvasCommit {
   date: string;
 }
 
+export interface GitSyncStatus {
+  /** false if not a git repo, no remote, or git unavailable */
+  available: boolean;
+  /** Why sync is unavailable, if applicable */
+  unavailableReason?: 'not-a-repo' | 'no-upstream' | 'detached-head' | 'git-not-found';
+  branch: string | null;
+  /** Commits ahead of upstream (ready to push) */
+  ahead: number;
+  /** Commits behind upstream (available to pull) */
+  behind: number;
+}
+
 // Types currently only in src/main/config.ts — duplicated here so both
 // main and renderer can reference them.  A later phase will unify.
 
@@ -242,6 +254,11 @@ export interface IpcCommands {
   'workspace:clear': { args: []; result: { ok: true } };
   'shell:openPath': { args: [folderPath: string]; result: string };
 
+  // ── Git sync ────────────────────────────────────────────
+  'workspace:git-status': { args: []; result: GitSyncStatus };
+  'workspace:git-push': { args: []; result: { ok: true } | { error: string } };
+  'workspace:git-pull': { args: []; result: { ok: true } | { error: string; conflict?: boolean } };
+
   // ── Canvas ───────────────────────────────────────────────
   'canvas:read': { args: [spaceId: string]; result: { content: string; error?: string } };
   'canvas:write': { args: [spaceId: string, content: string]; result: { success?: boolean; error?: string } };
@@ -369,6 +386,7 @@ export interface IpcEvents {
   'window:toggle': void;
   'workspace:committed': void;
   'workspace:changed': { path: string | null };
+  'workspace:git-sync-changed': GitSyncStatus;
   'agent:status-changed': { agentId: string; status: string; summary?: string };
   'agent:approval-needed': { agentId: string; requestId: string; permissionKind: string; intention?: string; path?: string };
   'agent:sandbox-blocked': {
