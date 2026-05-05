@@ -63,6 +63,7 @@ export function VoiceRecorderButton({
     }
   }, []);
 
+  // Waveform draw loop — matches the main UI visualizer (app.ts startWaveform)
   const startWaveform = useCallback((stream: MediaStream) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -88,9 +89,10 @@ export function VoiceRecorderButton({
     const bufLen = analyser.frequencyBinCount;
     const dataArray = new Uint8Array(bufLen);
 
-    const barCount = 32;
+    // Same params as main UI: 40 bars, 0.7 total width, minBar 3, h*0.75
+    const barCount = 40;
     const barGap = 2;
-    const totalBarWidth = w * 0.8;
+    const totalBarWidth = w * 0.7;
     const barWidth = (totalBarWidth - barGap * (barCount - 1)) / barCount;
     const startX = (w - totalBarWidth) / 2;
     const isDark = theme === 'dark';
@@ -103,8 +105,8 @@ export function VoiceRecorderButton({
       for (let i = 0; i < barCount; i++) {
         const binIndex = Math.floor((i + 2) * (bufLen * 0.6) / barCount);
         const val = dataArray[Math.min(binIndex, bufLen - 1)] / 255;
-        const minBar = 2;
-        const barH = Math.max(minBar, val * (h * 0.7));
+        const minBar = 3;
+        const barH = Math.max(minBar, val * (h * 0.75));
         const x = startX + i * (barWidth + barGap);
         const y = (h - barH) / 2;
 
@@ -214,31 +216,33 @@ export function VoiceRecorderButton({
   const isBusy = state === 'starting' || state === 'stopping';
 
   return (
-    <div className={`canvas-voice-recorder ${isRecording ? 'is-recording' : ''}`}>
+    <>
       {isRecording && (
         <div className="canvas-voice-waveform-bar" onClick={stopRecording}>
           <canvas ref={canvasRef} className="canvas-voice-waveform" />
-          <span className="canvas-voice-waveform-label">Recording… click to stop</span>
+          <span className="canvas-voice-waveform-label">🎤 Listening… click to stop</span>
         </div>
       )}
-      <button
-        className={`canvas-mic-btn ${isRecording ? 'recording' : ''}`}
-        onClick={handleClick}
-        disabled={disabled || isBusy}
-        title={isRecording ? 'Stop recording' : 'Record voice clip'}
-        aria-label={isRecording ? 'Stop recording' : 'Record voice clip'}
-      >
-        {isRecording ? (
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <rect x="3" y="3" width="10" height="10" rx="1.5" />
-          </svg>
-        ) : (
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M8 1a2.5 2.5 0 0 0-2.5 2.5v4a2.5 2.5 0 0 0 5 0v-4A2.5 2.5 0 0 0 8 1zM4 6.5a.5.5 0 0 1 1 0v1a3 3 0 0 0 6 0v-1a.5.5 0 0 1 1 0v1a4 4 0 0 1-3.5 3.97V13H10a.5.5 0 0 1 0 1H6a.5.5 0 0 1 0-1h1.5v-1.53A4 4 0 0 1 4 7.5v-1z" />
-          </svg>
-        )}
-      </button>
-    </div>
+      <div className="canvas-voice-recorder">
+        <button
+          className={`canvas-mic-btn ${isRecording ? 'recording' : ''}`}
+          onClick={handleClick}
+          disabled={disabled || isBusy}
+          title={isRecording ? 'Stop recording' : 'Record voice clip'}
+          aria-label={isRecording ? 'Stop recording' : 'Record voice clip'}
+        >
+          {isRecording ? (
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <rect x="3" y="3" width="10" height="10" rx="1.5" />
+            </svg>
+          ) : (
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M8 1a2.5 2.5 0 0 0-2.5 2.5v4a2.5 2.5 0 0 0 5 0v-4A2.5 2.5 0 0 0 8 1zM4 6.5a.5.5 0 0 1 1 0v1a3 3 0 0 0 6 0v-1a.5.5 0 0 1 1 0v1a4 4 0 0 1-3.5 3.97V13H10a.5.5 0 0 1 0 1H6a.5.5 0 0 1 0-1h1.5v-1.53A4 4 0 0 1 4 7.5v-1z" />
+            </svg>
+          )}
+        </button>
+      </div>
+    </>
   );
 }
 

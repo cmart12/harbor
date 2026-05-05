@@ -72,6 +72,8 @@ const AUTOSAVE_DELAY_MS = 2000;
 
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
 
+const VOICE_PLACEHOLDER = '🎤 *[Recording transcription…]*';
+
 type EditorMode = 'rendered' | 'raw';
 
 /** Serialize frontmatter + body into a markdown string with YAML block. */
@@ -147,7 +149,6 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
     const [personas, setPersonas] = useState<AgentPersona[]>(initialPersonas || []);
     const [presence, setPresence] = useState<DocumentPresence[]>(initialPresence || []);
     const [isTranscribing, setIsTranscribing] = useState(false);
-    const recordAnchorRef = useRef<{ contentSnapshot: string; position: number } | null>(null);
 
     contentRef.current = content;
     frontmatterRef.current = frontmatter;
@@ -497,43 +498,22 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
       }
     }
 
-    /** Insert content at a previously saved anchor position, with fallback. */
-    function insertAtAnchor(anchor: { contentSnapshot: string; position: number } | null, markdownRef: string) {
+    const handleRecordingStart = useCallback(() => {
+      // Insert a placeholder at the cursor so the user sees where content will go
       const current = contentRef.current;
-
-      // If content hasn't changed since anchor was saved, use the saved position
-      if (anchor && current === anchor.contentSnapshot && anchor.position >= 0) {
-        const pos = anchor.position;
-        const before = current.slice(0, pos);
-        const after = current.slice(pos);
-        handleContentChange(before + markdownRef + after);
-        return;
-      }
-
-      // Fallback: try current cursor position
       const state = stateRef.current;
+      const placeholder = `\n${VOICE_PLACEHOLDER}\n`;
+
       if (state && state.canonicalContent === current && state.selectionTo >= 0) {
         const pos = state.selectionTo;
         const before = current.slice(0, pos);
         const after = current.slice(pos);
-        handleContentChange(before + markdownRef + after);
-        return;
-      }
-
-      // Last resort: append at end
-      const separator = current.endsWith('\n') ? '' : '\n';
-      handleContentChange(current + separator + markdownRef);
-    }
-
-    const handleRecordingStart = useCallback(() => {
-      const state = stateRef.current;
-      const current = contentRef.current;
-      if (state && state.canonicalContent === current && state.selectionTo >= 0) {
-        recordAnchorRef.current = { contentSnapshot: current, position: state.selectionTo };
+        handleContentChange(before + placeholder + after);
       } else {
-        recordAnchorRef.current = { contentSnapshot: current, position: current.length };
+        const separator = current.endsWith('\n') ? '' : '\n';
+        handleContentChange(current + separator + placeholder);
       }
-    }, []);
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     const handleRecordingComplete = useCallback(async (result: VoiceRecordingResult) => {
       setIsTranscribing(true);
@@ -568,16 +548,45 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
 
         // Build the markdown block to insert
         const block = transcription
-          ? `\n${audioRef}\n\n${transcription}\n`
-          : `\n${audioRef}\n`;
+          ? `${audioRef}\n\n${transcription}`
+          : audioRef;
 
-        insertAtAnchor(recordAnchorRef.current, block);
-        recordAnchorRef.current = null;
+        // Replace the placeholder with the final content.
+        // If the placeholder was deleted by the user, append at the end.
+        const current = contentRef.current;
+        const placeholderWithNewlines = `\n${VOICE_PLACEHOLDER}\n`;
+        const idx = current.indexOf(placeholderWithNewlines);
+        if (idx >= 0) {
+          const before = current.slice(0, idx);
+          const after = current.slice(idx + placeholderWithNewlines.length);
+          handleContentChange(before + `\n${block}\n` + after);
+        } else {
+          // Placeholder may have slightly different surrounding whitespace
+          const bareIdx = current.indexOf(VOICE_PLACEHOLDER);
+          if (bareIdx >= 0) {
+            const before = current.slice(0, bareIdx);
+            const after = current.slice(bareIdx + VOICE_PLACEHOLDER.length);
+            handleContentChange(before + block + after);
+          } else {
+            // Placeholder was removed — append at end as a new block
+            const separator = current.endsWith('\n') ? '\n' : '\n\n';
+            handleContentChange(current + separator + block + '\n');
+          }
+        }
 
         onSaveStatus('✓ Voice clip added');
         setTimeout(() => onSaveStatus(''), 2000);
       } catch (err: any) {
         console.error('[canvas-voice] Error:', err);
+        // Clean up placeholder on failure
+        const current = contentRef.current;
+        const bareIdx = current.indexOf(VOICE_PLACEHOLDER);
+        if (bareIdx >= 0) {
+          const before = current.slice(0, bareIdx);
+          const after = current.slice(bareIdx + VOICE_PLACEHOLDER.length);
+          // Trim extra blank lines left by the placeholder
+          handleContentChange(before.replace(/\n$/, '') + after.replace(/^\n/, ''));
+        }
         onSaveStatus('✗ Voice recording failed');
         setTimeout(() => onSaveStatus(''), 3000);
       } finally {

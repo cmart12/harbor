@@ -20,7 +20,8 @@
     "dev": "npm run build && npm run rebuild:electron && (tsc -p tsconfig.main.json -w --preserveWatchOutput --declaration false --sourceMap false & node scripts/build-renderer.js --watch & node scripts/watch-assets.js & electronmon .)",
     "dev:packaged": "npm run build:mac && open build/mac-arm64/Copilot\\ Whim.app",
     "build:mac": "npm run build && electron-builder --mac --dir",
-    "build:installer:mac": "npm run build && electron-builder --mac"
+    "build:installer:mac": "npm run build && electron-builder --mac",
+    "release": "npm run build && electron-builder --mac --publish always"
   },
   "build": {
     "appId": "com.copilot.whim",
@@ -37,12 +38,21 @@
         "to": "assets"
       }
     ],
+    "publish": {
+      "provider": "github",
+      "owner": "patniko",
+      "repo": "intent"
+    },
     "mac": {
       "icon": "build/icon.icns",
-      "target": "dir",
+      "target": "dmg",
       "category": "public.app-category.productivity",
-      "entitlements": "scripts/entitlements.dev.plist",
-      "entitlementsInherit": "scripts/entitlements.dev.plist",
+      "hardenedRuntime": true,
+      "entitlements": "scripts/entitlements.plist",
+      "entitlementsInherit": "scripts/entitlements.plist",
+      "notarize": {
+        "teamId": "YFVZ335843"
+      },
       "extendInfo": {
         "LSUIElement": true,
         "NSMicrophoneUsageDescription": "Copilot Whim needs microphone access for voice input."

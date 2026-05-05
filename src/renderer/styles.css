@@ -3469,35 +3469,42 @@ body.dark .canvas-mic-btn.recording {
 }
 
 .canvas-voice-waveform-bar {
+  position: absolute;
+  bottom: 60px;
+  left: 16px;
+  right: 16px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
-  background: rgba(239, 68, 68, 0.06);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: 20px;
+  gap: 10px;
+  padding: 8px 14px;
+  background: rgba(239, 68, 68, 0.03);
+  border: 1px solid rgba(239, 68, 68, 0.5);
+  border-radius: 10px;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.08);
   cursor: pointer;
   transition: background 0.15s ease;
-  animation: canvas-waveform-fadein 0.15s ease;
+  animation: recordingPulse 1.5s ease infinite, canvas-waveform-fadein 0.15s ease;
+  box-sizing: border-box;
 }
 
 .canvas-voice-waveform-bar:hover {
-  background: rgba(239, 68, 68, 0.1);
+  background: rgba(239, 68, 68, 0.06);
 }
 
 body.dark .canvas-voice-waveform-bar {
-  background: rgba(239, 68, 68, 0.08);
-  border-color: rgba(248, 113, 113, 0.4);
+  background: rgba(239, 68, 68, 0.06);
+  border-color: rgba(239, 68, 68, 0.5);
 }
 
 body.dark .canvas-voice-waveform-bar:hover {
-  background: rgba(239, 68, 68, 0.14);
+  background: rgba(239, 68, 68, 0.1);
 }
 
 .canvas-voice-waveform {
-  width: 120px;
-  height: 28px;
+  flex: 1;
+  height: 44px;
   display: block;
+  min-width: 0;
 }
 
 .canvas-voice-waveform-label {
