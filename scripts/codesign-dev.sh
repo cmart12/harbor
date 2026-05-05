@@ -27,7 +27,7 @@ echo "[codesign] Patching Info.plist..."
 /usr/libexec/PlistBuddy -c "Set :CFBundleName 'Copilot Intent'" "$PLIST" 2>/dev/null
 /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName 'Copilot Whim'" "$PLIST" 2>/dev/null || \
   /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string 'Copilot Whim'" "$PLIST"
-/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier 'com.copilot.whim'" "$PLIST" 2>/dev/null
+/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier 'com.copilot.tokens'" "$PLIST" 2>/dev/null
 
 echo "[codesign] Signing Electron.app with microphone entitlement..."
 codesign --force --deep --sign - --entitlements "$ENTITLEMENTS" "$ELECTRON_APP" 2>&1

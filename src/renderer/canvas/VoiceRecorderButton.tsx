@@ -41,11 +41,11 @@ export function VoiceRecorderButton({
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
-      cleanup();
+      cleanupAudio();
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const cleanup = useCallback(() => {
+  const cleanupAudio = useCallback(() => {
     if (animFrameRef.current !== null) {
       cancelAnimationFrame(animFrameRef.current);
       animFrameRef.current = null;
@@ -63,10 +63,14 @@ export function VoiceRecorderButton({
     }
   }, []);
 
-  // Waveform draw loop — matches the main UI visualizer (app.ts startWaveform)
-  const startWaveform = useCallback((stream: MediaStream) => {
+  // Start waveform animation once recording state is set AND canvas is in DOM.
+  // This mirrors the main app approach: canvas is always rendered, waveform
+  // starts via effect after the stream is available.
+  useEffect(() => {
+    if (state !== 'recording') return;
+    const stream = streamRef.current;
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!stream || !canvas) return;
 
     const actx = new AudioContext();
     analyserCtxRef.current = actx;
@@ -98,8 +102,7 @@ export function VoiceRecorderButton({
     const isDark = theme === 'dark';
 
     function draw(): void {
-      if (!analyserNodeRef.current) return;
-      analyserNodeRef.current.getByteFrequencyData(dataArray);
+      analyser.getByteFrequencyData(dataArray);
       ctx.clearRect(0, 0, w, h);
 
       for (let i = 0; i < barCount; i++) {
@@ -123,7 +126,17 @@ export function VoiceRecorderButton({
     }
 
     animFrameRef.current = requestAnimationFrame(draw);
-  }, [theme]);
+
+    return () => {
+      if (animFrameRef.current !== null) {
+        cancelAnimationFrame(animFrameRef.current);
+        animFrameRef.current = null;
+      }
+      actx.close().catch(() => {});
+      analyserCtxRef.current = null;
+      analyserNodeRef.current = null;
+    };
+  }, [state, theme]);
 
   const startRecording = useCallback(async () => {
     if (state !== 'idle') return;
@@ -147,7 +160,13 @@ export function VoiceRecorderButton({
 
       recorder.onstop = async () => {
         if (!mountedRef.current) return;
-        cleanup();
+
+        streamRef.current?.getTracks().forEach(t => t.stop());
+        streamRef.current = null;
+        if (maxTimerRef.current) {
+          clearTimeout(maxTimerRef.current);
+          maxTimerRef.current = null;
+        }
 
         const chunks = audioChunksRef.current;
         if (chunks.length === 0) {
@@ -172,18 +191,17 @@ export function VoiceRecorderButton({
       };
 
       recorder.start();
+      // Setting state to 'recording' triggers the useEffect that starts waveform
       setState('recording');
       onRecordingStart?.();
-      startWaveform(stream);
 
-      // Auto-stop after max duration
       maxTimerRef.current = setTimeout(() => {
         if (mediaRecorderRef.current?.state === 'recording') {
           stopRecording();
         }
       }, MAX_RECORDING_MS);
     } catch (err: any) {
-      cleanup();
+      cleanupAudio();
       if (!mountedRef.current) return;
       setState('idle');
       if (err.name === 'NotAllowedError') {
@@ -192,7 +210,7 @@ export function VoiceRecorderButton({
         onError?.(`Mic error: ${err.message}`);
       }
     }
-  }, [state, cleanup, startWaveform, onRecordingComplete, onRecordingStart, onError]);
+  }, [state, cleanupAudio, onRecordingComplete, onRecordingStart, onError]);
 
   const stopRecording = useCallback(() => {
     if (maxTimerRef.current) {
@@ -217,12 +235,10 @@ export function VoiceRecorderButton({
 
   return (
     <>
-      {isRecording && (
-        <div className="canvas-voice-waveform-bar" onClick={stopRecording}>
-          <canvas ref={canvasRef} className="canvas-voice-waveform" />
-          <span className="canvas-voice-waveform-label">🎤 Listening… click to stop</span>
-        </div>
-      )}
+      <div className={`canvas-voice-waveform-bar ${isRecording ? '' : 'hidden'}`} onClick={stopRecording}>
+        <canvas ref={canvasRef} className="canvas-voice-waveform" />
+        <span className="canvas-voice-waveform-label">🎤 Listening… click to stop</span>
+      </div>
       <div className="canvas-voice-recorder">
         <button
           className={`canvas-mic-btn ${isRecording ? 'recording' : ''}`}

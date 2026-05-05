@@ -3485,6 +3485,11 @@ body.dark .canvas-mic-btn.recording {
   transition: background 0.15s ease;
   animation: recordingPulse 1.5s ease infinite, canvas-waveform-fadein 0.15s ease;
   box-sizing: border-box;
+  z-index: 8;
+}
+
+.canvas-voice-waveform-bar.hidden {
+  display: none;
 }
 
 .canvas-voice-waveform-bar:hover {

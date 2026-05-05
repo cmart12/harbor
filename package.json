@@ -24,7 +24,7 @@
     "release": "npm run build && electron-builder --mac --publish always"
   },
   "build": {
-    "appId": "com.copilot.whim",
+    "appId": "com.copilot.tokens",
     "productName": "Copilot Whim",
     "directories": {
       "output": "build"
@@ -50,9 +50,6 @@
       "hardenedRuntime": true,
       "entitlements": "scripts/entitlements.plist",
       "entitlementsInherit": "scripts/entitlements.plist",
-      "notarize": {
-        "teamId": "YFVZ335843"
-      },
       "extendInfo": {
         "LSUIElement": true,
         "NSMicrophoneUsageDescription": "Copilot Whim needs microphone access for voice input."
