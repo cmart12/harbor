@@ -264,8 +264,6 @@ const modelSelect = document.getElementById('model-select') as HTMLSelectElement
 const recordingIndicator = document.getElementById('recording-indicator') as HTMLDivElement;
 const waveformCanvas = document.getElementById('waveform-canvas') as HTMLCanvasElement;
 const inputHints = document.getElementById('input-hints') as HTMLDivElement;
-const themeLightBtn = document.getElementById('theme-light') as HTMLButtonElement;
-const themeDarkBtn = document.getElementById('theme-dark') as HTMLButtonElement;
 const timelineBtn = document.getElementById('timeline-btn') as HTMLButtonElement | null;
 const timelineView = document.getElementById('timeline-view') as HTMLDivElement;
 const timelineBack = document.getElementById('timeline-back') as HTMLButtonElement;
@@ -776,34 +774,20 @@ async function loadModels(): Promise<void> {
 }
 
 async function loadSettings(): Promise<void> {
-  // Apply saved theme on startup
-  const theme = await whimAPI.getSetting('theme');
-  applyTheme(theme || 'light');
+  // Always apply dark theme
+  applyTheme('dark');
 }
 
 // ── Theme ───────────────────────────────────────────────
-function applyTheme(theme: string): void {
-  document.body.classList.toggle('dark', theme === 'dark');
-  themeLightBtn.classList.toggle('active', theme !== 'dark');
-  themeDarkBtn.classList.toggle('active', theme === 'dark');
+function applyTheme(_theme?: string): void {
+  document.body.classList.add('dark');
 }
 
 async function loadThemeSetting(): Promise<void> {
-  const theme = await whimAPI.getSetting('theme');
-  applyTheme(theme || 'light');
+  applyTheme();
 }
 
-themeLightBtn.addEventListener('click', async () => {
-  await whimAPI.setSetting('theme', 'light');
-  applyTheme('light');
-  whimAPI.notifyCanvasThemeChanged('light');
-});
-
-themeDarkBtn.addEventListener('click', async () => {
-  await whimAPI.setSetting('theme', 'dark');
-  applyTheme('dark');
-  whimAPI.notifyCanvasThemeChanged('dark');
-});
+// Theme toggle removed — dark mode only
 
 async function loadWorkspaceSetting(): Promise<void> {
   const ws = await whimAPI.getSetting('workspace_root');
@@ -3180,7 +3164,7 @@ async function openSkillEditor(skillId: string): Promise<void> {
   canvasView.classList.remove('hidden');
 
   const myGen = ++canvasMountGen;
-  const currentTheme = await whimAPI.getSetting('theme').then(t => (t || 'light') as 'light' | 'dark');
+  const currentTheme = 'dark' as const;
 
   if (canvasMountGen !== myGen) return;
 
@@ -5008,7 +4992,7 @@ async function openCanvas(spaceId: string, expanded = false): Promise<void> {
   // Load all data in parallel
   const [result, currentTheme, canvasPersonas] = await Promise.all([
     whimAPI.readCanvas(spaceId),
-    whimAPI.getSetting('theme').then(t => (t || 'light') as 'light' | 'dark'),
+    Promise.resolve('dark' as const),
     whimAPI.listPersonas().then(p => p || []),
   ]);
 
@@ -5292,7 +5276,7 @@ async function enterPreview(commit: FolderCommit): Promise<void> {
 
   const spaceId = canvasSpaceId!;
   await unmountCanvas();
-  const currentTheme = await whimAPI.getSetting('theme').then(t => (t || 'light') as 'light' | 'dark');
+  const currentTheme = 'dark' as const;
   mountCanvas(canvasRoot, {
     spaceId,
     content: result.content,
@@ -5319,7 +5303,7 @@ async function exitPreview(): Promise<void> {
   // Remount with the original content
   const spaceId = canvasSpaceId!;
   await unmountCanvas();
-  const currentTheme = await whimAPI.getSetting('theme').then(t => (t || 'light') as 'light' | 'dark');
+  const currentTheme = 'dark' as const;
   const canvasPersonas = await whimAPI.listPersonas().then(p => p || []);
   mountCanvas(canvasRoot, {
     spaceId,
@@ -6128,10 +6112,10 @@ whimAPI.onCanvasWindowClosed(() => {
   if (!isCanvasMode) loadSpaces();
 });
 
-// Listen for theme changes from other windows (e.g. settings popout)
+// Listen for theme changes from other windows — always dark
 if (!isCanvasMode && !isSettingsMode) {
-  whimAPI.onCanvasThemeChanged((theme: string) => {
-    applyTheme(theme);
+  whimAPI.onCanvasThemeChanged((_theme: string) => {
+    applyTheme('dark');
   });
 }
 
@@ -6192,17 +6176,13 @@ if (isCanvasMode) {
     canvasPinLabel.textContent = pinned ? 'Unpin from Top' : 'Pin to Top';
   });
 
-  // Apply theme
-  whimAPI.getSetting('theme').then(t => {
-    if (t === 'dark') document.body.classList.add('dark');
-  });
+  // Apply dark theme
+  document.body.classList.add('dark');
 
-  // Listen for theme changes from main window
-  whimAPI.onCanvasThemeChanged((theme: string) => {
-    document.body.classList.toggle('dark', theme === 'dark');
+  // Listen for theme changes from main window (no-op, always dark)
+  whimAPI.onCanvasThemeChanged((_theme: string) => {
+    document.body.classList.add('dark');
   });
-
-  // Save and unmount the current canvas target (space or skill)
   async function saveAndUnmountCurrent(): Promise<void> {
     const finalContent = getCanvasContent();
     await unmountCanvas();
@@ -6266,14 +6246,12 @@ if (isSettingsMode) {
   settingsOverlay.classList.add('settings-fullpage');
   settingsModalOpen = true;
 
-  // Apply theme
-  whimAPI.getSetting('theme').then(t => {
-    if (t === 'dark') document.body.classList.add('dark');
-  });
+  // Apply dark theme
+  document.body.classList.add('dark');
 
-  // Listen for theme changes from main window
-  whimAPI.onCanvasThemeChanged((theme: string) => {
-    document.body.classList.toggle('dark', theme === 'dark');
+  // Listen for theme changes from main window (no-op, always dark)
+  whimAPI.onCanvasThemeChanged((_theme: string) => {
+    document.body.classList.add('dark');
   });
 
   // Load settings data

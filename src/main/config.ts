@@ -149,7 +149,7 @@ Guidelines:
 
 const DEFAULT_CONFIG: AppConfig = {
   workspace: null,
-  theme: 'light',
+  theme: 'dark',
   model: null,
   cliPath: null,
   sessions: {},
