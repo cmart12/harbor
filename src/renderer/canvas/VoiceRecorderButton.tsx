@@ -237,25 +237,19 @@ export function VoiceRecorderButton({
     <>
       <div className={`canvas-voice-waveform-bar ${isRecording ? '' : 'hidden'}`} onClick={stopRecording}>
         <canvas ref={canvasRef} className="canvas-voice-waveform" />
-        <span className="canvas-voice-waveform-label">🎤 Listening… click to stop</span>
+        <span className="canvas-voice-waveform-label">click to stop</span>
       </div>
-      <div className="canvas-voice-recorder">
+      <div className={`canvas-voice-recorder ${isRecording ? 'hidden' : ''}`}>
         <button
-          className={`canvas-mic-btn ${isRecording ? 'recording' : ''}`}
+          className="canvas-mic-btn"
           onClick={handleClick}
           disabled={disabled || isBusy}
-          title={isRecording ? 'Stop recording' : 'Record voice clip'}
-          aria-label={isRecording ? 'Stop recording' : 'Record voice clip'}
+          title="Record voice clip"
+          aria-label="Record voice clip"
         >
-          {isRecording ? (
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-              <rect x="3" y="3" width="10" height="10" rx="1.5" />
-            </svg>
-          ) : (
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M8 1a2.5 2.5 0 0 0-2.5 2.5v4a2.5 2.5 0 0 0 5 0v-4A2.5 2.5 0 0 0 8 1zM4 6.5a.5.5 0 0 1 1 0v1a3 3 0 0 0 6 0v-1a.5.5 0 0 1 1 0v1a4 4 0 0 1-3.5 3.97V13H10a.5.5 0 0 1 0 1H6a.5.5 0 0 1 0-1h1.5v-1.53A4 4 0 0 1 4 7.5v-1z" />
-            </svg>
-          )}
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M8 1a2.5 2.5 0 0 0-2.5 2.5v4a2.5 2.5 0 0 0 5 0v-4A2.5 2.5 0 0 0 8 1zM4 6.5a.5.5 0 0 1 1 0v1a3 3 0 0 0 6 0v-1a.5.5 0 0 1 1 0v1a4 4 0 0 1-3.5 3.97V13H10a.5.5 0 0 1 0 1H6a.5.5 0 0 1 0-1h1.5v-1.53A4 4 0 0 1 4 7.5v-1z" />
+          </svg>
         </button>
       </div>
     </>

@@ -499,19 +499,24 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
     }
 
     const handleRecordingStart = useCallback(() => {
-      // Insert a placeholder at the cursor so the user sees where content will go
+      // Insert a placeholder after the current line so it gets its own line
       const current = contentRef.current;
       const state = stateRef.current;
-      const placeholder = `\n${VOICE_PLACEHOLDER}\n`;
+      const placeholder = VOICE_PLACEHOLDER;
 
       if (state && state.canonicalContent === current && state.selectionTo >= 0) {
-        const pos = state.selectionTo;
-        const before = current.slice(0, pos);
-        const after = current.slice(pos);
-        handleContentChange(before + placeholder + after);
+        // Find the end of the line the cursor is on
+        let lineEnd = current.indexOf('\n', state.selectionTo);
+        if (lineEnd < 0) lineEnd = current.length;
+        const before = current.slice(0, lineEnd);
+        const after = current.slice(lineEnd);
+        // Ensure blank line before and after the placeholder
+        const pre = before.endsWith('\n') ? '\n' : '\n\n';
+        const post = after.startsWith('\n') ? '\n' : '\n\n';
+        handleContentChange(before + pre + placeholder + post + after.replace(/^\n/, ''));
       } else {
-        const separator = current.endsWith('\n') ? '' : '\n';
-        handleContentChange(current + separator + placeholder);
+        const separator = current.endsWith('\n') ? '\n' : '\n\n';
+        handleContentChange(current + separator + placeholder + '\n');
       }
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -551,27 +556,28 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
           ? `${audioRef}\n\n${transcription}`
           : audioRef;
 
-        // Replace the placeholder with the final content.
-        // If the placeholder was deleted by the user, append at the end.
+        // Replace the placeholder line with the final content.
+        // The placeholder is always on its own line(s).
         const current = contentRef.current;
-        const placeholderWithNewlines = `\n${VOICE_PLACEHOLDER}\n`;
-        const idx = current.indexOf(placeholderWithNewlines);
-        if (idx >= 0) {
-          const before = current.slice(0, idx);
-          const after = current.slice(idx + placeholderWithNewlines.length);
-          handleContentChange(before + `\n${block}\n` + after);
+        const bareIdx = current.indexOf(VOICE_PLACEHOLDER);
+        if (bareIdx >= 0) {
+          // Find the full line containing the placeholder
+          let lineStart = current.lastIndexOf('\n', bareIdx - 1);
+          lineStart = lineStart < 0 ? 0 : lineStart + 1;
+          let lineEnd = current.indexOf('\n', bareIdx + VOICE_PLACEHOLDER.length);
+          if (lineEnd < 0) lineEnd = current.length;
+          else lineEnd += 1; // include the newline
+
+          const before = current.slice(0, lineStart);
+          const after = current.slice(lineEnd);
+          // Ensure the block sits on its own lines
+          const pre = before.length === 0 || before.endsWith('\n') ? '' : '\n';
+          const post = after.length === 0 || after.startsWith('\n') ? '' : '\n';
+          handleContentChange(before + pre + block + '\n' + post + after);
         } else {
-          // Placeholder may have slightly different surrounding whitespace
-          const bareIdx = current.indexOf(VOICE_PLACEHOLDER);
-          if (bareIdx >= 0) {
-            const before = current.slice(0, bareIdx);
-            const after = current.slice(bareIdx + VOICE_PLACEHOLDER.length);
-            handleContentChange(before + block + after);
-          } else {
-            // Placeholder was removed — append at end as a new block
-            const separator = current.endsWith('\n') ? '\n' : '\n\n';
-            handleContentChange(current + separator + block + '\n');
-          }
+          // Placeholder was removed — append at end as a new block
+          const separator = current.endsWith('\n') ? '\n' : '\n\n';
+          handleContentChange(current + separator + block + '\n');
         }
 
         onSaveStatus('✓ Voice clip added');
@@ -582,10 +588,12 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
         const current = contentRef.current;
         const bareIdx = current.indexOf(VOICE_PLACEHOLDER);
         if (bareIdx >= 0) {
-          const before = current.slice(0, bareIdx);
-          const after = current.slice(bareIdx + VOICE_PLACEHOLDER.length);
-          // Trim extra blank lines left by the placeholder
-          handleContentChange(before.replace(/\n$/, '') + after.replace(/^\n/, ''));
+          let lineStart = current.lastIndexOf('\n', bareIdx - 1);
+          lineStart = lineStart < 0 ? 0 : lineStart;
+          let lineEnd = current.indexOf('\n', bareIdx + VOICE_PLACEHOLDER.length);
+          if (lineEnd < 0) lineEnd = current.length;
+          else lineEnd += 1;
+          handleContentChange(current.slice(0, lineStart) + current.slice(lineEnd));
         }
         onSaveStatus('✗ Voice recording failed');
         setTimeout(() => onSaveStatus(''), 3000);
