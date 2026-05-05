@@ -81,6 +81,7 @@ export interface WhimAPI {
   selectWorkspace(): Promise<IpcCommandResult<'workspace:select'>>;
   clearWorkspace(): Promise<IpcCommandResult<'workspace:clear'>>;
   openPath(folderPath: string): Promise<IpcCommandResult<'shell:openPath'>>;
+  openExternal(url: string): Promise<IpcCommandResult<'shell:openExternal'>>;
 
   // ── Git sync ────────────────────────────────────────────
   gitSyncStatus(): Promise<IpcCommandResult<'workspace:git-status'>>;
@@ -272,6 +273,7 @@ const api: WhimAPI = {
   selectWorkspace: () => ipcRenderer.invoke('workspace:select'),
   clearWorkspace: () => ipcRenderer.invoke('workspace:clear'),
   openPath: (folderPath) => ipcRenderer.invoke('shell:openPath', folderPath),
+  openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
 
   // ── Git sync ────────────────────────────────────────────
   gitSyncStatus: () => ipcRenderer.invoke('workspace:git-status'),

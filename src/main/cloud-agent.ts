@@ -210,7 +210,7 @@ export async function getCloudJobStatus(
       updatedAt: data.updated_at,
       pullRequest: data.pull_request ? { ...data.pull_request, url: prUrl } : undefined,
       workflowRun: data.workflow_run,
-      error: data.error,
+      ...(data.error ? { error: data.error } : {}),
     };
   } catch (err: any) {
     return { error: err.message || 'Failed to check cloud job status' };

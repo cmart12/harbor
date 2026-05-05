@@ -194,6 +194,7 @@ export interface CloudJobPollResult {
   pullRequest?: { id: string; number: number; url?: string };
   workflowRun?: { id: string };
   error?: { message: string };
+  url?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -253,6 +254,7 @@ export interface IpcCommands {
   'workspace:select': { args: []; result: { selected: boolean; path: string | null } };
   'workspace:clear': { args: []; result: { ok: true } };
   'shell:openPath': { args: [folderPath: string]; result: string };
+  'shell:openExternal': { args: [url: string]; result: { ok: true } };
 
   // ── Git sync ────────────────────────────────────────────
   'workspace:git-status': { args: []; result: GitSyncStatus };

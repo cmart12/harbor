@@ -203,6 +203,7 @@ interface WhimAPI {
   onAgentReplyReady(callback: (data: { agentId: string; spaceId: string; threadIndex: number; body: string }) => void): void;
   onCanvasContentUpdated(callback: (data: { spaceId: string; content: string }) => void): () => void;
   openPath(folderPath: string): Promise<void>;
+  openExternal(url: string): Promise<{ ok: true }>;
   // ── Skills ──────────────────────────────────────────────
   listSkills(): Promise<any[]>;
   readSkill(skillId: string): Promise<{ frontmatter: Record<string, unknown>; body: string } | { error: string }>;
@@ -3425,8 +3426,10 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
     const trivialSummaries = ['Completed', 'Failed', 'Starting...', ''];
     const showSummary = (agent.status === 'completed' || agent.status === 'failed') && agent.summary && !trivialSummaries.includes(agent.summary);
 
+    const cardTitle = agent.source === 'cloud' ? 'Click to open in browser' : 'Click to open chat';
+
     return `
-      <div class="agent-card ${statusClass}" data-agent-id="${agent.agentId}" title="Click to open chat">
+      <div class="agent-card ${statusClass}" data-agent-id="${agent.agentId}" title="${cardTitle}">
         <div class="agent-card-header">
           <span class="agent-card-icon">${statusIcon}</span>
           <span class="agent-card-name">${intentLabel}</span>
@@ -3446,15 +3449,23 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
     `;
   }).join('');
 
-  // Attach click handlers to open chat view
+  // Attach click handlers to open chat view (or browser for cloud agents)
   listEl.querySelectorAll('.agent-card[data-agent-id]').forEach(el => {
-    el.addEventListener('click', () => {
+    el.addEventListener('click', async () => {
       const agentId = (el as HTMLElement).dataset.agentId;
       if (!agentId) return;
       const agent = allAgents.find(a => a.agentId === agentId);
-      if (agent) {
-        openAgentChat(agentId, agent.selectedText, agent.status, agent.source as any, agent.spaceId, agent.source === 'conduit' ? agent.sessionId : undefined);
+      if (!agent) return;
+
+      if (agent.source === 'cloud') {
+        // Open cloud agent session in the browser
+        const status = await whimAPI.getCloudJobStatus(agentId);
+        const url = (status as any)?.url || `https://github.com`;
+        whimAPI.openExternal(url);
+        return;
       }
+
+      openAgentChat(agentId, agent.selectedText, agent.status, agent.source as any, agent.spaceId, agent.source === 'conduit' ? agent.sessionId : undefined);
     });
   });
 

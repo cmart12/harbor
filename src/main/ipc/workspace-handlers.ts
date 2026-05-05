@@ -134,6 +134,12 @@ export function registerWorkspaceHandlers(): void {
     return shell.openPath(folderPath);
   });
 
+  // Open a URL in the user's default browser
+  ipcMain.handle('shell:openExternal', async (_event, url: string) => {
+    await shell.openExternal(url);
+    return { ok: true };
+  });
+
   // Session launch
   ipcMain.handle('session:launch', async (_event, spaceId: string) => {
     const workspace = getConfigValue('workspace');
