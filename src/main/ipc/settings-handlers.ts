@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { setAIModel, listAvailableModels, reinitCopilot, previewSandboxConfig } from '../ai';
 import { resolveCopilotCliPath, invalidateCliPath, checkCliCompatibility, resolveCommandOnPath, resolveCmdToJs, isCliMxcCapable } from '../session';
-import { getConfigValue, setConfigValue, getConfig, type AgentPersona, type CliRuntime } from '../config';
+import { getConfigValue, setConfigValue, getConfig, DEFAULT_PERSONAS, type AgentPersona, type CliRuntime } from '../config';
 import { listDiscoveredMcpServers } from '../mcp';
 import { validateMcpServers, validateCliTools, validateSandboxPolicy } from '../validators';
 
@@ -67,20 +67,24 @@ export function registerSettingsHandlers(): void {
 
   // Agent Personas
   ipcMain.handle('personas:list', () => {
-    const personas = getConfigValue('personas') || [];
-    // Ensure @agent always exists
-    const hasDefault = (personas as AgentPersona[]).some((p: AgentPersona) => p.handle === 'agent');
+    const personas = (getConfigValue('personas') || []) as AgentPersona[];
+    const seeded = getConfigValue('personasSeeded');
+
+    if (!seeded) {
+      // One-time seed: merge any defaults whose handle doesn't already exist
+      const existing = new Set(personas.map((p: AgentPersona) => p.handle));
+      const toAdd = DEFAULT_PERSONAS.filter(d => !existing.has(d.handle));
+      const merged = [...toAdd, ...personas];
+      setConfigValue('personas', merged);
+      setConfigValue('personasSeeded', true);
+      return merged;
+    }
+
+    // After seeding, only guarantee @agent survives
+    const hasDefault = personas.some((p: AgentPersona) => p.handle === 'agent');
     if (!hasDefault) {
-      const withDefault: AgentPersona[] = [
-        {
-          id: 'default-agent',
-          handle: 'agent',
-          instructions: 'Follow the users instructions and respond to comments or create comments when you work on canvas.md documents.',
-          model: '',
-          runLocation: 'local',
-        },
-        ...(personas as AgentPersona[]),
-      ];
+      const agentDefault = DEFAULT_PERSONAS.find(p => p.handle === 'agent')!;
+      const withDefault: AgentPersona[] = [{ ...agentDefault }, ...personas];
       setConfigValue('personas', withDefault);
       return withDefault;
     }
@@ -138,13 +142,8 @@ export function registerSettingsHandlers(): void {
       if (existing) {
         validated.unshift(existing);
       } else {
-        validated.unshift({
-          id: 'default-agent',
-          handle: 'agent',
-          instructions: 'Follow the users instructions and respond to comments or create comments when you work on canvas.md documents.',
-          model: '',
-          runLocation: 'local',
-        });
+        const agentDefault = DEFAULT_PERSONAS.find(p => p.handle === 'agent')!;
+        validated.unshift({ ...agentDefault });
       }
     }
 

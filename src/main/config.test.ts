@@ -31,6 +31,7 @@ describe('config', () => {
       expect(config.model).toBeNull();
       expect(config.workspace).toBeNull();
       expect(config.personas).toEqual([]);
+      expect(config.personasSeeded).toBe(false);
     });
 
     it('includes new cliTools field with default empty array', () => {

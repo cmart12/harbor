@@ -3169,6 +3169,8 @@ body.dark .emoji-picker-popup {
   display: flex;
   align-items: center;
   gap: 8px;
+  position: relative;
+  z-index: 10;
 }
 
 .canvas-view header h1 {

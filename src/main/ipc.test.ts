@@ -130,19 +130,23 @@ vi.mock('./workspace', () => ({
   restoreSpaceVersion: vi.fn(async () => ({ success: true })),
 }));
 
-vi.mock('./config', () => ({
-  getConfig: vi.fn(() => ({ workspace: '/mock/workspace', sessions: {} })),
-  getConfigValue: vi.fn((key: string) => {
-    if (key === 'workspace') return '/mock/workspace';
-    if (key === 'theme') return 'dark';
-    if (key === 'model') return 'gpt-4';
-    if (key === 'personas') return [];
-    if (key === 'mcpServers') return [];
-    if (key === 'cliTools') return [];
-    return null;
-  }),
-  setConfigValue: vi.fn(),
-}));
+vi.mock('./config', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./config')>();
+  return {
+    ...actual,
+    getConfig: vi.fn(() => ({ workspace: '/mock/workspace', sessions: {} })),
+    getConfigValue: vi.fn((key: string) => {
+      if (key === 'workspace') return '/mock/workspace';
+      if (key === 'theme') return 'dark';
+      if (key === 'model') return 'gpt-4';
+      if (key === 'personas') return [];
+      if (key === 'mcpServers') return [];
+      if (key === 'cliTools') return [];
+      return null;
+    }),
+    setConfigValue: vi.fn(),
+  };
+});
 
 vi.mock('./mcp', () => ({
   listDiscoveredMcpServers: vi.fn(() => [{ name: 'discovered-server' }]),
@@ -577,24 +581,128 @@ describe('IPC handlers', () => {
   // ── Persona handlers ────────────────────────────────────────────
 
   describe('personas:list', () => {
-    it('seeds default-agent and persists when config is empty', () => {
-      // The handler guarantees @agent always exists. On the first call when
-      // no personas are saved, it injects default-agent and writes it back
-      // through setConfigValue so subsequent listings/saves see it.
+    it('seeds all default personas and sets seeded flag when config is empty', () => {
+      // On first call, personasSeeded is falsy (mock returns null) and personas
+      // is empty → handler injects all DEFAULT_PERSONAS and flips the flag.
       const result = invoke('personas:list');
       expect(getConfigValue).toHaveBeenCalledWith('personas');
-      expect(result).toEqual([
-        {
-          id: 'default-agent',
-          handle: 'agent',
-          instructions: expect.stringContaining('users instructions'),
-          model: '',
-          runLocation: 'local',
-        },
-      ]);
+      expect(getConfigValue).toHaveBeenCalledWith('personasSeeded');
+
+      expect(result).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: 'default-agent', handle: 'agent' }),
+        expect.objectContaining({ id: 'default-editor', handle: 'editor', emoji: '✏️' }),
+        expect.objectContaining({ id: 'default-dev', handle: 'dev', emoji: '🛠️' }),
+        expect.objectContaining({ id: 'default-cloud', handle: 'cloud', runLocation: 'cloud', emoji: '☁️' }),
+      ]));
+      expect(result).toHaveLength(4);
+
       expect(setConfigValue).toHaveBeenCalledWith('personas', expect.arrayContaining([
         expect.objectContaining({ id: 'default-agent', handle: 'agent' }),
+        expect.objectContaining({ handle: 'editor' }),
+        expect.objectContaining({ handle: 'dev' }),
+        expect.objectContaining({ handle: 'cloud' }),
       ]));
+      expect(setConfigValue).toHaveBeenCalledWith('personasSeeded', true);
+    });
+
+    it('does not re-seed when personasSeeded flag is true', () => {
+      vi.mocked(setConfigValue).mockClear();
+      const cfg = vi.mocked(getConfigValue);
+      const agentOnly = [{
+        id: 'default-agent', handle: 'agent',
+        instructions: 'custom', model: '', runLocation: 'local' as const,
+      }];
+      cfg.mockImplementation((key: string) => {
+        if (key === 'personas') return agentOnly as any;
+        if (key === 'personasSeeded') return true as any;
+        return null as any;
+      });
+
+      const result = invoke('personas:list');
+      expect(result).toEqual(agentOnly);
+      // Should NOT have written new personas or flipped the flag again
+      expect(setConfigValue).not.toHaveBeenCalledWith('personasSeeded', true);
+
+      // Restore default mock
+      cfg.mockImplementation((key: string) => {
+        if (key === 'workspace') return '/mock/workspace';
+        if (key === 'theme') return 'dark';
+        if (key === 'model') return 'gpt-4';
+        if (key === 'personas') return [];
+        if (key === 'mcpServers') return [];
+        if (key === 'cliTools') return [];
+        return null;
+      });
+    });
+
+    it('re-injects @agent even after seeding if user removed it', () => {
+      vi.mocked(setConfigValue).mockClear();
+      const cfg = vi.mocked(getConfigValue);
+      const noAgent = [{
+        id: 'custom', handle: 'reviewer',
+        instructions: 'review', model: '', runLocation: 'local' as const,
+      }];
+      cfg.mockImplementation((key: string) => {
+        if (key === 'personas') return noAgent as any;
+        if (key === 'personasSeeded') return true as any;
+        return null as any;
+      });
+
+      const result = invoke('personas:list');
+      expect(result).toEqual(expect.arrayContaining([
+        expect.objectContaining({ handle: 'agent' }),
+        expect.objectContaining({ handle: 'reviewer' }),
+      ]));
+
+      // Restore default mock
+      cfg.mockImplementation((key: string) => {
+        if (key === 'workspace') return '/mock/workspace';
+        if (key === 'theme') return 'dark';
+        if (key === 'model') return 'gpt-4';
+        if (key === 'personas') return [];
+        if (key === 'mcpServers') return [];
+        if (key === 'cliTools') return [];
+        return null;
+      });
+    });
+
+    it('merges defaults with existing personas during first seed', () => {
+      vi.mocked(setConfigValue).mockClear();
+      // Existing user who already has @agent and a custom persona but
+      // personasSeeded is false → gets @editor, @dev, @cloud added
+      const cfg = vi.mocked(getConfigValue);
+      const existing = [
+        { id: 'default-agent', handle: 'agent', instructions: 'custom agent', model: '', runLocation: 'local' as const },
+        { id: 'p1', handle: 'reviewer', instructions: 'review', model: '', runLocation: 'local' as const },
+      ];
+      cfg.mockImplementation((key: string) => {
+        if (key === 'personas') return existing as any;
+        if (key === 'personasSeeded') return false as any;
+        return null as any;
+      });
+
+      const result = invoke('personas:list');
+      // Existing ones preserved, missing defaults added
+      expect(result).toEqual(expect.arrayContaining([
+        expect.objectContaining({ handle: 'agent', instructions: 'custom agent' }),
+        expect.objectContaining({ handle: 'reviewer' }),
+        expect.objectContaining({ handle: 'editor' }),
+        expect.objectContaining({ handle: 'dev' }),
+        expect.objectContaining({ handle: 'cloud' }),
+      ]));
+      expect(result).toHaveLength(5);
+      expect(setConfigValue).toHaveBeenCalledWith('personasSeeded', true);
+
+      // Restore default mock
+      cfg.mockImplementation((key: string) => {
+        if (key === 'workspace') return '/mock/workspace';
+        if (key === 'theme') return 'dark';
+        if (key === 'model') return 'gpt-4';
+        if (key === 'personas') return [];
+        if (key === 'mcpServers') return [];
+        if (key === 'cliTools') return [];
+        return null;
+      });
     });
   });
 
@@ -613,6 +721,7 @@ describe('IPC handlers', () => {
     };
 
     it('validates and saves personas (prepends default-agent when missing)', () => {
+      vi.mocked(setConfigValue).mockClear();
       const personas = [
         { id: 'p1', handle: 'reviewer', instructions: 'Review code', model: '', runLocation: 'local' },
       ];
