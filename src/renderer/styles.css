@@ -3390,6 +3390,174 @@ body.dark .emoji-picker-popup {
   overflow: hidden;
 }
 
+/* ── Canvas Voice Recorder ───────────────────────────── */
+
+.canvas-voice-recorder {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.canvas-mic-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(8px);
+  color: #555;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  transition: all 0.15s ease;
+}
+
+.canvas-mic-btn:hover {
+  background: rgba(255, 255, 255, 1);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
+  color: #333;
+}
+
+.canvas-mic-btn:active {
+  transform: scale(0.95);
+}
+
+.canvas-mic-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.canvas-mic-btn.recording {
+  background: rgba(239, 68, 68, 0.9);
+  border-color: rgba(239, 68, 68, 0.6);
+  color: white;
+  animation: canvas-mic-pulse 1.5s ease-in-out infinite;
+}
+
+.canvas-mic-btn.recording:hover {
+  background: rgba(220, 50, 50, 0.95);
+  color: white;
+}
+
+body.dark .canvas-mic-btn {
+  background: rgba(40, 40, 44, 0.9);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #aaa;
+}
+
+body.dark .canvas-mic-btn:hover {
+  background: rgba(50, 50, 55, 1);
+  color: #ddd;
+}
+
+body.dark .canvas-mic-btn.recording {
+  background: rgba(220, 50, 50, 0.9);
+  border-color: rgba(248, 113, 113, 0.5);
+  color: white;
+}
+
+@keyframes canvas-mic-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.3); }
+  50% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0.05); }
+}
+
+.canvas-voice-waveform-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: rgba(239, 68, 68, 0.06);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 20px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  animation: canvas-waveform-fadein 0.15s ease;
+}
+
+.canvas-voice-waveform-bar:hover {
+  background: rgba(239, 68, 68, 0.1);
+}
+
+body.dark .canvas-voice-waveform-bar {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(248, 113, 113, 0.4);
+}
+
+body.dark .canvas-voice-waveform-bar:hover {
+  background: rgba(239, 68, 68, 0.14);
+}
+
+.canvas-voice-waveform {
+  width: 120px;
+  height: 28px;
+  display: block;
+}
+
+.canvas-voice-waveform-label {
+  font-size: 11px;
+  color: rgba(239, 68, 68, 0.8);
+  white-space: nowrap;
+  user-select: none;
+}
+
+body.dark .canvas-voice-waveform-label {
+  color: rgba(248, 113, 113, 0.85);
+}
+
+@keyframes canvas-waveform-fadein {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.canvas-voice-transcribing-bar {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  background: rgba(124, 102, 220, 0.08);
+  border: 1px solid rgba(124, 102, 220, 0.25);
+  border-radius: 20px;
+  font-size: 12px;
+  color: #6a52c9;
+  z-index: 8;
+  animation: canvas-waveform-fadein 0.15s ease;
+}
+
+body.dark .canvas-voice-transcribing-bar {
+  background: rgba(124, 102, 220, 0.12);
+  border-color: rgba(124, 102, 220, 0.35);
+  color: #a78bfa;
+}
+
+.canvas-voice-transcribing-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(124, 102, 220, 0.2);
+  border-top-color: #6a52c9;
+  border-radius: 50%;
+  animation: canvas-voice-spin 0.6s linear infinite;
+}
+
+body.dark .canvas-voice-transcribing-spinner {
+  border-color: rgba(167, 139, 250, 0.2);
+  border-top-color: #a78bfa;
+}
+
+@keyframes canvas-voice-spin {
+  to { transform: rotate(360deg); }
+}
+
 /* ── Canvas History Panel ────────────────────────────── */
 
 .canvas-history-panel {

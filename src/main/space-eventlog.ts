@@ -4,6 +4,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { resolveSpaceFolder } from './workspace';
 
 export interface SpaceActivityEvent {
   ts: string;
@@ -13,14 +14,16 @@ export interface SpaceActivityEvent {
 
 /** Get the activity log path for a space folder. */
 export function getSpaceActivityLogPath(workspaceRoot: string, spaceFolder: string): string {
-  return path.join(workspaceRoot, spaceFolder, '.whim', 'events.jsonl');
+  const folderRoot = resolveSpaceFolder(workspaceRoot, spaceFolder);
+  return path.join(folderRoot, '.whim', 'events.jsonl');
 }
 
 /** Append an event to the per-space activity log. */
 export function appendSpaceActivity(workspaceRoot: string, spaceFolder: string, type: string, data: Record<string, any>): void {
   if (!workspaceRoot || !spaceFolder) return;
 
-  const logDir = path.join(workspaceRoot, spaceFolder, '.whim');
+  const folderRoot = resolveSpaceFolder(workspaceRoot, spaceFolder);
+  const logDir = path.join(folderRoot, '.whim');
   const logPath = path.join(logDir, 'events.jsonl');
 
   try {

@@ -127,9 +127,24 @@ export function getCanvasPath(workspaceRoot: string, folder: string): string {
   return path.join(workspaceRoot, folder, CANVAS_FILE);
 }
 
+/**
+ * Resolve the actual folder root for a space, checking the archive
+ * location if the primary doesn't exist (space was completed/archived).
+ */
+export function resolveSpaceFolder(workspaceRoot: string, folder: string): string {
+  const primary = path.join(workspaceRoot, folder);
+  if (fs.existsSync(primary)) return primary;
+
+  const archived = path.join(workspaceRoot, WHIM_DIR, ARCHIVE_DIR, folder);
+  if (fs.existsSync(archived)) return archived;
+
+  return primary;
+}
+
 /** Read the canvas content for a space. Returns empty string if file doesn't exist. */
 export function readCanvas(workspaceRoot: string, folder: string): string {
-  const canvasPath = getCanvasPath(workspaceRoot, folder);
+  const folderRoot = resolveSpaceFolder(workspaceRoot, folder);
+  const canvasPath = path.join(folderRoot, CANVAS_FILE);
   if (!fs.existsSync(canvasPath)) return '';
   return fs.readFileSync(canvasPath, 'utf-8');
 }
@@ -326,11 +341,13 @@ export interface FolderCommit {
 export async function getSpaceHistory(workspaceRoot: string, folder: string, limit = 50): Promise<FolderCommit[]> {
   try {
     const SEPARATOR = '---COMMIT---';
+    // Search both live and archive paths so history survives archiving
+    const archivePath = path.join(WHIM_DIR, ARCHIVE_DIR, folder).replace(/\\/g, '/');
     const raw = await runGitOutput(workspaceRoot, [
       'log', `--max-count=${limit}`,
       `--format=${SEPARATOR}%n%H%n%h%n%s%n%aI%n%ar`,
       '--name-only',
-      '--', `${folder}/`,
+      '--', `${folder}/`, `${archivePath}/`,
     ]);
 
     if (!raw.trim()) return [];
@@ -352,7 +369,7 @@ export async function getSpaceHistory(workspaceRoot: string, folder: string, lim
         filesChanged: fileLines.filter(f => {
           // git always uses forward slashes in output, normalize folder to match
           const prefix = folder.replace(/\\/g, '/') + '/';
-          return f.startsWith(prefix);
+          return f.startsWith(prefix) || f.startsWith(archivePath + '/');
         }),
       });
     }
@@ -474,9 +491,9 @@ export function resolveAttachmentPath(
   folder: string,
   relativePath: string
 ): string | null {
-  const resolved = path.resolve(path.join(workspaceRoot, folder, relativePath));
-  const folderRoot = path.resolve(path.join(workspaceRoot, folder));
-  if (!resolved.startsWith(folderRoot)) return null;
+  const folderRoot = resolveSpaceFolder(workspaceRoot, folder);
+  const resolved = path.resolve(path.join(folderRoot, relativePath));
+  if (!resolved.startsWith(path.resolve(folderRoot))) return null;
   if (!fs.existsSync(resolved)) return null;
   return resolved;
 }

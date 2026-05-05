@@ -118,6 +118,7 @@ vi.mock('./workspace', () => ({
   initSpaceCanvas: vi.fn(() => 'test-folder'),
   readCanvas: vi.fn(() => 'canvas content'),
   writeCanvas: vi.fn(),
+  resolveSpaceFolder: vi.fn((workspace: string, folder: string) => `${workspace}/${folder}`),
   scheduleAutoCommit: vi.fn(),
   commitNow: vi.fn(async () => {}),
   archiveSpaceFolder: vi.fn(),

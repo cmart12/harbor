@@ -17,6 +17,7 @@ import {
   type DocumintStorage,
 } from 'documint';
 import { FrontmatterEditor } from './FrontmatterEditor';
+import { VoiceRecorderButton, type VoiceRecordingResult } from './VoiceRecorderButton';
 import { merge3 } from '../../shared/text-merge';
 
 declare const whimAPI: {
@@ -24,6 +25,7 @@ declare const whimAPI: {
   pasteFile(spaceId: string, filename: string, dataArray: number[]): Promise<{ error?: string; filename?: string; relativePath?: string }>;
   readFile(spaceId: string, relativePath: string): Promise<{ data?: number[]; mimeType?: string; error?: string }>;
   getSetting(key: string): Promise<string | null>;
+  transcribe(audioData: number[]): Promise<string>;
 };
 
 export interface AgentPersona {
@@ -144,6 +146,8 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
     const [isDragging, setIsDragging] = useState(false);
     const [personas, setPersonas] = useState<AgentPersona[]>(initialPersonas || []);
     const [presence, setPresence] = useState<DocumentPresence[]>(initialPresence || []);
+    const [isTranscribing, setIsTranscribing] = useState(false);
+    const recordAnchorRef = useRef<{ contentSnapshot: string; position: number } | null>(null);
 
     contentRef.current = content;
     frontmatterRef.current = frontmatter;
@@ -493,6 +497,99 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
       }
     }
 
+    /** Insert content at a previously saved anchor position, with fallback. */
+    function insertAtAnchor(anchor: { contentSnapshot: string; position: number } | null, markdownRef: string) {
+      const current = contentRef.current;
+
+      // If content hasn't changed since anchor was saved, use the saved position
+      if (anchor && current === anchor.contentSnapshot && anchor.position >= 0) {
+        const pos = anchor.position;
+        const before = current.slice(0, pos);
+        const after = current.slice(pos);
+        handleContentChange(before + markdownRef + after);
+        return;
+      }
+
+      // Fallback: try current cursor position
+      const state = stateRef.current;
+      if (state && state.canonicalContent === current && state.selectionTo >= 0) {
+        const pos = state.selectionTo;
+        const before = current.slice(0, pos);
+        const after = current.slice(pos);
+        handleContentChange(before + markdownRef + after);
+        return;
+      }
+
+      // Last resort: append at end
+      const separator = current.endsWith('\n') ? '' : '\n';
+      handleContentChange(current + separator + markdownRef);
+    }
+
+    const handleRecordingStart = useCallback(() => {
+      const state = stateRef.current;
+      const current = contentRef.current;
+      if (state && state.canonicalContent === current && state.selectionTo >= 0) {
+        recordAnchorRef.current = { contentSnapshot: current, position: state.selectionTo };
+      } else {
+        recordAnchorRef.current = { contentSnapshot: current, position: current.length };
+      }
+    }, []);
+
+    const handleRecordingComplete = useCallback(async (result: VoiceRecordingResult) => {
+      setIsTranscribing(true);
+      onSaveStatus('🎤 Saving clip…');
+
+      try {
+        // Always save the audio file first
+        const timestamp = Date.now();
+        const filename = `voice-${timestamp}.webm`;
+        const buffer = await result.audioBlob.arrayBuffer();
+        const dataArray = Array.from(new Uint8Array(buffer));
+        const pasteResult = await whimAPI.pasteFile(spaceId, filename, dataArray);
+
+        if (pasteResult.error) {
+          onSaveStatus('✗ Failed to save audio');
+          setTimeout(() => onSaveStatus(''), 3000);
+          return;
+        }
+
+        const audioRef = `[🎵 ${pasteResult.filename}](${pasteResult.relativePath})`;
+
+        // Now transcribe
+        let transcription = '';
+        try {
+          onSaveStatus('✨ Transcribing…');
+          const text = await whimAPI.transcribe(Array.from(result.float32Data));
+          transcription = text?.trim() || '';
+        } catch (err) {
+          console.error('[canvas-voice] Transcription failed:', err);
+          transcription = '_Transcription failed_';
+        }
+
+        // Build the markdown block to insert
+        const block = transcription
+          ? `\n${audioRef}\n\n${transcription}\n`
+          : `\n${audioRef}\n`;
+
+        insertAtAnchor(recordAnchorRef.current, block);
+        recordAnchorRef.current = null;
+
+        onSaveStatus('✓ Voice clip added');
+        setTimeout(() => onSaveStatus(''), 2000);
+      } catch (err: any) {
+        console.error('[canvas-voice] Error:', err);
+        onSaveStatus('✗ Voice recording failed');
+        setTimeout(() => onSaveStatus(''), 3000);
+      } finally {
+        setIsTranscribing(false);
+      }
+    }, [spaceId, onSaveStatus]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    const handleVoiceError = useCallback((message: string) => {
+      onSaveStatus(`✗ ${message}`);
+      setTimeout(() => onSaveStatus(''), 3000);
+    }, [onSaveStatus]);
+
     // Cleanup pending save on unmount
     useEffect(() => {
       return () => {
@@ -546,6 +643,19 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
                 onStateChanged={handleStateChange}
                 presence={presence}
                 theme={documintTheme}
+              />
+              {isTranscribing && (
+                <div className="canvas-voice-transcribing-bar">
+                  <span className="canvas-voice-transcribing-spinner" />
+                  <span>Transcribing…</span>
+                </div>
+              )}
+              <VoiceRecorderButton
+                theme={theme}
+                onRecordingComplete={handleRecordingComplete}
+                onRecordingStart={handleRecordingStart}
+                onError={handleVoiceError}
+                disabled={isTranscribing}
               />
             </div>
           </>

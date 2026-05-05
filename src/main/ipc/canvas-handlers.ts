@@ -1,7 +1,7 @@
 import { ipcMain, shell, BrowserWindow } from 'electron';
 import { isInitialized, getSpace, getSkill, assignSpaceFolder, updateCanvasContent } from '../database';
 import { getConfigValue } from '../config';
-import { initSpaceCanvas, readCanvas, writeCanvas, scheduleAutoCommit, saveAttachment, resolveAttachmentPath, getMimeType, readSpaceFile, getSpaceHistory, restoreSpaceVersion, getSpaceVersionContent } from '../workspace';
+import { initSpaceCanvas, readCanvas, writeCanvas, scheduleAutoCommit, saveAttachment, resolveAttachmentPath, getMimeType, readSpaceFile, getSpaceHistory, restoreSpaceVersion, getSpaceVersionContent, resolveSpaceFolder } from '../workspace';
 import { parseFrontmatter, serializeFrontmatter } from '../frontmatter';
 import { fetchLinkPreview } from '../services/link-preview';
 import { startWatching, stopWatching, markSelfWrite } from '../canvas-watcher';
@@ -37,7 +37,8 @@ export function registerCanvasHandlers(): void {
     lastEditorContent.set(spaceId, content);
 
     // Start watching for external changes (e.g. from agents)
-    const canvasPath = path.join(workspace, folder, CANVAS_FILE);
+    const folderRoot = resolveSpaceFolder(workspace, folder);
+    const canvasPath = path.join(folderRoot, CANVAS_FILE);
     startWatching(spaceId, canvasPath, (newContent: string) => {
       lastEditorContent.set(spaceId, newContent);
       updateCanvasContent(spaceId, newContent);
@@ -178,7 +179,7 @@ export function registerCanvasHandlers(): void {
     const space = getSpace(spaceId);
     if (!space || !space.folder) return;
 
-    shell.openPath(path.join(workspace, space.folder));
+    shell.openPath(resolveSpaceFolder(workspace, space.folder));
   });
 
   // ── Link preview ──────────────────────────────────────
