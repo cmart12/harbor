@@ -3054,12 +3054,9 @@ async function openSkillEditor(skillId: string): Promise<void> {
   canvasSaveBtn.classList.add('hidden');
   updateModeToggleUI('rendered');
 
-  // Show launch button for skills (creates workspace + launches session)
-  canvasLaunchBtn.classList.remove('hidden');
-  canvasLaunchBtn.title = 'Launch as new space';
-  canvasAgentsBtn.classList.add('hidden');
-  canvasHistoryBtn.classList.add('hidden');
-  canvasOpenFolder.classList.add('hidden');
+  // Configure dropdown for skill context
+  closeCanvasMenu();
+  updateCanvasMenuContext(true);
 
   canvasView.classList.remove('hidden');
 
@@ -4698,6 +4695,12 @@ const modeToggleRaw = document.getElementById('mode-toggle-raw') as HTMLButtonEl
 const canvasAgentsPanel = document.getElementById('canvas-agents-panel') as HTMLDivElement;
 const canvasAgentsClose = document.getElementById('canvas-agents-close') as HTMLButtonElement;
 const canvasAgentsList = document.getElementById('canvas-agents-list') as HTMLDivElement;
+const canvasMenuBtn = document.getElementById('canvas-menu-btn') as HTMLButtonElement;
+const canvasMenuDropdown = document.getElementById('canvas-menu-dropdown') as HTMLDivElement;
+const canvasMarkComplete = document.getElementById('canvas-mark-complete') as HTMLButtonElement;
+const canvasSaveAsSkill = document.getElementById('canvas-save-as-skill') as HTMLButtonElement;
+const canvasPinLabel = document.getElementById('canvas-pin-label') as HTMLSpanElement;
+const canvasLaunchLabel = document.getElementById('canvas-launch-label') as HTMLSpanElement;
 let canvasSpaceId: string | null = null;
 let canvasSkillId: string | null = null;
 let canvasDirty = false;
@@ -4772,6 +4775,83 @@ canvasTitleAI.addEventListener('click', async () => {
   }
 });
 
+// ── Canvas Dropdown Menu ────────────────────────────────
+function toggleCanvasMenu(): void {
+  canvasMenuDropdown.classList.toggle('hidden');
+}
+
+function closeCanvasMenu(): void {
+  canvasMenuDropdown.classList.add('hidden');
+}
+
+canvasMenuBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  toggleCanvasMenu();
+});
+
+document.addEventListener('click', (e) => {
+  if (!canvasMenuDropdown.classList.contains('hidden') &&
+      !(e.target as HTMLElement).closest('.canvas-menu-wrap')) {
+    closeCanvasMenu();
+  }
+});
+
+function updateCanvasMenuContext(isSkill: boolean): void {
+  canvasMenuDropdown.querySelectorAll('[data-context="space"]').forEach(el => {
+    el.classList.toggle('hidden', isSkill);
+  });
+  canvasLaunchLabel.textContent = isSkill ? 'Launch as Space' : 'Start Session';
+}
+
+canvasMarkComplete.addEventListener('click', async () => {
+  closeCanvasMenu();
+  if (!canvasSpaceId) return;
+  const spaceId = canvasSpaceId;
+  await saveCanvasEditor();
+  await whimAPI.update(spaceId, { status: 'done' });
+  showStatus('✓ Marked complete');
+  setTimeout(hideStatus, 2000);
+  closeCanvas();
+});
+
+canvasSaveAsSkill.addEventListener('click', async () => {
+  closeCanvasMenu();
+  if (!canvasSpaceId) return;
+  const space = spaces.find(s => s.id === canvasSpaceId);
+  const defaultName = space?.description || 'New Skill';
+  const name = prompt('Skill name:', defaultName);
+  if (!name) return;
+
+  const content = getCanvasContent();
+  const result = await whimAPI.createSkill(name);
+  if ('error' in result) {
+    showStatus(`Failed: ${(result as any).error}`, true);
+    setTimeout(hideStatus, 3000);
+    return;
+  }
+
+  // Parse frontmatter from canvas content if present, otherwise wrap content as skill body
+  const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
+  let frontmatter: Record<string, unknown> = { name, description: '' };
+  let body = content;
+  if (fmMatch) {
+    for (const line of fmMatch[1].split('\n')) {
+      const colonIdx = line.indexOf(':');
+      if (colonIdx > 0) {
+        const key = line.slice(0, colonIdx).trim();
+        const value = line.slice(colonIdx + 1).trim();
+        try { frontmatter[key] = JSON.parse(value); } catch { frontmatter[key] = value; }
+      }
+    }
+    body = fmMatch[2];
+  }
+  frontmatter.name = name;
+
+  await whimAPI.writeSkill(result.id, frontmatter, body);
+  showStatus('✓ Saved as skill');
+  setTimeout(hideStatus, 2000);
+});
+
 // Create a new blank space and immediately open it in the full canvas editor
 async function createAndOpenCanvas(): Promise<void> {
   const space = await whimAPI.create({ body: '' }) as any;
@@ -4814,12 +4894,9 @@ async function openCanvas(spaceId: string, expanded = false): Promise<void> {
   canvasSaveBtn.classList.add('hidden');
   updateModeToggleUI('rendered');
 
-  // Show space-specific controls
-  canvasLaunchBtn.classList.remove('hidden');
-  canvasLaunchBtn.title = 'Start session';
-  canvasAgentsBtn.classList.remove('hidden');
-  canvasHistoryBtn.classList.remove('hidden');
-  canvasOpenFolder.classList.remove('hidden');
+  // Configure dropdown for space context
+  closeCanvasMenu();
+  updateCanvasMenuContext(false);
 
   canvasView.classList.remove('hidden');
 
@@ -4926,12 +5003,14 @@ canvasSaveBtn.addEventListener('click', saveCanvas);
 canvasBack.addEventListener('click', closeCanvas);
 
 canvasOpenFolder.addEventListener('click', () => {
+  closeCanvasMenu();
   if (canvasSpaceId) {
     whimAPI.openSpaceFolder(canvasSpaceId);
   }
 });
 
 canvasLaunchBtn.addEventListener('click', async () => {
+  closeCanvasMenu();
   if (canvasSkillId) {
     // Skill mode: create space from skill + launch session
     await launchSkillAsSpace(canvasSkillId);
@@ -5200,7 +5279,7 @@ async function restoreFromPreview(): Promise<void> {
 canvasPreviewBack.addEventListener('click', exitPreview);
 canvasPreviewRestore.addEventListener('click', restoreFromPreview);
 
-canvasHistoryBtn.addEventListener('click', toggleHistoryPanel);
+canvasHistoryBtn.addEventListener('click', () => { closeCanvasMenu(); toggleHistoryPanel(); });
 canvasHistoryClose.addEventListener('click', closeHistoryPanel);
 
 // Refresh history panel when a new auto-commit happens
@@ -5290,7 +5369,7 @@ function closeAgentsPanel(): void {
   agentsPanelOpen = false;
 }
 
-canvasAgentsBtn.addEventListener('click', toggleAgentsPanel);
+canvasAgentsBtn.addEventListener('click', () => { closeCanvasMenu(); toggleAgentsPanel(); });
 canvasAgentsClose.addEventListener('click', closeAgentsPanel);
 
 function updateModeToggleUI(mode: string): void {
@@ -5980,11 +6059,12 @@ if (isCanvasMode) {
 
   // ── Always-on-top toggle ────────────────────────────────
   async function toggleCanvasOnTop(): Promise<void> {
+    closeCanvasMenu();
     const current = await whimAPI.getCanvasAlwaysOnTop();
     const next = !current;
     whimAPI.setCanvasAlwaysOnTop(next);
     canvasPinTopBtn.classList.toggle('active', next);
-    canvasPinTopBtn.title = next ? 'Remove from top (⌘⇧T)' : 'Keep on top (⌘⇧T)';
+    canvasPinLabel.textContent = next ? 'Unpin from Top' : 'Pin to Top';
   }
 
   canvasPinTopBtn.addEventListener('click', toggleCanvasOnTop);
@@ -6000,7 +6080,7 @@ if (isCanvasMode) {
   // Sync initial state
   whimAPI.getCanvasAlwaysOnTop().then(pinned => {
     canvasPinTopBtn.classList.toggle('active', pinned);
-    canvasPinTopBtn.title = pinned ? 'Remove from top (⌘⇧T)' : 'Keep on top (⌘⇧T)';
+    canvasPinLabel.textContent = pinned ? 'Unpin from Top' : 'Pin to Top';
   });
 
   // Apply theme
