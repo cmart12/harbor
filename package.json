@@ -41,7 +41,7 @@
     "publish": {
       "provider": "github",
       "owner": "patniko",
-      "repo": "intent"
+      "repo": "whim"
     },
     "mac": {
       "icon": "build/icon.icns",
