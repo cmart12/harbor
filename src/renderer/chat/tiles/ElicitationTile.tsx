@@ -120,6 +120,7 @@ export function ElicitationTile({
   const [values, setValues] = useState<Record<string, FieldValue>>(() =>
     getDefaultValues(properties),
   );
+  const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     setValues(getDefaultValues(properties));
@@ -153,7 +154,12 @@ export function ElicitationTile({
 
   return (
     <div className="chat-tool-tile border-blue">
-      <div className="chat-tool-header">
+      <div
+        className="chat-tool-header"
+        onClick={() => setExpanded(!expanded)}
+        role="button"
+        tabIndex={0}
+      >
         <span className={`chat-tool-status ${statusClass}`} aria-hidden="true">
           {statusIcon || '●'}
         </span>
@@ -164,7 +170,12 @@ export function ElicitationTile({
         {showSource && (
           <span className="elicitation-source-badge">{elicitationSource}</span>
         )}
+        <span className={`chat-tool-chevron ${expanded ? 'expanded' : ''}`}>▸</span>
       </div>
+
+      {expanded && (
+        <div className="elicitation-message-full">{message}</div>
+      )}
 
       {responded ? (
         <div className="elicitation-response">

@@ -4767,6 +4767,7 @@ async function unarchiveIntent(id: string): Promise<void> {
 
 // ── Canvas view ─────────────────────────────────────────
 import { mountCanvas, unmountCanvas, getCanvasContent, saveCanvas as saveCanvasEditor, updateCanvasPresence, addCanvasCommentReply, toggleCanvasMode, getCanvasEditorMode, replaceCanvasContent } from './canvas/mount.tsx';
+import { mountCanvasWorkerPanel, unmountCanvasWorkerPanel, isCanvasChatPaneOpen, closeCanvasChatPane } from './canvas/worker-panel-mount.tsx';
 import type { DocumentPresence } from 'documint';
 
 const canvasView = document.getElementById('canvas-view') as HTMLDivElement;
@@ -4777,6 +4778,8 @@ const canvasSaveStatus = document.getElementById('canvas-save-status') as HTMLSp
 const canvasLaunchBtn = document.getElementById('canvas-launch') as HTMLButtonElement;
 const canvasSaveBtn = document.getElementById('canvas-save') as HTMLButtonElement;
 const canvasRoot = document.getElementById('canvas-root') as HTMLDivElement;
+const canvasWorkerTilesRoot = document.getElementById('canvas-worker-tiles-root') as HTMLDivElement;
+const canvasChatPane = document.getElementById('canvas-chat-pane') as HTMLDivElement;
 const canvasHistoryBtn = document.getElementById('canvas-history-btn') as HTMLButtonElement;
 const canvasHistoryPanel = document.getElementById('canvas-history-panel') as HTMLDivElement;
 const canvasHistoryClose = document.getElementById('canvas-history-close') as HTMLButtonElement;
@@ -4785,14 +4788,10 @@ const canvasPreviewBanner = document.getElementById('canvas-preview-banner') as 
 const canvasPreviewLabel = document.getElementById('canvas-preview-label') as HTMLSpanElement;
 const canvasPreviewRestore = document.getElementById('canvas-preview-restore') as HTMLButtonElement;
 const canvasPreviewBack = document.getElementById('canvas-preview-back') as HTMLButtonElement;
-const canvasAgentsBtn = document.getElementById('canvas-agents-btn') as HTMLButtonElement;
 const canvasPinTopBtn = document.getElementById('canvas-pin-top') as HTMLButtonElement;
 const canvasOpenFolder = document.getElementById('canvas-open-folder') as HTMLButtonElement;
 const modeToggleRendered = document.getElementById('mode-toggle-rendered') as HTMLButtonElement;
 const modeToggleRaw = document.getElementById('mode-toggle-raw') as HTMLButtonElement;
-const canvasAgentsPanel = document.getElementById('canvas-agents-panel') as HTMLDivElement;
-const canvasAgentsClose = document.getElementById('canvas-agents-close') as HTMLButtonElement;
-const canvasAgentsList = document.getElementById('canvas-agents-list') as HTMLDivElement;
 const canvasMenuBtn = document.getElementById('canvas-menu-btn') as HTMLButtonElement;
 const canvasMenuDropdown = document.getElementById('canvas-menu-dropdown') as HTMLDivElement;
 const canvasMarkComplete = document.getElementById('canvas-mark-complete') as HTMLButtonElement;
@@ -4803,6 +4802,7 @@ let canvasSpaceId: string | null = null;
 let canvasSkillId: string | null = null;
 let canvasDirty = false;
 let canvasIsNewIntent = false;
+let canvasChatPaneOpen = false;
 let canvasMountGen = 0;
 let titleBeforeEdit = '';
 
@@ -5040,6 +5040,14 @@ async function openCanvas(spaceId: string, expanded = false): Promise<void> {
       }
     },
   });
+
+  // Mount worker tiles + chat side pane
+  mountCanvasWorkerPanel(canvasWorkerTilesRoot, canvasChatPane, {
+    spaceId,
+    onChatPaneToggle: (open: boolean) => {
+      canvasChatPaneOpen = open;
+    },
+  });
 }
 
 async function saveCanvas(): Promise<void> {
@@ -5057,7 +5065,8 @@ async function closeCanvas(): Promise<void> {
     canvasPreviewBanner.classList.add('hidden');
   }
   closeHistoryPanel();
-  closeAgentsPanel();
+  unmountCanvasWorkerPanel();
+  canvasChatPaneOpen = false;
   const spaceId = canvasSpaceId;
   const wasNewIntent = canvasIsNewIntent;
   const skillId = canvasSkillId;
@@ -5147,7 +5156,7 @@ function toggleHistoryPanel(): void {
 
 async function openHistoryPanel(): Promise<void> {
   if (!canvasSpaceId) return;
-  closeAgentsPanel();
+  closeCanvasChatPane();
   canvasHistoryPanel.classList.remove('hidden');
   canvasHistoryBtn.classList.add('active');
   historyPanelOpen = true;
@@ -5386,89 +5395,6 @@ whimAPI.onWorkspaceCommitted(() => {
     openHistoryPanel();
   }
 });
-
-// ── Canvas Agents Panel ─────────────────────────────────
-let agentsPanelOpen = false;
-
-function toggleAgentsPanel(): void {
-  if (agentsPanelOpen) {
-    closeAgentsPanel();
-  } else {
-    openAgentsPanel();
-  }
-}
-
-async function openAgentsPanel(): Promise<void> {
-  if (!canvasSpaceId) return;
-  closeHistoryPanel();
-  canvasAgentsPanel.classList.remove('hidden');
-  canvasAgentsBtn.classList.add('active');
-  agentsPanelOpen = true;
-  canvasAgentsList.innerHTML = '<div class="history-loading">Loading sessions…</div>';
-
-  let agents: Array<{ agentId: string; sessionId: string; status: string; summary: string; selectedText: string; createdAt?: string }> = [];
-  try {
-    agents = await whimAPI.listAgents(canvasSpaceId);
-  } catch { /* skip */ }
-
-  if (agents.length === 0) {
-    canvasAgentsList.innerHTML = '<div class="history-empty">No agent sessions for this space</div>';
-    return;
-  }
-
-  agents.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
-
-  canvasAgentsList.innerHTML = agents.map(agent => {
-    const statusIcon = agent.status === 'running' ? '⚡' :
-                       agent.status === 'waiting-approval' ? '⏳' :
-                       agent.status === 'completed' ? '✓' : '✗';
-    const statusClass = agent.status === 'running' ? 'agent-running' :
-                        agent.status === 'waiting-approval' ? 'agent-waiting' :
-                        agent.status === 'completed' ? 'agent-completed' : 'agent-failed';
-    const preview = agent.selectedText.length > 60
-      ? agent.selectedText.slice(0, 57) + '...'
-      : agent.selectedText;
-    const ago = agent.createdAt ? timeAgo(agent.createdAt) : '';
-
-    return `
-      <div class="canvas-agent-item ${statusClass}" data-agent-id="${agent.agentId}">
-        <div class="canvas-agent-status">${statusIcon}</div>
-        <div class="canvas-agent-body">
-          <div class="canvas-agent-text">${escapeHtml(preview || agent.summary || 'Agent session')}</div>
-          <div class="canvas-agent-meta">
-            <span>${escapeHtml(agent.status)}</span>
-            ${ago ? `<span>${ago}</span>` : ''}
-          </div>
-        </div>
-      </div>
-    `;
-  }).join('');
-
-  canvasAgentsList.querySelectorAll('.canvas-agent-item[data-agent-id]').forEach(el => {
-    el.addEventListener('click', () => {
-      const agentId = (el as HTMLElement).dataset.agentId;
-      if (!agentId) return;
-      const agent = agents.find(a => a.agentId === agentId);
-      if (agent) {
-        if (isCanvasMode) {
-          // Open the chat in the main panel so the canvas stays visible
-          whimAPI.openAgentChatInPanel({ agentId, agentPrompt: agent.selectedText, agentStatus: agent.status, spaceId: canvasSpaceId || undefined });
-        } else {
-          openAgentChat(agentId, agent.selectedText, agent.status, undefined, canvasSpaceId || undefined);
-        }
-      }
-    });
-  });
-}
-
-function closeAgentsPanel(): void {
-  canvasAgentsPanel.classList.add('hidden');
-  canvasAgentsBtn.classList.remove('active');
-  agentsPanelOpen = false;
-}
-
-canvasAgentsBtn.addEventListener('click', () => { closeCanvasMenu(); toggleAgentsPanel(); });
-canvasAgentsClose.addEventListener('click', closeAgentsPanel);
 
 function updateModeToggleUI(mode: string): void {
   modeToggleRendered.classList.toggle('active', mode === 'rendered');

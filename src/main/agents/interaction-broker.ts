@@ -479,28 +479,37 @@ export class InteractionBroker {
     return async (request: UserInputRequest, invocation: { sessionId: string }): Promise<UserInputResponse> => {
       const record = findRecord(invocation.sessionId);
       if (!record) return { answer: '', wasFreeform: true };
-
-      const requestId = crypto.randomUUID();
-
-      this.notifier.notifyRenderer(`chat:event:${record.agentId}`, {
-        type: 'user_input.requested',
-        requestId,
-        agentId: record.agentId,
-        question: request.question,
-        choices: request.choices,
-        allowFreeform: request.allowFreeform,
-      });
-
-      this.notifier.showApprovalNotification({
-        agentId: record.agentId,
-        requestId,
-        permissionKind: 'question',
-      });
-
-      return new Promise<UserInputResponse>((resolve) => {
-        this.userInputCallbacks.set(requestId, resolve);
-      });
+      return this.requestUserInput(record.agentId, request);
     };
+  }
+
+  /**
+   * Request user input for a given agent. Emits `user_input.requested` to the
+   * renderer, shows a notification, and returns a promise that resolves when the
+   * user responds. Used by both the SDK's onUserInputRequest callback and the
+   * custom ask_user tool.
+   */
+  async requestUserInput(agentId: string, request: UserInputRequest): Promise<UserInputResponse> {
+    const requestId = crypto.randomUUID();
+
+    this.notifier.notifyRenderer(`chat:event:${agentId}`, {
+      type: 'user_input.requested',
+      requestId,
+      agentId,
+      question: request.question,
+      choices: request.choices,
+      allowFreeform: request.allowFreeform,
+    });
+
+    this.notifier.showApprovalNotification({
+      agentId,
+      requestId,
+      permissionKind: 'question',
+    });
+
+    return new Promise<UserInputResponse>((resolve) => {
+      this.userInputCallbacks.set(requestId, resolve);
+    });
   }
 
   createElicitationHandler(findRecord: (sessionId: string) => AgentRecord | undefined) {

@@ -10,7 +10,6 @@ import {
   Documint,
   lightTheme,
   darkTheme,
-  type DocumintState,
   type DocumentUser,
   type DocumentPresence,
   type CommentChange,
@@ -143,7 +142,6 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
     const frontmatterRef = useRef(frontmatter);
     const editorModeRef = useRef<EditorMode>(editorMode);
     const rawContentRef = useRef(rawContent);
-    const stateRef = useRef<DocumintState | null>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const [isDragging, setIsDragging] = useState(false);
     const [personas, setPersonas] = useState<AgentPersona[]>(initialPersonas || []);
@@ -331,10 +329,6 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
       });
     }, [onAgentMentioned, personas]);
 
-    const handleStateChange = useCallback((state: DocumintState) => {
-      stateRef.current = state;
-    }, []);
-
     useImperativeHandle(ref, () => ({
       saveNow,
       getContent: () => getFullContent(),
@@ -485,39 +479,16 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
 
     function insertAttachment(markdownRef: string) {
       const current = contentRef.current;
-      const state = stateRef.current;
-
-      if (state && state.canonicalContent === current && state.selectionTo >= 0) {
-        const pos = state.selectionTo;
-        const before = current.slice(0, pos);
-        const after = current.slice(pos);
-        handleContentChange(before + markdownRef + after);
-      } else {
-        const separator = current.endsWith('\n') ? '' : '\n';
-        handleContentChange(current + separator + markdownRef);
-      }
+      const separator = current.endsWith('\n') ? '' : '\n';
+      handleContentChange(current + separator + markdownRef);
     }
 
     const handleRecordingStart = useCallback(() => {
-      // Insert a placeholder after the current line so it gets its own line
       const current = contentRef.current;
-      const state = stateRef.current;
       const placeholder = VOICE_PLACEHOLDER;
 
-      if (state && state.canonicalContent === current && state.selectionTo >= 0) {
-        // Find the end of the line the cursor is on
-        let lineEnd = current.indexOf('\n', state.selectionTo);
-        if (lineEnd < 0) lineEnd = current.length;
-        const before = current.slice(0, lineEnd);
-        const after = current.slice(lineEnd);
-        // Ensure blank line before and after the placeholder
-        const pre = before.endsWith('\n') ? '\n' : '\n\n';
-        const post = after.startsWith('\n') ? '\n' : '\n\n';
-        handleContentChange(before + pre + placeholder + post + after.replace(/^\n/, ''));
-      } else {
-        const separator = current.endsWith('\n') ? '\n' : '\n\n';
-        handleContentChange(current + separator + placeholder + '\n');
-      }
+      const separator = current.endsWith('\n') ? '\n' : '\n\n';
+      handleContentChange(current + separator + placeholder + '\n');
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     const handleRecordingComplete = useCallback(async (result: VoiceRecordingResult) => {
@@ -657,7 +628,6 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
                 storage={storage}
                 onContentChanged={handleContentChange}
                 onCommentChanged={handleCommentChanged}
-                onStateChanged={handleStateChange}
                 presence={presence}
                 theme={documintTheme}
               />

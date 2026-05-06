@@ -85,7 +85,7 @@ export function buildSandboxLaunchSetup(opts: {
 }): SandboxLaunchSetup {
   const { agentId, workingDir, persona, registry, broker } = opts;
   const allMcpServers = getAllMcpServers();
-  const allCustomTools = getCustomTools();
+  const allCustomTools = getCustomTools({ agentId, broker });
 
   const isSandboxed = persona.sandboxed === true && IS_WINDOWS;
 

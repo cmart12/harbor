@@ -285,10 +285,6 @@
           <div class="canvas-menu-wrap">
             <button id="canvas-menu-btn" class="header-icon-btn canvas-menu-trigger" title="More actions">⋯</button>
             <div id="canvas-menu-dropdown" class="canvas-menu-dropdown hidden">
-              <button id="canvas-agents-btn" class="canvas-menu-item" data-context="space">
-                <img src="copilot.png" width="16" height="16" alt="" class="canvas-menu-icon-img">
-                <span>Agents</span>
-              </button>
               <button id="canvas-history-btn" class="canvas-menu-item" data-context="space">
                 <span class="canvas-menu-icon">🕘</span>
                 <span>History</span>
@@ -327,13 +323,10 @@
             <button id="canvas-preview-back" class="preview-banner-btn back">Back to current</button>
           </div>
         </div>
-        <div id="canvas-root" class="canvas-root"></div>
-        <div id="canvas-agents-panel" class="canvas-agents-panel hidden">
-          <div class="history-panel-header">
-            <span class="history-panel-title">Agent Sessions</span>
-            <button id="canvas-agents-close" class="header-icon-btn" title="Close">✕</button>
-          </div>
-          <div id="canvas-agents-list" class="canvas-agents-list"></div>
+        <div id="canvas-worker-tiles-root" class="canvas-worker-tiles-root"></div>
+        <div class="canvas-content-row">
+          <div id="canvas-root" class="canvas-root"></div>
+          <div id="canvas-chat-pane" class="canvas-chat-pane hidden"></div>
         </div>
         <div id="canvas-history-panel" class="canvas-history-panel hidden">
           <div class="history-panel-header">

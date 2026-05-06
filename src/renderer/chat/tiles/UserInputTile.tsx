@@ -27,6 +27,7 @@ export function UserInputTile({
   const [selected, setSelected] = useState<string | null>(null);
   const [freeformText, setFreeformText] = useState('');
   const [usingFreeform, setUsingFreeform] = useState(false);
+  const [expanded, setExpanded] = useState(false);
 
   const showFreeform = allowFreeform || !choices?.length;
   const currentAnswer = usingFreeform ? freeformText : selected;
@@ -58,7 +59,12 @@ export function UserInputTile({
 
   return (
     <div className={`chat-tool-tile border-gold`}>
-      <div className="chat-tool-header">
+      <div
+        className="chat-tool-header"
+        onClick={() => setExpanded(!expanded)}
+        role="button"
+        tabIndex={0}
+      >
         <span className={`chat-tool-status ${responded ? (answer ? 'success' : 'error') : 'running'}`} aria-hidden="true">
           {statusIcon || '●'}
         </span>
@@ -66,7 +72,12 @@ export function UserInputTile({
           <span className="chat-tool-label">Ask User</span>
         </span>
         <span className="chat-user-input-question-preview">{question}</span>
+        <span className={`chat-tool-chevron ${expanded ? 'expanded' : ''}`}>▸</span>
       </div>
+
+      {expanded && (
+        <div className="chat-user-input-question-full">{question}</div>
+      )}
 
       {responded ? (
         answer ? (

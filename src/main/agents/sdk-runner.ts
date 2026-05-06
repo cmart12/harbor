@@ -80,7 +80,7 @@ export async function launchAgent(
     const session = await client.createSession({
       workingDirectory: workingDir,
       mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
-      tools: getCustomTools(),
+      tools: getCustomTools({ agentId, broker }),
       onPermissionRequest: broker.createPermissionHandler(findRecord),
       onUserInputRequest: broker.createUserInputHandler(findRecord),
       onElicitationRequest: broker.createElicitationHandler(findRecord),
@@ -189,7 +189,7 @@ export async function launchQuickAgent(
     const isSandboxed = sandboxSetup?.isSandboxed === true;
     const sandboxConfigs = sandboxSetup?.sandboxConfigs ?? null;
     const mcpServers = sandboxSetup ? sandboxSetup.mcpServers : getAllMcpServers();
-    const customTools = sandboxSetup ? sandboxSetup.customTools : getCustomTools();
+    const customTools = sandboxSetup ? sandboxSetup.customTools : getCustomTools({ agentId, broker });
     const sandboxState = sandboxSetup?.sandboxState;
     const hooks = sandboxSetup?.hooks;
     const enforcementMode = sandboxSetup?.enforcementMode ?? 'both';
@@ -338,7 +338,7 @@ export async function launchDocumentAgent(
     const session = await client.createSession({
       workingDirectory: workingDir,
       mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
-      tools: getCustomTools(),
+      tools: getCustomTools({ agentId, broker }),
       onPermissionRequest: broker.createPermissionHandler(findRecord),
       onUserInputRequest: broker.createUserInputHandler(findRecord),
       onElicitationRequest: broker.createElicitationHandler(findRecord),
@@ -512,7 +512,7 @@ export async function disableSandboxForSession(agentId: string): Promise<void> {
       configDir: offDir,
       workingDirectory: (await import('../config')).getConfig().workspace ?? undefined,
       mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
-      tools: getCustomTools(),
+      tools: getCustomTools({ agentId, broker }),
       onPermissionRequest: broker.createPermissionHandler(findRecord),
       onUserInputRequest: broker.createUserInputHandler(findRecord),
       onElicitationRequest: broker.createElicitationHandler(findRecord),
@@ -574,7 +574,7 @@ async function resumeAgentSession(agentId: string): Promise<'resumed' | 'restart
     const session = await client.resumeSession(persisted.session_id, {
       workingDirectory: workingDir,
       mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
-      tools: getCustomTools(),
+      tools: getCustomTools({ agentId, broker }),
       onPermissionRequest: broker.createPermissionHandler(findRecord),
       onUserInputRequest: broker.createUserInputHandler(findRecord),
       onElicitationRequest: broker.createElicitationHandler(findRecord),
@@ -653,7 +653,7 @@ async function restartExpiredSession(
     const session = await client.createSession({
       workingDirectory: workingDir,
       mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
-      tools: getCustomTools(),
+      tools: getCustomTools({ agentId, broker }),
       onPermissionRequest: broker.createPermissionHandler(findRecord),
       onUserInputRequest: broker.createUserInputHandler(findRecord),
       onElicitationRequest: broker.createElicitationHandler(findRecord),
