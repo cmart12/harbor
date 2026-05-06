@@ -1,4 +1,4 @@
-import { app, BrowserWindow, globalShortcut, session, protocol, net, systemPreferences } from 'electron';
+import { app, BrowserWindow, dialog, globalShortcut, session, protocol, net, systemPreferences } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { loadConfig, getConfigValue, setConfigValue } from './config';
@@ -48,6 +48,7 @@ const MIME_TYPES: Record<string, string> = {
 };
 
 app.whenReady().then(async () => {
+  try {
   // Register custom protocol to serve renderer files (Web Speech API needs a real origin, not file://)
   // Also serves workspace attachment files via copilot-whim://app/workspace/<intentFolder>/<path>
   protocol.handle('copilot-whim', (request) => {
@@ -164,6 +165,12 @@ app.whenReady().then(async () => {
   const registered = globalShortcut.register('CommandOrControl+Shift+Space', toggleWindow);
   if (!registered) {
     console.warn('Failed to register Ctrl+Shift+Space — another process may be holding it');
+  }
+  } catch (err) {
+    console.error('[main] Fatal startup error:', err);
+    dialog.showErrorBox('Copilot Whim — Startup Error',
+      `The app failed to initialize:\n\n${err instanceof Error ? err.message : String(err)}`);
+    app.quit();
   }
 });
 

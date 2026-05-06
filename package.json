@@ -1,6 +1,6 @@
 {
   "name": "whim",
-  "version": "1.0.0",
+  "version": "0.0.4",
   "description": "Quick capture from system tray",
   "productName": "Copilot Whim",
   "main": "dist/main/main.js",
@@ -19,9 +19,9 @@
     "start": "npm run build && npm run rebuild:electron && electron .",
     "dev": "npm run build && npm run rebuild:electron && (tsc -p tsconfig.main.json -w --preserveWatchOutput --declaration false --sourceMap false & node scripts/build-renderer.js --watch & node scripts/watch-assets.js & electronmon .)",
     "dev:packaged": "npm run build:mac && open build/mac-arm64/Copilot\\ Whim.app",
-    "build:mac": "npm run build && electron-builder --mac --dir",
-    "build:installer:mac": "npm run build && electron-builder --mac",
-    "release": "npm run build && electron-builder --mac --publish always"
+    "build:mac": "npm run build && npm run rebuild:electron && electron-builder --mac --dir",
+    "build:installer:mac": "npm run build && npm run rebuild:electron && electron-builder --mac",
+    "release": "npm run build && npm run rebuild:electron && electron-builder --mac --publish always"
   },
   "build": {
     "appId": "com.copilot.tokens",
