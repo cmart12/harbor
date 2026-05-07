@@ -44,6 +44,7 @@ export function createAskUserTool(agentId: string, broker: InteractionBroker) {
       },
       required: ['question'],
     },
+    overridesBuiltInTool: true,
     skipPermission: true,
     handler: async (args: AskUserArgs): Promise<string> => {
       const { question, choices, allow_freeform } = args;
