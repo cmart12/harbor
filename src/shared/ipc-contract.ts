@@ -304,6 +304,8 @@ export interface IpcCommands {
   'agent:cloud-status': { args: [agentId: string]; result: CloudJobPollResult };
   'agent:get-history': { args: [agentId: string]; result: { events: unknown[]; restarted?: boolean } | { error: string } };
   'agent:set-yolo': { args: [agentId: string, enabled: boolean]; result: { ok: true } | { error: string } };
+  'agent:enable-remote': { args: [agentId: string]; result: { enabled: boolean; remoteSteerable: boolean; url?: string } | { error: string } };
+  'agent:disable-remote': { args: [agentId: string]; result: { ok: true } | { error: string } };
 
   // ── Conduit ──────────────────────────────────────────────
   'conduit:host-status': { args: []; result: { configured: boolean; connected: boolean; url: string | null; hasProfiles: boolean; profileId: string | null; profileName: string | null } };
@@ -404,6 +406,7 @@ export interface IpcEvents {
   };
   'agent:completed': { agentId: string; summary: string };
   'agent:yolo-changed': { agentId: string; enabled: boolean };
+  'agent:remote-changed': { agentId: string; enabled: boolean; remoteSteerable: boolean; url?: string };
   'notification:approval-clicked': { agentId: string };
   'agent:presence-started': { agentId: string; spaceId: string; persona: { name: string; handle: string }; anchor: AgentAnchor };
   'agent:presence-ended': { agentId: string; spaceId: string };

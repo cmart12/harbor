@@ -197,6 +197,9 @@ interface WhimAPI {
   }) => void): void;
   onAgentCompleted(callback: (data: any) => void): void;
   onAgentYoloChanged(callback: (data: { agentId: string; enabled: boolean }) => void): void;
+  onAgentRemoteChanged(callback: (data: { agentId: string; enabled: boolean; remoteSteerable: boolean; url?: string }) => void): void;
+  enableRemote(agentId: string): Promise<{ enabled?: boolean; remoteSteerable?: boolean; url?: string; error?: string }>;
+  disableRemote(agentId: string): Promise<{ ok?: boolean; error?: string }>;
   onNotificationApprovalClicked(callback: (data: { agentId: string }) => void): void;
   onAgentPresenceStarted(callback: (data: { agentId: string; spaceId: string; persona: { name: string; handle: string; color?: string; imageUrl?: string }; anchor: { prefix?: string; suffix?: string } }) => void): void;
   onAgentPresenceEnded(callback: (data: { agentId: string; spaceId: string }) => void): void;
@@ -2871,6 +2874,7 @@ interface AgentStep {
 const agentSteps = new Map<string, AgentStep[]>();
 const agentApprovals = new Map<string, { requestId: string; permissionKind: string; intention?: string; path?: string }>();
 const agentYoloState = new Map<string, boolean>();
+const agentRemoteState = new Map<string, { enabled: boolean; url?: string }>();
 const agentChatUnsubs = new Map<string, () => void>();
 
 function basename(filePath: string): string {
@@ -3422,6 +3426,12 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
       ? `<button class="agent-card-yolo-btn${isYolo ? ' active' : ''}" data-agent-id="${agent.agentId}" title="${isYolo ? 'Yolo mode ON — click to disable' : 'Enable yolo mode (auto-approve all)'}">🔥</button>`
       : '';
 
+    const remoteInfo = agentRemoteState.get(agent.agentId);
+    const isRemote = remoteInfo?.enabled || false;
+    const remoteBtn = agent.source === 'sdk' && (agent.status === 'running' || agent.status === 'waiting-approval')
+      ? `<button class="agent-card-remote-btn${isRemote ? ' active' : ''}" data-agent-id="${agent.agentId}" title="${isRemote ? 'Remote control ON — click to view link' : 'Enable remote control'}">📱</button>`
+      : '';
+
     // Only show summary when it adds information beyond the status
     const trivialSummaries = ['Completed', 'Failed', 'Starting...', ''];
     const showSummary = (agent.status === 'completed' || agent.status === 'failed') && agent.summary && !trivialSummaries.includes(agent.summary);
@@ -3436,6 +3446,7 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
           ${sourceLabel}
           <div class="agent-card-actions">
             ${yoloBtn}
+            ${remoteBtn}
             ${canvasBtn}
             <button class="agent-card-delete-btn" data-agent-id="${agent.agentId}" title="Delete session">✕</button>
           </div>
@@ -3509,6 +3520,28 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
       const aid = (e.currentTarget as HTMLElement).dataset.agentId!;
       const current = agentYoloState.get(aid) || false;
       whimAPI.setAgentYolo(aid, !current);
+    });
+  });
+
+  // Wire up remote control toggle handlers
+  listEl.querySelectorAll('.agent-card-remote-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const aid = (e.currentTarget as HTMLElement).dataset.agentId!;
+      const current = agentRemoteState.get(aid);
+      if (current?.enabled) {
+        if (current.url) {
+          // Already enabled with URL — open the chat with remote overlay
+          const agent = (allAgents as any[]).find((a: any) => a.agentId === aid);
+          if (agent) {
+            openAgentChat(aid, agent.selectedText, agent.status, agent.source as any, agent.spaceId);
+          }
+        } else {
+          await whimAPI.disableRemote(aid);
+        }
+      } else {
+        await whimAPI.enableRemote(aid);
+      }
     });
   });
 
@@ -5568,6 +5601,16 @@ whimAPI.onAgentYoloChanged((data: { agentId: string; enabled: boolean }) => {
   if (btn) {
     btn.classList.toggle('active', data.enabled);
     btn.title = data.enabled ? 'Yolo mode ON — click to disable' : 'Enable yolo mode (auto-approve all)';
+  }
+});
+
+whimAPI.onAgentRemoteChanged((data: { agentId: string; enabled: boolean; remoteSteerable: boolean; url?: string }) => {
+  agentRemoteState.set(data.agentId, { enabled: data.enabled, url: data.url });
+  // Update the remote button if visible
+  const btn = document.querySelector(`.agent-card-remote-btn[data-agent-id="${data.agentId}"]`) as HTMLElement | null;
+  if (btn) {
+    btn.classList.toggle('active', data.enabled);
+    btn.title = data.enabled ? 'Remote control ON — click to view link' : 'Enable remote control';
   }
 });
 

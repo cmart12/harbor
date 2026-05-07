@@ -120,6 +120,8 @@ export interface WhimAPI {
   getAgentHistory(agentId: string): Promise<IpcCommandResult<'agent:get-history'>>;
   getAgentWorkingDir(agentId: string): Promise<string | null>;
   setAgentYolo(agentId: string, enabled: boolean): Promise<IpcCommandResult<'agent:set-yolo'>>;
+  enableRemote(agentId: string): Promise<IpcCommandResult<'agent:enable-remote'>>;
+  disableRemote(agentId: string): Promise<IpcCommandResult<'agent:disable-remote'>>;
 
   // ── Conduit ─────────────────────────────────────────────
   getConduitHostStatus(): Promise<IpcCommandResult<'conduit:host-status'>>;
@@ -184,6 +186,7 @@ export interface WhimAPI {
   onAgentSandboxBlocked(callback: (data: IpcEventPayload<'agent:sandbox-blocked'>) => void): void;
   onAgentCompleted(callback: (data: IpcEventPayload<'agent:completed'>) => void): void;
   onAgentYoloChanged(callback: (data: IpcEventPayload<'agent:yolo-changed'>) => void): void;
+  onAgentRemoteChanged(callback: (data: IpcEventPayload<'agent:remote-changed'>) => void): void;
   onNotificationApprovalClicked(callback: (data: IpcEventPayload<'notification:approval-clicked'>) => void): void;
   onAgentPresenceStarted(callback: (data: IpcEventPayload<'agent:presence-started'>) => void): void;
   onAgentPresenceEnded(callback: (data: IpcEventPayload<'agent:presence-ended'>) => void): void;
@@ -335,6 +338,10 @@ const api: WhimAPI = {
     ipcRenderer.invoke('agent:get-working-dir', agentId),
   setAgentYolo: (agentId, enabled) =>
     ipcRenderer.invoke('agent:set-yolo', agentId, enabled),
+  enableRemote: (agentId) =>
+    ipcRenderer.invoke('agent:enable-remote', agentId),
+  disableRemote: (agentId) =>
+    ipcRenderer.invoke('agent:disable-remote', agentId),
 
   // ── Conduit ─────────────────────────────────────────────
   getConduitHostStatus: () =>
@@ -467,6 +474,9 @@ const api: WhimAPI = {
   },
   onAgentYoloChanged: (callback) => {
     ipcRenderer.on('agent:yolo-changed', (_event: unknown, data: IpcEventPayload<'agent:yolo-changed'>) => callback(data));
+  },
+  onAgentRemoteChanged: (callback) => {
+    ipcRenderer.on('agent:remote-changed', (_event: unknown, data: IpcEventPayload<'agent:remote-changed'>) => callback(data));
   },
   onNotificationApprovalClicked: (callback) => {
     ipcRenderer.on('notification:approval-clicked', (_event: unknown, data: IpcEventPayload<'notification:approval-clicked'>) => callback(data));

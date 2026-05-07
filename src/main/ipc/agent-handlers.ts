@@ -216,6 +216,17 @@ export function registerAgentHandlers(): void {
     return setAgentYolo(agentId, enabled);
   });
 
+  // ── Remote control ──────────────────────────────────────
+  ipcMain.handle('agent:enable-remote', async (_event, agentId: string) => {
+    const { enableRemoteControl } = await import('../agent-service');
+    return enableRemoteControl(agentId);
+  });
+
+  ipcMain.handle('agent:disable-remote', async (_event, agentId: string) => {
+    const { disableRemoteControl } = await import('../agent-service');
+    return disableRemoteControl(agentId);
+  });
+
   // ── Cloud agent launch ────────────────────────────────────
   ipcMain.handle('agent:launch-cloud', async (_event, spaceId: string, prompt: string) => {
     const workspace = getConfigValue('workspace');

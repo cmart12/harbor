@@ -923,6 +923,21 @@ export function setupAgentEventListeners(session: CopilotSession, record: AgentR
 
   // Sub-agent tracking via catch-all listener
   installSubagentSubscription(session, record);
+
+  // Remote steering state changes
+  session.on('session.remote_steerable_changed' as any, (event: any) => {
+    const d = event.data ?? event;
+    const remoteSteerable = !!d.remoteSteerable;
+    if (record.remote) {
+      record.remote.remoteSteerable = remoteSteerable;
+    }
+    notifier.notifyRenderer('agent:remote-changed', {
+      agentId,
+      enabled: record.remote?.enabled ?? false,
+      remoteSteerable,
+      url: record.remote?.url,
+    });
+  });
 }
 
 /**
@@ -1063,4 +1078,47 @@ function installSubagentSubscription(session: CopilotSession, record: AgentRecor
       subagentTracker.trackIdle(parentAgentId, subAgentId);
     }
   });
+}
+
+// ── Remote control ─────────────────────────────────────
+
+export async function enableRemoteControl(agentId: string): Promise<{ enabled: boolean; remoteSteerable: boolean; url?: string } | { error: string }> {
+  const record = registry.get(agentId);
+  if (!record) return { error: 'Agent not found' };
+
+  try {
+    const result = await record.session.rpc.remote.enable();
+    record.remote = {
+      enabled: true,
+      remoteSteerable: result.remoteSteerable,
+      url: result.url,
+    };
+    notifier.notifyRenderer('agent:remote-changed', {
+      agentId,
+      enabled: true,
+      remoteSteerable: result.remoteSteerable,
+      url: result.url,
+    });
+    return { enabled: true, remoteSteerable: result.remoteSteerable, url: result.url };
+  } catch (err: any) {
+    return { error: err.message || 'Failed to enable remote control' };
+  }
+}
+
+export async function disableRemoteControl(agentId: string): Promise<{ ok: true } | { error: string }> {
+  const record = registry.get(agentId);
+  if (!record) return { error: 'Agent not found' };
+
+  try {
+    await record.session.rpc.remote.disable();
+    record.remote = { enabled: false, remoteSteerable: false };
+    notifier.notifyRenderer('agent:remote-changed', {
+      agentId,
+      enabled: false,
+      remoteSteerable: false,
+    });
+    return { ok: true };
+  } catch (err: any) {
+    return { error: err.message || 'Failed to disable remote control' };
+  }
 }

@@ -72,6 +72,8 @@ export interface AgentRecord {
   connectedClients?: ConduitClientInfo[];
   /** Set when the user intentionally disconnects a conduit session. */
   _intentionalDisconnect?: boolean;
+  /** Remote control state — tracks Mission Control integration per session. */
+  remote?: { enabled: boolean; remoteSteerable: boolean; url?: string };
 }
 
 export class AgentRegistry {

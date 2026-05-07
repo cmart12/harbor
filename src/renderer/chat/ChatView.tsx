@@ -3,6 +3,7 @@ import type { ChatMessage, ChatEvent, ChatAttachment, AssistantMessage as Assist
 import { MessageList } from './MessageList';
 import { PromptBar } from './PromptBar';
 import { SubagentDetailOverlay } from './SubagentDetailOverlay';
+import QRCode from 'qrcode';
 
 declare const whimAPI: {
   sendChatMessage: (agentId: string, prompt: string, attachments?: any[]) => Promise<{ error?: string }>;
@@ -21,6 +22,10 @@ declare const whimAPI: {
   onWorkspaceChanged: (callback: (path: string | null) => void) => void;
   setAgentYolo: (agentId: string, enabled: boolean) => Promise<{ ok?: boolean; error?: string }>;
   onAgentYoloChanged: (callback: (data: { agentId: string; enabled: boolean }) => void) => void;
+  enableRemote: (agentId: string) => Promise<{ enabled?: boolean; remoteSteerable?: boolean; url?: string; error?: string }>;
+  disableRemote: (agentId: string) => Promise<{ ok?: boolean; error?: string }>;
+  onAgentRemoteChanged: (callback: (data: { agentId: string; enabled: boolean; remoteSteerable: boolean; url?: string }) => void) => void;
+  openExternal: (url: string) => Promise<any>;
   [key: string]: any;
 };
 
@@ -371,6 +376,10 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
   const [cwd, setCwd] = useState<string>('');
   const [overlayAgentId, setOverlayAgentId] = useState<string | null>(null);
   const [yoloEnabled, setYoloEnabled] = useState(false);
+  const [remoteState, setRemoteState] = useState<{ enabled: boolean; remoteSteerable: boolean; url?: string }>({ enabled: false, remoteSteerable: false });
+  const [remoteLoading, setRemoteLoading] = useState(false);
+  const [showRemoteOverlay, setShowRemoteOverlay] = useState(false);
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const modelDropdownRef = useRef<HTMLDivElement>(null);
 
   // Track the current streaming assistant message ID
@@ -430,6 +439,26 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
       }
     });
   }, [currentAgentId]);
+
+  // Listen for remote control changes
+  useEffect(() => {
+    whimAPI.onAgentRemoteChanged((data: { agentId: string; enabled: boolean; remoteSteerable: boolean; url?: string }) => {
+      if (data.agentId === currentAgentId) {
+        setRemoteState({ enabled: data.enabled, remoteSteerable: data.remoteSteerable, url: data.url });
+      }
+    });
+  }, [currentAgentId]);
+
+  // Generate QR code when remote URL changes
+  useEffect(() => {
+    if (remoteState.url) {
+      QRCode.toDataURL(remoteState.url, { width: 200, margin: 2 })
+        .then(url => setQrDataUrl(url))
+        .catch(() => setQrDataUrl(null));
+    } else {
+      setQrDataUrl(null);
+    }
+  }, [remoteState.url]);
 
   // Load conversation history for existing agents (especially CLI sessions)
   useEffect(() => {
@@ -912,6 +941,26 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
     }
   }, [currentAgentId, yoloEnabled]);
 
+  const handleToggleRemote = useCallback(async () => {
+    if (!currentAgentId) return;
+    setRemoteLoading(true);
+    try {
+      if (remoteState.enabled) {
+        await whimAPI.disableRemote(currentAgentId);
+        setShowRemoteOverlay(false);
+      } else {
+        const result = await whimAPI.enableRemote(currentAgentId);
+        if ('error' in result && result.error) {
+          console.error('[remote] Enable failed:', result.error);
+        } else if (result.url) {
+          setShowRemoteOverlay(true);
+        }
+      }
+    } finally {
+      setRemoteLoading(false);
+    }
+  }, [currentAgentId, remoteState.enabled]);
+
   const handleAbort = useCallback(async () => {
     if (currentAgentId) await whimAPI.abortAgent(currentAgentId);
   }, [currentAgentId]);
@@ -1028,7 +1077,63 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
             {yoloEnabled ? 'YOLO' : 'Yolo'}
           </span>
         </button>
+
+        {agentSource !== 'cli' && (
+          <>
+            <span className="chat-status-bar-divider">|</span>
+            <button
+              className={`chat-status-bar-item chat-remote-btn${remoteState.enabled ? ' active' : ''}`}
+              onClick={remoteState.enabled && remoteState.url ? () => setShowRemoteOverlay(true) : handleToggleRemote}
+              disabled={remoteLoading}
+              title={remoteState.enabled ? 'Remote control enabled — click to view link' : 'Enable remote control (Mission Control)'}
+            >
+              <span className="chat-status-bar-icon">{remoteLoading ? '⏳' : '📱'}</span>
+              <span className="chat-status-bar-text">
+                {remoteState.enabled ? 'Remote' : 'Remote'}
+              </span>
+            </button>
+          </>
+        )}
       </div>
+
+      {showRemoteOverlay && remoteState.enabled && (
+        <div className="remote-overlay">
+          <div className="remote-overlay-backdrop" onClick={() => setShowRemoteOverlay(false)} />
+          <div className="remote-overlay-panel">
+            <div className="remote-overlay-header">
+              <span className="remote-overlay-title">📱 Remote Control</span>
+              <button className="remote-overlay-close" onClick={() => setShowRemoteOverlay(false)}>✕</button>
+            </div>
+            <div className="remote-overlay-body">
+              {remoteState.url ? (
+                <>
+                  <p className="remote-overlay-desc">Scan the QR code or click the link to control this session from another device.</p>
+                  {qrDataUrl && (
+                    <div className="remote-overlay-qr">
+                      <img src={qrDataUrl} alt="QR Code for remote session" />
+                    </div>
+                  )}
+                  <a
+                    className="remote-overlay-link"
+                    href="#"
+                    onClick={(e) => { e.preventDefault(); whimAPI.openExternal(remoteState.url!); }}
+                  >
+                    {remoteState.url}
+                  </a>
+                  <button className="remote-overlay-copy" onClick={() => navigator.clipboard.writeText(remoteState.url!)}>
+                    Copy link
+                  </button>
+                </>
+              ) : (
+                <p className="remote-overlay-desc">Remote control is enabled but no link is available yet. The session may not be in a GitHub repository working directory.</p>
+              )}
+              <button className="remote-overlay-disable" onClick={async () => { await handleToggleRemote(); setShowRemoteOverlay(false); }}>
+                Disable Remote Control
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {isLoadingHistory && (
         <div className="chat-loading-history">Loading conversation history...</div>
