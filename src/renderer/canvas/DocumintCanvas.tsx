@@ -14,7 +14,10 @@ import {
   type DocumentPresence,
   type CommentChange,
   type DocumintStorage,
+  type UserMentionEvent,
+  type DocumintActions,
 } from 'documint';
+import { GitFork } from 'lucide-react';
 import { FrontmatterEditor } from './FrontmatterEditor';
 import { VoiceRecorderButton, type VoiceRecordingResult } from './VoiceRecorderButton';
 import { merge3 } from '../../shared/text-merge';
@@ -54,6 +57,8 @@ export interface DocumintCanvasProps {
   onDirtyChange: (dirty: boolean) => void;
   onSaveStatus: (status: string) => void;
   onAgentMentioned?: (event: MentionEvent) => void;
+  onInlineMention?: (handle: string, lineMarkdown: string, lineNumber: number) => void;
+  onForkSelection?: (selectedText: string) => void;
 }
 
 export interface DocumintCanvasHandle {
@@ -127,7 +132,7 @@ function formatAttachmentRef(filename: string, relativePath: string, mimeType: s
 }
 
 export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasProps>(
-  function DocumintCanvas({ spaceId, initialContent, initialFrontmatter, theme, personas: initialPersonas, agentPresence: initialPresence, onDirtyChange, onSaveStatus, onAgentMentioned }, ref) {
+  function DocumintCanvas({ spaceId, initialContent, initialFrontmatter, theme, personas: initialPersonas, agentPresence: initialPresence, onDirtyChange, onSaveStatus, onAgentMentioned, onInlineMention, onForkSelection }, ref) {
     const hasFrontmatter = initialFrontmatter !== undefined;
     const [content, setContent] = useState(initialContent);
     const [frontmatter, setFrontmatter] = useState<Record<string, unknown>>(initialFrontmatter ?? {});
@@ -328,6 +333,36 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
         threadIndex: event.threadIndex,
       });
     }, [onAgentMentioned, personas]);
+
+    // Inline @-mention handler — dedupe by userId+lineNumber to prevent duplicate launches
+    const recentInlineMentions = useRef(new Set<string>());
+    const handleUserMentioned = useCallback((event: UserMentionEvent) => {
+      if (!onInlineMention) return;
+
+      // Check if this userId matches a known persona
+      const matched = personas.some(p => p.handle === event.userId);
+      if (!matched) return;
+
+      // Dedupe: skip if we already fired for this mention recently
+      const key = `${event.userId}:${event.lineNumber}:${event.lineMarkdown}`;
+      if (recentInlineMentions.current.has(key)) return;
+      recentInlineMentions.current.add(key);
+      setTimeout(() => recentInlineMentions.current.delete(key), 5000);
+
+      onInlineMention(event.userId, event.lineMarkdown, event.lineNumber);
+    }, [onInlineMention, personas]);
+
+    // Selection actions (Fork to new space)
+    const actions: DocumintActions | undefined = React.useMemo(() => {
+      if (!onForkSelection) return undefined;
+      return {
+        selection: {
+          icon: GitFork,
+          label: 'Fork to new space',
+          onClick: onForkSelection,
+        },
+      };
+    }, [onForkSelection]);
 
     useImperativeHandle(ref, () => ({
       saveNow,
@@ -626,8 +661,10 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
                 content={content}
                 users={users}
                 storage={storage}
+                actions={actions}
                 onContentChanged={handleContentChange}
                 onCommentChanged={handleCommentChanged}
+                onUserMentioned={handleUserMentioned}
                 presence={presence}
                 theme={documintTheme}
               />

@@ -5072,6 +5072,22 @@ async function openCanvas(spaceId: string, expanded = false): Promise<void> {
         );
       }
     },
+    onInlineMention: (handle, lineMarkdown) => {
+      whimAPI.launchCommentAgent(
+        spaceId,
+        lineMarkdown,
+        lineMarkdown,
+        {},
+        handle,
+        -1,
+      );
+    },
+    onForkSelection: async (selectedText) => {
+      const space = await whimAPI.create({ body: selectedText });
+      if (!space || (space as any).error || !space.id) return;
+      await loadSpaces();
+      whimAPI.openNewCanvasWindow({ kind: 'space', id: space.id, title: space.description });
+    },
   });
 
   // Mount worker tiles + chat side pane
@@ -5381,6 +5397,22 @@ async function exitPreview(): Promise<void> {
           event.threadIndex,
         );
       }
+    },
+    onInlineMention: (handle, lineMarkdown) => {
+      whimAPI.launchCommentAgent(
+        spaceId,
+        lineMarkdown,
+        lineMarkdown,
+        {},
+        handle,
+        -1,
+      );
+    },
+    onForkSelection: async (selectedText) => {
+      const space = await whimAPI.create({ body: selectedText });
+      if (!space || (space as any).error || !space.id) return;
+      await loadSpaces();
+      whimAPI.openNewCanvasWindow({ kind: 'space', id: space.id, title: space.description });
     },
   });
 }

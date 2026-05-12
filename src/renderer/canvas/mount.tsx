@@ -16,6 +16,8 @@ export interface MountCanvasOptions {
   onDirtyChange: (dirty: boolean) => void;
   onSaveStatus: (status: string) => void;
   onAgentMentioned?: (event: MentionEvent) => void;
+  onInlineMention?: (handle: string, lineMarkdown: string, lineNumber: number) => void;
+  onForkSelection?: (selectedText: string) => void;
 }
 
 export function mountCanvas(container: HTMLElement, options: MountCanvasOptions): void {
@@ -37,6 +39,8 @@ export function mountCanvas(container: HTMLElement, options: MountCanvasOptions)
       onDirtyChange={options.onDirtyChange}
       onSaveStatus={options.onSaveStatus}
       onAgentMentioned={options.onAgentMentioned}
+      onInlineMention={options.onInlineMention}
+      onForkSelection={options.onForkSelection}
     />
   );
 }
