@@ -1,7 +1,7 @@
 import React from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { DocumintCanvas, type DocumintCanvasHandle, type DocumintCanvasProps, type AgentPersona, type MentionEvent } from './DocumintCanvas';
-import type { DocumentPresence } from 'documint';
+import type { DocumentPresence, DocumintDecoration } from 'documint';
 
 let root: Root | null = null;
 let canvasRef: React.RefObject<DocumintCanvasHandle | null> = React.createRef();
@@ -71,6 +71,10 @@ export function updateCanvasPresence(presence: DocumentPresence[]): void {
 
 export function updateCanvasPersonas(personas: AgentPersona[]): void {
   canvasRef.current?.updatePersonas(personas);
+}
+
+export function updateCanvasDecorations(decorations: readonly DocumintDecoration[]): void {
+  canvasRef.current?.updateDecorations(decorations);
 }
 
 export function replaceCanvasContent(content: string): void {

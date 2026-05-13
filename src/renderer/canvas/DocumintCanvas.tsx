@@ -16,6 +16,7 @@ import {
   type DocumintStorage,
   type UserMentionEvent,
   type DocumintActions,
+  type DocumintDecoration,
 } from 'documint';
 import { GitFork } from 'lucide-react';
 import { FrontmatterEditor } from './FrontmatterEditor';
@@ -54,6 +55,7 @@ export interface DocumintCanvasProps {
   theme: 'light' | 'dark';
   personas?: AgentPersona[];
   agentPresence?: DocumentPresence[];
+  decorations?: readonly DocumintDecoration[];
   onDirtyChange: (dirty: boolean) => void;
   onSaveStatus: (status: string) => void;
   onAgentMentioned?: (event: MentionEvent) => void;
@@ -68,6 +70,7 @@ export interface DocumintCanvasHandle {
   toggleMode(): { mode: EditorMode; error?: string };
   updatePresence(presence: DocumentPresence[]): void;
   updatePersonas(personas: AgentPersona[]): void;
+  updateDecorations(decorations: readonly DocumintDecoration[]): void;
   addCommentReply(threadIndex: number, body: string): void;
   replaceContent(content: string): void;
 }
@@ -132,7 +135,7 @@ function formatAttachmentRef(filename: string, relativePath: string, mimeType: s
 }
 
 export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasProps>(
-  function DocumintCanvas({ spaceId, initialContent, initialFrontmatter, theme, personas: initialPersonas, agentPresence: initialPresence, onDirtyChange, onSaveStatus, onAgentMentioned, onInlineMention, onForkSelection }, ref) {
+  function DocumintCanvas({ spaceId, initialContent, initialFrontmatter, theme, personas: initialPersonas, agentPresence: initialPresence, decorations: initialDecorations, onDirtyChange, onSaveStatus, onAgentMentioned, onInlineMention, onForkSelection }, ref) {
     const hasFrontmatter = initialFrontmatter !== undefined;
     const [content, setContent] = useState(initialContent);
     const [frontmatter, setFrontmatter] = useState<Record<string, unknown>>(initialFrontmatter ?? {});
@@ -152,6 +155,7 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
     const [personas, setPersonas] = useState<AgentPersona[]>(initialPersonas || []);
     const [presence, setPresence] = useState<DocumentPresence[]>(initialPresence || []);
     const [isTranscribing, setIsTranscribing] = useState(false);
+    const [decorations, setDecorations] = useState<readonly DocumintDecoration[]>(initialDecorations || []);
 
     contentRef.current = content;
     frontmatterRef.current = frontmatter;
@@ -371,6 +375,7 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
       toggleMode: () => handleToggleMode(),
       updatePresence: (nextPresence: DocumentPresence[]) => setPresence(nextPresence),
       updatePersonas: (nextPersonas: AgentPersona[]) => setPersonas(nextPersonas),
+      updateDecorations: (nextDecorations: readonly DocumintDecoration[]) => setDecorations(nextDecorations),
       addCommentReply: (threadIndex: number, body: string) => {
         const current = contentRef.current;
         const updated = insertCommentReply(current, threadIndex, body);
@@ -662,6 +667,7 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
                 users={users}
                 storage={storage}
                 actions={actions}
+                decorations={decorations}
                 onContentChanged={handleContentChange}
                 onCommentChanged={handleCommentChanged}
                 onUserMentioned={handleUserMentioned}

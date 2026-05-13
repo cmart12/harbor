@@ -4799,9 +4799,9 @@ async function unarchiveIntent(id: string): Promise<void> {
 (window as any).unarchiveIntent = unarchiveIntent;
 
 // ── Canvas view ─────────────────────────────────────────
-import { mountCanvas, unmountCanvas, getCanvasContent, saveCanvas as saveCanvasEditor, updateCanvasPresence, addCanvasCommentReply, toggleCanvasMode, getCanvasEditorMode, replaceCanvasContent } from './canvas/mount.tsx';
+import { mountCanvas, unmountCanvas, getCanvasContent, saveCanvas as saveCanvasEditor, updateCanvasPresence, updateCanvasDecorations, addCanvasCommentReply, toggleCanvasMode, getCanvasEditorMode, replaceCanvasContent } from './canvas/mount.tsx';
 import { mountCanvasWorkerPanel, unmountCanvasWorkerPanel, isCanvasChatPaneOpen, closeCanvasChatPane } from './canvas/worker-panel-mount.tsx';
-import type { DocumentPresence } from 'documint';
+import type { DocumentPresence, DocumintDecoration } from 'documint';
 
 const canvasView = document.getElementById('canvas-view') as HTMLDivElement;
 const canvasBack = document.getElementById('canvas-back') as HTMLButtonElement;
@@ -5097,6 +5097,9 @@ async function openCanvas(spaceId: string, expanded = false): Promise<void> {
       canvasChatPaneOpen = open;
     },
   });
+
+  // Load initial agent activity decorations
+  refreshAgentDecorations();
 }
 
 async function saveCanvas(): Promise<void> {
@@ -5115,6 +5118,7 @@ async function closeCanvas(): Promise<void> {
   }
   closeHistoryPanel();
   unmountCanvasWorkerPanel();
+  clearAgentDecorations();
   canvasChatPaneOpen = false;
   const spaceId = canvasSpaceId;
   const wasNewIntent = canvasIsNewIntent;
@@ -5592,6 +5596,79 @@ whimAPI.onCanvasContentUpdated((data) => {
   replaceCanvasContent(data.content);
 });
 
+// ── Agent Activity Decorations ─────────────────────────
+// Tracks active agents and decorates the text they were spawned on
+
+interface AgentDecorationEntry {
+  status: string;
+  selectedText: string;
+}
+
+const agentDecorationMap = new Map<string, AgentDecorationEntry>();
+let decorationFlashTimers: ReturnType<typeof setTimeout>[] = [];
+
+const DECORATION_COLORS: Record<string, { bg: string }> = {
+  'running':          { bg: 'rgba(96, 165, 250, 0.15)' },
+  'waiting-approval': { bg: 'rgba(251, 191, 36, 0.18)' },
+  'completed':        { bg: 'rgba(74, 222, 128, 0.18)' },
+  'failed':           { bg: 'rgba(248, 113, 113, 0.18)' },
+};
+
+/** Escape a string for use in a RegExp literal. */
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Rebuild DocumintDecoration[] from the tracking map and push to canvas. */
+function syncCanvasDecorations(): void {
+  if (!canvasSpaceId) return;
+
+  const decorations: DocumintDecoration[] = [];
+  for (const entry of agentDecorationMap.values()) {
+    if (entry.selectedText.length < 5) continue;
+    const colors = DECORATION_COLORS[entry.status];
+    if (!colors) continue;
+    try {
+      decorations.push({
+        pattern: new RegExp(escapeRegex(entry.selectedText)),
+        backgroundColor: colors.bg,
+      });
+    } catch { /* invalid regex — skip */ }
+  }
+  updateCanvasDecorations(decorations);
+}
+
+/** Refresh agent decorations from the current canvas's agent list. */
+async function refreshAgentDecorations(): Promise<void> {
+  if (!canvasSpaceId) return;
+  try {
+    const agents = await whimAPI.listAgents(canvasSpaceId);
+    // Remove stale entries
+    const activeIds = new Set(agents.map((a: any) => a.agentId));
+    for (const id of agentDecorationMap.keys()) {
+      if (!activeIds.has(id)) agentDecorationMap.delete(id);
+    }
+    // Update/add entries for active agents
+    for (const agent of agents) {
+      if (agent.status === 'completed' || agent.status === 'failed') {
+        // Terminal states get a brief flash then removal
+        if (!agentDecorationMap.has(agent.agentId)) continue;
+        agentDecorationMap.set(agent.agentId, { status: agent.status, selectedText: agent.selectedText });
+      } else {
+        agentDecorationMap.set(agent.agentId, { status: agent.status, selectedText: agent.selectedText });
+      }
+    }
+    syncCanvasDecorations();
+  } catch { /* ignore — canvas may not be active */ }
+}
+
+function clearAgentDecorations(): void {
+  agentDecorationMap.clear();
+  for (const t of decorationFlashTimers) clearTimeout(t);
+  decorationFlashTimers = [];
+  updateCanvasDecorations([]);
+}
+
 // ── Global agent status/approval listeners ─────────────
 whimAPI.onAgentStatusChanged((data: any) => {
   if (currentFilter === 'agents') renderAgentsList();
@@ -5606,6 +5683,25 @@ whimAPI.onAgentStatusChanged((data: any) => {
     agentApprovals.delete(data.agentId);
     updateWorkersBadge();
   }
+
+  // Update agent activity decorations on canvas
+  if (canvasSpaceId) {
+    if (data.status === 'completed' || data.status === 'failed') {
+      // Flash terminal color for 2s, then remove
+      const existing = agentDecorationMap.get(data.agentId);
+      if (existing) {
+        agentDecorationMap.set(data.agentId, { ...existing, status: data.status });
+        syncCanvasDecorations();
+        const timer = setTimeout(() => {
+          agentDecorationMap.delete(data.agentId);
+          syncCanvasDecorations();
+        }, 2000);
+        decorationFlashTimers.push(timer);
+      }
+    } else {
+      refreshAgentDecorations();
+    }
+  }
 });
 
 whimAPI.onAgentApprovalNeeded((data: any) => {
@@ -5619,6 +5715,11 @@ whimAPI.onAgentApprovalNeeded((data: any) => {
     updateAgentCardApproval(data.agentId);
   }
   updateWorkersBadge();
+
+  // Update decoration to waiting-approval color
+  if (canvasSpaceId) {
+    refreshAgentDecorations();
+  }
 });
 
 whimAPI.onAgentCompleted(() => {
