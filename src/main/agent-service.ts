@@ -137,7 +137,7 @@ export async function abortAgent(agentId: string): Promise<void> {
 
 // ── Query functions ────────────────────────────────────
 
-export function listAgents(spaceId: string): Array<{ agentId: string; sessionId: string; status: import('./agents/agent-registry').AgentStatus; summary: string; selectedText: string; anchor: AgentAnchor }> {
+export function listAgents(spaceId: string): Array<{ agentId: string; sessionId: string; status: import('./agents/agent-registry').AgentStatus; summary: string; selectedText: string; quotedText: string; anchor: AgentAnchor }> {
   return Array.from(registry.values())
     .filter(a => a.spaceId === spaceId)
     .map(a => ({
@@ -146,6 +146,7 @@ export function listAgents(spaceId: string): Array<{ agentId: string; sessionId:
       status: a.status,
       summary: a.summary,
       selectedText: a.selectedText,
+      quotedText: a.commentContext?.quotedText ?? '',
       anchor: a.anchor,
     }));
 }

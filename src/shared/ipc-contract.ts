@@ -37,6 +37,7 @@ export interface AgentListItem {
   status: 'running' | 'waiting-approval' | 'completed' | 'failed';
   summary: string;
   selectedText: string;
+  quotedText: string;
   anchor: AgentAnchor;
 }
 

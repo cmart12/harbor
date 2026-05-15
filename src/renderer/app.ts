@@ -5601,7 +5601,7 @@ whimAPI.onCanvasContentUpdated((data) => {
 
 interface AgentDecorationEntry {
   status: string;
-  selectedText: string;
+  decorationText: string;
 }
 
 const agentDecorationMap = new Map<string, AgentDecorationEntry>();
@@ -5614,9 +5614,24 @@ const DECORATION_COLORS: Record<string, { bg: string }> = {
   'failed':           { bg: 'rgba(248, 113, 113, 0.18)' },
 };
 
+const MIN_DECORATION_TEXT = 5;
+const MAX_DECORATION_TEXT = 300;
+
 /** Escape a string for use in a RegExp literal. */
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Pick the best text to use for a decoration pattern.
+ * Prefer quotedText (actual document text) over selectedText (may be prompt or full doc).
+ */
+function pickDecorationText(agent: { selectedText: string; quotedText?: string }): string {
+  const quoted = agent.quotedText?.trim() ?? '';
+  if (quoted.length >= MIN_DECORATION_TEXT && quoted.length <= MAX_DECORATION_TEXT) return quoted;
+  const selected = agent.selectedText?.trim() ?? '';
+  if (selected.length >= MIN_DECORATION_TEXT && selected.length <= MAX_DECORATION_TEXT) return selected;
+  return '';
 }
 
 /** Rebuild DocumintDecoration[] from the tracking map and push to canvas. */
@@ -5625,12 +5640,12 @@ function syncCanvasDecorations(): void {
 
   const decorations: DocumintDecoration[] = [];
   for (const entry of agentDecorationMap.values()) {
-    if (entry.selectedText.length < 5) continue;
+    if (!entry.decorationText) continue;
     const colors = DECORATION_COLORS[entry.status];
     if (!colors) continue;
     try {
       decorations.push({
-        pattern: new RegExp(escapeRegex(entry.selectedText)),
+        pattern: new RegExp(escapeRegex(entry.decorationText)),
         backgroundColor: colors.bg,
       });
     } catch { /* invalid regex — skip */ }
@@ -5650,12 +5665,13 @@ async function refreshAgentDecorations(): Promise<void> {
     }
     // Update/add entries for active agents
     for (const agent of agents) {
+      const text = pickDecorationText(agent);
       if (agent.status === 'completed' || agent.status === 'failed') {
         // Terminal states get a brief flash then removal
         if (!agentDecorationMap.has(agent.agentId)) continue;
-        agentDecorationMap.set(agent.agentId, { status: agent.status, selectedText: agent.selectedText });
+        agentDecorationMap.set(agent.agentId, { status: agent.status, decorationText: text });
       } else {
-        agentDecorationMap.set(agent.agentId, { status: agent.status, selectedText: agent.selectedText });
+        agentDecorationMap.set(agent.agentId, { status: agent.status, decorationText: text });
       }
     }
     syncCanvasDecorations();
