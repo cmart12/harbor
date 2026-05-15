@@ -201,7 +201,7 @@ interface WhimAPI {
   enableRemote(agentId: string): Promise<{ enabled?: boolean; remoteSteerable?: boolean; url?: string; error?: string }>;
   disableRemote(agentId: string): Promise<{ ok?: boolean; error?: string }>;
   onNotificationApprovalClicked(callback: (data: { agentId: string }) => void): void;
-  onAgentPresenceStarted(callback: (data: { agentId: string; spaceId: string; persona: { name: string; handle: string; color?: string; imageUrl?: string }; anchor: { prefix?: string; suffix?: string } }) => void): void;
+  onAgentPresenceStarted(callback: (data: { agentId: string; spaceId: string; persona: { name: string; handle: string; color?: string; imageUrl?: string }; anchor: { prefix?: string; suffix?: string }; threadId?: string }) => void): void;
   onAgentPresenceEnded(callback: (data: { agentId: string; spaceId: string }) => void): void;
   onAgentReplyReady(callback: (data: { agentId: string; spaceId: string; threadId: string | null; body: string }) => void): void;
   onCanvasContentUpdated(callback: (data: { spaceId: string; content: string }) => void): () => void;
@@ -5566,16 +5566,37 @@ if (!isCanvasMode) {
 // ── Agent Presence Management ──────────────────────────
 const canvasAgentPresence = new Map<string, DocumentPresence>();
 
+const AGENT_PRESENCE_COLORS = [
+  '#6366f1', // indigo
+  '#8b5cf6', // violet
+  '#ec4899', // pink
+  '#f97316', // orange
+  '#14b8a6', // teal
+  '#06b6d4', // cyan
+  '#84cc16', // lime
+  '#f43f5e', // rose
+];
+
+function agentColor(handle: string): string {
+  let hash = 0;
+  for (let i = 0; i < handle.length; i++) hash = ((hash << 5) - hash + handle.charCodeAt(i)) | 0;
+  return AGENT_PRESENCE_COLORS[Math.abs(hash) % AGENT_PRESENCE_COLORS.length];
+}
+
 function syncCanvasPresence(): void {
   updateCanvasPresence(Array.from(canvasAgentPresence.values()));
 }
 
 whimAPI.onAgentPresenceStarted((data) => {
   if (data.spaceId !== canvasSpaceId) return;
+  // Use comment-thread anchor when threadId is available, otherwise text anchor
+  const cursor = data.threadId
+    ? { threadId: data.threadId }
+    : (data.anchor?.prefix || data.anchor?.suffix ? data.anchor : undefined);
   canvasAgentPresence.set(data.agentId, {
     userId: data.persona.handle,
-    color: data.persona.color,
-    cursor: data.anchor?.prefix || data.anchor?.suffix ? data.anchor : undefined,
+    color: agentColor(data.persona.handle),
+    cursor,
   });
   syncCanvasPresence();
 });

@@ -409,7 +409,7 @@ export interface IpcEvents {
   'agent:yolo-changed': { agentId: string; enabled: boolean };
   'agent:remote-changed': { agentId: string; enabled: boolean; remoteSteerable: boolean; url?: string };
   'notification:approval-clicked': { agentId: string };
-  'agent:presence-started': { agentId: string; spaceId: string; persona: { name: string; handle: string }; anchor: AgentAnchor };
+  'agent:presence-started': { agentId: string; spaceId: string; persona: { name: string; handle: string }; anchor: AgentAnchor; threadId?: string };
   'agent:presence-ended': { agentId: string; spaceId: string };
   'agent:reply-ready': { agentId: string; spaceId: string; threadId: string | null; body: string };
   'canvas:content-updated': { spaceId: string; content: string };

@@ -177,6 +177,7 @@ If you make changes to the document, clearly describe what you changed.${cliTool
       spaceId,
       persona: { name: persona.handle, handle: persona.handle },
       anchor,
+      ...(threadId ? { threadId } : {}),
     });
 
     session.send({
