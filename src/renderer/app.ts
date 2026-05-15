@@ -4799,9 +4799,9 @@ async function unarchiveIntent(id: string): Promise<void> {
 (window as any).unarchiveIntent = unarchiveIntent;
 
 // ── Canvas view ─────────────────────────────────────────
-import { mountCanvas, unmountCanvas, getCanvasContent, saveCanvas as saveCanvasEditor, updateCanvasPresence, updateCanvasDecorations, addCanvasCommentReply, toggleCanvasMode, getCanvasEditorMode, replaceCanvasContent } from './canvas/mount.tsx';
+import { mountCanvas, unmountCanvas, getCanvasContent, saveCanvas as saveCanvasEditor, updateCanvasPresence, updateCanvasDecorations, updateCanvasAgentUsers, addCanvasCommentReply, toggleCanvasMode, getCanvasEditorMode, replaceCanvasContent } from './canvas/mount.tsx';
 import { mountCanvasWorkerPanel, unmountCanvasWorkerPanel, isCanvasChatPaneOpen, closeCanvasChatPane } from './canvas/worker-panel-mount.tsx';
-import type { DocumentPresence, DocumintDecoration } from 'documint';
+import type { DocumentPresence, DocumentUser, DocumintDecoration } from 'documint';
 
 const canvasView = document.getElementById('canvas-view') as HTMLDivElement;
 const canvasBack = document.getElementById('canvas-back') as HTMLButtonElement;
@@ -5565,6 +5565,10 @@ if (!isCanvasMode) {
 
 // ── Agent Presence Management ──────────────────────────
 const canvasAgentPresence = new Map<string, DocumentPresence>();
+const canvasAgentUserMap = new Map<string, DocumentUser>();
+// Agents anchored to a comment thread — presence handles their busy state,
+// so the text-decoration system should skip them.
+const commentThreadAgents = new Set<string>();
 
 const AGENT_PRESENCE_COLORS = [
   '#6366f1', // indigo
@@ -5585,18 +5589,23 @@ function agentColor(handle: string): string {
 
 function syncCanvasPresence(): void {
   updateCanvasPresence(Array.from(canvasAgentPresence.values()));
+  updateCanvasAgentUsers(Array.from(canvasAgentUserMap.values()));
 }
 
 whimAPI.onAgentPresenceStarted((data) => {
   if (data.spaceId !== canvasSpaceId) return;
-  // Use comment-thread anchor when threadId is available, otherwise text anchor
   const cursor = data.threadId
     ? { threadId: data.threadId }
     : (data.anchor?.prefix || data.anchor?.suffix ? data.anchor : undefined);
+  if (data.threadId) commentThreadAgents.add(data.agentId);
   canvasAgentPresence.set(data.agentId, {
-    userId: data.persona.handle,
+    userId: data.agentId,
     color: agentColor(data.persona.handle),
     cursor,
+  });
+  canvasAgentUserMap.set(data.agentId, {
+    id: data.agentId,
+    username: data.persona.handle,
   });
   syncCanvasPresence();
 });
@@ -5604,6 +5613,8 @@ whimAPI.onAgentPresenceStarted((data) => {
 whimAPI.onAgentPresenceEnded((data) => {
   if (!canvasAgentPresence.has(data.agentId)) return;
   canvasAgentPresence.delete(data.agentId);
+  canvasAgentUserMap.delete(data.agentId);
+  commentThreadAgents.delete(data.agentId);
   syncCanvasPresence();
 });
 
@@ -5687,6 +5698,8 @@ async function refreshAgentDecorations(): Promise<void> {
     }
     // Update/add entries for active agents
     for (const agent of agents) {
+      // Comment-thread agents use presence for busy state — no text decoration
+      if (commentThreadAgents.has(agent.agentId)) continue;
       const text = pickDecorationText(agent);
       if (agent.status === 'completed' || agent.status === 'failed') {
         // Terminal states get a brief flash then removal
@@ -5722,8 +5735,8 @@ whimAPI.onAgentStatusChanged((data: any) => {
     updateWorkersBadge();
   }
 
-  // Update agent activity decorations on canvas
-  if (canvasSpaceId) {
+  // Update agent activity decorations on canvas (skip comment-thread agents — presence handles those)
+  if (canvasSpaceId && !commentThreadAgents.has(data.agentId)) {
     if (data.status === 'completed' || data.status === 'failed') {
       // Flash terminal color for 2s, then remove
       const existing = agentDecorationMap.get(data.agentId);
@@ -5754,8 +5767,8 @@ whimAPI.onAgentApprovalNeeded((data: any) => {
   }
   updateWorkersBadge();
 
-  // Update decoration to waiting-approval color
-  if (canvasSpaceId) {
+  // Update decoration to waiting-approval color (skip comment-thread agents)
+  if (canvasSpaceId && !commentThreadAgents.has(data.agentId)) {
     refreshAgentDecorations();
   }
 });
@@ -6346,6 +6359,8 @@ if (isCanvasMode) {
       canvasSpaceId = null;
     }
     canvasAgentPresence.clear();
+    canvasAgentUserMap.clear();
+    commentThreadAgents.clear();
   }
 
   // Listen for target to load (from main process)

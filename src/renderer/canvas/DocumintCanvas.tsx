@@ -71,6 +71,7 @@ export interface DocumintCanvasHandle {
   updatePresence(presence: DocumentPresence[]): void;
   updatePersonas(personas: AgentPersona[]): void;
   updateDecorations(decorations: readonly DocumintDecoration[]): void;
+  updateAgentUsers(users: DocumentUser[]): void;
   addCommentReply(threadId: string, body: string): void;
   replaceContent(content: string): void;
 }
@@ -156,6 +157,7 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
     const [presence, setPresence] = useState<DocumentPresence[]>(initialPresence || []);
     const [isTranscribing, setIsTranscribing] = useState(false);
     const [decorations, setDecorations] = useState<readonly DocumintDecoration[]>(initialDecorations || []);
+    const [agentUsers, setAgentUsers] = useState<DocumentUser[]>([]);
 
     contentRef.current = content;
     frontmatterRef.current = frontmatter;
@@ -168,10 +170,13 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
       return serializeFm(frontmatterRef.current, contentRef.current);
     }, [hasFrontmatter]);
 
-    // Convert personas to DocumentUser[] for the mention roster (use handle as id)
+    // Merge persona users (for mention roster) with active agent users (for presence display)
     const users: DocumentUser[] = React.useMemo(
-      () => personas.map(p => ({ id: p.handle, username: p.handle })),
-      [personas],
+      () => [
+        ...personas.map(p => ({ id: p.handle, username: p.handle })),
+        ...agentUsers,
+      ],
+      [personas, agentUsers],
     );
 
     // Documint storage: read/write files from the space's folder
@@ -376,6 +381,7 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
       updatePresence: (nextPresence: DocumentPresence[]) => setPresence(nextPresence),
       updatePersonas: (nextPersonas: AgentPersona[]) => setPersonas(nextPersonas),
       updateDecorations: (nextDecorations: readonly DocumintDecoration[]) => setDecorations(nextDecorations),
+      updateAgentUsers: (nextUsers: DocumentUser[]) => setAgentUsers(nextUsers),
       addCommentReply: (threadId: string, body: string) => {
         const current = contentRef.current;
         const updated = insertCommentReply(current, threadId, body);
