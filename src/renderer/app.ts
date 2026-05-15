@@ -156,7 +156,7 @@ interface WhimAPI {
   openAgentCli(agentId: string): Promise<{ error?: string }>;
   onChatEvent(agentId: string, callback: (event: any) => void): () => void;
   launchAgent(spaceId: string, selectedText: string, anchor: any, options?: { repo?: string; model?: string }): Promise<any>;
-  launchCommentAgent(spaceId: string, commentBody: string, quotedText: string, anchor: any, personaHandle: string, threadIndex: number): Promise<{ agentId?: string; sessionId?: string; error?: string }>;
+  launchCommentAgent(spaceId: string, commentBody: string, quotedText: string, anchor: any, personaHandle: string, threadId: string | null): Promise<{ agentId?: string; sessionId?: string; error?: string }>;
   approveAgent(agentId: string, requestId: string, approved: boolean): Promise<void>;
   abortAgent(agentId: string): Promise<void>;
   hideWindow(): void;
@@ -203,7 +203,7 @@ interface WhimAPI {
   onNotificationApprovalClicked(callback: (data: { agentId: string }) => void): void;
   onAgentPresenceStarted(callback: (data: { agentId: string; spaceId: string; persona: { name: string; handle: string; color?: string; imageUrl?: string }; anchor: { prefix?: string; suffix?: string } }) => void): void;
   onAgentPresenceEnded(callback: (data: { agentId: string; spaceId: string }) => void): void;
-  onAgentReplyReady(callback: (data: { agentId: string; spaceId: string; threadIndex: number; body: string }) => void): void;
+  onAgentReplyReady(callback: (data: { agentId: string; spaceId: string; threadId: string | null; body: string }) => void): void;
   onCanvasContentUpdated(callback: (data: { spaceId: string; content: string }) => void): () => void;
   openPath(folderPath: string): Promise<void>;
   openExternal(url: string): Promise<{ ok: true }>;
@@ -5068,7 +5068,7 @@ async function openCanvas(spaceId: string, expanded = false): Promise<void> {
           event.quote,
           event.anchor,
           handle,
-          event.threadIndex,
+          event.threadId,
         );
       }
     },
@@ -5079,7 +5079,7 @@ async function openCanvas(spaceId: string, expanded = false): Promise<void> {
         lineMarkdown,
         {},
         handle,
-        -1,
+        null,
       );
     },
     onForkSelection: async (selectedText) => {
@@ -5398,7 +5398,7 @@ async function exitPreview(): Promise<void> {
           event.quote,
           event.anchor,
           handle,
-          event.threadIndex,
+          event.threadId,
         );
       }
     },
@@ -5409,7 +5409,7 @@ async function exitPreview(): Promise<void> {
         lineMarkdown,
         {},
         handle,
-        -1,
+        null,
       );
     },
     onForkSelection: async (selectedText) => {
@@ -5588,7 +5588,7 @@ whimAPI.onAgentPresenceEnded((data) => {
 
 whimAPI.onAgentReplyReady((data) => {
   if (data.spaceId !== canvasSpaceId) return;
-  addCanvasCommentReply(data.threadIndex, data.body);
+  if (data.threadId) addCanvasCommentReply(data.threadId, data.body);
 });
 
 whimAPI.onCanvasContentUpdated((data) => {
@@ -5607,9 +5607,9 @@ interface AgentDecorationEntry {
 const agentDecorationMap = new Map<string, AgentDecorationEntry>();
 let decorationFlashTimers: ReturnType<typeof setTimeout>[] = [];
 
-const DECORATION_COLORS: Record<string, { bg: string }> = {
-  'running':          { bg: 'rgba(96, 165, 250, 0.15)' },
-  'waiting-approval': { bg: 'rgba(251, 191, 36, 0.18)' },
+const DECORATION_COLORS: Record<string, { bg: string; pulse?: boolean }> = {
+  'running':          { bg: 'rgba(96, 165, 250, 0.15)', pulse: true },
+  'waiting-approval': { bg: 'rgba(251, 191, 36, 0.18)', pulse: true },
   'completed':        { bg: 'rgba(74, 222, 128, 0.18)' },
   'failed':           { bg: 'rgba(248, 113, 113, 0.18)' },
 };
@@ -5647,6 +5647,7 @@ function syncCanvasDecorations(): void {
       decorations.push({
         pattern: new RegExp(escapeRegex(entry.decorationText)),
         backgroundColor: colors.bg,
+        ...(colors.pulse ? { pulse: true } : {}),
       });
     } catch { /* invalid regex — skip */ }
   }

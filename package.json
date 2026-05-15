@@ -73,7 +73,7 @@
     "@types/qrcode": "^1.5.6",
     "@types/ws": "^8.18.1",
     "better-sqlite3": "^12.9.0",
-    "documint": "^0.0.15",
+    "documint": "^0.0.16",
     "js-yaml": "^4.1.0",
     "linkedom": "^0.18.12",
     "lucide-react": "^1.8.0",

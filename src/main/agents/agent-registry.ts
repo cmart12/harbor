@@ -35,7 +35,7 @@ export interface SandboxAllowList {
 }
 
 export interface CommentAgentContext {
-  threadIndex: number;
+  threadId: string | null;
   personaHandle: string;
   personaName: string;
   commentBody: string;

@@ -45,7 +45,7 @@ export interface MentionEvent {
   commentBody: string;
   quote: string;
   anchor: { prefix?: string; suffix?: string };
-  threadIndex: number;
+  threadId: string | null;
 }
 
 export interface DocumintCanvasProps {
@@ -71,7 +71,7 @@ export interface DocumintCanvasHandle {
   updatePresence(presence: DocumentPresence[]): void;
   updatePersonas(personas: AgentPersona[]): void;
   updateDecorations(decorations: readonly DocumintDecoration[]): void;
-  addCommentReply(threadIndex: number, body: string): void;
+  addCommentReply(threadId: string, body: string): void;
   replaceContent(content: string): void;
 }
 
@@ -334,7 +334,7 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
         commentBody: event.comment.body,
         quote: event.thread.quote,
         anchor: event.thread.anchor,
-        threadIndex: event.threadIndex,
+        threadId: event.thread.id ?? null,
       });
     }, [onAgentMentioned, personas]);
 
@@ -376,9 +376,9 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
       updatePresence: (nextPresence: DocumentPresence[]) => setPresence(nextPresence),
       updatePersonas: (nextPersonas: AgentPersona[]) => setPersonas(nextPersonas),
       updateDecorations: (nextDecorations: readonly DocumintDecoration[]) => setDecorations(nextDecorations),
-      addCommentReply: (threadIndex: number, body: string) => {
+      addCommentReply: (threadId: string, body: string) => {
         const current = contentRef.current;
-        const updated = insertCommentReply(current, threadIndex, body);
+        const updated = insertCommentReply(current, threadId, body);
         if (updated !== current) {
           handleContentChange(updated);
         }
@@ -705,7 +705,7 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
 const COMMENTS_START = ':::documint-comments';
 const COMMENTS_END = ':::';
 
-function insertCommentReply(content: string, threadIndex: number, body: string): string {
+function insertCommentReply(content: string, threadId: string, body: string): string {
   const startIdx = content.indexOf(COMMENTS_START);
   if (startIdx < 0) return content;
 
@@ -716,9 +716,9 @@ function insertCommentReply(content: string, threadIndex: number, body: string):
   const jsonStr = content.slice(jsonStart, endIdx).trim();
   try {
     const threads = JSON.parse(jsonStr);
-    if (!Array.isArray(threads) || threadIndex < 0 || threadIndex >= threads.length) return content;
+    if (!Array.isArray(threads)) return content;
 
-    const thread = threads[threadIndex];
+    const thread = threads.find((t: any) => t.id === threadId);
     if (!thread || !Array.isArray(thread.comments)) return content;
 
     thread.comments.push({

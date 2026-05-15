@@ -81,8 +81,8 @@ export function replaceCanvasContent(content: string): void {
   canvasRef.current?.replaceContent(content);
 }
 
-export function addCanvasCommentReply(threadIndex: number, body: string): void {
-  canvasRef.current?.addCommentReply(threadIndex, body);
+export function addCanvasCommentReply(threadId: string, body: string): void {
+  canvasRef.current?.addCommentReply(threadId, body);
 }
 
 export function toggleCanvasMode(): { mode: string; error?: string } {

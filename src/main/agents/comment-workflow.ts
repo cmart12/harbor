@@ -43,7 +43,7 @@ export async function launchCommentAgent(
   quotedText: string,
   anchor: { prefix?: string; suffix?: string },
   persona: AgentPersona,
-  threadIndex: number,
+  threadId: string | null,
   workspaceRoot: string,
   intentFolder: string,
 ): Promise<{ agentId: string; sessionId: string } | { error: string }> {
@@ -138,7 +138,7 @@ If you make changes to the document, clearly describe what you changed.${cliTool
       ...(sandboxState ? { sandbox: sandboxState } : {}),
       ...(persona.yolo ? { yoloMode: true } : {}),
       commentContext: {
-        threadIndex,
+        threadId,
         personaHandle: persona.handle,
         personaName: persona.handle,
         commentBody,
@@ -228,7 +228,7 @@ export function handleCommentAgentCompletion(record: AgentRecord): void {
   notifier.notifyRenderer('agent:reply-ready', {
     agentId: record.agentId,
     spaceId: record.spaceId,
-    threadIndex: ctx.threadIndex,
+    threadId: ctx.threadId,
     body: replyBody,
   });
 }

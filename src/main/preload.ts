@@ -104,7 +104,7 @@ export interface WhimAPI {
   // ── Agent ────────────────────────────────────────────────
   launchAgent(spaceId: string, selectedText: string, anchor: AgentAnchor, options?: { repo?: string; model?: string }): Promise<IpcCommandResult<'agent:launch'>>;
   launchDocumentAgent(spaceId: string): Promise<{ agentId: string; sessionId: string } | { error: string }>;
-  launchCommentAgent(spaceId: string, commentBody: string, quotedText: string, anchor: AgentAnchor, personaHandle: string, threadIndex: number): Promise<IpcCommandResult<'agent:launch-from-comment'>>;
+  launchCommentAgent(spaceId: string, commentBody: string, quotedText: string, anchor: AgentAnchor, personaHandle: string, threadId: string | null): Promise<IpcCommandResult<'agent:launch-from-comment'>>;
   listAgents(spaceId: string): Promise<IpcCommandResult<'agent:list'>>;
   approveAgent(agentId: string, requestId: string, approved: boolean): Promise<IpcCommandResult<'agent:approve'>>;
   respondToUserInput(agentId: string, requestId: string, answer: string, wasFreeform: boolean): Promise<IpcCommandResult<'agent:respond-user-input'>>;
@@ -306,8 +306,8 @@ const api: WhimAPI = {
     ipcRenderer.invoke('agent:launch', spaceId, selectedText, anchor, options),
   launchDocumentAgent: (spaceId) =>
     ipcRenderer.invoke('agent:launch-document', spaceId),
-  launchCommentAgent: (spaceId, commentBody, quotedText, anchor, personaHandle, threadIndex) =>
-    ipcRenderer.invoke('agent:launch-from-comment', spaceId, commentBody, quotedText, anchor, personaHandle, threadIndex),
+  launchCommentAgent: (spaceId, commentBody, quotedText, anchor, personaHandle, threadId) =>
+    ipcRenderer.invoke('agent:launch-from-comment', spaceId, commentBody, quotedText, anchor, personaHandle, threadId),
   listAgents: (spaceId) =>
     ipcRenderer.invoke('agent:list', spaceId),
   approveAgent: (agentId, requestId, approved) =>

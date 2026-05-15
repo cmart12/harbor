@@ -279,7 +279,7 @@ export interface IpcCommands {
     result: { agentId: string; sessionId: string } | { error: string };
   };
   'agent:launch-from-comment': {
-    args: [spaceId: string, commentBody: string, quotedText: string, anchor: AgentAnchor, personaHandle: string, threadIndex: number];
+    args: [spaceId: string, commentBody: string, quotedText: string, anchor: AgentAnchor, personaHandle: string, threadId: string | null];
     result: { agentId: string; sessionId: string } | { error: string };
   };
   'agent:list': { args: [spaceId: string]; result: AgentListItem[] };
@@ -411,7 +411,7 @@ export interface IpcEvents {
   'notification:approval-clicked': { agentId: string };
   'agent:presence-started': { agentId: string; spaceId: string; persona: { name: string; handle: string }; anchor: AgentAnchor };
   'agent:presence-ended': { agentId: string; spaceId: string };
-  'agent:reply-ready': { agentId: string; spaceId: string; threadIndex: number; body: string };
+  'agent:reply-ready': { agentId: string; spaceId: string; threadId: string | null; body: string };
   'canvas:content-updated': { spaceId: string; content: string };
   'space:processed': { spaceId: string };
   'space:recurrence': { spaceId: string; result: RecurrenceResult };

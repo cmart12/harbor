@@ -15,7 +15,7 @@ export function registerAgentHandlers(): void {
     return launchAgent(spaceId, selectedText, anchor, workspace, space.folder, options);
   });
 
-  ipcMain.handle('agent:launch-from-comment', async (_event, spaceId: string, commentBody: string, quotedText: string, anchor: any, personaHandle: string, threadIndex: number) => {
+  ipcMain.handle('agent:launch-from-comment', async (_event, spaceId: string, commentBody: string, quotedText: string, anchor: any, personaHandle: string, threadId: string | null) => {
     const workspace = getConfigValue('workspace');
     if (!workspace || !isInitialized()) return { error: 'no_workspace' };
 
@@ -58,7 +58,7 @@ export function registerAgentHandlers(): void {
     }
 
     const { launchCommentAgent } = await import('../agent-service');
-    return launchCommentAgent(spaceId, commentBody, quotedText, anchor, persona, threadIndex, workspace, space.folder);
+    return launchCommentAgent(spaceId, commentBody, quotedText, anchor, persona, threadId, workspace, space.folder);
   });
 
   ipcMain.handle('agent:list', async (_event, spaceId: string) => {

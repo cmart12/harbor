@@ -468,13 +468,13 @@ describe('launchCommentAgent', () => {
 
   it('returns error when Copilot client is null', async () => {
     disableMockClient();
-    const result = await launchCommentAgent('space-1', 'comment body', 'quoted', {}, persona, 0, '/ws', 'folder');
+    const result = await launchCommentAgent('space-1', 'comment body', 'quoted', {}, persona, null, '/ws', 'folder');
     expect(result).toEqual({ error: 'Copilot SDK not initialized' });
   });
 
   it('creates agent with commentContext and returns agentId/sessionId', async () => {
     enableMockClient();
-    const result = await launchCommentAgent('space-1', 'fix this', 'quoted text', { prefix: 'p', suffix: 's' }, persona, 3, '/ws', 'folder');
+    const result = await launchCommentAgent('space-1', 'fix this', 'quoted text', { prefix: 'p', suffix: 's' }, persona, 'thread-3', '/ws', 'folder');
 
     expect(result).toEqual({ agentId: 'comment-agent-1', sessionId: 'mock-session-id' });
 
@@ -489,7 +489,7 @@ describe('launchCommentAgent', () => {
 
   it('sends the comment body as the prompt', async () => {
     enableMockClient();
-    await launchCommentAgent('space-1', 'fix this', 'quoted text', {}, persona, 0, '/ws', 'folder');
+    await launchCommentAgent('space-1', 'fix this', 'quoted text', {}, persona, null, '/ws', 'folder');
 
     expect(mockSession.send).toHaveBeenCalledWith(
       expect.objectContaining({ prompt: 'fix this' }),
@@ -517,7 +517,7 @@ describe('launchCommentAgent', () => {
           enforcementMode: 'both' as const,
         },
       };
-      await launchCommentAgent('space-1', 'fix this', 'quoted', {}, sandboxedPersona, 0, '/ws', 'folder');
+      await launchCommentAgent('space-1', 'fix this', 'quoted', {}, sandboxedPersona, null, '/ws', 'folder');
 
       const sessionOpts = mockClient.createSession.mock.calls[0][0];
       expect(sessionOpts.systemMessage.content).toContain('[SANDBOX MODE]');
@@ -542,7 +542,7 @@ describe('launchCommentAgent', () => {
           enforcementMode: 'mxc-only' as const,
         },
       };
-      await launchCommentAgent('space-1', 'fix this', 'quoted', {}, sandboxedPersona, 0, '/ws', 'folder');
+      await launchCommentAgent('space-1', 'fix this', 'quoted', {}, sandboxedPersona, null, '/ws', 'folder');
 
       const sessionOpts = mockClient.createSession.mock.calls[0][0];
       // Agent must NOT be told it's sandboxed in mxc-only mode — MXC is the
