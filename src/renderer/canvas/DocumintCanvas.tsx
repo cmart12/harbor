@@ -32,6 +32,8 @@ declare const whimAPI: {
   transcribe(audioData: number[]): Promise<string>;
   list(): Promise<Array<{ id: string; description: string; status: string }>>;
   searchSpaces(query: string): Promise<Array<{ id: string; description: string; status: string }>>;
+  openCanvasWindow(target: { kind: string; id: string; title: string }): void;
+  openExternal(url: string): Promise<{ ok: true }>;
 };
 
 export interface AgentPersona {
@@ -201,6 +203,14 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
         const result = await whimAPI.pasteFile(spaceId, file.name, dataArray);
         if (result.error) throw new Error(result.error);
         return result.relativePath!;
+      },
+      openFile(url: string) {
+        if (url.startsWith('whim://space/')) {
+          const targetId = url.replace('whim://space/', '');
+          whimAPI.openCanvasWindow({ kind: 'space', id: targetId, title: '' });
+        } else if (url.startsWith('http://') || url.startsWith('https://')) {
+          whimAPI.openExternal(url);
+        }
       },
     }), [spaceId]);
 
