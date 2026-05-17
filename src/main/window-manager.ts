@@ -276,18 +276,32 @@ export function registerWindowIpcHandlers(preloadPath: string): void {
 /** Open external links in the user's default browser instead of inside Electron. */
 function attachExternalLinkHandler(win: BrowserWindow): void {
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith('http://') || url.startsWith('https://')) {
+    if (url.startsWith('whim://space/')) {
+      const spaceId = url.replace('whim://space/', '');
+      navigateCanvasToSpace(win, spaceId);
+    } else if (url.startsWith('http://') || url.startsWith('https://')) {
       shell.openExternal(url);
     }
     return { action: 'deny' };
   });
 
   win.webContents.on('will-navigate', (event, url) => {
-    if (url.startsWith('http://') || url.startsWith('https://')) {
+    if (url.startsWith('whim://space/')) {
+      event.preventDefault();
+      const spaceId = url.replace('whim://space/', '');
+      navigateCanvasToSpace(win, spaceId);
+    } else if (url.startsWith('http://') || url.startsWith('https://')) {
       event.preventDefault();
       shell.openExternal(url);
     }
   });
+}
+
+/** Navigate a canvas window to a different space by sending a load-target event. */
+function navigateCanvasToSpace(win: BrowserWindow, spaceId: string): void {
+  if (!win.isDestroyed()) {
+    win.webContents.send('canvas-window:load-target', { kind: 'space', id: spaceId, title: '' });
+  }
 }
 
 /** Persist the user's preferred width when they resize the window. */

@@ -21,6 +21,7 @@ import {
 import { GitFork } from 'lucide-react';
 import { FrontmatterEditor } from './FrontmatterEditor';
 import { VoiceRecorderButton, type VoiceRecordingResult } from './VoiceRecorderButton';
+import { SpaceLinkPicker, type SpaceResult } from './SpaceLinkPicker';
 import { merge3 } from '../../shared/text-merge';
 
 declare const whimAPI: {
@@ -29,6 +30,8 @@ declare const whimAPI: {
   readFile(spaceId: string, relativePath: string): Promise<{ data?: number[]; mimeType?: string; error?: string }>;
   getSetting(key: string): Promise<string | null>;
   transcribe(audioData: number[]): Promise<string>;
+  list(): Promise<Array<{ id: string; description: string; status: string }>>;
+  searchSpaces(query: string): Promise<Array<{ id: string; description: string; status: string }>>;
 };
 
 export interface AgentPersona {
@@ -158,6 +161,7 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
     const [isTranscribing, setIsTranscribing] = useState(false);
     const [decorations, setDecorations] = useState<readonly DocumintDecoration[]>(initialDecorations || []);
     const [agentUsers, setAgentUsers] = useState<DocumentUser[]>([]);
+    const [showLinkPicker, setShowLinkPicker] = useState(false);
 
     contentRef.current = content;
     frontmatterRef.current = frontmatter;
@@ -472,6 +476,26 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
       return () => el.removeEventListener('keydown', handler);
     }, [saveNow]);
 
+    // Cmd+P handler — open space link picker
+    useEffect(() => {
+      const handler = (e: KeyboardEvent) => {
+        if ((e.metaKey || e.ctrlKey) && e.key === 'p') {
+          e.preventDefault();
+          setShowLinkPicker(prev => !prev);
+        }
+      };
+      window.addEventListener('keydown', handler);
+      return () => window.removeEventListener('keydown', handler);
+    }, []);
+
+    const handleLinkPickerSelect = useCallback((space: SpaceResult) => {
+      setShowLinkPicker(false);
+      const link = `[${space.description || 'Untitled'}](whim://space/${space.id})`;
+      const current = contentRef.current;
+      const separator = current.endsWith('\n') || current === '' ? '' : '\n';
+      handleContentChange(current + separator + link);
+    }, [handleContentChange]);
+
     // File drag-and-drop handler
     useEffect(() => {
       const el = containerRef.current;
@@ -701,6 +725,12 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
             value={rawContent}
             onChange={handleRawContentChange}
             spellCheck={false}
+          />
+        )}
+        {showLinkPicker && (
+          <SpaceLinkPicker
+            onSelect={handleLinkPickerSelect}
+            onDismiss={() => setShowLinkPicker(false)}
           />
         )}
       </div>
