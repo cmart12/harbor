@@ -1,12 +1,12 @@
 /**
- * Sandbox policies for agent sessions (Windows-only).
+ * Sandbox policies for agent sessions.
  *
  * Provides:
  * - Read-only command classification for shell commands
  * - Pre-tool hook that denies non-read-only shell commands
  * - Path-policy engine for host-side enforcement of path-bearing tools
- *   (view/edit/create/glob/grep/etc.) since MXC only sandboxes shell
- * - Platform check constant
+ *   (view/edit/create/glob/grep/etc.) since runtime sandbox only sandboxes shell
+ * - Platform check constant (for path normalization, not sandbox availability)
  */
 
 import * as path from 'path';

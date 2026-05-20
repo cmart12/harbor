@@ -14,7 +14,7 @@ export interface AgentPersona {
   instructions: string;
   model: string;        // model ID
   runLocation: 'local' | 'cloud' | 'conduit';  // where to execute the agent
-  sandboxed?: boolean;  // Windows-only; ignored on other platforms
+  sandboxed?: boolean;  // enable runtime sandbox for this persona
   emoji?: string;       // emoji avatar for presence and worker tabs
   cliRuntime?: string;  // id of a CliRuntime; null/empty = use default cliPath
   /**

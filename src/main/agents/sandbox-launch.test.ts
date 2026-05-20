@@ -39,8 +39,6 @@ function makePersistence(): AgentPersistence {
   return { updateStatus: vi.fn() } as unknown as AgentPersistence;
 }
 
-const IS_WINDOWS = process.platform === 'win32';
-
 describe('buildSandboxLaunchSetup', () => {
   let registry: AgentRegistry;
   let broker: InteractionBroker;
@@ -50,7 +48,7 @@ describe('buildSandboxLaunchSetup', () => {
     broker = new InteractionBroker(makeNotifier(), makePersistence());
   });
 
-  it('returns isSandboxed=false for a non-sandboxed persona', () => {
+  it('returns isSandboxed=true for a sandboxed persona', () => {
     const setup = buildSandboxLaunchSetup({
       agentId: 'a1',
       workingDir: path.join(os.tmpdir(), 'a1-work'),
@@ -63,79 +61,77 @@ describe('buildSandboxLaunchSetup', () => {
     expect(setup.enforcementMode).toBe('both');
   });
 
-  // Sandbox is Windows-only. On non-Windows, the setup early-returns
-  // isSandboxed=false regardless of policy.
-  if (IS_WINDOWS) {
-    function makeSandboxedPersona(override: Partial<SandboxPolicy> = {}) {
-      return {
-        id: 'p1', handle: 'p', instructions: '', model: 'gpt', runLocation: 'local' as const,
-        sandboxed: true,
-        sandboxPolicyOverride: { ...DEFAULT_SANDBOX_POLICY, ...override },
-      };
-    }
-
-    it('installs both onPreToolUse + onPostToolUse in enforcementMode=both', () => {
-      const setup = buildSandboxLaunchSetup({
-        agentId: 'a1',
-        workingDir: path.join(os.tmpdir(), 'a1-work'),
-        persona: makeSandboxedPersona({ enforcementMode: 'both' }),
-        registry,
-        broker,
-      });
-      expect(setup.isSandboxed).toBe(true);
-      expect(setup.enforcementMode).toBe('both');
-      expect(setup.hooks).toBeDefined();
-      expect(setup.hooks).toHaveProperty('onPreToolUse');
-      expect(setup.hooks).toHaveProperty('onPostToolUse');
-    });
-
-    it('skips onPreToolUse but keeps onPostToolUse in enforcementMode=mxc-only', () => {
-      const setup = buildSandboxLaunchSetup({
-        agentId: 'a2',
-        workingDir: path.join(os.tmpdir(), 'a2-work'),
-        persona: makeSandboxedPersona({ enforcementMode: 'mxc-only' }),
-        registry,
-        broker,
-      });
-      expect(setup.isSandboxed).toBe(true);
-      expect(setup.enforcementMode).toBe('mxc-only');
-      expect(setup.hooks).toBeDefined();
-      expect(setup.hooks).not.toHaveProperty('onPreToolUse');
-      expect(setup.hooks).toHaveProperty('onPostToolUse');
-    });
-
-    it('still pre-materializes config dirs in mxc-only so MXC stays enabled', () => {
-      const setup = buildSandboxLaunchSetup({
-        agentId: 'a3',
-        workingDir: path.join(os.tmpdir(), 'a3-work'),
-        persona: makeSandboxedPersona({ enforcementMode: 'mxc-only' }),
-        registry,
-        broker,
-      });
-      expect(setup.sandboxConfigs).toBeTruthy();
-      expect(setup.sandboxConfigs?.onDir).toMatch(/sandbox-config[\\/]a3[\\/]on/);
-      expect(setup.sandboxConfigs?.offDir).toMatch(/sandbox-config[\\/]a3[\\/]off/);
-    });    it('still strips web_fetch when allowWebFetch=false in mxc-only', () => {
-      const setup = buildSandboxLaunchSetup({
-        agentId: 'a4',
-        workingDir: path.join(os.tmpdir(), 'a4-work'),
-        persona: makeSandboxedPersona({ enforcementMode: 'mxc-only', allowWebFetch: false }),
-        registry,
-        broker,
-      });
-      expect(setup.customTools.some((t: any) => t?.name === 'web_fetch')).toBe(false);
-      expect(setup.customTools.some((t: any) => t?.name === 'other_tool')).toBe(true);
-    });
-
-    it('keeps web_fetch when allowWebFetch=true in mxc-only', () => {
-      const setup = buildSandboxLaunchSetup({
-        agentId: 'a5',
-        workingDir: path.join(os.tmpdir(), 'a5-work'),
-        persona: makeSandboxedPersona({ enforcementMode: 'mxc-only', allowWebFetch: true }),
-        registry,
-        broker,
-      });
-      expect(setup.customTools.some((t: any) => t?.name === 'web_fetch')).toBe(true);
-    });
+  function makeSandboxedPersona(override: Partial<SandboxPolicy> = {}) {
+    return {
+      id: 'p1', handle: 'p', instructions: '', model: 'gpt', runLocation: 'local' as const,
+      sandboxed: true,
+      sandboxPolicyOverride: { ...DEFAULT_SANDBOX_POLICY, ...override },
+    };
   }
+
+  it('installs both onPreToolUse + onPostToolUse in enforcementMode=both', () => {
+    const setup = buildSandboxLaunchSetup({
+      agentId: 'a1',
+      workingDir: path.join(os.tmpdir(), 'a1-work'),
+      persona: makeSandboxedPersona({ enforcementMode: 'both' }),
+      registry,
+      broker,
+    });
+    expect(setup.isSandboxed).toBe(true);
+    expect(setup.enforcementMode).toBe('both');
+    expect(setup.hooks).toBeDefined();
+    expect(setup.hooks).toHaveProperty('onPreToolUse');
+    expect(setup.hooks).toHaveProperty('onPostToolUse');
+  });
+
+  it('skips onPreToolUse but keeps onPostToolUse in enforcementMode=mxc-only', () => {
+    const setup = buildSandboxLaunchSetup({
+      agentId: 'a2',
+      workingDir: path.join(os.tmpdir(), 'a2-work'),
+      persona: makeSandboxedPersona({ enforcementMode: 'mxc-only' }),
+      registry,
+      broker,
+    });
+    expect(setup.isSandboxed).toBe(true);
+    expect(setup.enforcementMode).toBe('mxc-only');
+    expect(setup.hooks).toBeDefined();
+    expect(setup.hooks).not.toHaveProperty('onPreToolUse');
+    expect(setup.hooks).toHaveProperty('onPostToolUse');
+  });
+
+  it('still pre-materializes config dirs in mxc-only so sandbox stays enabled', () => {
+    const setup = buildSandboxLaunchSetup({
+      agentId: 'a3',
+      workingDir: path.join(os.tmpdir(), 'a3-work'),
+      persona: makeSandboxedPersona({ enforcementMode: 'mxc-only' }),
+      registry,
+      broker,
+    });
+    expect(setup.sandboxConfigs).toBeTruthy();
+    expect(setup.sandboxConfigs?.onDir).toMatch(/sandbox-config[\\/]a3[\\/]on/);
+    expect(setup.sandboxConfigs?.offDir).toMatch(/sandbox-config[\\/]a3[\\/]off/);
+  });
+
+  it('still strips web_fetch when allowWebFetch=false in mxc-only', () => {
+    const setup = buildSandboxLaunchSetup({
+      agentId: 'a4',
+      workingDir: path.join(os.tmpdir(), 'a4-work'),
+      persona: makeSandboxedPersona({ enforcementMode: 'mxc-only', allowWebFetch: false }),
+      registry,
+      broker,
+    });
+    expect(setup.customTools.some((t: any) => t?.name === 'web_fetch')).toBe(false);
+    expect(setup.customTools.some((t: any) => t?.name === 'other_tool')).toBe(true);
+  });
+
+  it('keeps web_fetch when allowWebFetch=true in mxc-only', () => {
+    const setup = buildSandboxLaunchSetup({
+      agentId: 'a5',
+      workingDir: path.join(os.tmpdir(), 'a5-work'),
+      persona: makeSandboxedPersona({ enforcementMode: 'mxc-only', allowWebFetch: true }),
+      registry,
+      broker,
+    });
+    expect(setup.customTools.some((t: any) => t?.name === 'web_fetch')).toBe(true);
+  });
 });

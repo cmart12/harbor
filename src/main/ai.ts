@@ -59,8 +59,6 @@ function getSandboxRoot(): string {
  * Materialize on/ and off/ sandbox config dirs for a single agent. Both dirs
  * receive `config.json` files that the runtime reads as its `COPILOT_HOME`.
  *
- * Windows-only — returns null on other platforms (mxc is Windows-only today).
- *
  * Caller passes `policy` already resolved via `resolveSandboxPolicy(persona)`.
  */
 export function buildSandboxConfigs(
@@ -68,7 +66,6 @@ export function buildSandboxConfigs(
   intentWorkingDir: string,
   policy: SandboxPolicy,
 ): SandboxConfigDirs | null {
-  if (process.platform !== 'win32') return null;
 
   const root = getSandboxRoot();
   const agentRoot = path.join(root, agentId);

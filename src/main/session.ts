@@ -132,10 +132,6 @@ export function isCliMxcCapable(): boolean {
   mxcCapableResolved = true;
   resolvedMxcCapable = false;
 
-  if (process.platform !== 'win32') {
-    // mxc is Windows-only today; even if the package is present it won't enforce.
-    return false;
-  }
   const cliPath = resolveCopilotCliPath();
   if (!cliPath) return false;
 

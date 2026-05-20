@@ -81,7 +81,7 @@ export interface AgentPersona {
   instructions: string;
   model: string;
   runLocation: 'local' | 'cloud';
-  sandboxed?: boolean;  // Windows-only; ignored on other platforms
+  sandboxed?: boolean;  // enable runtime sandbox for this persona
   emoji?: string;
   cliRuntime?: string;
   /** Optional per-persona override of the global sandbox policy. */

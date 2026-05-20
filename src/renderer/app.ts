@@ -1033,8 +1033,7 @@ function renderAgentEditor(persona: AgentPersona): void {
   locationRow.appendChild(locationLabel);
   locationRow.appendChild(locationSelect);
 
-  // Sandbox checkbox (visible on all platforms, functional on Windows only)
-  const isWindows = whimAPI.getPlatform() === 'win32';
+  // Sandbox checkbox (available on all platforms with runtime sandbox support)
   const sandboxRow = document.createElement('div');
   sandboxRow.className = 'persona-form-row persona-sandbox-row';
   if (persona.runLocation === 'cloud' || persona.runLocation === 'conduit') {
@@ -1045,20 +1044,8 @@ function renderAgentEditor(persona: AgentPersona): void {
   const sandboxCheck = document.createElement('input');
   sandboxCheck.type = 'checkbox';
   sandboxCheck.checked = persona.sandboxed === true;
-  if (!isWindows) {
-    sandboxCheck.disabled = true;
-    sandboxCheck.checked = false;
-  }
   sandboxLabel.appendChild(sandboxCheck);
   sandboxLabel.appendChild(document.createTextNode(' 🔒 Run in sandbox (restrict writes & dangerous commands)'));
-  if (!isWindows) {
-    const hint = document.createElement('span');
-    hint.style.cssText = 'font-size:11px;color:rgba(255,255,255,0.4);margin-left:4px';
-    hint.textContent = '(Windows only)';
-    sandboxLabel.appendChild(hint);
-    sandboxLabel.style.opacity = '0.55';
-    sandboxLabel.title = 'Sandbox requires Windows + the mxc-aware Copilot CLI build';
-  }
   sandboxRow.appendChild(sandboxLabel);
 
   locationSelect.addEventListener('change', () => {
@@ -1068,7 +1055,7 @@ function renderAgentEditor(persona: AgentPersona): void {
       sandboxOverrideRow.style.display = 'none';
     } else {
       sandboxRow.style.display = '';
-      if (isWindows) updateSandboxOverrideVisibility();
+      updateSandboxOverrideVisibility();
     }
   });
 
@@ -1133,7 +1120,7 @@ function renderAgentEditor(persona: AgentPersona): void {
   });
 
   function updateSandboxOverrideVisibility(): void {
-    if (sandboxCheck.checked && isWindows && locationSelect.value !== 'cloud') {
+    if (sandboxCheck.checked && locationSelect.value !== 'cloud') {
       sandboxOverrideRow.style.display = '';
       if (isDefault || !inheritCheck.checked) ensurePolicyForm();
     } else {
@@ -1316,7 +1303,7 @@ function renderAgentEditor(persona: AgentPersona): void {
   // Hide the preview button when sandbox is off (or the platform doesn't
   // support sandboxing at all) — there's nothing meaningful to materialize.
   const updatePreviewVisibility = () => {
-    previewBtn.style.display = sandboxCheck.checked && isWindows ? '' : 'none';
+    previewBtn.style.display = sandboxCheck.checked ? '' : 'none';
   };
   updatePreviewVisibility();
   sandboxCheck.addEventListener('change', updatePreviewVisibility);
@@ -4021,16 +4008,10 @@ const cliMxcIndicator = document.getElementById('cli-mxc-indicator') as HTMLSpan
 
 async function updateCliMxcIndicator(): Promise<void> {
   if (!cliMxcIndicator) return;
-  const platform = whimAPI.getPlatform();
-  if (platform !== 'win32') {
-    cliMxcIndicator.textContent = 'unavailable on this platform';
-    cliMxcIndicator.className = 'cli-mxc-indicator';
-    return;
-  }
   try {
     const r = await whimAPI.checkCliMxcCapable();
     if (r.mxcCapable) {
-      cliMxcIndicator.textContent = '✓ supported (this CLI build ships @microsoft/mxc-sdk)';
+      cliMxcIndicator.textContent = '✓ runtime sandbox supported';
       cliMxcIndicator.className = 'cli-mxc-indicator ok';
     } else {
       cliMxcIndicator.textContent = '⚠ not detected — sandboxed personas will fall back to host-side path enforcement only';

@@ -325,13 +325,7 @@ describe('launchQuickAgent', () => {
     );
   });
 
-  it('skips sandbox setup for sandboxed persona on non-Windows hosts', async () => {
-    // The default test host is non-Windows (process.platform comes from CI). On
-    // Linux/macOS the IS_WINDOWS gate short-circuits sandbox setup, so a
-    // sandboxed persona launches with no configDir and no hooks — same as a
-    // plain persona.  We don't fake win32 here because that requires mocking
-    // sandbox-policies' module-level constant.
-    if (process.platform === 'win32') return; // covered by the next test on Windows hosts
+  it('sets up sandbox for sandboxed persona', async () => {
     enableMockClient();
     const persona = {
       id: 'p2', handle: 'jail', instructions: 'sandboxed',
@@ -340,16 +334,14 @@ describe('launchQuickAgent', () => {
     await launchQuickAgent('do something', '/ws', persona as any);
 
     const sessionOpts = mockClient.createSession.mock.calls[0][0];
-    expect(sessionOpts.configDir).toBeUndefined();
-    expect(sessionOpts.hooks).toBeUndefined();
+    // Sandbox is now cross-platform — configDir and hooks should be present
+    expect(sessionOpts.configDir).toBeDefined();
+    expect(sessionOpts.hooks).toBeDefined();
     // Persona instructions still applied.
     expect(sessionOpts.systemMessage.content).toContain('sandboxed');
   });
 
-  // Sandbox setup short-circuits on non-Windows, so the system-prompt branch
-  // can only be exercised on a Windows host. Skip elsewhere.
-  if (process.platform === 'win32') {
-    it('appends [SANDBOX MODE] system prompt when enforcementMode=both', async () => {
+  it('appends [SANDBOX MODE] system prompt when enforcementMode=both', async () => {
       enableMockClient();
       const persona = {
         id: 'p-both', handle: 'guard', instructions: 'Persona instructions here.',
@@ -450,7 +442,6 @@ describe('launchQuickAgent', () => {
         mockSession.sessionId = originalSessionId;
       }
     });
-  }
 });
 
 describe('launchCommentAgent', () => {
@@ -496,63 +487,60 @@ describe('launchCommentAgent', () => {
     );
   });
 
-  // Sandbox setup short-circuits on non-Windows, so the system-prompt branch
-  // can only be exercised on a Windows host. Skip elsewhere.
-  if (process.platform === 'win32') {
-    it('appends [SANDBOX MODE] system prompt for sandboxed persona when enforcementMode=both', async () => {
-      enableMockClient();
-      const sandboxedPersona = {
-        id: 'p-cmt-both', handle: 'guard', instructions: 'Be helpful',
-        model: 'gpt-4o', runLocation: 'local' as const,
-        sandboxed: true,
-        sandboxPolicyOverride: {
-          scopeToSpaceFolder: true,
-          extraReadwritePaths: [],
-          extraReadonlyPaths: [],
-          extraDeniedPaths: [],
-          allowMcpServers: false,
-          allowWebFetch: false,
-          allowOutbound: false,
-          allowLocalNetwork: false,
-          enforcementMode: 'both' as const,
-        },
-      };
-      await launchCommentAgent('space-1', 'fix this', 'quoted', {}, sandboxedPersona, null, '/ws', 'folder');
+  // Sandbox is now cross-platform — these tests run everywhere.
+  it('appends [SANDBOX MODE] system prompt for sandboxed persona when enforcementMode=both', async () => {
+    enableMockClient();
+    const sandboxedPersona = {
+      id: 'p-cmt-both', handle: 'guard', instructions: 'Be helpful',
+      model: 'gpt-4o', runLocation: 'local' as const,
+      sandboxed: true,
+      sandboxPolicyOverride: {
+        scopeToSpaceFolder: true,
+        extraReadwritePaths: [],
+        extraReadonlyPaths: [],
+        extraDeniedPaths: [],
+        allowMcpServers: false,
+        allowWebFetch: false,
+        allowOutbound: false,
+        allowLocalNetwork: false,
+        enforcementMode: 'both' as const,
+      },
+    };
+    await launchCommentAgent('space-1', 'fix this', 'quoted', {}, sandboxedPersona, null, '/ws', 'folder');
 
-      const sessionOpts = mockClient.createSession.mock.calls[0][0];
-      expect(sessionOpts.systemMessage.content).toContain('[SANDBOX MODE]');
-      expect(sessionOpts.systemMessage.content).toContain('Be helpful');
-    });
+    const sessionOpts = mockClient.createSession.mock.calls[0][0];
+    expect(sessionOpts.systemMessage.content).toContain('[SANDBOX MODE]');
+    expect(sessionOpts.systemMessage.content).toContain('Be helpful');
+  });
 
-    it('omits [SANDBOX MODE] system prompt for sandboxed persona when enforcementMode=mxc-only', async () => {
-      enableMockClient();
-      const sandboxedPersona = {
-        id: 'p-cmt-mxc', handle: 'guard', instructions: 'Be helpful',
-        model: 'gpt-4o', runLocation: 'local' as const,
-        sandboxed: true,
-        sandboxPolicyOverride: {
-          scopeToSpaceFolder: true,
-          extraReadwritePaths: [],
-          extraReadonlyPaths: [],
-          extraDeniedPaths: [],
-          allowMcpServers: false,
-          allowWebFetch: false,
-          allowOutbound: false,
-          allowLocalNetwork: false,
-          enforcementMode: 'mxc-only' as const,
-        },
-      };
-      await launchCommentAgent('space-1', 'fix this', 'quoted', {}, sandboxedPersona, null, '/ws', 'folder');
+  it('omits [SANDBOX MODE] system prompt for sandboxed persona when enforcementMode=mxc-only', async () => {
+    enableMockClient();
+    const sandboxedPersona = {
+      id: 'p-cmt-mxc', handle: 'guard', instructions: 'Be helpful',
+      model: 'gpt-4o', runLocation: 'local' as const,
+      sandboxed: true,
+      sandboxPolicyOverride: {
+        scopeToSpaceFolder: true,
+        extraReadwritePaths: [],
+        extraReadonlyPaths: [],
+        extraDeniedPaths: [],
+        allowMcpServers: false,
+        allowWebFetch: false,
+        allowOutbound: false,
+        allowLocalNetwork: false,
+        enforcementMode: 'mxc-only' as const,
+      },
+    };
+    await launchCommentAgent('space-1', 'fix this', 'quoted', {}, sandboxedPersona, null, '/ws', 'folder');
 
-      const sessionOpts = mockClient.createSession.mock.calls[0][0];
-      // Agent must NOT be told it's sandboxed in mxc-only mode — MXC is the
-      // sole enforcer and the prompt would defeat the verification purpose.
-      expect(sessionOpts.systemMessage.content).not.toContain('[SANDBOX MODE]');
-      expect(sessionOpts.systemMessage.content).not.toContain('sandboxed environment');
-      // Persona instructions still applied.
-      expect(sessionOpts.systemMessage.content).toContain('Be helpful');
-    });
-  }
+    const sessionOpts = mockClient.createSession.mock.calls[0][0];
+    // Agent must NOT be told it's sandboxed in mxc-only mode — the runtime
+    // sandbox is the sole enforcer and the prompt would defeat the verification purpose.
+    expect(sessionOpts.systemMessage.content).not.toContain('[SANDBOX MODE]');
+    expect(sessionOpts.systemMessage.content).not.toContain('sandboxed environment');
+    // Persona instructions still applied.
+    expect(sessionOpts.systemMessage.content).toContain('Be helpful');
+  });
 });
 
 describe('approveAgent', () => {

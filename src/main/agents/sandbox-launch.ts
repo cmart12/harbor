@@ -16,7 +16,6 @@ import type { SandboxPolicy } from '../../shared/ipc-contract';
 import { AgentRegistry, type SandboxRuntimeState } from './agent-registry';
 import { InteractionBroker } from './interaction-broker';
 import {
-  IS_WINDOWS,
   resolvePathPolicy,
   createSandboxPathPolicyHook,
   createSandboxShellDenialHook,
@@ -87,7 +86,7 @@ export function buildSandboxLaunchSetup(opts: {
   const allMcpServers = getAllMcpServers();
   const allCustomTools = getCustomTools({ agentId, broker });
 
-  const isSandboxed = persona.sandboxed === true && IS_WINDOWS;
+  const isSandboxed = persona.sandboxed === true;
 
   if (!isSandboxed) {
     return {

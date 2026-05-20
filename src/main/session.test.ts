@@ -430,118 +430,112 @@ describe('session', () => {
       invalidateMxcCapability();
     });
 
-    it('returns false on non-Windows hosts even when mxc-sdk is present', () => {
-      if (process.platform === 'win32') return;
-      mockGetConfigValue.mockReturnValue('/repo/dist-cli/index.js');
-      mockExistsSync.mockReturnValue(true);
+    // Drive the FS via an allow-set: existsSync returns true iff the queried
+    // path is in the set. The cliPath itself must also be in the set so
+    // resolveCopilotCliPath validates it. Case-insensitive on Windows.
+    function setupFs(present: string[]) {
+      const isWin = process.platform === 'win32';
+      const allow = new Set(present.map((p) => isWin ? p.toLowerCase() : p));
+      mockExistsSync.mockImplementation((p: unknown) =>
+        typeof p === 'string' && allow.has(isWin ? p.toLowerCase() : p),
+      );
+    }
+
+    const isWin = process.platform === 'win32';
+    const cli = isWin ? 'C:\\repo\\dist-cli\\index.js' : '/repo/dist-cli/index.js';
+    const mxcDir = isWin
+      ? 'C:\\repo\\node_modules\\@microsoft\\mxc-sdk'
+      : '/repo/node_modules/@microsoft/mxc-sdk';
+
+    it('detects mxc-sdk in a bundled dist-cli layout (deps in parent node_modules)', () => {
+      mockGetConfigValue.mockReturnValue(cli);
+      setupFs([cli, mxcDir]);
+
+      expect(isCliMxcCapable()).toBe(true);
+    });
+
+    it('detects mxc-sdk in a hoisted standard install layout', () => {
+      const hoistedCli = isWin
+        ? 'C:\\prefix\\node_modules\\@github\\copilot\\index.js'
+        : '/prefix/node_modules/@github/copilot/index.js';
+      const hoistedMxc = isWin
+        ? 'C:\\prefix\\node_modules\\@microsoft\\mxc-sdk'
+        : '/prefix/node_modules/@microsoft/mxc-sdk';
+      mockGetConfigValue.mockReturnValue(hoistedCli);
+      setupFs([hoistedCli, hoistedMxc]);
+
+      expect(isCliMxcCapable()).toBe(true);
+    });
+
+    it('detects mxc-sdk in a nested install layout', () => {
+      const nestedCli = isWin
+        ? 'C:\\prefix\\node_modules\\@github\\copilot\\index.js'
+        : '/prefix/node_modules/@github/copilot/index.js';
+      const nestedMxc = isWin
+        ? 'C:\\prefix\\node_modules\\@github\\copilot\\node_modules\\@microsoft\\mxc-sdk'
+        : '/prefix/node_modules/@github/copilot/node_modules/@microsoft/mxc-sdk';
+      mockGetConfigValue.mockReturnValue(nestedCli);
+      setupFs([nestedCli, nestedMxc]);
+
+      expect(isCliMxcCapable()).toBe(true);
+    });
+
+    it('returns false when mxc-sdk is not present at any level', () => {
+      mockGetConfigValue.mockReturnValue(cli);
+      setupFs([cli]); // no mxc-sdk anywhere
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      expect(isCliMxcCapable()).toBe(false);
+      // Logged the searched directories for debuggability.
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('@microsoft/mxc-sdk not found'));
+      warnSpy.mockRestore();
+    });
+
+    it('returns false when no CLI path can be resolved', () => {
+      mockGetConfigValue.mockReturnValue(null);
+      mockExistsSync.mockReturnValue(false);
+      mockExecSync.mockImplementation(() => { throw new Error('not found'); });
+
       expect(isCliMxcCapable()).toBe(false);
     });
 
-    if (process.platform === 'win32') {
-      // For Windows-only tests we drive the FS via an allow-set: existsSync
-      // returns true iff the queried path is in the set. The cliPath itself
-      // must also be in the set so resolveCopilotCliPath validates it.
-      function setupFs(present: string[]) {
-        const allow = new Set(present.map((p) => p.toLowerCase()));
-        mockExistsSync.mockImplementation((p: unknown) =>
-          typeof p === 'string' && allow.has(p.toLowerCase()),
-        );
-      }
+    it('caches the result after the first call', () => {
+      mockGetConfigValue.mockReturnValue(cli);
+      setupFs([cli, mxcDir]);
 
-      it('detects mxc-sdk in a bundled dist-cli layout (deps in parent node_modules)', () => {
-        // Mirrors the user's layout: `<repo>/dist-cli/index.js` with
-        // `<repo>/node_modules/@microsoft/mxc-sdk`.
-        const cli = 'C:\\repo\\dist-cli\\index.js';
-        const mxc = 'C:\\repo\\node_modules\\@microsoft\\mxc-sdk';
-        mockGetConfigValue.mockReturnValue(cli);
-        setupFs([cli, mxc]);
+      expect(isCliMxcCapable()).toBe(true);
+      const firstCallCount = mockExistsSync.mock.calls.length;
 
-        expect(isCliMxcCapable()).toBe(true);
-      });
+      // Second call must not re-stat the FS.
+      expect(isCliMxcCapable()).toBe(true);
+      expect(mockExistsSync.mock.calls.length).toBe(firstCallCount);
+    });
 
-      it('detects mxc-sdk in a hoisted standard install layout', () => {
-        // `<prefix>/node_modules/@github/copilot/index.js` →
-        // `<prefix>/node_modules/@microsoft/mxc-sdk` (3 levels up).
-        const cli = 'C:\\prefix\\node_modules\\@github\\copilot\\index.js';
-        const mxc = 'C:\\prefix\\node_modules\\@microsoft\\mxc-sdk';
-        mockGetConfigValue.mockReturnValue(cli);
-        setupFs([cli, mxc]);
+    it('re-probes after invalidateMxcCapability()', () => {
+      mockGetConfigValue.mockReturnValue(cli);
+      // First probe: no mxc-sdk → false.
+      setupFs([cli]);
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      expect(isCliMxcCapable()).toBe(false);
 
-        expect(isCliMxcCapable()).toBe(true);
-      });
+      // Now the SDK appears, but cache still says false until invalidated.
+      setupFs([cli, mxcDir]);
+      expect(isCliMxcCapable()).toBe(false);
 
-      it('detects mxc-sdk in a nested install layout', () => {
-        // `<...>/@github/copilot/node_modules/@microsoft/mxc-sdk` — the dep
-        // is a direct child of the CLI package's own node_modules.
-        const cli = 'C:\\prefix\\node_modules\\@github\\copilot\\index.js';
-        const mxc = 'C:\\prefix\\node_modules\\@github\\copilot\\node_modules\\@microsoft\\mxc-sdk';
-        mockGetConfigValue.mockReturnValue(cli);
-        setupFs([cli, mxc]);
+      invalidateMxcCapability();
+      expect(isCliMxcCapable()).toBe(true);
+      warnSpy.mockRestore();
+    });
 
-        expect(isCliMxcCapable()).toBe(true);
-      });
+    it('stops searching at the filesystem root without infinite-looping', () => {
+      // cliPath is at root; walker should bail at parent === dir.
+      const rootCli = isWin ? 'C:\\index.js' : '/index.js';
+      mockGetConfigValue.mockReturnValue(rootCli);
+      setupFs([rootCli]);
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-      it('returns false when mxc-sdk is not present at any level', () => {
-        const cli = 'C:\\repo\\dist-cli\\index.js';
-        mockGetConfigValue.mockReturnValue(cli);
-        setupFs([cli]); // no mxc-sdk anywhere
-        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-
-        expect(isCliMxcCapable()).toBe(false);
-        // Logged the searched directories for debuggability.
-        expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('@microsoft/mxc-sdk not found'));
-        warnSpy.mockRestore();
-      });
-
-      it('returns false when no CLI path can be resolved', () => {
-        mockGetConfigValue.mockReturnValue(null);
-        mockExistsSync.mockReturnValue(false);
-        mockExecSync.mockImplementation(() => { throw new Error('not found'); });
-
-        expect(isCliMxcCapable()).toBe(false);
-      });
-
-      it('caches the result after the first call', () => {
-        const cli = 'C:\\repo\\dist-cli\\index.js';
-        const mxc = 'C:\\repo\\node_modules\\@microsoft\\mxc-sdk';
-        mockGetConfigValue.mockReturnValue(cli);
-        setupFs([cli, mxc]);
-
-        expect(isCliMxcCapable()).toBe(true);
-        const firstCallCount = mockExistsSync.mock.calls.length;
-
-        // Second call must not re-stat the FS.
-        expect(isCliMxcCapable()).toBe(true);
-        expect(mockExistsSync.mock.calls.length).toBe(firstCallCount);
-      });
-
-      it('re-probes after invalidateMxcCapability()', () => {
-        const cli = 'C:\\repo\\dist-cli\\index.js';
-        mockGetConfigValue.mockReturnValue(cli);
-        // First probe: no mxc-sdk → false.
-        setupFs([cli]);
-        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-        expect(isCliMxcCapable()).toBe(false);
-
-        // Now the SDK appears, but cache still says false until invalidated.
-        setupFs([cli, 'C:\\repo\\node_modules\\@microsoft\\mxc-sdk']);
-        expect(isCliMxcCapable()).toBe(false);
-
-        invalidateMxcCapability();
-        expect(isCliMxcCapable()).toBe(true);
-        warnSpy.mockRestore();
-      });
-
-      it('stops searching at the filesystem root without infinite-looping', () => {
-        // cliPath is at drive root; walker should bail at parent === dir.
-        const cli = 'C:\\index.js';
-        mockGetConfigValue.mockReturnValue(cli);
-        setupFs([cli]);
-        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-
-        expect(isCliMxcCapable()).toBe(false);
-        warnSpy.mockRestore();
-      });
-    }
+      expect(isCliMxcCapable()).toBe(false);
+      warnSpy.mockRestore();
+    });
   });
 });
