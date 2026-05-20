@@ -6,6 +6,7 @@ import { resolveCopilotCliPath, invalidateCliPath, checkCliCompatibility, resolv
 import { getConfigValue, setConfigValue, getConfig, DEFAULT_PERSONAS, type AgentPersona, type CliRuntime } from '../config';
 import { listDiscoveredMcpServers } from '../mcp';
 import { validateMcpServers, validateCliTools, validateSandboxPolicy } from '../validators';
+import { onAutoHideSidePaneChanged } from '../window-manager';
 
 const HANDLE_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;
 
@@ -18,6 +19,7 @@ export function registerSettingsHandlers(): void {
       cli_path: 'cliPath',
       conduit_host_url: 'conduitHostUrl',
       conduit_profile: 'conduitProfile',
+      auto_hide_side_pane: 'autoHideSidePane',
     };
     const configKey = configKeyMap[key];
     if (configKey) return getConfigValue(configKey);
@@ -46,6 +48,10 @@ export function registerSettingsHandlers(): void {
       setConfigValue('conduitHostUrl', value || null);
     } else if (key === 'conduit_profile') {
       setConfigValue('conduitProfile', value || null);
+    } else if (key === 'auto_hide_side_pane') {
+      const enabled = value === 'true';
+      setConfigValue('autoHideSidePane', enabled);
+      onAutoHideSidePaneChanged();
     }
   });
 

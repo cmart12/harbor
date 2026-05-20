@@ -135,6 +135,21 @@ export function isCliMxcCapable(): boolean {
   const cliPath = resolveCopilotCliPath();
   if (!cliPath) return false;
 
+  // Compiled standalone binaries (e.g. Homebrew Cask) bundle all dependencies
+  // inside a single Mach-O/PE executable. They ship with MXC but have no
+  // external node_modules to probe. Detect by checking if the resolved path
+  // is a binary (not a .js/.cjs entry point).
+  if (!cliPath.endsWith('.js') && !cliPath.endsWith('.cjs')) {
+    // Heuristic: a standalone binary >= 50MB almost certainly bundles deps.
+    try {
+      const stat = fs.statSync(cliPath);
+      if (stat.size > 50 * 1024 * 1024) {
+        resolvedMxcCapable = true;
+        return true;
+      }
+    } catch { /* fall through to node_modules probe */ }
+  }
+
   const MAX_DEPTH = 8;
   const searched: string[] = [];
   let dir = path.dirname(cliPath);

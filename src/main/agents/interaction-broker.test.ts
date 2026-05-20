@@ -509,6 +509,7 @@ describe('InteractionBroker', () => {
         state: 'on',
         allowMcpServers: false,
         allowWebFetch: false,
+        allowOutbound: false,
         allowList: { paths: new Set(), resources: new Set(), webFetch: false },
       };
       return record;
@@ -581,6 +582,7 @@ describe('InteractionBroker', () => {
         state: 'on',
         allowMcpServers: false,
         allowWebFetch: false,
+        allowOutbound: false,
         allowList: { paths: new Set(), resources: new Set(), webFetch: false },
       };
       return record;

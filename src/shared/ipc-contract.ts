@@ -145,7 +145,10 @@ export type SandboxLayer =
   | 'host:web-fetch'
   | 'host:permission'
   | 'mxc-only:auto-approve'
-  | 'mxc:shell-denial-suspected';
+  | 'mxc:shell-denial-suspected'   // legacy alias — kept for in-flight messages
+  | 'mxc:shell-denial-high'
+  | 'mxc:shell-denial-medium'
+  | 'mxc:shell-denial-network';
 
 export interface CliRuntime {
   id: string;

@@ -17,6 +17,7 @@ import {
   createSandboxShellDenialHook,
   detectShellSandboxDenial,
   logSandboxLayerDenial,
+  SANDBOX_DENIAL_SCAN_BYTES,
 } from './sandbox-policies';
 
 describe('sandbox-policies', () => {
@@ -406,22 +407,27 @@ describe('sandbox-policies', () => {
   });
 
   describe('createSandboxShellDenialHook (post-tool MXC denial detector)', () => {
-    it('tags MXC denials with mxc:shell-denial-suspected', async () => {
+    it('detects high-confidence denials and returns modifiedResult with footer', async () => {
       const blocks: any[] = [];
       const hook = createSandboxShellDenialHook({
         isDisabled: () => false,
+        allowOutbound: () => false,
         onBlock: async (info) => { blocks.push(info); },
       });
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-      await hook({
+      const result = await hook({
         toolName: 'bash',
         toolArgs: { command: 'Set-Content C:\\Users\\foo\\bar.txt hi' },
         toolResult: { stderr: 'Set-Content : Access is denied. (0xC0000022)' },
       });
       expect(blocks).toHaveLength(1);
-      expect(blocks[0].layer).toBe('mxc:shell-denial-suspected');
+      expect(blocks[0].layer).toBe('mxc:shell-denial-high');
+      expect(blocks[0].kind).toBe('high');
+      // Should return footer for the LLM
+      expect(result).toBeDefined();
+      expect((result as any).additionalContext).toContain('sandbox is active');
       const calls = warn.mock.calls.map(c => c.join(' '));
-      expect(calls.some(c => c.includes('[sandbox][mxc:shell-denial-suspected]'))).toBe(true);
+      expect(calls.some(c => c.includes('[sandbox][mxc:shell-denial-high]'))).toBe(true);
       warn.mockRestore();
     });
 
@@ -429,6 +435,7 @@ describe('sandbox-policies', () => {
       const blocks: any[] = [];
       const hook = createSandboxShellDenialHook({
         isDisabled: () => true,
+        allowOutbound: () => false,
         onBlock: async (info) => { blocks.push(info); },
       });
       await hook({
@@ -443,6 +450,7 @@ describe('sandbox-policies', () => {
       const blocks: any[] = [];
       const hook = createSandboxShellDenialHook({
         isDisabled: () => false,
+        allowOutbound: () => true,
         onBlock: async (info) => { blocks.push(info); },
       });
       await hook({
@@ -451,6 +459,40 @@ describe('sandbox-policies', () => {
         toolResult: { content: 'hi' },
       });
       expect(blocks).toHaveLength(0);
+    });
+
+    it('detects medium-confidence denials with non-zero exit code', async () => {
+      const blocks: any[] = [];
+      const hook = createSandboxShellDenialHook({
+        isDisabled: () => false,
+        allowOutbound: () => true,
+        onBlock: async (info) => { blocks.push(info); },
+      });
+      await hook({
+        toolName: 'bash',
+        toolArgs: { command: 'rm /etc/shadow' },
+        toolResult: 'rm: Permission denied\n<exited with exit code 1>',
+      });
+      expect(blocks).toHaveLength(1);
+      expect(blocks[0].kind).toBe('medium');
+      expect(blocks[0].layer).toBe('mxc:shell-denial-medium');
+    });
+
+    it('detects network denials when outbound is restricted', async () => {
+      const blocks: any[] = [];
+      const hook = createSandboxShellDenialHook({
+        isDisabled: () => false,
+        allowOutbound: () => false,
+        onBlock: async (info) => { blocks.push(info); },
+      });
+      await hook({
+        toolName: 'bash',
+        toolArgs: { command: 'curl https://example.com' },
+        toolResult: 'curl: (6) Could not resolve host: example.com\n<exited with exit code 6>',
+      });
+      expect(blocks).toHaveLength(1);
+      expect(blocks[0].kind).toBe('network');
+      expect(blocks[0].layer).toBe('mxc:shell-denial-network');
     });
   });
 
@@ -474,50 +516,105 @@ describe('sandbox-policies', () => {
       expect(detectShellSandboxDenial({
         toolName: 'bash',
         toolArgs: { command: 'cat foo.txt' },
-        toolResult: 'hello world\nexit code 0',
+        toolResult: 'hello world\n<exited with exit code 0>',
       })).toBeNull();
     });
 
-    it('detects "Access is denied"', () => {
+    it('detects "Access is denied" as medium (with non-zero exit)', () => {
       const r = detectShellSandboxDenial({
         toolName: 'bash',
         toolArgs: { command: 'echo > C:\\Windows\\foo.txt' },
-        toolResult: { content: 'Access is denied.\nexit code 1' },
+        toolResult: { content: 'Access is denied.\n<exited with exit code 1>' },
       });
       expect(r).not.toBeNull();
-      expect(r?.command).toBe('echo > C:\\Windows\\foo.txt');
+      expect(r?.kind).toBe('medium');
     });
 
-    it('detects "permission denied"', () => {
+    it('does NOT detect "Access is denied" on exit code 0', () => {
+      const r = detectShellSandboxDenial({
+        toolName: 'bash',
+        toolArgs: { command: 'find /' },
+        toolResult: { content: 'Access is denied.\n<exited with exit code 0>' },
+      });
+      expect(r).toBeNull();
+    });
+
+    it('detects "permission denied" as medium (with non-zero exit)', () => {
       const r = detectShellSandboxDenial({
         toolName: 'shell',
         toolArgs: { command: 'rm /etc/passwd' },
-        toolResult: 'rm: /etc/passwd: Permission denied',
+        toolResult: 'rm: /etc/passwd: Permission denied\n<exited with exit code 1>',
       });
       expect(r).not.toBeNull();
+      expect(r?.kind).toBe('medium');
     });
 
-    it('detects wxc-exec marker', () => {
+    it('detects wxc-exec marker as high (regardless of exit code)', () => {
       const r = detectShellSandboxDenial({
         toolName: 'bash',
         toolArgs: { command: 'foo' },
         toolResult: { detailedContent: '[wxc-exec] policy violation: write blocked' },
       });
       expect(r).not.toBeNull();
+      expect(r?.kind).toBe('high');
     });
 
-    it('detects NTSTATUS 0xC0000022', () => {
+    it('detects NTSTATUS 0xC0000022 as high (regardless of exit code)', () => {
       const r = detectShellSandboxDenial({
         toolName: 'bash',
         toolArgs: { command: 'foo' },
         toolResult: 'failed: NTSTATUS 0xC0000022',
       });
       expect(r).not.toBeNull();
+      expect(r?.kind).toBe('high');
+    });
+
+    it('detects macOS Seatbelt denial as high', () => {
+      const r = detectShellSandboxDenial({
+        toolName: 'bash',
+        toolArgs: { command: 'touch /protected' },
+        toolResult: 'file system sandbox blocked\n<exited with exit code 1>',
+      });
+      expect(r).not.toBeNull();
+      expect(r?.kind).toBe('high');
+    });
+
+    it('detects network denial when allowOutbound=false', () => {
+      const r = detectShellSandboxDenial({
+        toolName: 'bash',
+        toolArgs: { command: 'curl https://evil.com' },
+        toolResult: 'curl: (6) Could not resolve host: evil.com\n<exited with exit code 6>',
+        allowOutbound: false,
+      });
+      expect(r).not.toBeNull();
+      expect(r?.kind).toBe('network');
+    });
+
+    it('skips network patterns when allowOutbound=true', () => {
+      const r = detectShellSandboxDenial({
+        toolName: 'bash',
+        toolArgs: { command: 'curl https://down.com' },
+        toolResult: 'curl: (6) Could not resolve host: down.com\n<exited with exit code 6>',
+        allowOutbound: true,
+      });
+      // Should not match as network — not a sandbox issue if outbound is allowed.
+      expect(r).toBeNull();
     });
 
     it('returns null when toolResult is empty', () => {
       expect(detectShellSandboxDenial({ toolName: 'bash', toolArgs: { command: 'x' }, toolResult: '' })).toBeNull();
       expect(detectShellSandboxDenial({ toolName: 'bash', toolArgs: { command: 'x' }, toolResult: null })).toBeNull();
+    });
+
+    it('scans only the last 16KB', () => {
+      // Pattern buried before the 16KB tail should be missed.
+      const padding = 'x'.repeat(SANDBOX_DENIAL_SCAN_BYTES + 1000);
+      const r = detectShellSandboxDenial({
+        toolName: 'bash',
+        toolArgs: { command: 'foo' },
+        toolResult: 'file system sandbox blocked\n' + padding + '\n<exited with exit code 1>',
+      });
+      expect(r).toBeNull();
     });
   });
 });

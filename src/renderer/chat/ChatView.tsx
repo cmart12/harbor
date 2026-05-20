@@ -21,6 +21,7 @@ declare const whimAPI: {
   selectWorkspace: () => Promise<{ selected: boolean; path: string | null }>;
   onWorkspaceChanged: (callback: (path: string | null) => void) => void;
   setAgentYolo: (agentId: string, enabled: boolean) => Promise<{ ok?: boolean; error?: string }>;
+  disableSandbox: (agentId: string) => Promise<{ ok?: boolean; error?: string }>;
   onAgentYoloChanged: (callback: (data: { agentId: string; enabled: boolean }) => void) => void;
   enableRemote: (agentId: string) => Promise<{ enabled?: boolean; remoteSteerable?: boolean; url?: string; error?: string }>;
   disableRemote: (agentId: string) => Promise<{ ok?: boolean; error?: string }>;
@@ -35,6 +36,7 @@ interface ChatViewProps {
   agentStatus: string;
   agentSource?: 'sdk' | 'cli';
   spaceId?: string;
+  sandboxed?: boolean;
   pendingApprovalId?: string;
   pendingPermissionKind?: string;
   onClose: () => void;
@@ -337,7 +339,7 @@ function replayBufferedEvents(msgs: ChatMessage[], events: ChatEvent[]): ChatMes
   return result;
 }
 
-export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: initialStatus, agentSource, spaceId, pendingApprovalId, pendingPermissionKind, onClose, onOpenCli, onOpenCanvas }: ChatViewProps) {
+export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: initialStatus, agentSource, spaceId, sandboxed: initialSandboxed, pendingApprovalId, pendingPermissionKind, onClose, onOpenCli, onOpenCanvas }: ChatViewProps) {
   const [currentAgentId, setCurrentAgentId] = useState<string | null>(initialAgentId || null);
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     // For CLI sessions or sessions with history, don't seed — history will load
@@ -376,10 +378,14 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
   const [cwd, setCwd] = useState<string>('');
   const [overlayAgentId, setOverlayAgentId] = useState<string | null>(null);
   const [yoloEnabled, setYoloEnabled] = useState(false);
+  const [sandboxActive, setSandboxActive] = useState(initialSandboxed ?? false);
+  const [sandboxDisabling, setSandboxDisabling] = useState(false);
   const [remoteState, setRemoteState] = useState<{ enabled: boolean; remoteSteerable: boolean; url?: string }>({ enabled: false, remoteSteerable: false });
   const [remoteLoading, setRemoteLoading] = useState(false);
   const [showRemoteOverlay, setShowRemoteOverlay] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+  const [remoteError, setRemoteError] = useState<string | null>(null);
+  const remoteErrorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const modelDropdownRef = useRef<HTMLDivElement>(null);
 
   // Track the current streaming assistant message ID
@@ -703,6 +709,18 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
           break;
         }
 
+        case 'sandbox.disabled': {
+          setSandboxActive(false);
+          setMessages(prev => [...prev, {
+            id: genId(),
+            type: 'session_event',
+            eventType: 'info',
+            message: 'Sandbox disabled for this session.',
+            timestamp: new Date().toISOString(),
+          } as SessionEventMessage]);
+          break;
+        }
+
         case 'approval.needed': {
           setMessages(prev => [...prev, {
             id: genId(),
@@ -941,8 +959,26 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
     }
   }, [currentAgentId, yoloEnabled]);
 
+  const handleDisableSandbox = useCallback(async () => {
+    if (!currentAgentId || sandboxDisabling) return;
+    setSandboxDisabling(true);
+    try {
+      const result = await whimAPI.disableSandbox(currentAgentId);
+      if (!result?.error) setSandboxActive(false);
+    } finally {
+      setSandboxDisabling(false);
+    }
+  }, [currentAgentId, sandboxDisabling]);
+
+  const showRemoteError = useCallback((msg: string) => {
+    if (remoteErrorTimer.current) clearTimeout(remoteErrorTimer.current);
+    setRemoteError(msg);
+    remoteErrorTimer.current = setTimeout(() => setRemoteError(null), 4000);
+  }, []);
+
   const handleToggleRemote = useCallback(async () => {
     if (!currentAgentId) return;
+    setRemoteError(null);
     setRemoteLoading(true);
     try {
       if (remoteState.enabled) {
@@ -952,14 +988,20 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
         const result = await whimAPI.enableRemote(currentAgentId);
         if ('error' in result && result.error) {
           console.error('[remote] Enable failed:', result.error);
+          showRemoteError(result.error);
         } else if (result.url) {
           setShowRemoteOverlay(true);
+        } else {
+          showRemoteError('Remote enabled but no link was returned. Is this a GitHub repository?');
         }
       }
+    } catch (err: any) {
+      console.error('[remote] Enable threw:', err);
+      showRemoteError(err.message || 'Failed to enable remote control');
     } finally {
       setRemoteLoading(false);
     }
-  }, [currentAgentId, remoteState.enabled]);
+  }, [currentAgentId, remoteState.enabled, showRemoteError]);
 
   const handleAbort = useCallback(async () => {
     if (currentAgentId) await whimAPI.abortAgent(currentAgentId);
@@ -1078,6 +1120,21 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
           </span>
         </button>
 
+        {sandboxActive && (
+          <>
+            <span className="chat-status-bar-divider">|</span>
+            <button
+              className="chat-status-bar-item chat-sandbox-btn active"
+              onClick={handleDisableSandbox}
+              disabled={sandboxDisabling}
+              title="Sandbox active — click to disable for this session"
+            >
+              <span className="chat-status-bar-icon">{sandboxDisabling ? '⏳' : '🔒'}</span>
+              <span className="chat-status-bar-text">Sandbox</span>
+            </button>
+          </>
+        )}
+
         {agentSource !== 'cli' && (
           <>
             <span className="chat-status-bar-divider">|</span>
@@ -1092,6 +1149,9 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
                 {remoteState.enabled ? 'Remote' : 'Remote'}
               </span>
             </button>
+            {remoteError && (
+              <span className="remote-error-toast">{remoteError}</span>
+            )}
           </>
         )}
       </div>

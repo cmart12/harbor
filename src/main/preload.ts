@@ -110,6 +110,7 @@ export interface WhimAPI {
   respondToUserInput(agentId: string, requestId: string, answer: string, wasFreeform: boolean): Promise<IpcCommandResult<'agent:respond-user-input'>>;
   respondToElicitation(agentId: string, requestId: string, action: 'accept' | 'decline' | 'cancel', content?: Record<string, unknown>): Promise<IpcCommandResult<'agent:respond-elicitation'>>;
   resolveSandboxBlock(agentId: string, requestId: string, decision: 'allow-once' | 'allow-for-session' | 'disable'): Promise<IpcCommandResult<'agent:resolve-sandbox'>>;
+  disableSandbox(agentId: string): Promise<{ ok?: boolean; error?: string }>;
   abortAgent(agentId: string): Promise<IpcCommandResult<'agent:abort'>>;
   openAgentCli(agentId: string): Promise<IpcCommandResult<'agent:open-cli'>>;
   quickLaunchAgent(prompt: string, personaHandle?: string): Promise<IpcCommandResult<'agent:quick-launch'>>;
@@ -318,6 +319,8 @@ const api: WhimAPI = {
     ipcRenderer.invoke('agent:respond-elicitation', agentId, requestId, action, content),
   resolveSandboxBlock: (agentId, requestId, decision) =>
     ipcRenderer.invoke('agent:resolve-sandbox', agentId, requestId, decision),
+  disableSandbox: (agentId) =>
+    ipcRenderer.invoke('agent:disable-sandbox', agentId),
   abortAgent: (agentId) =>
     ipcRenderer.invoke('agent:abort', agentId),
   openAgentCli: (agentId) =>

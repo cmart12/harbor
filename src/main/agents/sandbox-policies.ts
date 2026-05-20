@@ -391,104 +391,239 @@ export interface PathPolicyHookResult {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Post-tool shell denial detector (heuristic / best-effort)
+// Post-tool shell denial detector (tiered, based on copilot-agent-runtime)
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Heuristic patterns that suggest a shell command was denied by MXC.  Used by
- * the post-tool-use hook as a *soft* signal — the runtime currently surfaces
- * no structured `sandboxDenied` field, so we match strings.  Callers must
- * label the resulting prompt as "Possible sandbox denial" and offer an
- * "Ignore" option.
+ * Confidence level of a detected sandbox-related failure.
  *
- * See docs/mxc-sandbox-flow.md ("Known gaps") for context.
+ * - `high`: output explicitly mentions a sandbox blocking something
+ *   (e.g. macOS Seatbelt, MXC wxc-exec, explicit sandbox deny/block).
+ * - `medium`: a generic permission error (`Permission denied`, `EACCES`, …)
+ *   accompanied by a non-zero exit code. Hedged — may be a real host error.
+ * - `network`: a network-failure fingerprint while the sandbox restricts
+ *   outbound traffic.
  */
-const MXC_DENIAL_PATTERNS = [
-  /access\s+is\s+denied/i,
-  /access\s+denied/i,
-  /permission\s+denied/i,
-  /operation\s+not\s+permitted/i,
+export type SandboxDenialKind = 'high' | 'medium' | 'network';
+
+export interface SandboxDenialHint {
+  kind: SandboxDenialKind;
+  /** Substring of output that triggered the match. */
+  matched: string;
+}
+
+/** Maximum bytes of output to scan (tail-only). */
+export const SANDBOX_DENIAL_SCAN_BYTES = 16 * 1024;
+
+const HIGH_CONFIDENCE_PATTERNS: ReadonlyArray<RegExp> = [
+  // macOS Seatbelt user-space message.
+  /file system sandbox blocked/i,
+  // macOS Seatbelt kernel violation log: `Sandbox: bash(1234) deny ...`.
+  /\bsandbox:\s+\S+\(\d+\)\s+deny\b/i,
+  // Catch-all: "sandbox" near a denial verb.
+  /\bsandbox\b[^.\n]{0,80}\b(?:block(?:ed|s|ing)?|den(?:y|ied|ies|ying))\b/i,
+  // MXC/wxc-exec and lxc-exec markers (whim-specific, carried forward).
   /\bwxc[-_]exec\b/i,
   /lxc[-_]exec/i,
-  /sandbox(ed)?\s+(denial|denied|violation|policy)/i,
-  // Windows NTSTATUS for STATUS_ACCESS_DENIED
+  // Windows NTSTATUS for STATUS_ACCESS_DENIED (MXC AppContainer).
   /0x[cC]0000022/,
 ];
 
+const MEDIUM_CONFIDENCE_PATTERNS: ReadonlyArray<RegExp> = [
+  /\bpermission denied\b/i,
+  /\boperation not permitted\b/i,
+  /\baccess (?:is )?denied\b/i,
+  /\bEACCES\b/,
+  /\bEPERM\b/,
+  // Windows ACCESS_DENIED HRESULT.
+  /0x80070005\b/i,
+];
+
+const NETWORK_PATTERNS: ReadonlyArray<RegExp> = [
+  /could not resolve host/i,
+  /temporary failure in name resolution/i,
+  /name or service not known/i,
+  /network is unreachable/i,
+  /no route to host/i,
+  /\bconnection refused\b/i,
+  // curl exit-style messages.
+  /curl:\s*\(\d+\)\s+(?:could not resolve|couldn't resolve|failed to connect)/i,
+  // PowerShell / .NET HttpRequestException flavours.
+  /the remote name could not be resolved/i,
+];
+
+function firstMatch(text: string, patterns: ReadonlyArray<RegExp>): string | undefined {
+  for (const pattern of patterns) {
+    const m = pattern.exec(text);
+    if (m) return m[0];
+  }
+  return undefined;
+}
+
+/** Extract the exit code from embedded `<exited with exit code N>` text. */
+export function extractExitCode(text: string): number | undefined {
+  // Prefer a structured exitCode field passed through the SDK result object
+  // before falling back to the text-embedded pattern.
+  const m = text.match(/<exited with exit code (\d+)>/);
+  return m ? Number(m[1]) : undefined;
+}
+
 /**
- * Inspect a finished shell tool result for MXC-style denial markers.
- * Returns null when no markers found.  Otherwise returns a hint that the
- * caller can surface to the user via emitSandboxBlock.
+ * Inspect a finished shell tool result for fingerprints suggesting the
+ * failure was caused by the active sandbox policy. Returns null when the
+ * output is empty or no fingerprint matches.
  *
- * NOTE: This is best-effort.  It will produce false positives for normal
- * "permission denied" failures (e.g., reading a file the user themselves
- * lacks access to).  The UI must label the prompt accordingly.
+ * Tiered detection (mirrors copilot-agent-runtime sandboxDenialDetector):
+ *  - `high` patterns fire regardless of exit code.
+ *  - `medium` and `network` only fire on non-zero exit codes to reduce
+ *    false positives (e.g. `find` printing "Permission denied" but exiting 0).
+ *  - `network` only fires when `allowOutbound` is false.
  */
 export function detectShellSandboxDenial(input: {
   toolName: string;
   toolArgs: unknown;
   toolResult: unknown;
-}): { command: string; matchedPattern: string } | null {
+  /** Whether the sandbox allows outbound network. When true, network
+   *  patterns are skipped (they wouldn't be sandbox-caused). */
+  allowOutbound?: boolean;
+}): SandboxDenialHint | null {
   if (input.toolName !== 'bash' && input.toolName !== 'shell') return null;
 
-  const args = (input.toolArgs ?? {}) as Record<string, unknown>;
-  const command = typeof args.command === 'string' ? args.command : '';
-
-  // Result text may live in result.content / result.detailedContent / result.text / etc.
   let text = '';
   if (typeof input.toolResult === 'string') {
     text = input.toolResult;
   } else if (input.toolResult && typeof input.toolResult === 'object') {
     const r = input.toolResult as Record<string, unknown>;
-    text = [r.content, r.detailedContent, r.text, r.error, r.stderr]
+    // SDK ToolResultObject has textResultForLlm; also check legacy fields.
+    text = [r.textResultForLlm, r.content, r.detailedContent, r.text, r.error, r.stderr]
       .filter((v) => typeof v === 'string')
       .join('\n');
   }
   if (!text) return null;
 
-  for (const re of MXC_DENIAL_PATTERNS) {
-    const m = text.match(re);
-    if (m) return { command, matchedPattern: m[0] };
+  // Scan only the tail (denial messages appear near the point of failure).
+  const scanText = text.length > SANDBOX_DENIAL_SCAN_BYTES
+    ? text.slice(-SANDBOX_DENIAL_SCAN_BYTES)
+    : text;
+
+  // High confidence: fire regardless of exit code.
+  const highMatch = firstMatch(scanText, HIGH_CONFIDENCE_PATTERNS);
+  if (highMatch) return { kind: 'high', matched: highMatch };
+
+  // Medium and network only fire for actual failures.
+  const exitCode = extractExitCode(text);
+  if (exitCode === 0 || exitCode === undefined) return null;
+
+  // Network patterns only apply when outbound is restricted.
+  if (input.allowOutbound === false) {
+    const networkMatch = firstMatch(scanText, NETWORK_PATTERNS);
+    if (networkMatch) return { kind: 'network', matched: networkMatch };
   }
+
+  const mediumMatch = firstMatch(scanText, MEDIUM_CONFIDENCE_PATTERNS);
+  if (mediumMatch) return { kind: 'medium', matched: mediumMatch };
+
   return null;
 }
 
 /**
- * Create a post-tool-use hook that detects MXC denials in shell results and
- * emits a sandbox block via `onBlock` (best-effort).
+ * Build the LLM-facing footer appended to the tool result when a denial is
+ * detected. Wording varies by confidence: high/network are definitive,
+ * medium is hedged.
+ */
+export function formatSandboxDenialFooter(hint: SandboxDenialHint): string {
+  switch (hint.kind) {
+    case 'high':
+      return (
+        '<sandbox is active and blocked this command. ' +
+        'Do not attempt workarounds (alternative paths, retries, fallback tools). ' +
+        'If this command needs broader access, ask the user to update their sandbox policy in Settings (paths, network).>'
+      );
+    case 'network':
+      return (
+        '<sandbox is active and outbound network access is currently restricted by policy. ' +
+        'Do not attempt workarounds. ' +
+        'If this command needs network access, ask the user to enable outbound access in their sandbox settings.>'
+      );
+    case 'medium':
+      return (
+        '<this failure may be caused by the active sandbox policy. ' +
+        'Do not attempt workarounds. ' +
+        'If you suspect the sandbox blocked this, ask the user to review their sandbox policy in Settings (paths, network).>'
+      );
+  }
+}
+
+/** Map denial kind to a SandboxLayer tag for logging and UI. */
+function denialKindToLayer(kind: SandboxDenialKind): SandboxLayer {
+  switch (kind) {
+    case 'high': return 'mxc:shell-denial-high';
+    case 'medium': return 'mxc:shell-denial-medium';
+    case 'network': return 'mxc:shell-denial-network';
+  }
+}
+
+/**
+ * Create a post-tool-use hook that detects sandbox denials in shell results.
  *
- * Unlike `createSandboxPathPolicyHook`, this does not pause the tool call —
- * by the time `onPostToolUse` fires, the shell has already returned its
- * result.  We surface the bubble-up to give the user a chance to disable the
- * sandbox / allow once before the agent moves on.
+ * Two effects:
+ *  1. Emits a bubble-up block notification to the UI (fire-and-forget).
+ *  2. Returns `modifiedResult` with the denial footer appended so the LLM
+ *     stops retrying and asks the user to adjust their policy.
  */
 export function createSandboxShellDenialHook(args: {
   isDisabled: () => boolean;
+  allowOutbound: () => boolean;
   onBlock: (info: {
     toolName: string;
     target: string;
     matchedPattern: string;
+    kind: SandboxDenialKind;
     layer: SandboxLayer;
   }) => Promise<unknown>;
 }) {
   return async (input: { toolName: string; toolArgs: unknown; toolResult: unknown }, _invocation?: { sessionId: string }) => {
     if (args.isDisabled()) return undefined;
-    const hit = detectShellSandboxDenial(input);
-    if (!hit) return undefined;
-    logSandboxLayerDenial('mxc:shell-denial-suspected', {
-      toolName: input.toolName,
-      target: hit.command,
-      reason: `matched pattern "${hit.matchedPattern}"`,
+
+    const hint = detectShellSandboxDenial({
+      ...input,
+      allowOutbound: args.allowOutbound(),
     });
-    // Fire-and-forget: we don't block the runtime here, since the tool call
-    // already finished. The bubble-up runs asynchronously; the user may resolve
-    // it before or after the agent's next turn.
+    if (!hint) return undefined;
+
+    const toolArgs = (input.toolArgs ?? {}) as Record<string, unknown>;
+    const command = typeof toolArgs.command === 'string' ? toolArgs.command : '';
+    const layer = denialKindToLayer(hint.kind);
+
+    logSandboxLayerDenial(layer, {
+      toolName: input.toolName,
+      target: command,
+      reason: `[${hint.kind}] matched "${hint.matched}"`,
+    });
+
+    // Bubble-up to user (fire-and-forget).
     void args.onBlock({
       toolName: input.toolName,
-      target: hit.command,
-      matchedPattern: hit.matchedPattern,
-      layer: 'mxc:shell-denial-suspected',
+      target: command,
+      matchedPattern: hint.matched,
+      kind: hint.kind,
+      layer,
     });
-    return undefined;
+
+    // Append footer to the tool result so the LLM sees it.
+    const footer = formatSandboxDenialFooter(hint);
+    const result = input.toolResult;
+    if (result && typeof result === 'object' && 'textResultForLlm' in result) {
+      // SDK ToolResultObject — return modifiedResult with footer.
+      const orig = result as { textResultForLlm: string; [k: string]: unknown };
+      return {
+        modifiedResult: {
+          ...orig,
+          textResultForLlm: `${orig.textResultForLlm}\n\n${footer}`,
+        },
+      };
+    }
+    // Legacy string result — return additionalContext as fallback.
+    return { additionalContext: footer };
   };
 }

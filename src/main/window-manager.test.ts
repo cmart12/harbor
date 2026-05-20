@@ -64,7 +64,7 @@ vi.mock('electron', () => {
 });
 
 vi.mock('./config', () => {
-  const store: Record<string, any> = {};
+  const store: Record<string, any> = { autoHideSidePane: true };
   return {
     getConfigValue: vi.fn((key: string) => store[key]),
     setConfigValue: vi.fn((key: string, value: any) => { store[key] = value; }),

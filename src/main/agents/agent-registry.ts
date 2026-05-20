@@ -21,6 +21,8 @@ export interface SandboxRuntimeState {
   allowMcpServers: boolean;
   /** Whether web_fetch is allowed for this agent (policy.allowWebFetch). */
   allowWebFetch: boolean;
+  /** Whether the sandbox allows outbound network (policy.allowOutbound). */
+  allowOutbound: boolean;
   /** Per-agent host allow list — populated by user "Allow for session" decisions. */
   allowList: SandboxAllowList;
 }

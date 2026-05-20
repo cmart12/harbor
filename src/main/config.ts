@@ -54,6 +54,7 @@ export interface AppConfig {
   cliPath: string | null;          // user override for Copilot CLI path; null = auto-detect
   sessions: Record<string, string>; // spaceId → copilot CLI sessionId
   pinned: boolean;
+  autoHideSidePane: boolean;       // when true, side pane auto-hides on blur & stays alwaysOnTop
   snapPosition: SnapPosition;
   windowWidth: number;
   personas: AgentPersona[];
@@ -154,6 +155,7 @@ const DEFAULT_CONFIG: AppConfig = {
   cliPath: null,
   sessions: {},
   pinned: false,
+  autoHideSidePane: true,
   snapPosition: 'bottom-right',
   windowWidth: 420,
   personas: [],

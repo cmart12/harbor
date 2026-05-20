@@ -98,6 +98,16 @@ export function registerAgentHandlers(): void {
     return { ok: true };
   });
 
+  ipcMain.handle('agent:disable-sandbox', async (_event, agentId: string) => {
+    try {
+      const { disableSandboxForSession } = await import('../agent-service');
+      await disableSandboxForSession(agentId);
+      return { ok: true };
+    } catch (err: any) {
+      return { error: err?.message ?? 'Failed to disable sandbox' };
+    }
+  });
+
   ipcMain.handle('agent:abort', async (_event, agentId: string) => {
     // Route conduit agents to conduit-specific abort
     const { getAgentSession } = await import('../database');

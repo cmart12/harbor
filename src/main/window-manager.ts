@@ -18,12 +18,44 @@ const SETTINGS_HEIGHT = 700;
 let mainWindow: BrowserWindow | null = null;
 let canvasWindow: BrowserWindow | null = null;
 const canvasWindows = new Set<BrowserWindow>();
+const canvasUserPinned = new WeakSet<BrowserWindow>();
 let settingsWindow: BrowserWindow | null = null;
 let isExpanded = false;
 let isSnapping = false;
 let showTimestamp = 0;
 let unpinTimestamp = 0;
 let blurHideTimer: ReturnType<typeof setTimeout> | null = null;
+
+// ── Window stacking policy ──────────────────────────────
+// Centralized helpers so every callsite agrees on when a window is alwaysOnTop.
+
+function shouldMainBeOnTop(): boolean {
+  return getConfigValue('pinned') || getConfigValue('autoHideSidePane');
+}
+
+function shouldBlurHide(): boolean {
+  return getConfigValue('autoHideSidePane') && !getConfigValue('pinned');
+}
+
+function shouldCanvasBeOnTop(win: BrowserWindow): boolean {
+  return getConfigValue('pinned') || canvasUserPinned.has(win);
+}
+
+/** Apply the stacking policy to the main window and all canvas windows. */
+function applyStackingPolicy(): void {
+  if (mainWindow && !mainWindow.isDestroyed() && !isExpanded) {
+    mainWindow.setAlwaysOnTop(shouldMainBeOnTop());
+  }
+  for (const win of canvasWindows) {
+    if (!win.isDestroyed()) {
+      win.setAlwaysOnTop(shouldCanvasBeOnTop(win));
+    }
+  }
+}
+
+function cancelBlurTimer(): void {
+  if (blurHideTimer) { clearTimeout(blurHideTimer); blurHideTimer = null; }
+}
 
 // ── Public API ───────────────────────────────────────────
 
@@ -43,7 +75,7 @@ export function createMainWindow(options: WindowManagerOptions): BrowserWindow {
     show: false,
     frame: false,
     resizable: true,
-    alwaysOnTop: true,
+    alwaysOnTop: shouldMainBeOnTop(),
     transparent: true,
     vibrancy: 'under-window',
     visualEffectState: 'active',
@@ -65,9 +97,40 @@ export function createMainWindow(options: WindowManagerOptions): BrowserWindow {
   return win;
 }
 
+/** Called when the autoHideSidePane setting changes at runtime. */
+export function onAutoHideSidePaneChanged(): void {
+  cancelBlurTimer();
+  applyStackingPolicy();
+}
+
 /** Toggle the main window: show (full-height edge strip) or delegate hide to renderer. */
 export function toggleWindow(): void {
   if (!mainWindow || mainWindow.isDestroyed()) return;
+
+  const autoHide = getConfigValue('autoHideSidePane');
+
+  if (!autoHide) {
+    // Non-auto-hide mode: hotkey always brings the window to front
+    if (!mainWindow.isVisible()) {
+      const cursorPoint = screen.getCursorScreenPoint();
+      const display = screen.getDisplayNearestPoint(cursorPoint);
+      const { x, y, width, height } = display.workArea;
+
+      const snap = getConfigValue('snapPosition') || 'bottom-right';
+      const isLeft = snap.includes('left');
+      const winWidth = getConfigValue('windowWidth') || WINDOW_WIDTH;
+      const winX = isLeft ? x + SNAP_MARGIN : x + width - winWidth - SNAP_MARGIN;
+      const winY = y + SNAP_MARGIN;
+      const winHeight = height - SNAP_MARGIN * 2;
+
+      mainWindow.setBounds({ x: winX, y: winY, width: winWidth, height: winHeight }, false);
+      mainWindow.show();
+      mainWindow.webContents.send('window:shown', { side: isLeft ? 'left' : 'right', expanded: false });
+    }
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+    return;
+  }
 
   if (mainWindow.isVisible()) {
     // Let the renderer decide: navigate back to list or hide
@@ -85,7 +148,7 @@ export function toggleWindow(): void {
     const winHeight = height - SNAP_MARGIN * 2;
 
     showTimestamp = Date.now();
-    if (blurHideTimer) { clearTimeout(blurHideTimer); blurHideTimer = null; }
+    cancelBlurTimer();
     mainWindow.setBounds({ x: winX, y: winY, width: winWidth, height: winHeight }, false);
     mainWindow.show();
     mainWindow.focus();
@@ -107,7 +170,7 @@ export function setupSnapOnDrop(): void {
 /** Register all window-related IPC handlers. Call after createMainWindow(). */
 export function registerWindowIpcHandlers(preloadPath: string): void {
   ipcMain.on('window:hide', () => {
-    if (blurHideTimer) { clearTimeout(blurHideTimer); blurHideTimer = null; }
+    cancelBlurTimer();
     mainWindow?.hide();
   });
 
@@ -122,7 +185,7 @@ export function registerWindowIpcHandlers(preloadPath: string): void {
     const newX = Math.round(x + (width - EXPANDED_WIDTH) / 2);
     const newY = Math.round(y + (height - EXPANDED_HEIGHT) / 2);
 
-    mainWindow.setAlwaysOnTop(false);
+    mainWindow.setAlwaysOnTop(false);  // expanded windows are never alwaysOnTop
     mainWindow.setResizable(true);
     mainWindow.setBounds({ x: newX, y: newY, width: EXPANDED_WIDTH, height: EXPANDED_HEIGHT }, true);
   });
@@ -131,7 +194,7 @@ export function registerWindowIpcHandlers(preloadPath: string): void {
     if (!mainWindow || !isExpanded) return;
     isExpanded = false;
 
-    mainWindow.setAlwaysOnTop(true);
+    mainWindow.setAlwaysOnTop(shouldMainBeOnTop());
 
     isSnapping = true;
     const cursorPoint = screen.getCursorScreenPoint();
@@ -156,6 +219,9 @@ export function registerWindowIpcHandlers(preloadPath: string): void {
 
   ipcMain.on('window:set-pinned', (_event, pinned: boolean) => {
     setConfigValue('pinned', pinned);
+    cancelBlurTimer();
+    applyStackingPolicy();
+
     if (mainWindow && !isExpanded) {
       // When unpinning, snap back to full-height edge position
       if (!pinned) {
@@ -184,8 +250,6 @@ export function registerWindowIpcHandlers(preloadPath: string): void {
     for (const win of BrowserWindow.getAllWindows()) {
       win.webContents.send('window:pinned-changed', pinned);
     }
-
-    // (Canvas popout is independent of pin state)
   });
 
   // ── Canvas popout window ────────────────────────────────
@@ -213,18 +277,25 @@ export function registerWindowIpcHandlers(preloadPath: string): void {
     });
   });
 
-  // Toggle always-on-top for the calling canvas window
+  // Toggle user-pinned state for the calling canvas window.
+  // When the side pane is pinned all canvases are already alwaysOnTop;
+  // per-canvas pin gives the user independent control.
   ipcMain.on('canvas-window:set-always-on-top', (event, pinned: boolean) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (win && !win.isDestroyed()) {
-      win.setAlwaysOnTop(pinned);
+      if (pinned) {
+        canvasUserPinned.add(win);
+      } else {
+        canvasUserPinned.delete(win);
+      }
+      win.setAlwaysOnTop(shouldCanvasBeOnTop(win));
     }
   });
 
   ipcMain.handle('canvas-window:get-always-on-top', (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (win && !win.isDestroyed()) {
-      return win.isAlwaysOnTop();
+      return canvasUserPinned.has(win);
     }
     return false;
   });
@@ -322,21 +393,23 @@ function attachResizePersist(win: BrowserWindow): void {
 /** Attach blur handler that lets the renderer animate out before hiding. */
 function attachBlurHide(win: BrowserWindow): void {
   win.on('blur', () => {
+    // Only auto-hide when the policy says so
+    if (!shouldBlurHide()) return;
+
     // Ignore blur if window was just shown (e.g. from tray menu click)
     if (Date.now() - showTimestamp < 300) return;
 
     // Ignore blur caused by setBounds repositioning after unpin
     if (Date.now() - unpinTimestamp < 500) return;
 
-    // Never hide when pinned
-    if (getConfigValue('pinned')) return;
-
     // Let renderer decide whether to stay and animate out if hiding
     win.webContents.send('window:request-hide');
 
     // Safety: hide even if renderer doesn't respond in time
-    if (blurHideTimer) clearTimeout(blurHideTimer);
+    cancelBlurTimer();
     blurHideTimer = setTimeout(() => {
+      // Re-check policy in case it changed during the delay
+      if (!shouldBlurHide()) { blurHideTimer = null; return; }
       if (!win.isDestroyed() && win.isVisible()) win.hide();
       blurHideTimer = null;
     }, 400);
@@ -446,6 +519,7 @@ function createCanvasWindow(preloadPath: string): BrowserWindow {
     x: Math.round(x + (width - CANVAS_WIDTH) / 2),
     y: Math.round(y + (height - CANVAS_HEIGHT) / 2),
     show: false,
+    alwaysOnTop: getConfigValue('pinned'),
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 16 },
     vibrancy: 'under-window',

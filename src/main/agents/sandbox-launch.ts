@@ -125,6 +125,7 @@ export function buildSandboxLaunchSetup(opts: {
     state: 'on',
     allowMcpServers: policy.allowMcpServers,
     allowWebFetch: policy.allowWebFetch,
+    allowOutbound: policy.allowOutbound,
     allowList: { paths: new Set<string>(), resources: new Set<string>(), webFetch: false },
   };
 
@@ -157,6 +158,7 @@ export function buildSandboxLaunchSetup(opts: {
   // user finds out that MXC actually blocked something at the OS level.
   const postTool = createSandboxShellDenialHook({
     isDisabled: () => registry.get(agentId)?.sandbox?.state === 'off',
+    allowOutbound: () => registry.get(agentId)?.sandbox?.allowOutbound ?? false,
     onBlock: async (info) => {
       const livingRecord = registry.get(agentId);
       if (!livingRecord) return;
@@ -165,7 +167,11 @@ export function buildSandboxLaunchSetup(opts: {
         kind: 'shell',
         toolName: info.toolName,
         target: info.target,
-        intention: `Possible MXC denial detected: "${info.matchedPattern}"`,
+        intention: info.kind === 'high'
+          ? `Sandbox blocked this command: "${info.matchedPattern}"`
+          : info.kind === 'network'
+            ? `Sandbox network restriction: "${info.matchedPattern}"`
+            : `Possible sandbox denial: "${info.matchedPattern}"`,
         allowedDecisions: ['allow-once', 'disable'],
         layer: info.layer,
       });

@@ -121,6 +121,7 @@ interface WhimAPI {
   saveSandboxDefaultPolicy(policy: SandboxPolicy): Promise<{ ok?: boolean; policy?: SandboxPolicy; error?: string }>;
   openSandboxConfigPreview(policy: SandboxPolicy): Promise<{ ok?: boolean; path?: string; error?: string }>;
   resolveSandboxBlock(agentId: string, requestId: string, decision: 'allow-once' | 'allow-for-session' | 'disable'): Promise<{ ok?: boolean; error?: string }>;
+  disableSandbox(agentId: string): Promise<{ ok?: boolean; error?: string }>;
   listEvents(limit?: number): Promise<any[]>;
   resolveDate(dateText: string): Promise<{ due_at: string; due_at_utc: string | null }>;
   classifyInput(text: string): Promise<{ type: 'space' | 'query'; query_answer?: string }>;
@@ -1048,6 +1049,12 @@ function renderAgentEditor(persona: AgentPersona): void {
   sandboxLabel.appendChild(document.createTextNode(' 🔒 Run in sandbox (restrict writes & dangerous commands)'));
   sandboxRow.appendChild(sandboxLabel);
 
+  const sandboxInfoNote = document.createElement('div');
+  sandboxInfoNote.className = 'persona-sandbox-info';
+  sandboxInfoNote.textContent = 'ℹ The agent\'s working directory is always included in read/write paths.';
+  sandboxInfoNote.style.display = sandboxCheck.checked ? '' : 'none';
+  sandboxRow.appendChild(sandboxInfoNote);
+
   locationSelect.addEventListener('change', () => {
     if (locationSelect.value === 'cloud' || locationSelect.value === 'conduit') {
       sandboxRow.style.display = 'none';
@@ -1120,7 +1127,9 @@ function renderAgentEditor(persona: AgentPersona): void {
   });
 
   function updateSandboxOverrideVisibility(): void {
-    if (sandboxCheck.checked && locationSelect.value !== 'cloud') {
+    const show = sandboxCheck.checked && locationSelect.value !== 'cloud';
+    sandboxInfoNote.style.display = show ? '' : 'none';
+    if (show) {
       sandboxOverrideRow.style.display = '';
       if (isDefault || !inheritCheck.checked) ensurePolicyForm();
     } else {
@@ -1233,11 +1242,11 @@ function renderAgentEditor(persona: AgentPersona): void {
 
     await whimAPI.savePersonas(personas);
     renderAgentsSidebar();
-    // Show brief save confirmation
-    errorEl.textContent = 'Saved.';
+    // Show animated save confirmation
+    errorEl.textContent = '✓ Saved';
+    errorEl.className = 'persona-form-error persona-save-toast';
     errorEl.classList.remove('hidden');
-    errorEl.style.color = '#2d8a3a';
-    setTimeout(() => { errorEl.classList.add('hidden'); errorEl.style.color = ''; }, 1500);
+    setTimeout(() => { errorEl.classList.add('hidden'); errorEl.className = 'persona-form-error hidden'; }, 2000);
   });
 
   const deleteBtn = document.createElement('button');
@@ -3267,7 +3276,7 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
   countEl.textContent = String(spaces.filter(i => i.status !== 'done').length);
 
   // Gather all agents (including workspace-level ones)
-  let allAgents: Array<{ agentId: string; sessionId: string; status: string; summary: string; selectedText: string; quotedText?: string; spaceId: string; createdAt?: string; pendingApprovalId?: string | null; pendingPermissionKind?: string | null; source?: 'sdk' | 'cli' | 'cloud' | 'conduit'; personaHandle?: string | null }> = [];
+  let allAgents: Array<{ agentId: string; sessionId: string; status: string; summary: string; selectedText: string; quotedText?: string; spaceId: string; createdAt?: string; pendingApprovalId?: string | null; pendingPermissionKind?: string | null; source?: 'sdk' | 'cli' | 'cloud' | 'conduit'; personaHandle?: string | null; sandboxed?: boolean }> = [];
 
   try {
     allAgents = await whimAPI.listAllAgents();
@@ -3419,6 +3428,10 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
       ? `<button class="agent-card-remote-btn${isRemote ? ' active' : ''}" data-agent-id="${agent.agentId}" title="${isRemote ? 'Remote control ON — click to view link' : 'Enable remote control'}">📱</button>`
       : '';
 
+    const sandboxBtn = agent.sandboxed && (agent.status === 'running' || agent.status === 'waiting-approval')
+      ? `<button class="agent-card-sandbox-btn active" data-agent-id="${agent.agentId}" title="Sandbox active — click to disable for this session">🔒</button>`
+      : '';
+
     // Only show summary when it adds information beyond the status
     const trivialSummaries = ['Completed', 'Failed', 'Starting...', ''];
     const showSummary = (agent.status === 'completed' || agent.status === 'failed') && agent.summary && !trivialSummaries.includes(agent.summary);
@@ -3432,6 +3445,7 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
           <span class="agent-card-name">${intentLabel}</span>
           ${sourceLabel}
           <div class="agent-card-actions">
+            ${sandboxBtn}
             ${yoloBtn}
             ${remoteBtn}
             ${canvasBtn}
@@ -3507,6 +3521,24 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
       const aid = (e.currentTarget as HTMLElement).dataset.agentId!;
       const current = agentYoloState.get(aid) || false;
       whimAPI.setAgentYolo(aid, !current);
+    });
+  });
+
+  // Wire up sandbox disable handlers
+  listEl.querySelectorAll('.agent-card-sandbox-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const aid = (e.currentTarget as HTMLElement).dataset.agentId!;
+      const el = e.currentTarget as HTMLElement;
+      el.textContent = '⏳';
+      el.style.pointerEvents = 'none';
+      const result = await whimAPI.disableSandbox(aid);
+      if (result?.error) {
+        el.textContent = '🔒';
+        el.style.pointerEvents = '';
+      } else {
+        renderAgentsList();
+      }
     });
   });
 
@@ -4021,6 +4053,21 @@ async function updateCliMxcIndicator(): Promise<void> {
     cliMxcIndicator.textContent = '?';
     cliMxcIndicator.className = 'cli-mxc-indicator';
   }
+}
+
+// ── Auto-hide side pane setting ──────────────────────────
+const autoHideSidePaneCb = document.getElementById('auto-hide-side-pane-cb') as HTMLInputElement | null;
+
+async function loadAutoHideSetting(): Promise<void> {
+  if (!autoHideSidePaneCb) return;
+  const val = await whimAPI.getSetting('auto_hide_side_pane');
+  autoHideSidePaneCb.checked = val !== false; // default true
+}
+
+if (autoHideSidePaneCb) {
+  autoHideSidePaneCb.addEventListener('change', () => {
+    whimAPI.setSetting('auto_hide_side_pane', String(autoHideSidePaneCb.checked));
+  });
 }
 
 // ── Conduit host settings ────────────────────────────────
@@ -5500,6 +5547,10 @@ async function openAgentChat(agentId: string | undefined, agentPrompt: string, a
     return;
   }
 
+  // Look up sandbox state from the most recent agent list data
+  const agentData = renderedAgents?.find((a: any) => a.agentId === agentId);
+  const sandboxed = (agentData as any)?.sandboxed === true;
+
   activeConduitChat = false;
   mountChat(chatRoot, {
     agentId,
@@ -5507,6 +5558,7 @@ async function openAgentChat(agentId: string | undefined, agentPrompt: string, a
     agentStatus,
     agentSource,
     spaceId,
+    sandboxed,
     pendingApprovalId: approval?.requestId,
     pendingPermissionKind: approval?.permissionKind,
     onClose: () => closeAgentChat(),
@@ -6406,6 +6458,7 @@ if (isSettingsMode) {
   loadModels();
   loadWorkspaceSetting();
   loadThemeSetting();
+  loadAutoHideSetting();
   loadPersonas();
   loadRuntimes();
   loadCliPathSetting();
