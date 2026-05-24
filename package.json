@@ -53,7 +53,7 @@
         "publisherName": "CN=Patrick Nikoletich",
         "endpoint": "https://wus2.codesigning.azure.net/",
         "codeSigningAccountName": "microsoft@isolated.dev",
-        "certificateProfileName": "Patrick Nikoletich"
+        "certificateProfileName": "nurturewhim"
       }
     },
     "mac": {

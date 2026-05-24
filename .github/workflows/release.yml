@@ -30,15 +30,24 @@ jobs:
 
           echo "$MACOS_CERTIFICATE" | base64 --decode > "$CERTIFICATE_PATH"
 
+          # Verify the .p12 is valid
+          openssl pkcs12 -in "$CERTIFICATE_PATH" -nokeys -passin pass:"$MACOS_CERTIFICATE_PWD" -info 2>&1 | head -5
+
           security create-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN_PATH"
 
           security import "$CERTIFICATE_PATH" -P "$MACOS_CERTIFICATE_PWD" \
             -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+
+          # set-key-partition-list only works when a private key is present
           security set-key-partition-list -S apple-tool:,apple: \
-            -k "$KEYCHAIN_PWD" "$KEYCHAIN_PATH"
+            -k "$KEYCHAIN_PWD" "$KEYCHAIN_PATH" || echo "Warning: set-key-partition-list failed (may indicate missing private key in .p12)"
+
           security list-keychain -d user -s "$KEYCHAIN_PATH"
+
+          # Verify the identity was imported
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
 
       - name: Install dependencies
         run: npm ci
