@@ -7,6 +7,7 @@ import { getConfigValue, setConfigValue, getConfig, DEFAULT_PERSONAS, type Agent
 import { listDiscoveredMcpServers } from '../mcp';
 import { validateMcpServers, validateCliTools, validateSandboxPolicy } from '../validators';
 import { onAutoHideSidePaneChanged } from '../window-manager';
+import { setAutoDownload } from '../update-service';
 
 const HANDLE_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;
 
@@ -20,6 +21,7 @@ export function registerSettingsHandlers(): void {
       conduit_host_url: 'conduitHostUrl',
       conduit_profile: 'conduitProfile',
       auto_hide_side_pane: 'autoHideSidePane',
+      auto_download_updates: 'autoDownloadUpdates',
     };
     const configKey = configKeyMap[key];
     if (configKey) return getConfigValue(configKey);
@@ -52,6 +54,10 @@ export function registerSettingsHandlers(): void {
       const enabled = value === 'true';
       setConfigValue('autoHideSidePane', enabled);
       onAutoHideSidePaneChanged();
+    } else if (key === 'auto_download_updates') {
+      const enabled = value === 'true';
+      setConfigValue('autoDownloadUpdates', enabled);
+      setAutoDownload(enabled);
     }
   });
 

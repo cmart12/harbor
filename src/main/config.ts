@@ -63,6 +63,7 @@ export interface AppConfig {
   cliTools: CliToolDefinition[];
   mcpServers: CustomMcpServer[];   // user-added MCP servers
   sandboxDefaultPolicy: SandboxPolicy;  // default policy for sandboxed personas
+  autoDownloadUpdates: boolean;     // auto-download updates in the background (vs. notify only)
   conduitHostUrl: string | null;    // URL of the Conduit host (e.g. "http://localhost:8080")
   conduitProfile: string | null;    // optional Conduit profile name for agent sessions
 }
@@ -164,6 +165,7 @@ const DEFAULT_CONFIG: AppConfig = {
   cliTools: [],
   mcpServers: [],
   sandboxDefaultPolicy: { ...DEFAULT_SANDBOX_POLICY },
+  autoDownloadUpdates: true,
   conduitHostUrl: null,
   conduitProfile: null,
 };

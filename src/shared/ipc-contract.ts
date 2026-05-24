@@ -5,7 +5,7 @@
  * This file is **types only** — no runtime code.
  */
 
-import type { Space, CreateSpaceInput, Attachment, AgentAnchor, AgentSession, LinkPreviewMeta, RecurrenceResult, RecallMatch, Skill, SkillContent, CanvasTarget } from './types';
+import type { Space, CreateSpaceInput, Attachment, AgentAnchor, AgentSession, LinkPreviewMeta, RecurrenceResult, RecallMatch, Skill, SkillContent, CanvasTarget, UpdateState } from './types';
 import type { ChatEvent, ElicitationSchema, ElicitationFieldValue } from './chat-types';
 import type { SubagentSummary, SubagentInfo } from './subagent-types';
 
@@ -364,6 +364,11 @@ export interface IpcCommands {
   'skill:open-folder': { args: [skillId: string]; result: void };
   'skill:create-space': { args: [skillId: string]; result: Space | { error: string } };
   'skill:launch': { args: [skillId: string]; result: Space | { error: string } };
+
+  // ── Updates ──────────────────────────────────────────────
+  'update:install': { args: []; result: void };
+  'update:check': { args: []; result: void };
+  'update:download': { args: []; result: void };
 }
 
 // ---------------------------------------------------------------------------
@@ -421,6 +426,7 @@ export interface IpcEvents {
   'space:recurrence-applied': { spaceId: string };
   'space:recall': { spaceId: string; match: RecallMatch };
   'skills:changed': void;
+  'update:state-changed': UpdateState;
 }
 
 // ---------------------------------------------------------------------------

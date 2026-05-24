@@ -8,7 +8,7 @@ import type {
   SandboxPolicy,
 } from '../shared/ipc-contract';
 import type { ChatEvent } from '../shared/chat-types';
-import type { AgentAnchor, RecurrenceResult, RecallMatch, Skill, SkillContent, CanvasTarget } from '../shared/types';
+import type { AgentAnchor, RecurrenceResult, RecallMatch, Skill, SkillContent, CanvasTarget, UpdateState } from '../shared/types';
 
 const { contextBridge, ipcRenderer } = require('electron');
 
@@ -211,6 +211,12 @@ export interface WhimAPI {
   createSpaceFromSkill(skillId: string): Promise<IpcCommandResult<'skill:create-space'>>;
   launchSkill(skillId: string): Promise<IpcCommandResult<'skill:launch'>>;
   onSkillsChanged(callback: () => void): void;
+
+  // ── Updates ──────────────────────────────────────────────
+  onUpdateStateChanged(callback: (state: UpdateState) => void): () => void;
+  installUpdate(): Promise<void>;
+  checkForUpdate(): Promise<void>;
+  downloadUpdate(): Promise<void>;
 
   // ── Platform ─────────────────────────────────────────────
   getPlatform(): string;
@@ -527,6 +533,16 @@ const api: WhimAPI = {
   onSkillsChanged: (callback) => {
     ipcRenderer.on('skills:changed', callback);
   },
+
+  // ── Updates ──────────────────────────────────────────────
+  onUpdateStateChanged: (callback) => {
+    const handler = (_event: unknown, state: UpdateState) => callback(state);
+    ipcRenderer.on('update:state-changed', handler);
+    return () => { ipcRenderer.removeListener('update:state-changed', handler); };
+  },
+  installUpdate: () => ipcRenderer.invoke('update:install'),
+  checkForUpdate: () => ipcRenderer.invoke('update:check'),
+  downloadUpdate: () => ipcRenderer.invoke('update:download'),
 
   // ── Platform ─────────────────────────────────────────────
   getPlatform: () => process.platform,

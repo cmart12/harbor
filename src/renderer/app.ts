@@ -265,6 +265,12 @@ const settingsOverlay = document.getElementById('settings-overlay') as HTMLDivEl
 const settingsBackdrop = settingsOverlay.querySelector('.settings-backdrop') as HTMLDivElement;
 const settingsClose = document.getElementById('settings-close') as HTMLButtonElement;
 const mainView = document.getElementById('main-view') as HTMLDivElement;
+
+// ── Update banner ───────────────────────────────────────
+import { mountUpdateBanner } from './views/UpdateBanner.tsx';
+const updateBannerRoot = document.getElementById('update-banner-root');
+if (updateBannerRoot) mountUpdateBanner(updateBannerRoot);
+
 const modelSelect = document.getElementById('model-select') as HTMLSelectElement;
 const recordingIndicator = document.getElementById('recording-indicator') as HTMLDivElement;
 const waveformCanvas = document.getElementById('waveform-canvas') as HTMLCanvasElement;

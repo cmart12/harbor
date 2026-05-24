@@ -12,6 +12,7 @@ import { initCopilot, shutdownCopilot } from './ai';
 import { startCliExitMonitor, stopCliExitMonitor } from './agent-service';
 import { createMainWindow, toggleWindow, setupSnapOnDrop, registerWindowIpcHandlers } from './window-manager';
 import { createTray, destroyTray } from './tray';
+import { initAutoUpdater, cleanupAutoUpdater } from './update-service';
 
 // Register custom scheme as privileged (must happen before app ready)
 protocol.registerSchemesAsPrivileged([
@@ -144,6 +145,7 @@ app.whenReady().then(async () => {
   preloadModel();
   initCopilot();
   startCliExitMonitor();
+  initAutoUpdater();
 
   // Auto-show window on first launch so new users see the welcome screen
   if (!workspace) {
@@ -177,6 +179,7 @@ app.whenReady().then(async () => {
 app.on('will-quit', async () => {
   globalShortcut.unregisterAll();
   stopCliExitMonitor();
+  cleanupAutoUpdater();
   destroyTray();
   await shutdownCopilot();
 });

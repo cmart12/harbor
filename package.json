@@ -58,7 +58,7 @@
     },
     "mac": {
       "icon": "build/icon.icns",
-      "target": "dmg",
+      "target": ["dmg", "zip"],
       "category": "public.app-category.productivity",
       "hardenedRuntime": true,
       "entitlements": "scripts/entitlements.plist",
@@ -87,6 +87,7 @@
     "@types/ws": "^8.18.1",
     "better-sqlite3": "^12.9.0",
     "documint": "^0.0.16",
+    "electron-updater": "^6.8.3",
     "js-yaml": "^4.1.0",
     "linkedom": "^0.18.12",
     "lucide-react": "^1.8.0",

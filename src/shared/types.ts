@@ -1,3 +1,12 @@
+// ── Auto-update ────────────────────────────────────────────────────────────
+export type UpdateStatus = 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'error' | 'disabled';
+export interface UpdateState {
+  status: UpdateStatus;
+  version?: string;
+  error?: string;
+  progress?: number;
+}
+
 export interface Attachment {
   type: 'url' | 'file';
   name: string;

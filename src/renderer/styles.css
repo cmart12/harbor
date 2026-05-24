@@ -7569,3 +7569,67 @@ body.dark .canvas-chat-pane {
   background: rgba(28, 28, 32, 0.96);
   border-left-color: rgba(255, 255, 255, 0.08);
 }
+
+/* ── Update Banner ───────────────────────────────────────── */
+
+.update-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: #fff;
+  z-index: 9999;
+}
+
+.update-banner--available { background: #1a6fb5; }
+.update-banner--downloading { background: #1a6fb5; }
+.update-banner--ready { background: #2ea043; }
+
+.update-banner__text {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.update-banner__btn {
+  flex-shrink: 0;
+  padding: 2px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+}
+.update-banner__btn:hover { background: rgba(255, 255, 255, 0.25); }
+
+.update-banner__dismiss {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+}
+.update-banner__dismiss:hover { color: #fff; }
+
+.update-banner__progress {
+  flex-shrink: 0;
+  width: 80px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.update-banner__progress-bar {
+  height: 100%;
+  background: #fff;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
