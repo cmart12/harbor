@@ -56,7 +56,7 @@ jobs:
         run: security delete-keychain $RUNNER_TEMP/app-signing.keychain-db
 
   release-win:
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
 
