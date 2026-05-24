@@ -4,3 +4,6 @@ dist/
 
 # Electron builder output
 build/
+!build/icon.icns
+!build/icon.ico
+!build/icon.iconset/

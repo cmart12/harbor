@@ -1,6 +1,6 @@
 {
   "name": "whim",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "Quick capture from system tray",
   "productName": "Copilot Whim",
   "main": "dist/main/main.js",
@@ -21,7 +21,10 @@
     "dev:packaged": "npm run build:mac && open build/mac-arm64/Copilot\\ Whim.app",
     "build:mac": "npm run build && npm run rebuild:electron && electron-builder --mac --dir",
     "build:installer:mac": "npm run build && npm run rebuild:electron && electron-builder --mac",
-    "release": "npm run build && npm run rebuild:electron && electron-builder --mac --publish always"
+    "build:win": "npm run build && npm run rebuild:electron && electron-builder --win --dir",
+    "build:installer:win": "npm run build && npm run rebuild:electron && electron-builder --win",
+    "release": "npm run build && npm run rebuild:electron && electron-builder --mac --publish always",
+    "release:win": "npm run build && npm run rebuild:electron && electron-builder --win --publish always"
   },
   "build": {
     "appId": "com.copilot.tokens",
@@ -42,6 +45,16 @@
       "provider": "github",
       "owner": "patniko",
       "repo": "whim"
+    },
+    "win": {
+      "icon": "build/icon.ico",
+      "target": "nsis",
+      "azureSignOptions": {
+        "publisherName": "CN=Patrick Nikoletich",
+        "endpoint": "https://wus2.codesigning.azure.net/",
+        "codeSigningAccountName": "microsoft@isolated.dev",
+        "certificateProfileName": "Patrick Nikoletich"
+      }
     },
     "mac": {
       "icon": "build/icon.icns",

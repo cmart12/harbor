@@ -22,6 +22,27 @@ To generate an app-specific password, go to https://account.apple.com/sign-in �
 npm run build:installer:mac   # Signed + notarized DMG in build/
 ```
 
+## Windows Release
+
+Windows builds are signed via Azure Trusted Signing. The signing configuration is in `package.json` under `build.win.azureSignOptions`. No local certificates are needed — signing happens in the cloud during the build.
+
+### Local build (unsigned, for testing)
+
+```bash
+npm run build:win        # Unpacked app in build/win-unpacked/
+npm run build:installer:win  # NSIS installer in build/
+```
+
+### Local build (signed)
+
+```bash
+export AZURE_TENANT_ID="your-tenant-id"
+export AZURE_CLIENT_ID="your-client-id"
+export AZURE_CLIENT_SECRET="your-client-secret"
+
+npm run build:installer:win
+```
+
 ## CI Release (GitHub Actions)
 
 Push a version tag to trigger the release workflow:
@@ -50,6 +71,9 @@ Configure these in Settings → Secrets and variables → Actions:
 | `MACOS_CERTIFICATE` | Base64-encoded .p12 export of your Developer ID certificate |
 | `MACOS_CERTIFICATE_PWD` | Password used when exporting the .p12 |
 | `APPLE_APP_SPECIFIC_PASSWORD` | App-specific password from appleid.apple.com |
+| `AZURE_TENANT_ID` | Azure AD Tenant ID (for Windows signing) |
+| `AZURE_CLIENT_ID` | App Registration Client ID (for Windows signing) |
+| `AZURE_CLIENT_SECRET` | App Registration Client Secret (for Windows signing) |
 
 ### Exporting the certificate
 
