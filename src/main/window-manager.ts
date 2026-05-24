@@ -110,8 +110,17 @@ export function toggleWindow(): void {
   const autoHide = getConfigValue('autoHideSidePane');
 
   if (!autoHide) {
-    // Non-auto-hide mode: hotkey always brings the window to front
-    if (!mainWindow.isVisible()) {
+    // Non-auto-hide mode: toggle the window visibility
+    if (mainWindow.isVisible()) {
+      if (mainWindow.isFocused()) {
+        // Visible and focused — hide via renderer slide-out
+        mainWindow.webContents.send('window:toggle');
+      } else {
+        // Visible but behind other windows — bring to front
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.focus();
+      }
+    } else {
       const cursorPoint = screen.getCursorScreenPoint();
       const display = screen.getDisplayNearestPoint(cursorPoint);
       const { x, y, width, height } = display.workArea;
@@ -125,10 +134,10 @@ export function toggleWindow(): void {
 
       mainWindow.setBounds({ x: winX, y: winY, width: winWidth, height: winHeight }, false);
       mainWindow.show();
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
       mainWindow.webContents.send('window:shown', { side: isLeft ? 'left' : 'right', expanded: false });
     }
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.focus();
     return;
   }
 

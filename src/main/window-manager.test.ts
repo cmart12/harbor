@@ -32,6 +32,8 @@ const mockWindow = {
   hide: vi.fn(),
   focus: vi.fn(),
   isVisible: vi.fn(() => true),
+  isFocused: vi.fn(() => true),
+  isMinimized: vi.fn(() => false),
   isDestroyed: vi.fn(() => false),
   isAlwaysOnTop: vi.fn(() => false),
 };
@@ -72,8 +74,9 @@ vi.mock('./config', () => {
 });
 
 // Now import the module under test after mocks are in place
-import { createMainWindow, registerWindowIpcHandlers } from './window-manager';
+import { createMainWindow, registerWindowIpcHandlers, toggleWindow } from './window-manager';
 import { BrowserWindow } from 'electron';
+import { setConfigValue } from './config';
 
 describe('window-manager', () => {
   beforeEach(() => {
@@ -152,6 +155,67 @@ describe('window-manager', () => {
       // handleWindowMoved has a 500ms debounce, so we need to wait
       // The key check is that setBounds was only called once (the unpin snap)
       // and not a second time from handleWindowMoved
+    });
+  });
+
+  describe('toggleWindow hotkey', () => {
+    it('hides window when visible and focused (autoHide mode)', () => {
+      setConfigValue('autoHideSidePane', true);
+      mockWindow.isVisible.mockReturnValue(true);
+      mockWindow.isFocused.mockReturnValue(true);
+
+      toggleWindow();
+
+      expect(mockWebContents.send).toHaveBeenCalledWith('window:toggle');
+    });
+
+    it('shows window when hidden (autoHide mode)', () => {
+      setConfigValue('autoHideSidePane', true);
+      mockWindow.isVisible.mockReturnValue(false);
+
+      toggleWindow();
+
+      expect(mockWindow.show).toHaveBeenCalled();
+      expect(mockWindow.focus).toHaveBeenCalled();
+      expect(mockWebContents.send).toHaveBeenCalledWith(
+        'window:shown',
+        expect.objectContaining({ expanded: false }),
+      );
+    });
+
+    it('hides window when visible and focused (non-autoHide mode)', () => {
+      setConfigValue('autoHideSidePane', false);
+      mockWindow.isVisible.mockReturnValue(true);
+      mockWindow.isFocused.mockReturnValue(true);
+
+      toggleWindow();
+
+      expect(mockWebContents.send).toHaveBeenCalledWith('window:toggle');
+    });
+
+    it('focuses window when visible but not focused (non-autoHide mode)', () => {
+      setConfigValue('autoHideSidePane', false);
+      mockWindow.isVisible.mockReturnValue(true);
+      mockWindow.isFocused.mockReturnValue(false);
+
+      toggleWindow();
+
+      expect(mockWindow.focus).toHaveBeenCalled();
+      expect(mockWebContents.send).not.toHaveBeenCalledWith('window:toggle');
+    });
+
+    it('shows window when hidden (non-autoHide mode)', () => {
+      setConfigValue('autoHideSidePane', false);
+      mockWindow.isVisible.mockReturnValue(false);
+
+      toggleWindow();
+
+      expect(mockWindow.show).toHaveBeenCalled();
+      expect(mockWindow.focus).toHaveBeenCalled();
+      expect(mockWebContents.send).toHaveBeenCalledWith(
+        'window:shown',
+        expect.objectContaining({ expanded: false }),
+      );
     });
   });
 });
