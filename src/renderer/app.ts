@@ -4907,6 +4907,7 @@ let canvasSpaceId: string | null = null;
 let canvasSkillId: string | null = null;
 let canvasPageName: string | null = null;
 let canvasPageSpaceId: string | null = null;
+let canvasFilePath: string | null = null;
 let canvasDirty = false;
 let canvasIsNewIntent = false;
 let canvasChatPaneOpen = false;
@@ -5202,6 +5203,45 @@ async function openPage(spaceId: string, pageName: string): Promise<void> {
 
   mountCanvas(canvasRoot, {
     spaceId: `__page__${spaceId}/${pageName}`,
+    content: result.content || '',
+    theme: 'dark' as const,
+    personas: [],
+    onDirtyChange: (dirty: boolean) => {
+      canvasDirty = dirty;
+      canvasSaveBtn.classList.toggle('hidden', !dirty);
+    },
+    onSaveStatus: (status: string) => {
+      canvasSaveStatus.textContent = status;
+    },
+  });
+}
+
+async function openWorkspaceFile(filePath: string, title: string): Promise<void> {
+  canvasSpaceId = null;
+  canvasSkillId = null;
+  canvasPageSpaceId = null;
+  canvasPageName = null;
+  canvasFilePath = filePath;
+
+  canvasTitle.textContent = title;
+  canvasTitle.contentEditable = 'false';
+  canvasTitle.classList.remove('editing');
+  canvasTitleAI.classList.add('hidden');
+  canvasSaveStatus.textContent = '';
+  canvasDirty = false;
+  canvasSaveBtn.classList.add('hidden');
+  updateModeToggleUI('rendered');
+
+  closeCanvasMenu();
+  updateCanvasMenuContext(false);
+  canvasView.classList.remove('hidden');
+
+  const fileSpaceId = `__file__${encodeURIComponent(filePath)}`;
+  const result = await whimAPI.readCanvas(fileSpaceId);
+  if (result.error) return;
+
+  mountCanvas(canvasRoot, {
+    spaceId: fileSpaceId,
     content: result.content || '',
     theme: 'dark' as const,
     personas: [],
@@ -6494,6 +6534,10 @@ if (isCanvasMode) {
     if (canvasSkillId) {
       await saveSkillFromCanvas(canvasSkillId, finalContent);
       canvasSkillId = null;
+    } else if (canvasFilePath) {
+      const fileSpaceId = `__file__${encodeURIComponent(canvasFilePath)}`;
+      await whimAPI.closeCanvas(fileSpaceId, finalContent);
+      canvasFilePath = null;
     } else if (canvasPageSpaceId && canvasPageName) {
       await whimAPI.closePage(canvasPageSpaceId, canvasPageName, finalContent);
       canvasPageSpaceId = null;
@@ -6510,7 +6554,7 @@ if (isCanvasMode) {
   // Listen for target to load (from main process)
   whimAPI.onLoadCanvasTarget(async (target: { kind: string; id: string; title: string }) => {
     // If a canvas is already open, save and close it first
-    if (canvasSpaceId || canvasSkillId || canvasPageSpaceId) {
+    if (canvasSpaceId || canvasSkillId || canvasPageSpaceId || canvasFilePath) {
       await saveAndUnmountCurrent();
     }
 
@@ -6519,6 +6563,8 @@ if (isCanvasMode) {
       await openSkillEditor(target.id);
     } else if (target.kind === 'page') {
       await openPage((target as any).spaceId, (target as any).page);
+    } else if (target.kind === 'file') {
+      await openWorkspaceFile((target as any).filePath, target.title);
     } else {
       // Populate space data so openCanvas() can find it
       if (!spaces.find(i => i.id === target.id)) {

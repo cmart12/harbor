@@ -6,6 +6,7 @@ import { parseFrontmatter, serializeFrontmatter } from '../frontmatter';
 import { fetchLinkPreview } from '../services/link-preview';
 import { startWatching, stopWatching, markSelfWrite } from '../canvas-watcher';
 import { merge3 } from '../../shared/text-merge';
+import { openFileInNewWindow, isWorkspaceMdFile } from '../window-manager';
 import type { SkillFrontmatter } from '../../shared/types';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -22,6 +23,18 @@ export function registerCanvasHandlers(): void {
   ipcMain.handle('canvas:read', (_event, spaceId: string) => {
     const workspace = getConfigValue('workspace');
     if (!workspace || !isInitialized()) return { content: '', error: 'no_workspace' };
+
+    // Route workspace file reads to the actual file on disk
+    if (spaceId.startsWith('__file__')) {
+      const filePath = decodeURIComponent(spaceId.slice('__file__'.length));
+      if (!isWorkspaceMdFile(filePath)) return { content: '', error: 'not_in_workspace' };
+      try {
+        const content = fs.readFileSync(filePath, 'utf-8');
+        return { content };
+      } catch {
+        return { content: '', error: 'read_failed' };
+      }
+    }
 
     // Route page reads to page files
     if (spaceId.startsWith('__page__')) {
@@ -73,6 +86,19 @@ export function registerCanvasHandlers(): void {
   ipcMain.handle('canvas:write', (_event, spaceId: string, content: string) => {
     const workspace = getConfigValue('workspace');
     if (!workspace || !isInitialized()) return { error: 'no_workspace' };
+
+    // Route workspace file writes to the actual file on disk
+    if (spaceId.startsWith('__file__')) {
+      const filePath = decodeURIComponent(spaceId.slice('__file__'.length));
+      if (!isWorkspaceMdFile(filePath)) return { error: 'not_in_workspace' };
+      try {
+        fs.writeFileSync(filePath, content, 'utf-8');
+        scheduleAutoCommit(workspace);
+        return { success: true };
+      } catch {
+        return { error: 'write_failed' };
+      }
+    }
 
     // Route skill autosaves to the skill file
     if (spaceId.startsWith('__skill__')) {
@@ -143,6 +169,17 @@ export function registerCanvasHandlers(): void {
   ipcMain.handle('canvas:close', (_event, spaceId: string, content: string) => {
     const workspace = getConfigValue('workspace');
     if (!workspace || !isInitialized()) return;
+
+    // Route workspace file closes to the actual file on disk
+    if (spaceId.startsWith('__file__')) {
+      const filePath = decodeURIComponent(spaceId.slice('__file__'.length));
+      if (!isWorkspaceMdFile(filePath)) return;
+      try {
+        fs.writeFileSync(filePath, content, 'utf-8');
+        scheduleAutoCommit(workspace);
+      } catch { /* ignore write failures on close */ }
+      return;
+    }
 
     // Route page closes to page files
     if (spaceId.startsWith('__page__')) {
@@ -387,4 +424,84 @@ export function registerCanvasHandlers(): void {
 
     return { pages: listPages(workspace, folder) };
   });
+
+  // ── Open link from canvas ─────────────────────────────────
+  // Resolves file paths relative to the current canvas context and opens
+  // .md files under workspace in a new canvas window, or opens externally.
+  ipcMain.handle('canvas:open-link', (_event, spaceId: string, url: string) => {
+    const workspace = getConfigValue('workspace');
+    if (!workspace) return { action: 'none' as const, error: 'no_workspace' };
+
+    // Strip fragment (#heading) and query string before filesystem checks
+    const hashIdx = url.indexOf('#');
+    const cleanUrl = hashIdx >= 0 ? url.slice(0, hashIdx) : url;
+
+    let filePath: string | null = null;
+
+    if (cleanUrl.startsWith('file://')) {
+      try {
+        filePath = decodeURIComponent(new URL(cleanUrl).pathname);
+      } catch {
+        return { action: 'none' as const, error: 'invalid_url' };
+      }
+    } else if (cleanUrl.startsWith('/')) {
+      // Absolute path
+      filePath = cleanUrl;
+    } else if (!cleanUrl.includes('://')) {
+      // Relative path — resolve against current canvas context
+      const baseDir = resolveCanvasBaseDir(workspace, spaceId);
+      if (baseDir) {
+        filePath = path.resolve(baseDir, decodeURIComponent(cleanUrl));
+      }
+    }
+
+    if (!filePath) {
+      // Not a file path — open externally if it's a valid URL
+      if (cleanUrl.startsWith('http://') || cleanUrl.startsWith('https://') || cleanUrl.startsWith('mailto:')) {
+        shell.openExternal(url);
+        return { action: 'external' as const };
+      }
+      return { action: 'none' as const };
+    }
+
+    // Decode percent-encoded path components
+    filePath = decodeURIComponent(filePath);
+
+    if (isWorkspaceMdFile(filePath)) {
+      openFileInNewWindow(filePath);
+      return { action: 'canvas' as const };
+    }
+
+    // Non-.md file or not in workspace — open with OS default
+    shell.openPath(filePath);
+    return { action: 'external' as const };
+  });
+}
+
+/** Resolve the base directory for relative path resolution based on the canvas context. */
+function resolveCanvasBaseDir(workspace: string, spaceId: string): string | null {
+  if (spaceId.startsWith('__file__')) {
+    const filePath = decodeURIComponent(spaceId.slice('__file__'.length));
+    return path.dirname(filePath);
+  }
+
+  if (spaceId.startsWith('__page__')) {
+    const rest = spaceId.slice('__page__'.length);
+    const slashIdx = rest.indexOf('/');
+    if (slashIdx > 0) {
+      const realSpaceId = rest.slice(0, slashIdx);
+      const space = getSpace(realSpaceId);
+      if (space?.folder) return resolveSpaceFolder(workspace, space.folder);
+    }
+  }
+
+  if (spaceId.startsWith('__skill__')) {
+    return null; // Skills don't have a meaningful base dir for relative links
+  }
+
+  // Normal space
+  const space = getSpace(spaceId);
+  if (space?.folder) return resolveSpaceFolder(workspace, space.folder);
+
+  return workspace;
 }

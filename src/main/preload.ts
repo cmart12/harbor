@@ -178,6 +178,7 @@ export interface WhimAPI {
   closePage(spaceId: string, pageName: string, content: string): Promise<{ success?: boolean; error?: string }>;
   listPages(spaceId: string): Promise<{ pages: string[]; error?: string }>;
   openPageWindow(target: { kind: 'page'; spaceId: string; page: string; title: string }): void;
+  openLink(spaceId: string, url: string): Promise<{ action: string; error?: string }>;
 
   // ── Settings popout window ──────────────────────────────
   openSettingsWindow(): void;
@@ -463,6 +464,7 @@ const api: WhimAPI = {
   closePage: (spaceId, pageName, content) => ipcRenderer.invoke('canvas:close-page', spaceId, pageName, content),
   listPages: (spaceId) => ipcRenderer.invoke('canvas:list-pages', spaceId),
   openPageWindow: (target) => ipcRenderer.send('canvas-window:open-page', target),
+  openLink: (spaceId, url) => ipcRenderer.invoke('canvas:open-link', spaceId, url),
 
   // ── Settings popout window ──────────────────────────────
   openSettingsWindow: () => ipcRenderer.send('settings-window:open'),

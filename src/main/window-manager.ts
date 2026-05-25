@@ -1,5 +1,7 @@
 import { BrowserWindow, screen, ipcMain, shell } from 'electron';
 import { getConfigValue, setConfigValue, type SnapPosition } from './config';
+import * as fs from 'fs';
+import * as nodePath from 'path';
 
 // ── Geometry constants ───────────────────────────────────
 const WINDOW_WIDTH = 420;
@@ -374,6 +376,8 @@ function attachExternalLinkHandler(win: BrowserWindow): void {
     } else if (url.startsWith('whim://space/')) {
       const spaceId = url.replace('whim://space/', '');
       navigateCanvasToSpace(win, spaceId);
+    } else if (url.startsWith('file://')) {
+      handleFileUrl(url);
     } else if (url.startsWith('http://') || url.startsWith('https://')) {
       shell.openExternal(url);
     }
@@ -393,11 +397,44 @@ function attachExternalLinkHandler(win: BrowserWindow): void {
       event.preventDefault();
       const spaceId = url.replace('whim://space/', '');
       navigateCanvasToSpace(win, spaceId);
+    } else if (url.startsWith('file://')) {
+      event.preventDefault();
+      handleFileUrl(url);
     } else if (url.startsWith('http://') || url.startsWith('https://')) {
       event.preventDefault();
       shell.openExternal(url);
     }
   });
+}
+
+/** Handle a file:// URL — open .md files under workspace in canvas, others externally. */
+function handleFileUrl(url: string): void {
+  try {
+    const filePath = decodeURIComponent(new URL(url).pathname);
+    if (isWorkspaceMdFile(filePath)) {
+      openFileInNewWindow(filePath);
+    } else {
+      shell.openPath(filePath);
+    }
+  } catch {
+    // Malformed URL — ignore
+  }
+}
+
+/** Check if a file path is a .md file that lives inside the workspace root. */
+export function isWorkspaceMdFile(filePath: string): boolean {
+  const workspace = getConfigValue('workspace');
+  if (!workspace) return false;
+  if (!filePath.toLowerCase().endsWith('.md')) return false;
+
+  try {
+    const realWorkspace = fs.realpathSync(workspace) + nodePath.sep;
+    const realFile = fs.realpathSync(filePath);
+    return realFile.startsWith(realWorkspace);
+  } catch {
+    // File doesn't exist or can't resolve — not a workspace md file
+    return false;
+  }
 }
 
 /** Navigate a canvas window to a different space by sending a load-target event. */
@@ -411,6 +448,17 @@ function navigateCanvasToSpace(win: BrowserWindow, spaceId: string): void {
 function openPageInNewWindow(preloadPath: string, spaceId: string, page: string): void {
   const win = createCanvasWindow(preloadPath);
   const target = { kind: 'page' as const, spaceId, page, title: page };
+  win.webContents.once('did-finish-load', () => {
+    win.webContents.send('canvas-window:load-target', target);
+    win.show();
+  });
+}
+
+/** Open a workspace .md file in a new canvas window. */
+export function openFileInNewWindow(filePath: string): void {
+  const title = filePath.split('/').pop()?.replace(/\.md$/i, '') ?? filePath;
+  const win = createCanvasWindow(storedPreloadPath);
+  const target = { kind: 'file' as const, filePath, title };
   win.webContents.once('did-finish-load', () => {
     win.webContents.send('canvas-window:load-target', target);
     win.show();

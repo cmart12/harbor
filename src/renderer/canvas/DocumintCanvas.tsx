@@ -40,6 +40,7 @@ declare const whimAPI: {
   listPages(spaceId: string): Promise<{ pages: string[]; error?: string }>;
   openPageWindow(target: { kind: 'page'; spaceId: string; page: string; title: string }): void;
   openExternal(url: string): Promise<{ ok: true }>;
+  openLink(spaceId: string, url: string): Promise<{ action: string; error?: string }>;
 };
 
 export interface AgentPersona {
@@ -222,8 +223,10 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
         } else if (url.startsWith('whim://space/')) {
           const targetId = url.replace('whim://space/', '');
           whimAPI.openCanvasWindow({ kind: 'space', id: targetId, title: '' });
-        } else if (url.startsWith('http://') || url.startsWith('https://')) {
-          whimAPI.openExternal(url);
+        } else {
+          // Delegate to main process: opens .md files under workspace in canvas,
+          // opens http(s) URLs in browser, opens other files with OS default
+          whimAPI.openLink(spaceId, url);
         }
       },
     }), [spaceId]);

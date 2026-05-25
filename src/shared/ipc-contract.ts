@@ -282,6 +282,8 @@ export interface IpcCommands {
   'canvas:write-page': { args: [spaceId: string, pageName: string, content: string]; result: { success?: boolean; error?: string } };
   'canvas:close-page': { args: [spaceId: string, pageName: string, content: string]; result: { success?: boolean; error?: string } };
   'canvas:list-pages': { args: [spaceId: string]; result: { pages: string[]; error?: string } };
+  'canvas:open-link': { args: [spaceId: string, url: string]; result: { action: 'canvas' | 'external' | 'none'; error?: string } };
+  'canvas:read-file': { args: [spaceId: string, relativePath: string]; result: { data?: number[]; mimeType?: string; error?: string } };
 
   // ── Agent ────────────────────────────────────────────────
   'agent:launch': {
