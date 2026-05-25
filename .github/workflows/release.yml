@@ -54,11 +54,19 @@ jobs:
 
       - name: Build, sign, notarize, and publish
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: npm run release
+
+      - name: Create draft release on private repo
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          gh release create "$TAG" --draft --title "$TAG" --repo getnurture/whim \
+            build/*.dmg build/*.zip build/*.blockmap build/latest-mac.yml 2>/dev/null || true
 
       - name: Clean up keychain
         if: always()
@@ -79,8 +87,17 @@ jobs:
 
       - name: Build, sign, and publish
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
         run: npm run release:win
+
+      - name: Create draft release on private repo
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $TAG = "${{ github.ref_name }}"
+          gh release create "$TAG" --draft --title "$TAG" --repo getnurture/whim `
+            (Get-ChildItem build/*.exe),(Get-ChildItem build/*.blockmap),(Get-ChildItem build/latest.yml) 2>$null
+        shell: pwsh

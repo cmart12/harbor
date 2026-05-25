@@ -13,7 +13,9 @@ git tag v0.1.0
 git push origin master --tags
 ```
 
-This triggers the CI workflow which builds, signs, and publishes both platforms to GitHub Releases in parallel. The release is created as a draft — go to the repo's Releases page to publish it.
+This triggers the CI workflow which builds, signs, and publishes both platforms to GitHub Releases in parallel.
+
+Releases are published to the **public** [`getnurture/whim-releases`](https://github.com/getnurture/whim-releases) repo so that the auto-updater can fetch `latest-mac.yml` / `latest.yml` without authentication. A draft release is also created on the private `getnurture/whim` repo for reference.
 
 ---
 
@@ -82,6 +84,12 @@ The `.github/workflows/release.yml` workflow runs on tag pushes matching `v*`. I
 ### GitHub Secrets
 
 All values are stored as **Secrets** in Settings → Secrets and variables → Actions:
+
+#### Release publishing
+
+| Secret | Description |
+|--------|-------------|
+| `RELEASE_PAT` | GitHub PAT (classic) with `repo` scope — used to publish releases to the public `whim-releases` repo |
 
 #### macOS signing & notarization
 

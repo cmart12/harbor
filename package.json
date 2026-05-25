@@ -44,7 +44,7 @@
     "publish": {
       "provider": "github",
       "owner": "getnurture",
-      "repo": "whim"
+      "repo": "whim-releases"
     },
     "win": {
       "icon": "build/icon.ico",
