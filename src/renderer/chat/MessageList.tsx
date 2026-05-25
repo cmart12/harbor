@@ -22,6 +22,7 @@ export function MessageList({ messages, onApprovalRespond, onUserInputRespond, o
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const userScrolledUp = useRef(false);
+  const hasInitiallyScrolled = useRef(false);
 
   const handleScroll = useCallback(() => {
     const el = containerRef.current;
@@ -32,7 +33,9 @@ export function MessageList({ messages, onApprovalRespond, onUserInputRespond, o
 
   useEffect(() => {
     if (!userScrolledUp.current) {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+      const behavior = hasInitiallyScrolled.current ? 'smooth' : 'instant';
+      bottomRef.current?.scrollIntoView({ behavior });
+      hasInitiallyScrolled.current = true;
     }
   }, [messages]);
 

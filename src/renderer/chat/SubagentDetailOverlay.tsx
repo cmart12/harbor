@@ -113,6 +113,7 @@ export function SubagentDetailOverlay({ parentAgentId, agentId, onClose }: Subag
   const [sendError, setSendError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const hasInitiallyScrolled = useRef(false);
 
   const refresh = useCallback(async () => {
     if (!agentId) return;
@@ -122,6 +123,7 @@ export function SubagentDetailOverlay({ parentAgentId, agentId, onClose }: Subag
 
   // Poll + listen for changes
   useEffect(() => {
+    hasInitiallyScrolled.current = false;
     if (!agentId) return;
     refresh();
     const interval = setInterval(refresh, 1500);
@@ -134,7 +136,9 @@ export function SubagentDetailOverlay({ parentAgentId, agentId, onClose }: Subag
 
   // Auto-scroll on agent updates
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+    const behavior = hasInitiallyScrolled.current ? 'smooth' : 'instant';
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior });
+    hasInitiallyScrolled.current = true;
   }, [agent]);
 
   // Focus input on open
