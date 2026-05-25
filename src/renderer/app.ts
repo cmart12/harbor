@@ -2554,13 +2554,18 @@ async function animateRefinement(spaceId: string): Promise<void> {
 }
 
 // ── Space CRUD ─────────────────────────────────────────
+let loadSpacesRequestId = 0;
+
 async function loadSpaces(): Promise<void> {
+  const requestId = ++loadSpacesRequestId;
   spaces = await whimAPI.list();
   activeSessionSpaces = new Set(await whimAPI.getActiveSessions());
 
   // Build agents-per-space map for Spaces view
   try {
     const allAgents = await whimAPI.listAllAgents();
+    // Bail if a newer loadSpaces() was triggered while we were fetching
+    if (requestId !== loadSpacesRequestId) return;
     const map = new Map<string, Array<{ agentId: string; status: string; summary: string; selectedText: string; quotedText?: string; source?: string }>>();
     for (const agent of allAgents) {
       if (!agent.spaceId || agent.spaceId === '__workspace__') continue;
@@ -2577,8 +2582,33 @@ async function loadSpaces(): Promise<void> {
     agentsBySpace = map;
   } catch { /* skip */ }
 
+  if (requestId !== loadSpacesRequestId) return;
   updateFocusBanner();
   render();
+}
+
+// ── Debounced refresh for agent status events ──────────
+// Coalesces rapid-fire agent status/completion IPC events into a single
+// sidebar re-render, preventing the full innerHTML replacement from running
+// on every individual event (which causes visible flicker).
+let _agentRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+let _agentListRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+const AGENT_REFRESH_DELAY_MS = 300;
+
+function scheduleAgentSpacesRefresh(): void {
+  if (_agentRefreshTimer) clearTimeout(_agentRefreshTimer);
+  _agentRefreshTimer = setTimeout(() => {
+    _agentRefreshTimer = null;
+    if (currentFilter === 'open') loadSpaces();
+  }, AGENT_REFRESH_DELAY_MS);
+}
+
+function scheduleAgentListRefresh(): void {
+  if (_agentListRefreshTimer) clearTimeout(_agentListRefreshTimer);
+  _agentListRefreshTimer = setTimeout(() => {
+    _agentListRefreshTimer = null;
+    if (currentFilter === 'agents') renderAgentsList();
+  }, AGENT_REFRESH_DELAY_MS);
 }
 
 function render(): void {
@@ -5761,9 +5791,8 @@ function clearAgentDecorations(): void {
 
 // ── Global agent status/approval listeners ─────────────
 whimAPI.onAgentStatusChanged((data: any) => {
-  if (currentFilter === 'agents') renderAgentsList();
-  // Refresh Spaces view to update agent indicators
-  if (currentFilter === 'open') loadSpaces();
+  scheduleAgentListRefresh();
+  scheduleAgentSpacesRefresh();
   // Clear steps if agent restarted
   if (data.status === 'running' && !agentSteps.has(data.agentId)) {
     agentSteps.set(data.agentId, []);
@@ -5813,8 +5842,8 @@ whimAPI.onAgentApprovalNeeded((data: any) => {
 });
 
 whimAPI.onAgentCompleted(() => {
-  if (currentFilter === 'agents') renderAgentsList();
-  if (currentFilter === 'open') loadSpaces();
+  scheduleAgentListRefresh();
+  scheduleAgentSpacesRefresh();
 });
 
 whimAPI.onAgentYoloChanged((data: { agentId: string; enabled: boolean }) => {
