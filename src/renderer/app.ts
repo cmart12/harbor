@@ -6492,16 +6492,21 @@ if (isCanvasMode) {
 
   canvasPinTopBtn.addEventListener('click', toggleCanvasOnTop);
 
-  // Cmd+Shift+T keyboard shortcut
+  // Canvas keyboard shortcuts — use capture phase so the editor can't swallow them
   window.addEventListener('keydown', (e) => {
-    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 't') {
+    if (!(e.metaKey || e.ctrlKey) || !e.shiftKey) return;
+    const key = e.key.toUpperCase();
+
+    if (key === 'T') {
       e.preventDefault();
+      e.stopPropagation();
       toggleCanvasOnTop();
       return;
     }
 
-    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'N' && canvasSpaceId) {
+    if (key === 'N' && canvasSpaceId) {
       e.preventDefault();
+      e.stopPropagation();
       const spaceId = canvasSpaceId;
       const name = prompt('New page name:');
       if (!name) return;
@@ -6513,7 +6518,7 @@ if (isCanvasMode) {
         whimAPI.openPageWindow({ kind: 'page', spaceId, page: result.page, title: name });
       });
     }
-  });
+  }, true);
 
   // Sync initial state
   whimAPI.getCanvasAlwaysOnTop().then(pinned => {
