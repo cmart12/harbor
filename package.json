@@ -43,7 +43,7 @@
     ],
     "publish": {
       "provider": "github",
-      "owner": "patniko",
+      "owner": "getnurture",
       "repo": "whim"
     },
     "win": {
