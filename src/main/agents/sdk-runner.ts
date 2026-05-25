@@ -3,11 +3,12 @@ import { v4 as uuid } from 'uuid';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as crypto from 'crypto';
-import { getCopilotClient } from '../ai';
+import { getCopilotClient, getEphemeralCopilotClient } from '../ai';
 import { AgentAnchor } from '../../shared/types';
 import { getConfig, getConfigValue, type AgentPersona } from '../config';
 import { getAllMcpServers } from '../mcp';
 import { AgentRegistry, truncate } from './agent-registry';
+import { InMemoryFsProvider } from './in-memory-fs-provider';
 import type { AgentRecord } from './agent-registry';
 import { AgentNotifier } from './agent-notifier';
 import { AgentPersistence } from './agent-persistence';
@@ -172,9 +173,10 @@ export async function launchQuickAgent(
   workspaceRoot: string,
   persona?: AgentPersona,
 ): Promise<{ agentId: string; sessionId: string } | { error: string }> {
-  const client = getCopilotClient();
+  const isEphemeral = persona?.ephemeral === true;
+  const client = isEphemeral ? getEphemeralCopilotClient() : getCopilotClient();
   if (!client) {
-    return { error: 'Copilot SDK not initialized' };
+    return { error: isEphemeral ? 'Ephemeral Copilot client not initialized' : 'Copilot SDK not initialized' };
   }
 
   const agentId = uuid();
@@ -229,6 +231,7 @@ export async function launchQuickAgent(
           content: `\n${systemContent}`,
         },
       } : {}),
+      ...(isEphemeral ? { createSessionFsHandler: () => new InMemoryFsProvider() } : {}),
       onPermissionRequest: useHostPathAwareHandler
         ? broker.createPathAwareSandboxPermissionHandler(findRecord)
         : useMxcOnlyAutoApprove
@@ -257,6 +260,7 @@ export async function launchQuickAgent(
       summary,
       ...(sandboxState ? { sandbox: sandboxState } : {}),
       ...(persona?.yolo ? { yoloMode: true } : {}),
+      ...(isEphemeral ? { ephemeral: true } : {}),
     };
     registry.set(agentId, record);
 
@@ -265,20 +269,22 @@ export async function launchQuickAgent(
       notifier.notifyRenderer('agent:yolo-changed', { agentId, enabled: true });
     }
 
-    persistence.createAgentSessionRecord({
-      id: agentId,
-      session_id: sessionId,
-      space_id: null,
-      prompt,
-      status: 'running',
-      summary,
-      working_dir: workspaceRoot,
-      source: 'sdk',
-      persona_handle: persona?.handle ?? null,
-      quoted_text: null,
-      created_at: now,
-      updated_at: now,
-    });
+    if (!isEphemeral) {
+      persistence.createAgentSessionRecord({
+        id: agentId,
+        session_id: sessionId,
+        space_id: null,
+        prompt,
+        status: 'running',
+        summary,
+        working_dir: workspaceRoot,
+        source: 'sdk',
+        persona_handle: persona?.handle ?? null,
+        quoted_text: null,
+        created_at: now,
+        updated_at: now,
+      });
+    }
 
     setupAgentEventListeners(session, record);
 
@@ -287,7 +293,7 @@ export async function launchQuickAgent(
     session.send({ prompt }).catch((err: any) => {
       record.status = 'failed';
       record.summary = `Error: ${err.message || 'Unknown'}`;
-      persistence.updateStatus(record);
+      if (!record.ephemeral) persistence.updateStatus(record);
       notifier.notifyRenderer(`chat:event:${agentId}`, {
         type: 'session.error',
         message: err.message || 'Failed to process message',
@@ -752,6 +758,7 @@ function resolveSpaceActivityContext(record: AgentRecord): { workspaceRoot: stri
 
 /** Append to the per-space activity log (non-fatal on failure). */
 function logIntentActivity(record: AgentRecord, type: string, data: Record<string, any>): void {
+  if (record.ephemeral) return;
   const ctx = resolveSpaceActivityContext(record);
   if (!ctx) return;
   appendSpaceActivity(ctx.workspaceRoot, ctx.spaceFolder, type, { agentId: record.agentId, ...data });
@@ -892,6 +899,12 @@ export function setupAgentEventListeners(session: CopilotSession, record: AgentR
           }
         } catch { /* non-fatal: file may not exist */ }
       }
+
+      // Ephemeral agents: remove from registry after a short delay so the
+      // renderer has time to process final events, then they vanish from history.
+      if (record.ephemeral) {
+        setTimeout(() => registry.delete(agentId), 30_000);
+      }
     }
   });
 
@@ -918,6 +931,10 @@ export function setupAgentEventListeners(session: CopilotSession, record: AgentR
     if (record.sandbox) {
       const { cleanupSandboxConfigs } = require('../ai');
       cleanupSandboxConfigs(agentId);
+    }
+
+    if (record.ephemeral) {
+      setTimeout(() => registry.delete(agentId), 30_000);
     }
   });
 

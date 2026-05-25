@@ -56,6 +56,7 @@ interface AgentPersona {
   cliRuntime?: string;
   sandboxPolicyOverride?: SandboxPolicy;
   yolo?: boolean;
+  ephemeral?: boolean;
 }
 
 interface CliRuntime {
@@ -1187,6 +1188,31 @@ function renderAgentEditor(persona: AgentPersona): void {
   yoloLabel.appendChild(document.createTextNode(' 🔥 Auto-enable yolo mode (skip all permission prompts)'));
   yoloRow.appendChild(yoloLabel);
 
+  // Ephemeral mode checkbox
+  const ephemeralRow = document.createElement('div');
+  ephemeralRow.className = 'persona-form-row persona-ephemeral-row';
+  if (persona.runLocation === 'cloud' || persona.runLocation === 'conduit') {
+    ephemeralRow.style.display = 'none';
+  }
+  const ephemeralLabel = document.createElement('label');
+  ephemeralLabel.className = 'persona-form-checkbox-label';
+  const ephemeralCheck = document.createElement('input');
+  ephemeralCheck.type = 'checkbox';
+  ephemeralCheck.checked = persona.ephemeral === true;
+  ephemeralLabel.appendChild(ephemeralCheck);
+  ephemeralLabel.appendChild(document.createTextNode(' 🕵️ Ephemeral mode (no session history — nothing persisted to disk or DB)'));
+  ephemeralRow.appendChild(ephemeralLabel);
+
+  // Hide ephemeral option for cloud/conduit personas
+  locationSelect.addEventListener('change', () => {
+    if (locationSelect.value === 'cloud' || locationSelect.value === 'conduit') {
+      ephemeralRow.style.display = 'none';
+      ephemeralCheck.checked = false;
+    } else {
+      ephemeralRow.style.display = '';
+    }
+  });
+
   // Error display
   const errorEl = document.createElement('div');
   errorEl.className = 'persona-form-error hidden';
@@ -1248,6 +1274,7 @@ function renderAgentEditor(persona: AgentPersona): void {
           ...(sandboxed ? { sandboxed: true } : { sandboxed: undefined }),
           ...(sandboxOverride ? { sandboxPolicyOverride: sandboxOverride } : { sandboxPolicyOverride: undefined }),
           ...(yoloCheck.checked ? { yolo: true } : { yolo: undefined }),
+          ...(ephemeralCheck.checked && runLocation === 'local' ? { ephemeral: true } : { ephemeral: undefined }),
         }
       : p
     );
@@ -1338,6 +1365,7 @@ function renderAgentEditor(persona: AgentPersona): void {
   form.appendChild(sandboxOverrideRow);
   form.appendChild(runtimeRow);
   form.appendChild(yoloRow);
+  form.appendChild(ephemeralRow);
   form.appendChild(errorEl);
   form.appendChild(btnRow);
 

@@ -88,6 +88,8 @@ export interface AgentPersona {
   sandboxPolicyOverride?: SandboxPolicy;
   /** When true, agents launched with this persona automatically enable yolo mode (auto-approve all permissions). */
   yolo?: boolean;
+  /** When true, session state is kept in-memory only — nothing persisted to disk or DB. */
+  ephemeral?: boolean;
 }
 
 /** Sandbox policy applied to a sandboxed agent.  See docs/mxc-sandbox-schema.md. */

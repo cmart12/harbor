@@ -131,6 +131,7 @@ export interface ParsedSpace {
 }
 
 let client: CopilotClient | null = null;
+let ephemeralClient: CopilotClient | null = null;
 let parseSession: CopilotSession | null = null;
 let recurrenceSession: CopilotSession | null = null;
 let recallSession: CopilotSession | null = null;
@@ -234,14 +235,35 @@ export async function initCopilot(): Promise<void> {
     // Eagerly init the parse session (most commonly used)
     await getParseSession();
     console.log('[copilot-sdk] Client started, parse session created');
+
+    // Start a separate client for ephemeral sessions. When sessionFs is
+    // enabled the SDK requires *every* createSession call to provide a
+    // createSessionFsHandler, so this must be a dedicated client.
+    const ephemeralOpts: Record<string, unknown> = {
+      ...opts,
+      sessionFs: {
+        initialCwd: '/',
+        sessionStatePath: '/.session-state',
+        conventions: 'posix',
+      },
+    };
+    ephemeralClient = new CopilotClient(ephemeralOpts as any);
+    await ephemeralClient.start();
+    console.log('[copilot-sdk] Ephemeral client started');
   } catch (err) {
     console.error('[copilot-sdk] Failed to initialize:', err);
     client = null;
+    ephemeralClient = null;
   }
 }
 
 export function getCopilotClient(): CopilotClient | null {
   return client;
+}
+
+/** Returns the dedicated CopilotClient for ephemeral (zero-persistence) sessions. */
+export function getEphemeralCopilotClient(): CopilotClient | null {
+  return ephemeralClient;
 }
 
 /** Shut down and re-initialize the Copilot SDK client (e.g. after CLI path change). */
@@ -280,6 +302,10 @@ export async function shutdownCopilot(): Promise<void> {
     if (client) {
       await client.stop();
       client = null;
+    }
+    if (ephemeralClient) {
+      await ephemeralClient.stop();
+      ephemeralClient = null;
     }
     console.log('[copilot-sdk] Shut down');
   } catch (err) {

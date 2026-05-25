@@ -76,6 +76,8 @@ export interface AgentRecord {
   _intentionalDisconnect?: boolean;
   /** Remote control state — tracks Mission Control integration per session. */
   remote?: { enabled: boolean; remoteSteerable: boolean; url?: string };
+  /** When true, this agent is ephemeral — no DB persistence, in-memory session FS. */
+  ephemeral?: boolean;
 }
 
 export class AgentRegistry {

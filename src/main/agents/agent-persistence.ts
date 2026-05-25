@@ -19,8 +19,9 @@ export class AgentPersistence {
     dbCreateAgentSession(data);
   }
 
-  /** Write status to both canvas_agents and agent_sessions tables */
+  /** Write status to both canvas_agents and agent_sessions tables. No-op for ephemeral agents. */
   updateStatus(record: AgentRecord): void {
+    if (record.ephemeral) return;
     try {
       updateCanvasAgentStatus(record.agentId, record.status);
     } catch { /* non-fatal */ }
@@ -29,8 +30,9 @@ export class AgentPersistence {
     } catch { /* non-fatal */ }
   }
 
-  /** Write summary to agent_sessions table only */
+  /** Write summary to agent_sessions table only. No-op for ephemeral agents. */
   persistSummary(record: AgentRecord): void {
+    if (record.ephemeral) return;
     try {
       updateAgentSessionStatus(record.agentId, record.status, record.summary);
     } catch { /* non-fatal */ }

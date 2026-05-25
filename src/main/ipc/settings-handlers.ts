@@ -144,6 +144,7 @@ export function registerSettingsHandlers(): void {
             })()
           : {}),
         ...(raw.yolo === true ? { yolo: true } : {}),
+        ...(raw.ephemeral === true ? { ephemeral: true } : {}),
       });
     }
 
