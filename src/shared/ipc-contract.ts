@@ -276,6 +276,13 @@ export interface IpcCommands {
   'canvas:restore': { args: [spaceId: string, sha: string]; result: { success: boolean; error?: string } };
   'canvas:preview-version': { args: [spaceId: string, sha: string]; result: { content: string; error?: string } };
 
+  // ── Canvas child pages ────────────────────────────────────
+  'canvas:create-page': { args: [spaceId: string, pageName: string]; result: { success: boolean; page: string; error?: string } };
+  'canvas:read-page': { args: [spaceId: string, pageName: string]; result: { content: string; error?: string } };
+  'canvas:write-page': { args: [spaceId: string, pageName: string, content: string]; result: { success?: boolean; error?: string } };
+  'canvas:close-page': { args: [spaceId: string, pageName: string, content: string]; result: { success?: boolean; error?: string } };
+  'canvas:list-pages': { args: [spaceId: string]; result: { pages: string[]; error?: string } };
+
   // ── Agent ────────────────────────────────────────────────
   'agent:launch': {
     args: [spaceId: string, selectedText: string, anchor: AgentAnchor, options?: { repo?: string; model?: string }];
@@ -381,6 +388,7 @@ export interface IpcMessages {
   'window:collapse': { args: [] };
   'window:set-pinned': { args: [pinned: boolean] };
   'canvas-window:open': { args: [target: CanvasTarget] };
+  'canvas-window:open-page': { args: [target: { kind: 'page'; spaceId: string; page: string; title: string }] };
   'canvas-window:theme-changed': { args: [theme: string] };
 }
 

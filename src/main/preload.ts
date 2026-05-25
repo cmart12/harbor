@@ -171,6 +171,14 @@ export interface WhimAPI {
   openAgentChatInPanel(data: { agentId: string; agentPrompt: string; agentStatus: string; agentSource?: 'sdk' | 'cli' | 'conduit'; spaceId?: string }): void;
   onOpenAgentChatInPanel(callback: (data: { agentId: string; agentPrompt: string; agentStatus: string; agentSource?: 'sdk' | 'cli' | 'conduit'; spaceId?: string }) => void): void;
 
+  // ── Canvas child pages ──────────────────────────────────
+  createPage(spaceId: string, pageName: string): Promise<{ success: boolean; page: string; error?: string }>;
+  readPage(spaceId: string, pageName: string): Promise<{ content: string; error?: string }>;
+  writePage(spaceId: string, pageName: string, content: string): Promise<{ success?: boolean; error?: string }>;
+  closePage(spaceId: string, pageName: string, content: string): Promise<{ success?: boolean; error?: string }>;
+  listPages(spaceId: string): Promise<{ pages: string[]; error?: string }>;
+  openPageWindow(target: { kind: 'page'; spaceId: string; page: string; title: string }): void;
+
   // ── Settings popout window ──────────────────────────────
   openSettingsWindow(): void;
 
@@ -447,6 +455,14 @@ const api: WhimAPI = {
   onOpenAgentChatInPanel: (callback) => {
     ipcRenderer.on('main-window:open-agent-chat', (_event: unknown, data: { agentId: string; agentPrompt: string; agentStatus: string; agentSource?: 'sdk' | 'cli'; spaceId?: string }) => callback(data));
   },
+
+  // ── Canvas child pages ──────────────────────────────────
+  createPage: (spaceId, pageName) => ipcRenderer.invoke('canvas:create-page', spaceId, pageName),
+  readPage: (spaceId, pageName) => ipcRenderer.invoke('canvas:read-page', spaceId, pageName),
+  writePage: (spaceId, pageName, content) => ipcRenderer.invoke('canvas:write-page', spaceId, pageName, content),
+  closePage: (spaceId, pageName, content) => ipcRenderer.invoke('canvas:close-page', spaceId, pageName, content),
+  listPages: (spaceId) => ipcRenderer.invoke('canvas:list-pages', spaceId),
+  openPageWindow: (target) => ipcRenderer.send('canvas-window:open-page', target),
 
   // ── Settings popout window ──────────────────────────────
   openSettingsWindow: () => ipcRenderer.send('settings-window:open'),

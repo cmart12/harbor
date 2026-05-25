@@ -1,7 +1,7 @@
 import { ipcMain, shell, BrowserWindow } from 'electron';
 import { isInitialized, getSpace, getSkill, assignSpaceFolder, updateCanvasContent } from '../database';
 import { getConfigValue } from '../config';
-import { initSpaceCanvas, readCanvas, writeCanvas, scheduleAutoCommit, saveAttachment, resolveAttachmentPath, getMimeType, readSpaceFile, getSpaceHistory, restoreSpaceVersion, getSpaceVersionContent, resolveSpaceFolder } from '../workspace';
+import { initSpaceCanvas, readCanvas, writeCanvas, scheduleAutoCommit, saveAttachment, resolveAttachmentPath, getMimeType, readSpaceFile, getSpaceHistory, restoreSpaceVersion, getSpaceVersionContent, resolveSpaceFolder, createPage, readPage, writePage, listPages } from '../workspace';
 import { parseFrontmatter, serializeFrontmatter } from '../frontmatter';
 import { fetchLinkPreview } from '../services/link-preview';
 import { startWatching, stopWatching, markSelfWrite } from '../canvas-watcher';
@@ -22,6 +22,26 @@ export function registerCanvasHandlers(): void {
   ipcMain.handle('canvas:read', (_event, spaceId: string) => {
     const workspace = getConfigValue('workspace');
     if (!workspace || !isInitialized()) return { content: '', error: 'no_workspace' };
+
+    // Route page reads to page files
+    if (spaceId.startsWith('__page__')) {
+      const rest = spaceId.slice('__page__'.length);
+      const slashIdx = rest.indexOf('/');
+      if (slashIdx > 0) {
+        const realSpaceId = rest.slice(0, slashIdx);
+        const pageName = rest.slice(slashIdx + 1);
+        const space = getSpace(realSpaceId);
+        if (!space) return { content: '', error: 'not_found' };
+        let folder = space.folder;
+        if (!folder) {
+          folder = initSpaceCanvas(workspace, realSpaceId, space.description, space.body);
+          assignSpaceFolder(realSpaceId, folder);
+        }
+        const result = readPage(workspace, folder, pageName);
+        if ('error' in result) return { content: '', error: result.error };
+        return { content: result.content };
+      }
+    }
 
     const space = getSpace(spaceId);
     if (!space) return { content: '', error: 'not_found' };
@@ -69,6 +89,26 @@ export function registerCanvasHandlers(): void {
       }
     }
 
+    // Route page autosaves to the page file
+    if (spaceId.startsWith('__page__')) {
+      const rest = spaceId.slice('__page__'.length);
+      const slashIdx = rest.indexOf('/');
+      if (slashIdx > 0) {
+        const realSpaceId = rest.slice(0, slashIdx);
+        const pageName = rest.slice(slashIdx + 1);
+        const space = getSpace(realSpaceId);
+        if (!space) return { error: 'not_found' };
+        let folder = space.folder;
+        if (!folder) {
+          folder = initSpaceCanvas(workspace, realSpaceId, space.description, space.body);
+          assignSpaceFolder(realSpaceId, folder);
+        }
+        const result = writePage(workspace, folder, pageName, content);
+        if ('error' in result) return { error: result.error };
+        return { success: true };
+      }
+    }
+
     const space = getSpace(spaceId);
     if (!space) return { error: 'not_found' };
 
@@ -103,6 +143,26 @@ export function registerCanvasHandlers(): void {
   ipcMain.handle('canvas:close', (_event, spaceId: string, content: string) => {
     const workspace = getConfigValue('workspace');
     if (!workspace || !isInitialized()) return;
+
+    // Route page closes to page files
+    if (spaceId.startsWith('__page__')) {
+      const rest = spaceId.slice('__page__'.length);
+      const slashIdx = rest.indexOf('/');
+      if (slashIdx > 0) {
+        const realSpaceId = rest.slice(0, slashIdx);
+        const pageName = rest.slice(slashIdx + 1);
+        const space = getSpace(realSpaceId);
+        if (!space) return;
+        let folder = space.folder;
+        if (!folder) {
+          folder = initSpaceCanvas(workspace, realSpaceId, space.description, space.body);
+          assignSpaceFolder(realSpaceId, folder);
+        }
+        writePage(workspace, folder, pageName, content);
+        scheduleAutoCommit(workspace);
+        return;
+      }
+    }
 
     // Stop watching — user is leaving this canvas
     stopWatching(spaceId);
@@ -234,5 +294,97 @@ export function registerCanvasHandlers(): void {
 
     const { readSpaceActivityLog } = await import('../space-eventlog');
     return { events: readSpaceActivityLog(workspace, space.folder) };
+  });
+
+  // ── Child pages ──────────────────────────────────────────
+  ipcMain.handle('canvas:create-page', (_event, spaceId: string, pageName: string) => {
+    const workspace = getConfigValue('workspace');
+    if (!workspace || !isInitialized()) return { success: false, page: '', error: 'no_workspace' };
+
+    const space = getSpace(spaceId);
+    if (!space) return { success: false, page: '', error: 'not_found' };
+
+    let folder = space.folder;
+    if (!folder) {
+      folder = initSpaceCanvas(workspace, spaceId, space.description, space.body);
+      assignSpaceFolder(spaceId, folder);
+    }
+
+    const result = createPage(workspace, folder, pageName);
+    if ('error' in result) return { success: false, page: '', error: result.error };
+
+    scheduleAutoCommit(workspace);
+    return { success: true, page: result.page };
+  });
+
+  ipcMain.handle('canvas:read-page', (_event, spaceId: string, pageName: string) => {
+    const workspace = getConfigValue('workspace');
+    if (!workspace || !isInitialized()) return { content: '', error: 'no_workspace' };
+
+    const space = getSpace(spaceId);
+    if (!space) return { content: '', error: 'not_found' };
+
+    let folder = space.folder;
+    if (!folder) {
+      folder = initSpaceCanvas(workspace, spaceId, space.description, space.body);
+      assignSpaceFolder(spaceId, folder);
+    }
+
+    const result = readPage(workspace, folder, pageName);
+    if ('error' in result) return { content: '', error: result.error };
+    return { content: result.content };
+  });
+
+  ipcMain.handle('canvas:write-page', (_event, spaceId: string, pageName: string, content: string) => {
+    const workspace = getConfigValue('workspace');
+    if (!workspace || !isInitialized()) return { error: 'no_workspace' };
+
+    const space = getSpace(spaceId);
+    if (!space) return { error: 'not_found' };
+
+    let folder = space.folder;
+    if (!folder) {
+      folder = initSpaceCanvas(workspace, spaceId, space.description, space.body);
+      assignSpaceFolder(spaceId, folder);
+    }
+
+    const result = writePage(workspace, folder, pageName, content);
+    if ('error' in result) return { error: result.error };
+    return { success: true };
+  });
+
+  ipcMain.handle('canvas:close-page', (_event, spaceId: string, pageName: string, content: string) => {
+    const workspace = getConfigValue('workspace');
+    if (!workspace || !isInitialized()) return { error: 'no_workspace' };
+
+    const space = getSpace(spaceId);
+    if (!space) return { error: 'not_found' };
+
+    let folder = space.folder;
+    if (!folder) {
+      folder = initSpaceCanvas(workspace, spaceId, space.description, space.body);
+      assignSpaceFolder(spaceId, folder);
+    }
+
+    const result = writePage(workspace, folder, pageName, content);
+    if ('error' in result) return { error: result.error };
+    scheduleAutoCommit(workspace);
+    return { success: true };
+  });
+
+  ipcMain.handle('canvas:list-pages', (_event, spaceId: string) => {
+    const workspace = getConfigValue('workspace');
+    if (!workspace || !isInitialized()) return { pages: [], error: 'no_workspace' };
+
+    const space = getSpace(spaceId);
+    if (!space) return { pages: [], error: 'not_found' };
+
+    let folder = space.folder;
+    if (!folder) {
+      folder = initSpaceCanvas(workspace, spaceId, space.description, space.body);
+      assignSpaceFolder(spaceId, folder);
+    }
+
+    return { pages: listPages(workspace, folder) };
   });
 }

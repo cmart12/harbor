@@ -174,6 +174,12 @@ interface WhimAPI {
   onCanvasThemeChanged(callback: (theme: string) => void): void;
   openAgentChatInPanel(data: { agentId: string; agentPrompt: string; agentStatus: string; agentSource?: 'sdk' | 'cli'; spaceId?: string }): void;
   onOpenAgentChatInPanel(callback: (data: { agentId: string; agentPrompt: string; agentStatus: string; agentSource?: 'sdk' | 'cli'; spaceId?: string }) => void): void;
+  createPage(spaceId: string, pageName: string): Promise<{ success: boolean; page: string; error?: string }>;
+  readPage(spaceId: string, pageName: string): Promise<{ content: string; error?: string }>;
+  writePage(spaceId: string, pageName: string, content: string): Promise<{ success?: boolean; error?: string }>;
+  closePage(spaceId: string, pageName: string, content: string): Promise<{ success?: boolean; error?: string }>;
+  listPages(spaceId: string): Promise<{ pages: string[]; error?: string }>;
+  openPageWindow(target: { kind: 'page'; spaceId: string; page: string; title: string }): void;
   openSettingsWindow(): void;
   onWindowShown(callback: (data: { side: 'left' | 'right'; expanded: boolean }) => void): void;
   onWindowToggle(callback: () => void): void;
@@ -3184,6 +3190,8 @@ async function openSkillEditor(skillId: string): Promise<void> {
 
   canvasSpaceId = null;
   canvasSkillId = skillId;
+  canvasPageSpaceId = null;
+  canvasPageName = null;
 
   canvasTitle.textContent = skill.name;
   canvasTitle.contentEditable = 'false';
@@ -4897,6 +4905,8 @@ const canvasPinLabel = document.getElementById('canvas-pin-label') as HTMLSpanEl
 const canvasLaunchLabel = document.getElementById('canvas-launch-label') as HTMLSpanElement;
 let canvasSpaceId: string | null = null;
 let canvasSkillId: string | null = null;
+let canvasPageName: string | null = null;
+let canvasPageSpaceId: string | null = null;
 let canvasDirty = false;
 let canvasIsNewIntent = false;
 let canvasChatPaneOpen = false;
@@ -5080,6 +5090,8 @@ async function openCanvas(spaceId: string, expanded = false): Promise<void> {
   // ── Below runs only inside the canvas popout window ──
   canvasSpaceId = spaceId;
   canvasSkillId = null;
+  canvasPageSpaceId = null;
+  canvasPageName = null;
   canvasTitle.textContent = space.description;
   canvasTitle.contentEditable = 'false';
   canvasTitle.classList.remove('editing');
@@ -5166,6 +5178,43 @@ async function openCanvas(spaceId: string, expanded = false): Promise<void> {
   refreshAgentDecorations();
 }
 
+async function openPage(spaceId: string, pageName: string): Promise<void> {
+  canvasSpaceId = null;
+  canvasSkillId = null;
+  canvasPageSpaceId = spaceId;
+  canvasPageName = pageName;
+
+  canvasTitle.textContent = pageName;
+  canvasTitle.contentEditable = 'false';
+  canvasTitle.classList.remove('editing');
+  canvasTitleAI.classList.add('hidden');
+  canvasSaveStatus.textContent = '';
+  canvasDirty = false;
+  canvasSaveBtn.classList.add('hidden');
+  updateModeToggleUI('rendered');
+
+  closeCanvasMenu();
+  updateCanvasMenuContext(false);
+  canvasView.classList.remove('hidden');
+
+  const result = await whimAPI.readPage(spaceId, pageName);
+  if (result.error) return;
+
+  mountCanvas(canvasRoot, {
+    spaceId: `__page__${spaceId}/${pageName}`,
+    content: result.content || '',
+    theme: 'dark' as const,
+    personas: [],
+    onDirtyChange: (dirty: boolean) => {
+      canvasDirty = dirty;
+      canvasSaveBtn.classList.toggle('hidden', !dirty);
+    },
+    onSaveStatus: (status: string) => {
+      canvasSaveStatus.textContent = status;
+    },
+  });
+}
+
 async function saveCanvas(): Promise<void> {
   await saveCanvasEditor();
 }
@@ -5187,8 +5236,12 @@ async function closeCanvas(): Promise<void> {
   const spaceId = canvasSpaceId;
   const wasNewIntent = canvasIsNewIntent;
   const skillId = canvasSkillId;
+  const pageSpaceId = canvasPageSpaceId;
+  const pageName = canvasPageName;
   canvasSpaceId = null;
   canvasSkillId = null;
+  canvasPageSpaceId = null;
+  canvasPageName = null;
   canvasIsNewIntent = false;
   canvasClosing = true;
 
@@ -5199,6 +5252,8 @@ async function closeCanvas(): Promise<void> {
   if (skillId) {
     // Save skill content
     await saveSkillFromCanvas(skillId, finalContent);
+  } else if (pageSpaceId && pageName) {
+    await whimAPI.closePage(pageSpaceId, pageName, finalContent);
   } else if (spaceId) {
     await whimAPI.closeCanvas(spaceId, finalContent);
 
@@ -5985,6 +6040,8 @@ window.addEventListener('beforeunload', () => {
   const content = getCanvasContent();
   if (canvasSkillId) {
     saveSkillFromCanvas(canvasSkillId, content);
+  } else if (canvasPageSpaceId && canvasPageName) {
+    whimAPI.closePage(canvasPageSpaceId, canvasPageName, content);
   } else if (canvasSpaceId) {
     whimAPI.closeCanvas(canvasSpaceId, content);
   }
@@ -6400,6 +6457,21 @@ if (isCanvasMode) {
     if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 't') {
       e.preventDefault();
       toggleCanvasOnTop();
+      return;
+    }
+
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'N' && canvasSpaceId) {
+      e.preventDefault();
+      const spaceId = canvasSpaceId;
+      const name = prompt('New page name:');
+      if (!name) return;
+      whimAPI.createPage(spaceId, name).then(result => {
+        if (result.error) {
+          alert(result.error);
+          return;
+        }
+        whimAPI.openPageWindow({ kind: 'page', spaceId, page: result.page, title: name });
+      });
     }
   });
 
@@ -6422,6 +6494,10 @@ if (isCanvasMode) {
     if (canvasSkillId) {
       await saveSkillFromCanvas(canvasSkillId, finalContent);
       canvasSkillId = null;
+    } else if (canvasPageSpaceId && canvasPageName) {
+      await whimAPI.closePage(canvasPageSpaceId, canvasPageName, finalContent);
+      canvasPageSpaceId = null;
+      canvasPageName = null;
     } else if (canvasSpaceId) {
       await whimAPI.closeCanvas(canvasSpaceId, finalContent);
       canvasSpaceId = null;
@@ -6434,14 +6510,15 @@ if (isCanvasMode) {
   // Listen for target to load (from main process)
   whimAPI.onLoadCanvasTarget(async (target: { kind: string; id: string; title: string }) => {
     // If a canvas is already open, save and close it first
-    if (canvasSpaceId || canvasSkillId) {
+    if (canvasSpaceId || canvasSkillId || canvasPageSpaceId) {
       await saveAndUnmountCurrent();
     }
 
     if (target.kind === 'skill') {
-      // Load skills list so openSkillEditor can find the skill
       cachedSkills = await whimAPI.listSkills();
       await openSkillEditor(target.id);
+    } else if (target.kind === 'page') {
+      await openPage((target as any).spaceId, (target as any).page);
     } else {
       // Populate space data so openCanvas() can find it
       if (!spaces.find(i => i.id === target.id)) {

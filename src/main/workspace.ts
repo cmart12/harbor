@@ -686,3 +686,92 @@ export function getMimeType(filePath: string): string {
   if (ext === '.webm') return 'video/webm';
   return mimeMap[ext] || 'application/octet-stream';
 }
+
+// ── Child pages ──────────────────────────────────────────
+
+const PAGE_SLUG_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
+const RESERVED_PAGE_NAMES = new Set(['canvas', 'uploads', '.whim', '.workspace', '.git', '.ds_store']);
+
+/** Validate and normalize a page name to a safe filename slug. */
+export function sanitizePageName(name: string): string | null {
+  // Normalize: trim, lowercase, replace spaces/underscores with hyphens, strip invalid chars
+  let slug = name.trim().toLowerCase()
+    .replace(/[\s_]+/g, '-')
+    .replace(/[^a-z0-9-]/g, '')
+    .replace(/-{2,}/g, '-')
+    .replace(/^-|-$/g, '');
+
+  if (!slug || !PAGE_SLUG_PATTERN.test(slug)) return null;
+  if (RESERVED_PAGE_NAMES.has(slug)) return null;
+  if (slug.length > 80) slug = slug.slice(0, 80).replace(/-$/, '');
+  return slug;
+}
+
+/** Create a new child page in a space folder. Returns the sanitized page slug. */
+export function createPage(workspaceRoot: string, folder: string, pageName: string): { page: string } | { error: string } {
+  const slug = sanitizePageName(pageName);
+  if (!slug) return { error: 'Invalid page name. Use letters, numbers, and hyphens only.' };
+
+  const folderRoot = resolveSpaceFolder(workspaceRoot, folder);
+  const pagePath = path.join(folderRoot, `${slug}.md`);
+
+  // Safety: ensure resolved path is inside the space folder
+  const resolved = path.resolve(pagePath);
+  if (!resolved.startsWith(path.resolve(folderRoot) + path.sep) && resolved !== path.resolve(folderRoot)) {
+    return { error: 'Invalid page path' };
+  }
+
+  if (fs.existsSync(pagePath)) return { error: 'A page with that name already exists.' };
+
+  fs.writeFileSync(pagePath, '', 'utf-8');
+  return { page: slug };
+}
+
+/** Read a child page's content. */
+export function readPage(workspaceRoot: string, folder: string, pageName: string): { content: string } | { error: string } {
+  const slug = sanitizePageName(pageName);
+  if (!slug) return { error: 'Invalid page name' };
+
+  const folderRoot = resolveSpaceFolder(workspaceRoot, folder);
+  const pagePath = path.join(folderRoot, `${slug}.md`);
+
+  const resolved = path.resolve(pagePath);
+  if (!resolved.startsWith(path.resolve(folderRoot) + path.sep) && resolved !== path.resolve(folderRoot)) {
+    return { error: 'Invalid page path' };
+  }
+
+  if (!fs.existsSync(pagePath)) return { error: 'Page not found' };
+  return { content: fs.readFileSync(pagePath, 'utf-8') };
+}
+
+/** Write content to a child page. */
+export function writePage(workspaceRoot: string, folder: string, pageName: string, content: string): { success: boolean } | { error: string } {
+  const slug = sanitizePageName(pageName);
+  if (!slug) return { error: 'Invalid page name' };
+
+  const folderRoot = resolveSpaceFolder(workspaceRoot, folder);
+  const pagePath = path.join(folderRoot, `${slug}.md`);
+
+  const resolved = path.resolve(pagePath);
+  if (!resolved.startsWith(path.resolve(folderRoot) + path.sep) && resolved !== path.resolve(folderRoot)) {
+    return { error: 'Invalid page path' };
+  }
+
+  fs.writeFileSync(pagePath, content, 'utf-8');
+  return { success: true };
+}
+
+/** List all child pages in a space folder (all .md files except canvas.md). */
+export function listPages(workspaceRoot: string, folder: string): string[] {
+  const folderRoot = resolveSpaceFolder(workspaceRoot, folder);
+  if (!fs.existsSync(folderRoot)) return [];
+
+  try {
+    return fs.readdirSync(folderRoot)
+      .filter(f => f.endsWith('.md') && f !== 'canvas.md')
+      .map(f => f.replace(/\.md$/, ''))
+      .sort();
+  } catch {
+    return [];
+  }
+}

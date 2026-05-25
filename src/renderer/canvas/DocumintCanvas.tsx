@@ -33,6 +33,12 @@ declare const whimAPI: {
   list(): Promise<Array<{ id: string; description: string; status: string }>>;
   searchSpaces(query: string): Promise<Array<{ id: string; description: string; status: string }>>;
   openCanvasWindow(target: { kind: string; id: string; title: string }): void;
+  createPage(spaceId: string, pageName: string): Promise<{ success: boolean; page: string; error?: string }>;
+  readPage(spaceId: string, pageName: string): Promise<{ content: string; error?: string }>;
+  writePage(spaceId: string, pageName: string, content: string): Promise<{ success?: boolean; error?: string }>;
+  closePage(spaceId: string, pageName: string, content: string): Promise<{ success?: boolean; error?: string }>;
+  listPages(spaceId: string): Promise<{ pages: string[]; error?: string }>;
+  openPageWindow(target: { kind: 'page'; spaceId: string; page: string; title: string }): void;
   openExternal(url: string): Promise<{ ok: true }>;
 };
 
@@ -205,7 +211,15 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
         return result.relativePath!;
       },
       openFile(url: string) {
-        if (url.startsWith('whim://space/')) {
+        if (url.startsWith('whim://page/')) {
+          const raw = url.replace('whim://page/', '');
+          const slashIdx = raw.indexOf('/');
+          if (slashIdx > 0) {
+            const targetSpaceId = decodeURIComponent(raw.slice(0, slashIdx));
+            const pageName = decodeURIComponent(raw.slice(slashIdx + 1));
+            whimAPI.openPageWindow({ kind: 'page', spaceId: targetSpaceId, page: pageName, title: pageName });
+          }
+        } else if (url.startsWith('whim://space/')) {
           const targetId = url.replace('whim://space/', '');
           whimAPI.openCanvasWindow({ kind: 'space', id: targetId, title: '' });
         } else if (url.startsWith('http://') || url.startsWith('https://')) {
