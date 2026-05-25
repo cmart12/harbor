@@ -77,20 +77,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify Azure credentials
-        env:
-          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-        shell: pwsh
-        run: |
-          Write-Host "AZURE_TENANT_ID set: $($env:AZURE_TENANT_ID.Length -gt 0)"
-          Write-Host "AZURE_CLIENT_ID set: $($env:AZURE_CLIENT_ID.Length -gt 0)"
-          Write-Host "AZURE_CLIENT_SECRET set: $($env:AZURE_CLIENT_SECRET.Length -gt 0)"
-          Write-Host "AZURE_TENANT_ID length: $($env:AZURE_TENANT_ID.Length)"
-          Write-Host "AZURE_CLIENT_ID length: $($env:AZURE_CLIENT_ID.Length)"
-          Write-Host "AZURE_CLIENT_SECRET length: $($env:AZURE_CLIENT_SECRET.Length)"
-
       - name: Build, sign, and publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
