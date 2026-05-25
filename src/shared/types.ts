@@ -98,7 +98,8 @@ export interface RecallMatch {
 
 export type CanvasTarget =
   | { kind: 'space'; id: string; title: string }
-  | { kind: 'skill'; id: string; title: string };
+  | { kind: 'skill'; id: string; title: string }
+  | { kind: 'page'; spaceId: string; page: string; title: string };
 
 // ── Skills ──────────────────────────────────────────────
 

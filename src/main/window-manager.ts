@@ -25,6 +25,7 @@ let isSnapping = false;
 let showTimestamp = 0;
 let unpinTimestamp = 0;
 let blurHideTimer: ReturnType<typeof setTimeout> | null = null;
+let storedPreloadPath: string = '';
 
 // ── Window stacking policy ──────────────────────────────
 // Centralized helpers so every callsite agrees on when a window is alwaysOnTop.
@@ -178,6 +179,8 @@ export function setupSnapOnDrop(): void {
 
 /** Register all window-related IPC handlers. Call after createMainWindow(). */
 export function registerWindowIpcHandlers(preloadPath: string): void {
+  storedPreloadPath = preloadPath;
+
   ipcMain.on('window:hide', () => {
     cancelBlurTimer();
     mainWindow?.hide();
@@ -286,6 +289,11 @@ export function registerWindowIpcHandlers(preloadPath: string): void {
     });
   });
 
+  // Open a child page in a new canvas window
+  ipcMain.on('canvas-window:open-page', (_event, target: { kind: 'page'; spaceId: string; page: string; title: string }) => {
+    openPageInNewWindow(preloadPath, target.spaceId, target.page);
+  });
+
   // Toggle user-pinned state for the calling canvas window.
   // When the side pane is pinned all canvases are already alwaysOnTop;
   // per-canvas pin gives the user independent control.
@@ -356,7 +364,14 @@ export function registerWindowIpcHandlers(preloadPath: string): void {
 /** Open external links in the user's default browser instead of inside Electron. */
 function attachExternalLinkHandler(win: BrowserWindow): void {
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith('whim://space/')) {
+    if (url.startsWith('whim://page/')) {
+      const parts = decodeURIComponent(url.replace('whim://page/', '')).split('/');
+      if (parts.length >= 2) {
+        const [spaceId, ...rest] = parts;
+        const page = rest.join('/');
+        openPageInNewWindow(storedPreloadPath, spaceId, page);
+      }
+    } else if (url.startsWith('whim://space/')) {
       const spaceId = url.replace('whim://space/', '');
       navigateCanvasToSpace(win, spaceId);
     } else if (url.startsWith('http://') || url.startsWith('https://')) {
@@ -366,7 +381,15 @@ function attachExternalLinkHandler(win: BrowserWindow): void {
   });
 
   win.webContents.on('will-navigate', (event, url) => {
-    if (url.startsWith('whim://space/')) {
+    if (url.startsWith('whim://page/')) {
+      event.preventDefault();
+      const parts = decodeURIComponent(url.replace('whim://page/', '')).split('/');
+      if (parts.length >= 2) {
+        const [spaceId, ...rest] = parts;
+        const page = rest.join('/');
+        openPageInNewWindow(storedPreloadPath, spaceId, page);
+      }
+    } else if (url.startsWith('whim://space/')) {
       event.preventDefault();
       const spaceId = url.replace('whim://space/', '');
       navigateCanvasToSpace(win, spaceId);
@@ -382,6 +405,16 @@ function navigateCanvasToSpace(win: BrowserWindow, spaceId: string): void {
   if (!win.isDestroyed()) {
     win.webContents.send('canvas-window:load-target', { kind: 'space', id: spaceId, title: '' });
   }
+}
+
+/** Open a child page in a new canvas window. */
+function openPageInNewWindow(preloadPath: string, spaceId: string, page: string): void {
+  const win = createCanvasWindow(preloadPath);
+  const target = { kind: 'page' as const, spaceId, page, title: page };
+  win.webContents.once('did-finish-load', () => {
+    win.webContents.send('canvas-window:load-target', target);
+    win.show();
+  });
 }
 
 /** Persist the user's preferred width when they resize the window. */
