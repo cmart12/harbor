@@ -52,7 +52,7 @@
       "azureSignOptions": {
         "publisherName": "CN=Patrick Nikoletich",
         "endpoint": "https://wus2.codesigning.azure.net/",
-        "codeSigningAccountName": "microsoft@isolated.dev",
+        "codeSigningAccountName": "whim",
         "certificateProfileName": "nurturewhim"
       }
     },
