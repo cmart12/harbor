@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { ChatMessage, ChatEvent, ChatAttachment, AssistantMessage as AssistantMsgType, ToolCallMessage, ReasoningMessage, ApprovalMessage, UserInputMessage, ElicitationMessage, SessionEventMessage } from '../../shared/chat-types';
 import { MessageList } from './MessageList';
 import { PromptBar } from './PromptBar';
 import { SubagentDetailOverlay } from './SubagentDetailOverlay';
+import { WorkingIndicator } from './tiles/WorkingIndicator';
 import QRCode from 'qrcode';
 
 declare const whimAPI: {
@@ -27,6 +28,7 @@ declare const whimAPI: {
   disableRemote: (agentId: string) => Promise<{ ok?: boolean; error?: string }>;
   onAgentRemoteChanged: (callback: (data: { agentId: string; enabled: boolean; remoteSteerable: boolean; url?: string }) => void) => void;
   openExternal: (url: string) => Promise<any>;
+  listAllAgents: () => Promise<Array<{ agentId: string; status: string; [key: string]: any }>>;
   [key: string]: any;
 };
 
@@ -370,6 +372,7 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
   });
   const [isBusy, setIsBusy] = useState(initialStatus === 'running' && agentSource !== 'cli');
   const [status, setStatus] = useState(initialAgentId ? initialStatus : 'new');
+  const [isWaitingForInput, setIsWaitingForInput] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(!!initialAgentId);
   const [historyLoaded, setHistoryLoaded] = useState(!initialAgentId);
   const [models, setModels] = useState<{ id: string; name?: string }[]>([]);
@@ -553,6 +556,29 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
         historyLoadedRef.current = true;
         setIsLoadingHistory(false);
         setHistoryLoaded(true);
+
+        // Reconcile status with backend truth — fixes stale "running" when
+        // session.idle was missed (e.g. agent completed before chat opened,
+        // or session.idle arrived during history load and was skipped by replay)
+        try {
+          const allAgents = await whimAPI.listAllAgents();
+          const match = allAgents.find((a: any) => a.agentId === initialAgentId);
+          if (match) {
+            const backendStatus = match.status;
+            if (backendStatus === 'completed' || backendStatus === 'failed') {
+              setIsBusy(false);
+              setStatus(backendStatus);
+            } else if (backendStatus === 'waiting-approval') {
+              setIsWaitingForInput(true);
+              setStatus('waiting-approval');
+            } else if (backendStatus === 'running') {
+              setIsBusy(true);
+              setStatus('running');
+            }
+          }
+        } catch {
+          // Non-fatal — keep whatever status we have
+        }
       }
     })();
   }, [initialAgentId]);
@@ -678,16 +704,16 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
         case 'session.idle': {
           setIsBusy(false);
           setStatus('completed');
-          currentAssistantId.current = null;
-          currentReasoningId.current = null;
+          setIsWaitingForInput(false);
+          finalizeStreamingMessages();
           break;
         }
 
         case 'session.error': {
           setIsBusy(false);
           setStatus('failed');
-          currentAssistantId.current = null;
-          currentReasoningId.current = null;
+          setIsWaitingForInput(false);
+          finalizeStreamingMessages();
           setMessages(prev => [...prev, {
             id: genId(),
             type: 'session_event',
@@ -722,6 +748,7 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
         }
 
         case 'approval.needed': {
+          setIsWaitingForInput(true);
           setMessages(prev => [...prev, {
             id: genId(),
             type: 'approval',
@@ -737,6 +764,7 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
         }
 
         case 'approval.resolved': {
+          setIsWaitingForInput(false);
           setMessages(prev => prev.map(m =>
             m.type === 'approval' && m.requestId === event.requestId
               ? { ...m, responded: true, approved: event.approved }
@@ -746,6 +774,7 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
         }
 
         case 'user_input.requested': {
+          setIsWaitingForInput(true);
           setMessages(prev => [...prev, {
             id: genId(),
             type: 'user_input',
@@ -761,6 +790,7 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
         }
 
         case 'user_input.resolved': {
+          setIsWaitingForInput(false);
           setMessages(prev => prev.map(m =>
             m.type === 'user_input' && m.requestId === event.requestId
               ? { ...m, responded: true, answer: event.answer, wasFreeform: event.wasFreeform }
@@ -770,6 +800,7 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
         }
 
         case 'elicitation.requested': {
+          setIsWaitingForInput(true);
           setMessages(prev => [...prev, {
             id: genId(),
             type: 'elicitation',
@@ -786,6 +817,7 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
         }
 
         case 'elicitation.resolved': {
+          setIsWaitingForInput(false);
           setMessages(prev => prev.map(m =>
             m.type === 'elicitation' && m.requestId === event.requestId
               ? { ...m, responded: true, action: event.action, content: event.content }
@@ -1003,9 +1035,26 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
     }
   }, [currentAgentId, remoteState.enabled, showRemoteError]);
 
+  const finalizeStreamingMessages = useCallback(() => {
+    currentAssistantId.current = null;
+    currentReasoningId.current = null;
+    setMessages(prev => prev.map(m => {
+      if (m.type === 'assistant' && m.isStreaming) return { ...m, isStreaming: false };
+      if (m.type === 'reasoning' && m.isStreaming) return { ...m, isStreaming: false };
+      return m;
+    }));
+  }, []);
+
   const handleAbort = useCallback(async () => {
-    if (currentAgentId) await whimAPI.abortAgent(currentAgentId);
-  }, [currentAgentId]);
+    if (!currentAgentId) return;
+    // Optimistic UI update — stop showing working state immediately
+    setIsBusy(false);
+    setStatus('failed');
+    setIsWaitingForInput(false);
+    finalizeStreamingMessages();
+    // Fire backend abort (errors are non-fatal)
+    void whimAPI.abortAgent(currentAgentId).catch(() => {});
+  }, [currentAgentId, finalizeStreamingMessages]);
 
   const statusIcon = status === 'new' ? '✦' :
                      status === 'running' ? '⚡' :
@@ -1020,6 +1069,32 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
 
   const selectedModelInfo = models.find(m => m.id === selectedModel);
   const cwdFolderName = cwd ? cwd.split('/').pop() || cwd : '';
+
+  // Derive streaming preview text from current messages (no extra state needed)
+  const streamingPreviews = useMemo(() => {
+    let thinkingPreview: string | undefined;
+    let outputPreview: string | undefined;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m.type === 'reasoning' && m.isStreaming && m.content) {
+        // Take last ~80 chars of thinking content
+        const text = m.content.replace(/\s+/g, ' ').trim();
+        thinkingPreview = text.length > 80 ? '…' + text.slice(-80) : text;
+        break;
+      }
+      if (m.type === 'assistant' && m.isStreaming && m.content) {
+        const text = m.content.replace(/\s+/g, ' ').trim();
+        outputPreview = text.length > 80 ? '…' + text.slice(-80) : text;
+        break;
+      }
+      // Stop scanning if we hit a non-streaming message type that isn't a tool
+      if (m.type === 'user' || (m.type === 'assistant' && !m.isStreaming)) break;
+    }
+    return { thinkingPreview, outputPreview };
+  }, [messages]);
+
+  // Show working indicator only when actively running (not waiting for user input)
+  const showWorkingIndicator = isBusy && !isWaitingForInput;
 
   return (
     <div className="chat-container">
@@ -1207,6 +1282,13 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
         parentAgentId={currentAgentId || ''}
         onOpenSubagentDetail={setOverlayAgentId}
       />
+
+      {showWorkingIndicator && (
+        <WorkingIndicator
+          thinkingPreview={streamingPreviews.thinkingPreview}
+          outputPreview={streamingPreviews.outputPreview}
+        />
+      )}
 
       <PromptBar
         onSend={handleSend}
