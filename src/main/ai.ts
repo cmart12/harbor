@@ -220,7 +220,9 @@ async function getRecallSession(): Promise<CopilotSession | null> {
 export async function initCopilot(): Promise<void> {
   try {
     const cliPath = resolveCopilotCliPath();
-    const opts: Record<string, unknown> = { useStdio: false, remote: true };
+    // remote: false keeps sessions local-only by default; per-session
+    // remote access is enabled on demand via enableRemoteControl().
+    const opts: Record<string, unknown> = { useStdio: false, remote: false };
     if (cliPath) {
       opts.cliPath = cliPath;
       console.log(`[copilot-sdk] Using local CLI: ${cliPath}`);
