@@ -1,6 +1,6 @@
 {
   "name": "whim",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "description": "Quick capture from system tray",
   "productName": "Copilot Whim",
   "main": "dist/main/main.js",
@@ -58,7 +58,10 @@
     },
     "mac": {
       "icon": "build/icon.icns",
-      "target": ["dmg", "zip"],
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "category": "public.app-category.productivity",
       "hardenedRuntime": true,
       "entitlements": "scripts/entitlements.plist",
