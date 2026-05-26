@@ -79,8 +79,38 @@ export function registerSettingsHandlers(): void {
 
   // Agent Personas
   ipcMain.handle('personas:list', () => {
-    const personas = (getConfigValue('personas') || []) as AgentPersona[];
+    let personas = (getConfigValue('personas') || []) as AgentPersona[];
     const seeded = getConfigValue('personasSeeded');
+
+    // Migrate legacy runLocation values from before the cca/cloud rename
+    let migrated = false;
+    personas = personas.map(p => {
+      if ((p as any).runLocation === 'cloud-sandbox') {
+        migrated = true;
+        return { ...p, runLocation: 'cloud' as const };
+      }
+      // Old 'cloud' meant CCA (Copilot Coding Agent) — now 'cca'
+      // But only migrate if this is the old CCA persona (not the new cloud ephemeral).
+      // The old CCA persona never had ephemeral: true.
+      if (p.runLocation === 'cloud' && p.ephemeral !== true) {
+        migrated = true;
+        return { ...p, runLocation: 'cca' as const };
+      }
+      return p;
+    });
+    // Also migrate old default handles
+    personas = personas.map(p => {
+      if (p.id === 'default-cloud' && p.handle === 'cloud' && p.runLocation === 'cca') {
+        migrated = true;
+        return { ...p, id: 'default-pr', handle: 'pr', emoji: p.emoji === '☁️' ? '🔀' : p.emoji };
+      }
+      if (p.id === 'default-sandbox-cloud' && p.handle === 'sandbox-cloud' && p.runLocation === 'cloud') {
+        migrated = true;
+        return { ...p, id: 'default-cloud', handle: 'cloud', emoji: p.emoji === '📦' ? '☁️' : p.emoji };
+      }
+      return p;
+    });
+    if (migrated) setConfigValue('personas', personas);
 
     if (!seeded) {
       // One-time seed: merge any defaults whose handle doesn't already exist
@@ -121,8 +151,9 @@ export function registerSettingsHandlers(): void {
         ? raw.instructions.trim().slice(0, 2000)
         : '';
       const model = typeof raw.model === 'string' ? raw.model.trim() : '';
-      const runLocation = raw.runLocation === 'cloud' ? 'cloud' as const
+      const runLocation = raw.runLocation === 'cca' ? 'cca' as const
         : raw.runLocation === 'conduit' ? 'conduit' as const
+        : raw.runLocation === 'cloud' ? 'cloud' as const
         : 'local' as const;
 
       const emoji = typeof raw.emoji === 'string' ? raw.emoji.trim().slice(0, 8) : '';

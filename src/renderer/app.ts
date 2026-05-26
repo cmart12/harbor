@@ -50,7 +50,7 @@ interface AgentPersona {
   handle: string;
   instructions: string;
   model: string;
-  runLocation: 'local' | 'cloud' | 'conduit';
+  runLocation: 'local' | 'cca' | 'cloud' | 'conduit';
   sandboxed?: boolean;
   emoji?: string;
   cliRuntime?: string;
@@ -1033,16 +1033,21 @@ function renderAgentEditor(persona: AgentPersona): void {
   const localOpt = document.createElement('option');
   localOpt.value = 'local';
   localOpt.textContent = '💻 Local';
+  const ccaOpt = document.createElement('option');
+  ccaOpt.value = 'cca';
+  ccaOpt.textContent = '🔀 PR (GitHub CCA)';
   const cloudOpt = document.createElement('option');
   cloudOpt.value = 'cloud';
-  cloudOpt.textContent = '☁️ Cloud (GitHub CCA)';
+  cloudOpt.textContent = '☁️ Cloud';
   const conduitOpt = document.createElement('option');
   conduitOpt.value = 'conduit';
   conduitOpt.textContent = '🔗 Conduit';
   locationSelect.appendChild(localOpt);
+  locationSelect.appendChild(ccaOpt);
   locationSelect.appendChild(cloudOpt);
   locationSelect.appendChild(conduitOpt);
-  if (persona.runLocation === 'cloud') cloudOpt.selected = true;
+  if (persona.runLocation === 'cca') ccaOpt.selected = true;
+  else if (persona.runLocation === 'cloud') cloudOpt.selected = true;
   else if (persona.runLocation === 'conduit') conduitOpt.selected = true;
   locationRow.appendChild(locationLabel);
   locationRow.appendChild(locationSelect);
@@ -1050,7 +1055,7 @@ function renderAgentEditor(persona: AgentPersona): void {
   // Sandbox checkbox (available on all platforms with runtime sandbox support)
   const sandboxRow = document.createElement('div');
   sandboxRow.className = 'persona-form-row persona-sandbox-row';
-  if (persona.runLocation === 'cloud' || persona.runLocation === 'conduit') {
+  if (persona.runLocation !== 'local') {
     sandboxRow.style.display = 'none';
   }
   const sandboxLabel = document.createElement('label');
@@ -1069,7 +1074,7 @@ function renderAgentEditor(persona: AgentPersona): void {
   sandboxRow.appendChild(sandboxInfoNote);
 
   locationSelect.addEventListener('change', () => {
-    if (locationSelect.value === 'cloud' || locationSelect.value === 'conduit') {
+    if (locationSelect.value !== 'local') {
       sandboxRow.style.display = 'none';
       sandboxCheck.checked = false;
       sandboxOverrideRow.style.display = 'none';
@@ -1140,7 +1145,7 @@ function renderAgentEditor(persona: AgentPersona): void {
   });
 
   function updateSandboxOverrideVisibility(): void {
-    const show = sandboxCheck.checked && locationSelect.value !== 'cloud';
+    const show = sandboxCheck.checked && locationSelect.value === 'local';
     sandboxInfoNote.style.display = show ? '' : 'none';
     if (show) {
       sandboxOverrideRow.style.display = '';
@@ -1191,7 +1196,7 @@ function renderAgentEditor(persona: AgentPersona): void {
   // Ephemeral mode checkbox
   const ephemeralRow = document.createElement('div');
   ephemeralRow.className = 'persona-form-row persona-ephemeral-row';
-  if (persona.runLocation === 'cloud' || persona.runLocation === 'conduit') {
+  if (persona.runLocation === 'cca' || persona.runLocation === 'conduit') {
     ephemeralRow.style.display = 'none';
   }
   const ephemeralLabel = document.createElement('label');
@@ -1203,9 +1208,9 @@ function renderAgentEditor(persona: AgentPersona): void {
   ephemeralLabel.appendChild(document.createTextNode(' 🕵️ Ephemeral mode (no session history — nothing persisted to disk or DB)'));
   ephemeralRow.appendChild(ephemeralLabel);
 
-  // Hide ephemeral option for cloud/conduit personas
+  // Hide ephemeral option for CCA/conduit personas
   locationSelect.addEventListener('change', () => {
-    if (locationSelect.value === 'cloud' || locationSelect.value === 'conduit') {
+    if (locationSelect.value === 'cca' || locationSelect.value === 'conduit') {
       ephemeralRow.style.display = 'none';
       ephemeralCheck.checked = false;
     } else {
@@ -1228,7 +1233,7 @@ function renderAgentEditor(persona: AgentPersona): void {
     const rawHandle = isDefault ? DEFAULT_AGENT_HANDLE : handleInput.value.trim().replace(/^@/, '').toLowerCase();
     const instructions = instrInput.value.trim();
     const model = modelSelect.value;
-    const runLocation = locationSelect.value as 'local' | 'cloud' | 'conduit';
+    const runLocation = locationSelect.value as 'local' | 'cca' | 'cloud' | 'conduit';
     const sandboxed = sandboxCheck.checked && runLocation === 'local';
     const emoji = selectedEmoji;
     const cliRuntime = runtimeSelect.value;
@@ -1274,7 +1279,7 @@ function renderAgentEditor(persona: AgentPersona): void {
           ...(sandboxed ? { sandboxed: true } : { sandboxed: undefined }),
           ...(sandboxOverride ? { sandboxPolicyOverride: sandboxOverride } : { sandboxPolicyOverride: undefined }),
           ...(yoloCheck.checked ? { yolo: true } : { yolo: undefined }),
-          ...(ephemeralCheck.checked && runLocation === 'local' ? { ephemeral: true } : { ephemeral: undefined }),
+          ...(ephemeralCheck.checked && (runLocation === 'local' || runLocation === 'cloud') ? { ephemeral: true } : { ephemeral: undefined }),
         }
       : p
     );
@@ -2702,15 +2707,15 @@ function render(): void {
     let agentsHtml = '';
     if (spaceAgents.length > 0) {
       const agentCards = spaceAgents.map(agent => {
-        const isCloud = agent.source === 'cloud';
+        const isCca = agent.source === 'cca';
         const isConduit = agent.source === 'conduit';
-        const aIcon = isCloud ? '☁️' :
+        const aIcon = isCca ? '🔀' :
                       isConduit ? '🔗' :
                       agent.status === 'running' ? '⚡' :
                       agent.status === 'waiting-approval' ? '⏳' :
                       agent.status === 'completed' ? '✓' :
                       '✗';
-        const aClass = agent.status === 'running' ? (isCloud ? 'mini-agent-cloud' : isConduit ? 'mini-agent-cloud' : 'mini-agent-running') :
+        const aClass = agent.status === 'running' ? (isCca ? 'mini-agent-cloud' : isConduit ? 'mini-agent-cloud' : 'mini-agent-running') :
                        agent.status === 'waiting-approval' ? 'mini-agent-waiting' :
                        agent.status === 'completed' ? 'mini-agent-completed' :
                        'mini-agent-failed';
@@ -3348,7 +3353,7 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
   countEl.textContent = String(spaces.filter(i => i.status !== 'done').length);
 
   // Gather all agents (including workspace-level ones)
-  let allAgents: Array<{ agentId: string; sessionId: string; status: string; summary: string; selectedText: string; quotedText?: string; spaceId: string; createdAt?: string; pendingApprovalId?: string | null; pendingPermissionKind?: string | null; source?: 'sdk' | 'cli' | 'cloud' | 'conduit'; personaHandle?: string | null; sandboxed?: boolean }> = [];
+  let allAgents: Array<{ agentId: string; sessionId: string; status: string; summary: string; selectedText: string; quotedText?: string; spaceId: string; createdAt?: string; pendingApprovalId?: string | null; pendingPermissionKind?: string | null; source?: 'sdk' | 'cli' | 'cca' | 'conduit'; personaHandle?: string | null; sandboxed?: boolean }> = [];
 
   try {
     allAgents = await whimAPI.listAllAgents();
@@ -3427,15 +3432,15 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
                        '<svg class="agent-icon-svg" width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="9" fill="#ef4444"/><path d="M6 6L12 12M12 6L6 12" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>';
 
     // Source label (cloud/cli/conduit/local)
-    const sourceLabel = agent.source === 'cloud' ? '<span class="agent-card-source">☁️ Cloud</span>'
+    const sourceLabel = agent.source === 'cca' ? '<span class="agent-card-source">🔀 PR</span>'
       : agent.source === 'cli' ? '<span class="agent-card-source">🖥 CLI</span>'
       : agent.source === 'conduit' ? '<span class="agent-card-source">🔗 Conduit</span>'
       : '';
 
     const intentLabel = agent.source === 'cli'
       ? 'CLI Session'
-      : agent.source === 'cloud'
-        ? 'Cloud Agent'
+      : agent.source === 'cca'
+        ? 'PR Agent'
         : agent.source === 'conduit'
           ? 'Conduit Agent'
           : agent.spaceId === '__workspace__'
@@ -3508,7 +3513,7 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
     const trivialSummaries = ['Completed', 'Failed', 'Starting...', ''];
     const showSummary = (agent.status === 'completed' || agent.status === 'failed') && agent.summary && !trivialSummaries.includes(agent.summary);
 
-    const cardTitle = agent.source === 'cloud' ? 'Click to open in browser' : 'Click to open chat';
+    const cardTitle = agent.source === 'cca' ? 'Click to open in browser' : 'Click to open chat';
 
     return `
       <div class="agent-card ${statusClass}" data-agent-id="${agent.agentId}" title="${cardTitle}">
@@ -3541,8 +3546,8 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
       const agent = allAgents.find(a => a.agentId === agentId);
       if (!agent) return;
 
-      if (agent.source === 'cloud') {
-        // Open cloud agent session in the browser
+      if (agent.source === 'cca') {
+        // Open CCA (PR agent) session in the browser
         const status = await whimAPI.getCloudJobStatus(agentId);
         const url = (status as any)?.url || `https://github.com`;
         whimAPI.openExternal(url);
@@ -3650,7 +3655,7 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
   }
 }
 
-let renderedAgents: Array<{ agentId: string; sessionId: string; status: string; summary: string; selectedText: string; spaceId: string; createdAt?: string; source?: 'sdk' | 'cli' | 'cloud' | 'conduit' }> = [];
+let renderedAgents: Array<{ agentId: string; sessionId: string; status: string; summary: string; selectedText: string; spaceId: string; createdAt?: string; source?: 'sdk' | 'cli' | 'cca' | 'conduit' }> = [];
 
 /**
  * Render a "Conduit Sessions" panel at the bottom of the Workers tab,
@@ -5679,7 +5684,7 @@ const chatView = document.getElementById('chat-view') as HTMLDivElement;
 const chatRoot = document.getElementById('chat-root') as HTMLDivElement;
 let activeConduitChat = false;
 
-async function openAgentChat(agentId: string | undefined, agentPrompt: string, agentStatus: string, agentSource?: 'sdk' | 'cli' | 'conduit', spaceId?: string, conduitSessionId?: string): Promise<void> {
+async function openAgentChat(agentId: string | undefined, agentPrompt: string, agentStatus: string, agentSource?: 'sdk' | 'cli' | 'cca' | 'conduit', spaceId?: string, conduitSessionId?: string): Promise<void> {
   // Hide other views, show chat inline
   mainView.classList.add('hidden');
   hideSettings();

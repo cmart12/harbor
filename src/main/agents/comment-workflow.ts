@@ -12,6 +12,7 @@ import { InteractionBroker } from './interaction-broker';
 import { buildCliToolsPrompt } from './sdk-runner';
 import { buildSandboxLaunchSetup } from './sandbox-launch';
 import { SANDBOX_SYSTEM_PROMPT } from './sandbox-policies';
+import { getWorkspaceRepo } from '../cloud-agent';
 
 /** Shared dependencies injected from agent-service at init time. */
 let registry: AgentRegistry;
@@ -94,6 +95,16 @@ On this text: "${quotedText}"
 The full canvas document is available as canvas.md in the working directory.
 If you make changes to the document, clearly describe what you changed.${cliToolsPrompt}`;
 
+    // Resolve cloud session options for cloud personas
+    const isCloudSandbox = persona.runLocation === 'cloud';
+    let cloudOpts: { repository?: { owner: string; name: string } } | undefined;
+    if (isCloudSandbox) {
+      try {
+        const repoInfo = await getWorkspaceRepo(workingDir);
+        cloudOpts = repoInfo ? { repository: { owner: repoInfo.owner, name: repoInfo.repo } } : {};
+      } catch { cloudOpts = {}; }
+    }
+
     const session = await client.createSession({
       workingDirectory: workingDir,
       ...(sandboxConfigs ? { configDir: sandboxConfigs.onDir } : {}),
@@ -101,6 +112,7 @@ If you make changes to the document, clearly describe what you changed.${cliTool
       tools: customTools,
       ...(persona.model ? { model: persona.model } : {}),
       ...(hooks ? { hooks } : {}),
+      ...(cloudOpts ? { cloud: cloudOpts } : {}),
       onPermissionRequest: useHostPathAwareHandler
         ? broker.createPathAwareSandboxPermissionHandler(findRecord)
         : useMxcOnlyAutoApprove

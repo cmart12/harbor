@@ -505,7 +505,7 @@ describe('IPC handlers', () => {
       cfg.mockImplementationOnce((key: string) => key === 'workspace' ? '/mock/workspace' : null as any);
       cfg.mockImplementationOnce((key: string) => key === 'personas' ? [{
         id: 'p2', handle: 'cloudie', instructions: 'You run in the cloud.',
-        model: 'gpt-4o', runLocation: 'cloud',
+        model: 'gpt-4o', runLocation: 'cca',
       }] as any : null as any);
       const { launchCloudAgent } = await import('./cloud-agent');
       vi.mocked(launchCloudAgent).mockClear();
@@ -592,15 +592,19 @@ describe('IPC handlers', () => {
         expect.objectContaining({ id: 'default-agent', handle: 'agent' }),
         expect.objectContaining({ id: 'default-editor', handle: 'editor', emoji: '✏️' }),
         expect.objectContaining({ id: 'default-dev', handle: 'dev', emoji: '🛠️' }),
+        expect.objectContaining({ id: 'default-pr', handle: 'pr', runLocation: 'cca', emoji: '🔀' }),
         expect.objectContaining({ id: 'default-cloud', handle: 'cloud', runLocation: 'cloud', emoji: '☁️' }),
+        expect.objectContaining({ id: 'default-secret-agent', handle: 'secret-agent', ephemeral: true, emoji: '🕵️' }),
       ]));
-      expect(result).toHaveLength(4);
+      expect(result).toHaveLength(6);
 
       expect(setConfigValue).toHaveBeenCalledWith('personas', expect.arrayContaining([
         expect.objectContaining({ id: 'default-agent', handle: 'agent' }),
         expect.objectContaining({ handle: 'editor' }),
         expect.objectContaining({ handle: 'dev' }),
+        expect.objectContaining({ handle: 'pr' }),
         expect.objectContaining({ handle: 'cloud' }),
+        expect.objectContaining({ handle: 'secret-agent' }),
       ]));
       expect(setConfigValue).toHaveBeenCalledWith('personasSeeded', true);
     });
@@ -688,9 +692,11 @@ describe('IPC handlers', () => {
         expect.objectContaining({ handle: 'reviewer' }),
         expect.objectContaining({ handle: 'editor' }),
         expect.objectContaining({ handle: 'dev' }),
+        expect.objectContaining({ handle: 'pr' }),
         expect.objectContaining({ handle: 'cloud' }),
+        expect.objectContaining({ handle: 'secret-agent' }),
       ]));
-      expect(result).toHaveLength(5);
+      expect(result).toHaveLength(7);
       expect(setConfigValue).toHaveBeenCalledWith('personasSeeded', true);
 
       // Restore default mock

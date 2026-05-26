@@ -26,8 +26,8 @@ export function registerAgentHandlers(): void {
     const persona = allPersonas.find(p => p.handle === personaHandle);
     if (!persona) return { error: 'persona_not_found' };
 
-    // Route to cloud if persona is configured for cloud execution
-    if (persona.runLocation === 'cloud') {
+    // Route to CCA (Copilot Coding Agent) if persona is configured for PR-based cloud execution
+    if (persona.runLocation === 'cca') {
       const prompt = `${persona.instructions}\n\nComment: "${commentBody}"\nOn text: "${quotedText}"`;
       const { getWorkspaceRepo, getGitHubToken, launchCloudAgent } = await import('../cloud-agent');
       const repoInfo = await getWorkspaceRepo(workspace);
@@ -46,7 +46,7 @@ export function registerAgentHandlers(): void {
       createAgentSession({
         id: agentId, session_id: result.sessionId, space_id: spaceId,
         prompt: commentBody, status: 'running', summary: `Cloud job ${result.jobId}`,
-        working_dir: workspace, source: 'cloud' as any, persona_handle: persona.handle,
+        working_dir: workspace, source: 'cca' as any, persona_handle: persona.handle,
         quoted_text: quotedText || null, created_at: now, updated_at: now,
       });
 
@@ -148,7 +148,7 @@ export function registerAgentHandlers(): void {
       if (!persona) return { error: `Persona @${personaHandle} not found` };
     }
 
-    if (persona && persona.runLocation === 'cloud') {
+    if (persona && persona.runLocation === 'cca') {
       const fullPrompt = `${persona.instructions}\n\n${prompt}`;
       const { getWorkspaceRepo, getGitHubToken, launchCloudAgent } = await import('../cloud-agent');
       const repoInfo = await getWorkspaceRepo(workspace);
@@ -173,7 +173,7 @@ export function registerAgentHandlers(): void {
         status: 'running',
         summary,
         working_dir: workspace,
-        source: 'cloud' as any,
+        source: 'cca' as any,
         persona_handle: persona.handle,
         quoted_text: null,
         created_at: now,
@@ -265,7 +265,7 @@ export function registerAgentHandlers(): void {
       status: 'running',
       summary: `Cloud job ${result.jobId}`,
       working_dir: workspace,
-      source: 'cloud' as any,
+      source: 'cca' as any,
       persona_handle: null,
       quoted_text: null,
       created_at: now,

@@ -36,7 +36,7 @@ interface ChatViewProps {
   agentId?: string;
   agentPrompt: string;
   agentStatus: string;
-  agentSource?: 'sdk' | 'cli';
+  agentSource?: 'sdk' | 'cli' | 'cca' | 'conduit';
   spaceId?: string;
   sandboxed?: boolean;
   pendingApprovalId?: string;

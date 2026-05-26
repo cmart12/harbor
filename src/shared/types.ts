@@ -36,7 +36,7 @@ export interface AgentSession {
   status: 'running' | 'waiting-approval' | 'completed' | 'failed';
   summary: string;
   working_dir: string | null;
-  source: 'sdk' | 'cli' | 'cloud' | 'conduit';
+  source: 'sdk' | 'cli' | 'cca' | 'conduit';
   persona_handle: string | null;
   quoted_text: string | null;
   created_at: string;

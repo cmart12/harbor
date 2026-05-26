@@ -19,6 +19,21 @@ import { appendSpaceActivity } from '../space-eventlog';
 import { buildSandboxLaunchSetup } from './sandbox-launch';
 import { SANDBOX_WORKSPACE_SYSTEM_PROMPT } from './sandbox-policies';
 import { updateCanvasContent } from '../database';
+import { getWorkspaceRepo } from '../cloud-agent';
+
+/**
+ * Resolve cloud session options from the workspace. Attempts to detect the
+ * GitHub repository so the cloud sandbox is provisioned with repo context.
+ */
+async function resolveCloudSessionOptions(workspaceRoot: string): Promise<{ repository?: { owner: string; name: string } }> {
+  try {
+    const repoInfo = await getWorkspaceRepo(workspaceRoot);
+    if (repoInfo) {
+      return { repository: { owner: repoInfo.owner, name: repoInfo.repo } };
+    }
+  } catch { /* non-git workspace — cloud sandbox without repo context */ }
+  return {};
+}
 
 /** Shared dependencies injected from agent-service at init time. */
 let registry: AgentRegistry;
@@ -174,7 +189,11 @@ export async function launchQuickAgent(
   persona?: AgentPersona,
 ): Promise<{ agentId: string; sessionId: string } | { error: string }> {
   const isEphemeral = persona?.ephemeral === true;
-  const client = isEphemeral ? getEphemeralCopilotClient() : getCopilotClient();
+  const isCloudSandbox = persona?.runLocation === 'cloud';
+  // Cloud sessions use the regular client — the cloud environment provides its
+  // own filesystem so we avoid the sessionFs + cloud interaction on the
+  // ephemeral client.
+  const client = (isEphemeral && !isCloudSandbox) ? getEphemeralCopilotClient() : getCopilotClient();
   if (!client) {
     return { error: isEphemeral ? 'Ephemeral Copilot client not initialized' : 'Copilot SDK not initialized' };
   }
@@ -207,7 +226,7 @@ export async function launchQuickAgent(
     // When a persona is supplied, prepend its instructions to the system message
     // and use its preferred model.  Persona handles are matched against the
     // 'personas' config; cloud routing happens in the IPC handler so this path
-    // only handles local sessions (sandboxed or not).
+    // only handles local and cloud sessions.
     const personaPreamble = persona ? `${persona.instructions}\n\n` : '';
     const baseSystemContent = `${personaPreamble}${cliToolsPrompt}`.trim();
     // In mxc-only mode the host-side guards are deliberately suppressed so MXC
@@ -217,6 +236,9 @@ export async function launchQuickAgent(
     const systemContent = isSandboxed && enforcementMode === 'both'
       ? `${baseSystemContent}${SANDBOX_WORKSPACE_SYSTEM_PROMPT}`
       : baseSystemContent;
+
+    // Resolve cloud session options for cloud personas
+    const cloudOpts = isCloudSandbox ? await resolveCloudSessionOptions(workspaceRoot) : undefined;
 
     const session = await client.createSession({
       workingDirectory: workspaceRoot,
@@ -231,7 +253,8 @@ export async function launchQuickAgent(
           content: `\n${systemContent}`,
         },
       } : {}),
-      ...(isEphemeral ? { createSessionFsHandler: () => new InMemoryFsProvider() } : {}),
+      ...((isEphemeral && !isCloudSandbox) ? { createSessionFsHandler: () => new InMemoryFsProvider() } : {}),
+      ...(cloudOpts ? { cloud: cloudOpts } : {}),
       onPermissionRequest: useHostPathAwareHandler
         ? broker.createPathAwareSandboxPermissionHandler(findRecord)
         : useMxcOnlyAutoApprove

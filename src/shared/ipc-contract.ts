@@ -48,7 +48,7 @@ export interface AgentListAllItem extends AgentListItem {
   pendingPermissionKind: string | null;
   pendingIntention: string | null;
   pendingPath: string | null;
-  source: 'sdk' | 'cli' | 'cloud';
+  source: 'sdk' | 'cli' | 'cca' | 'conduit';
   personaHandle: string | null;
   yoloMode: boolean;
   quotedText: string;
@@ -80,7 +80,7 @@ export interface AgentPersona {
   handle: string;
   instructions: string;
   model: string;
-  runLocation: 'local' | 'cloud';
+  runLocation: 'local' | 'cca' | 'cloud' | 'conduit';
   sandboxed?: boolean;  // enable runtime sandbox for this persona
   emoji?: string;
   cliRuntime?: string;

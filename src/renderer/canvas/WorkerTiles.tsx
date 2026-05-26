@@ -11,7 +11,7 @@ interface AgentInfo {
   createdAt?: string;
   pendingApprovalId?: string | null;
   pendingPermissionKind?: string | null;
-  source?: 'sdk' | 'cli' | 'cloud' | 'conduit';
+  source?: 'sdk' | 'cli' | 'cca' | 'conduit';
 }
 
 interface AgentStep {

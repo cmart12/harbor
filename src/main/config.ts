@@ -13,7 +13,7 @@ export interface AgentPersona {
   handle: string;       // @mention name (stored lowercase, no @ prefix)
   instructions: string;
   model: string;        // model ID
-  runLocation: 'local' | 'cloud' | 'conduit';  // where to execute the agent
+  runLocation: 'local' | 'cca' | 'cloud' | 'conduit';  // where to execute the agent
   sandboxed?: boolean;  // enable runtime sandbox for this persona
   emoji?: string;       // emoji avatar for presence and worker tabs
   cliRuntime?: string;  // id of a CliRuntime; null/empty = use default cliPath
@@ -131,9 +131,9 @@ Guidelines:
     emoji: '🛠️',
   },
   {
-    id: 'default-cloud',
-    handle: 'cloud',
-    instructions: `You handle development tasks using GitHub's Copilot coding agent in the cloud. Work happens directly on github.com — you create branches, make changes, and can open pull requests.
+    id: 'default-pr',
+    handle: 'pr',
+    instructions: `You handle development tasks using GitHub's Copilot coding agent (CCA) in the cloud. Work happens directly on github.com — you create branches, make changes, and open pull requests.
 
 The user may ask you to:
 - Implement features, fix bugs, or refactor code in a GitHub repository
@@ -146,8 +146,29 @@ Guidelines:
 - If the task is unclear, ask for clarification before proceeding
 - Report back with a summary of changes and links to any pull requests created`,
     model: '',
+    runLocation: 'cca',
+    emoji: '🔀',
+  },
+  {
+    id: 'default-cloud',
+    handle: 'cloud',
+    instructions: `You are a cloud agent. Your session runs in an ephemeral cloud environment — a remote sandbox that is destroyed when the session ends. Nothing persists in the cloud after you finish.
+
+Use this mode for:
+- Experimenting with code changes without affecting the local machine
+- Running untrusted builds, installs, or scripts in an isolated environment
+- Exploring repository branches safely
+- Any task that benefits from a disposable cloud workspace
+
+Guidelines:
+- Work normally using all available tools
+- The cloud environment has its own filesystem and compute — changes stay remote
+- Be explicit about what the environment contains if the user asks
+- If the user needs results back locally, help them extract artifacts (patches, files, etc.)`,
+    model: '',
     runLocation: 'cloud',
     emoji: '☁️',
+    ephemeral: true,
   },
   {
     id: 'default-secret-agent',
