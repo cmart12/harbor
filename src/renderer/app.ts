@@ -6176,6 +6176,8 @@ whimAPI.onAgentRemoteChanged((data: { agentId: string; enabled: boolean; remoteS
   // Track the latest remote URL for the app-level overlay
   if (data.enabled && data.url && !appRemoteUrl) {
     appRemoteUrl = data.url;
+    // Refresh the app-level overlay if it's open and was showing the no-link state
+    if (appRemoteOverlayEl) showAppRemoteOverlay();
   }
   // Update the remote button if visible
   const btn = document.querySelector(`.agent-card-remote-btn[data-agent-id="${data.agentId}"]`) as HTMLElement | null;
