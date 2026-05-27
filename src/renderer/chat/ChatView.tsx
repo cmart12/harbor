@@ -385,6 +385,9 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
   const [sandboxDisabling, setSandboxDisabling] = useState(false);
   const [remoteState, setRemoteState] = useState<{ enabled: boolean; remoteSteerable: boolean; url?: string }>({ enabled: false, remoteSteerable: false });
   const [remoteLoading, setRemoteLoading] = useState(false);
+  const [remoteResetting, setRemoteResetting] = useState(false);
+  const [remoteHint, setRemoteHint] = useState<string | null>(null);
+  const remoteHintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showRemoteOverlay, setShowRemoteOverlay] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [remoteError, setRemoteError] = useState<string | null>(null);
@@ -456,6 +459,37 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
         setRemoteState({ enabled: data.enabled, remoteSteerable: data.remoteSteerable, url: data.url });
       }
     });
+  }, [currentAgentId]);
+
+  // Seed remote state from main process when the agent changes (e.g. ChatView
+  // remount or navigation back to a session that already has remote enabled).
+  // This is what makes the QR URL "stick" for the life of the session.
+  useEffect(() => {
+    if (!currentAgentId) return;
+    let cancelled = false;
+    (async () => {
+      const api = whimAPI as typeof whimAPI & {
+        getAgentRemoteState?: (agentId: string) => Promise<
+          { enabled: boolean; remoteSteerable: boolean; url?: string } | { error: string }
+        >;
+      };
+      if (!api.getAgentRemoteState) return;
+      try {
+        const result = await api.getAgentRemoteState(currentAgentId);
+        if (cancelled) return;
+        if ('error' in result) return;
+        setRemoteState({
+          enabled: result.enabled,
+          remoteSteerable: result.remoteSteerable,
+          url: result.url,
+        });
+      } catch (err) {
+        console.warn('[chat] getAgentRemoteState failed:', err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [currentAgentId]);
 
   // Generate QR code when remote URL changes
@@ -1035,6 +1069,43 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
     }
   }, [currentAgentId, remoteState.enabled, showRemoteError]);
 
+  const showRemoteHint = useCallback((msg: string) => {
+    if (remoteHintTimer.current) clearTimeout(remoteHintTimer.current);
+    setRemoteHint(msg);
+    remoteHintTimer.current = setTimeout(() => setRemoteHint(null), 3000);
+  }, []);
+
+  const handleResetRemote = useCallback(async () => {
+    if (!currentAgentId) return;
+    const api = whimAPI as typeof whimAPI & {
+      resetAgentRemote?: (agentId: string) => Promise<
+        { enabled: boolean; remoteSteerable: boolean; url?: string; changed: boolean } | { error: string }
+      >;
+    };
+    if (!api.resetAgentRemote) {
+      showRemoteError('Reset is not available in this build');
+      return;
+    }
+    setRemoteError(null);
+    setRemoteHint(null);
+    setRemoteResetting(true);
+    try {
+      const result = await api.resetAgentRemote(currentAgentId);
+      if ('error' in result) {
+        showRemoteError(result.error);
+      } else if (!result.url) {
+        showRemoteError('Remote was reset but no link was returned.');
+      } else {
+        showRemoteHint(result.changed ? 'Generated a new link' : 'Link is unchanged');
+      }
+    } catch (err: any) {
+      console.error('[remote] Reset threw:', err);
+      showRemoteError(err.message || 'Failed to reset remote control');
+    } finally {
+      setRemoteResetting(false);
+    }
+  }, [currentAgentId, showRemoteError, showRemoteHint]);
+
   const finalizeStreamingMessages = useCallback(() => {
     currentAssistantId.current = null;
     currentReasoningId.current = null;
@@ -1262,6 +1333,15 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
               ) : (
                 <p className="remote-overlay-desc">Remote control is enabled across all spaces but no link is available for this session yet. The session may not be in a GitHub repository working directory.</p>
               )}
+              {remoteHint && <div className="remote-overlay-hint">{remoteHint}</div>}
+              <button
+                className="remote-overlay-reset"
+                onClick={handleResetRemote}
+                disabled={remoteResetting}
+                title="Disable and re-enable remote control to recover from a stuck link"
+              >
+                {remoteResetting ? 'Resetting…' : 'Reset link'}
+              </button>
               <button className="remote-overlay-disable" onClick={async () => { await handleToggleRemote(); setShowRemoteOverlay(false); }}>
                 Disable Remote Control
               </button>

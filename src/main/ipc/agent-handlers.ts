@@ -208,6 +208,16 @@ export function registerAgentHandlers(): void {
     return disableRemoteControl(agentId);
   });
 
+  ipcMain.handle('agent:get-remote-state', async (_event, agentId: string) => {
+    const { getRemoteState } = await import('../agent-service');
+    return getRemoteState(agentId);
+  });
+
+  ipcMain.handle('agent:reset-remote', async (_event, agentId: string) => {
+    const { resetRemoteControl } = await import('../agent-service');
+    return resetRemoteControl(agentId);
+  });
+
   // ── App-level remote ──────────────────────────────────────
   ipcMain.handle('app:set-remote', async (_event, enabled: boolean) => {
     const { setAppRemote } = await import('../agent-service');

@@ -6224,6 +6224,49 @@ body.dark .chat-loading-history {
   border-color: rgba(239, 68, 68, 0.5);
 }
 
+.remote-overlay-reset {
+  background: none;
+  border: 1px solid rgba(156, 163, 175, 0.4);
+  color: #6b7280;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 6px 16px;
+  border-radius: 6px;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.remote-overlay-reset:hover:not(:disabled) {
+  background: rgba(156, 163, 175, 0.08);
+  border-color: rgba(156, 163, 175, 0.6);
+  color: #374151;
+}
+
+.remote-overlay-reset:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.remote-overlay-hint {
+  font-size: 12px;
+  color: #6b7280;
+  text-align: center;
+  padding: 4px 0;
+}
+
+body.dark .remote-overlay-reset {
+  border-color: rgba(156, 163, 175, 0.35);
+  color: #9ca3af;
+}
+
+body.dark .remote-overlay-reset:hover:not(:disabled) {
+  background: rgba(156, 163, 175, 0.08);
+  color: #d1d5db;
+}
+
+body.dark .remote-overlay-hint {
+  color: #9ca3af;
+}
+
 .chat-status-bar-dropdown {
   position: relative;
 }

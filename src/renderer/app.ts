@@ -825,6 +825,9 @@ async function loadPinState(): Promise<void> {
 let appRemoteUrl: string | null = null;
 let appRemoteAgentId: string | null = null;
 let appRemoteLoading = false;
+let appRemoteResetting = false;
+let appRemoteHint: string | null = null;
+let appRemoteHintTimer: ReturnType<typeof setTimeout> | null = null;
 let appRemoteOverlayEl: HTMLDivElement | null = null;
 
 function hideAppRemoteOverlay(): void {
@@ -911,6 +914,21 @@ async function showAppRemoteOverlay(): Promise<void> {
     body.appendChild(retryBtn);
   }
 
+  if (appRemoteHint) {
+    const hint = document.createElement('div');
+    hint.className = 'remote-overlay-hint';
+    hint.textContent = appRemoteHint;
+    body.appendChild(hint);
+  }
+
+  const resetBtn = document.createElement('button');
+  resetBtn.className = 'remote-overlay-reset';
+  resetBtn.title = 'Disable and re-enable remote control to recover from a stuck link';
+  resetBtn.disabled = appRemoteResetting || appRemoteLoading;
+  resetBtn.textContent = appRemoteResetting ? 'Resetting…' : 'Reset link';
+  resetBtn.addEventListener('click', () => { void resetAppRemote(); });
+  body.appendChild(resetBtn);
+
   const disableBtn = document.createElement('button');
   disableBtn.className = 'remote-overlay-disable';
   disableBtn.textContent = 'Disable Remote Control';
@@ -953,6 +971,63 @@ async function bootstrapAppRemote(): Promise<void> {
     console.error('[remote] setAppRemote threw:', err);
   } finally {
     appRemoteLoading = false;
+    if (appRemoteOverlayEl) await showAppRemoteOverlay();
+  }
+}
+
+function showAppRemoteHint(msg: string): void {
+  if (appRemoteHintTimer) clearTimeout(appRemoteHintTimer);
+  appRemoteHint = msg;
+  if (appRemoteOverlayEl) void showAppRemoteOverlay();
+  appRemoteHintTimer = setTimeout(() => {
+    appRemoteHint = null;
+    if (appRemoteOverlayEl) void showAppRemoteOverlay();
+  }, 3000);
+}
+
+/**
+ * Force-reset the app-level remote link.  Targets the supervisor agent
+ * (appRemoteAgentId) for an atomic main-process disable+enable.  Falls back
+ * to bootstrapAppRemote() if no supervisor is known (e.g. nothing was ever
+ * launched, or the supervisor died and was cleared).
+ */
+async function resetAppRemote(): Promise<void> {
+  if (appRemoteResetting || appRemoteLoading) return;
+
+  const targetAgentId = appRemoteAgentId;
+  const api = whimAPI as typeof whimAPI & {
+    resetAgentRemote?: (agentId: string) => Promise<
+      { enabled: boolean; remoteSteerable: boolean; url?: string; changed: boolean } | { error: string }
+    >;
+  };
+
+  if (!targetAgentId || !api.resetAgentRemote) {
+    // Nothing to reset — bootstrap from scratch instead.
+    await bootstrapAppRemote();
+    return;
+  }
+
+  appRemoteResetting = true;
+  if (appRemoteOverlayEl) await showAppRemoteOverlay();
+  try {
+    const result = await api.resetAgentRemote(targetAgentId);
+    if ('error' in result) {
+      console.error('[remote] reset error:', result.error);
+      showAppRemoteHint(result.error);
+    } else if (result.url) {
+      // The push event will also update appRemoteUrl, but set it now so the
+      // overlay refreshes immediately.
+      appRemoteUrl = result.url;
+      appRemoteAgentId = targetAgentId;
+      showAppRemoteHint(result.changed ? 'Generated a new link' : 'Link is unchanged');
+    } else {
+      showAppRemoteHint('Remote was reset but no link was returned.');
+    }
+  } catch (err: any) {
+    console.error('[remote] reset threw:', err);
+    showAppRemoteHint(err?.message || 'Failed to reset remote control');
+  } finally {
+    appRemoteResetting = false;
     if (appRemoteOverlayEl) await showAppRemoteOverlay();
   }
 }

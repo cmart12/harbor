@@ -339,6 +339,8 @@ export interface IpcCommands {
   'agent:set-yolo': { args: [agentId: string, enabled: boolean]; result: { ok: true } | { error: string } };
   'agent:enable-remote': { args: [agentId: string]; result: { enabled: boolean; remoteSteerable: boolean; url?: string } | { error: string } };
   'agent:disable-remote': { args: [agentId: string]; result: { ok: true } | { error: string } };
+  'agent:get-remote-state': { args: [agentId: string]; result: { enabled: boolean; remoteSteerable: boolean; url?: string } | { error: string } };
+  'agent:reset-remote': { args: [agentId: string]; result: { enabled: boolean; remoteSteerable: boolean; url?: string; changed: boolean } | { error: string } };
 
   // ── App-level remote ────────────────────────────────────
   'app:set-remote': {

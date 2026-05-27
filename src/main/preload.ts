@@ -129,6 +129,8 @@ export interface WhimAPI {
   setAgentYolo(agentId: string, enabled: boolean): Promise<IpcCommandResult<'agent:set-yolo'>>;
   enableRemote(agentId: string): Promise<IpcCommandResult<'agent:enable-remote'>>;
   disableRemote(agentId: string): Promise<IpcCommandResult<'agent:disable-remote'>>;
+  getAgentRemoteState(agentId: string): Promise<IpcCommandResult<'agent:get-remote-state'>>;
+  resetAgentRemote(agentId: string): Promise<IpcCommandResult<'agent:reset-remote'>>;
 
   // ── App-level remote ────────────────────────────────────
   setAppRemote(enabled: boolean): Promise<IpcCommandResult<'app:set-remote'>>;
@@ -362,6 +364,10 @@ const api: WhimAPI = {
     ipcRenderer.invoke('agent:enable-remote', agentId),
   disableRemote: (agentId) =>
     ipcRenderer.invoke('agent:disable-remote', agentId),
+  getAgentRemoteState: (agentId) =>
+    ipcRenderer.invoke('agent:get-remote-state', agentId),
+  resetAgentRemote: (agentId) =>
+    ipcRenderer.invoke('agent:reset-remote', agentId),
 
   // ── App-level remote ────────────────────────────────────
   setAppRemote: (enabled) =>

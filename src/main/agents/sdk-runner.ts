@@ -1287,3 +1287,73 @@ export async function disableRemoteControl(agentId: string): Promise<{ ok: true 
     return { error: err.message || 'Failed to disable remote control' };
   }
 }
+
+/**
+ * Return the current remote control state for an agent.  Used by the renderer
+ * to restore overlay state on mount so the link sticks for the life of the
+ * session even if the chat view remounts.
+ */
+export function getRemoteState(
+  agentId: string,
+): { enabled: boolean; remoteSteerable: boolean; url?: string } | { error: string } {
+  const record = registry.get(agentId);
+  if (!record) return { error: 'Agent not found' };
+  return record.remote
+    ? { enabled: record.remote.enabled, remoteSteerable: record.remote.remoteSteerable, url: record.remote.url }
+    : { enabled: false, remoteSteerable: false };
+}
+
+/**
+ * Force-reset remote control on an agent by disabling then re-enabling it.
+ * Performs the disable/enable atomically with respect to renderer events:
+ * emits exactly ONE final `agent:remote-changed` so the renderer never sees
+ * the intermediate "disabled" state and overlays don't flicker.
+ *
+ * Returns `changed: true` if the URL rotated, `changed: false` if the SDK
+ * returned the same URL (so callers can show a meaningful hint to the user).
+ */
+export async function resetRemoteControl(
+  agentId: string,
+): Promise<{ enabled: boolean; remoteSteerable: boolean; url?: string; changed: boolean } | { error: string }> {
+  const record = registry.get(agentId);
+  if (!record) return { error: 'Agent not found' };
+
+  const oldUrl = record.remote?.url;
+
+  try {
+    await record.session.rpc.remote.disable();
+  } catch (err: any) {
+    console.error(`[sdk-runner] reset: disable failed for agent=${agentId}:`, err);
+    return { error: err.message || 'Failed to disable remote control during reset' };
+  }
+
+  try {
+    const result = await record.session.rpc.remote.enable({ mode: 'on' });
+    record.remote = {
+      enabled: true,
+      remoteSteerable: result.remoteSteerable,
+      url: result.url,
+    };
+    notifier.notifyRenderer('agent:remote-changed', {
+      agentId,
+      enabled: true,
+      remoteSteerable: result.remoteSteerable,
+      url: result.url,
+    });
+    return {
+      enabled: true,
+      remoteSteerable: result.remoteSteerable,
+      url: result.url,
+      changed: oldUrl !== result.url,
+    };
+  } catch (err: any) {
+    console.error(`[sdk-runner] reset: enable failed for agent=${agentId}:`, err);
+    record.remote = { enabled: false, remoteSteerable: false };
+    notifier.notifyRenderer('agent:remote-changed', {
+      agentId,
+      enabled: false,
+      remoteSteerable: false,
+    });
+    return { error: err.message || 'Failed to re-enable remote control during reset' };
+  }
+}

@@ -122,6 +122,8 @@ import {
   getAgentHistory,
   setAgentYolo,
   setAppRemote,
+  getRemoteState,
+  resetRemoteControl,
   __resetAppRemoteForTests,
 } from './agent-service';
 import { getCopilotClient } from './ai';
@@ -130,6 +132,7 @@ import { getConfig } from './config';
 import { launchSessionInTerminal } from './session';
 import { v4 as uuid } from 'uuid';
 import * as fs from 'fs';
+import { AgentNotifier } from './agents/agent-notifier';
 
 describe('buildCliToolsPrompt', () => {
   beforeEach(() => {
@@ -1255,5 +1258,209 @@ describe('setAppRemote', () => {
     // Only one supervisor should exist in the registry.
     const supervisors = [...testRegistry.values()].filter(r => r.appRemoteSupervisor === true);
     expect(supervisors).toHaveLength(1);
+  });
+});
+
+// ── getRemoteState / resetRemoteControl ──────────────────
+
+describe('getRemoteState', () => {
+  let testRegistry: ReturnType<typeof __resetAppRemoteForTests>['registry'];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    ({ registry: testRegistry } = __resetAppRemoteForTests());
+  });
+
+  it('returns an error when the agent does not exist', () => {
+    const result = getRemoteState('does-not-exist');
+    expect('error' in result).toBe(true);
+    if ('error' in result) {
+      expect(result.error).toBe('Agent not found');
+    }
+  });
+
+  it('returns disabled defaults for an agent that has never enabled remote', () => {
+    testRegistry.set('agent-no-remote', {
+      agentId: 'agent-no-remote',
+      sessionId: 's1',
+      session: mockSession as any,
+      spaceId: 'space-1',
+      selectedText: '',
+      anchor: { prefix: '', suffix: '' } as any,
+      status: 'running',
+      pendingApprovalId: null,
+      pendingPermissionKind: null,
+      pendingApprovals: new Map(),
+      summary: '',
+    });
+
+    const result = getRemoteState('agent-no-remote');
+    expect('error' in result).toBe(false);
+    if (!('error' in result)) {
+      expect(result.enabled).toBe(false);
+      expect(result.remoteSteerable).toBe(false);
+      expect(result.url).toBeUndefined();
+    }
+  });
+
+  it('returns the current remote state when remote is enabled', () => {
+    testRegistry.set('agent-remote-on', {
+      agentId: 'agent-remote-on',
+      sessionId: 's2',
+      session: mockSession as any,
+      spaceId: 'space-2',
+      selectedText: '',
+      anchor: { prefix: '', suffix: '' } as any,
+      status: 'running',
+      pendingApprovalId: null,
+      pendingPermissionKind: null,
+      pendingApprovals: new Map(),
+      summary: '',
+      remote: { enabled: true, remoteSteerable: true, url: 'https://stick.example/abc' },
+    });
+
+    const result = getRemoteState('agent-remote-on');
+    if (!('error' in result)) {
+      expect(result.enabled).toBe(true);
+      expect(result.remoteSteerable).toBe(true);
+      expect(result.url).toBe('https://stick.example/abc');
+    }
+  });
+});
+
+describe('resetRemoteControl', () => {
+  let testRegistry: ReturnType<typeof __resetAppRemoteForTests>['registry'];
+  let notifySpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    ({ registry: testRegistry } = __resetAppRemoteForTests());
+    notifySpy = vi.spyOn(AgentNotifier.prototype, 'notifyRenderer').mockImplementation(() => {});
+    mockSession.rpc.remote.disable.mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    notifySpy.mockRestore();
+  });
+
+  function seed(agentId: string, currentUrl?: string) {
+    testRegistry.set(agentId, {
+      agentId,
+      sessionId: 'session-' + agentId,
+      session: mockSession as any,
+      spaceId: 'space-x',
+      selectedText: '',
+      anchor: { prefix: '', suffix: '' } as any,
+      status: 'running',
+      pendingApprovalId: null,
+      pendingPermissionKind: null,
+      pendingApprovals: new Map(),
+      summary: '',
+      remote: { enabled: true, remoteSteerable: true, url: currentUrl },
+    });
+  }
+
+  it('returns an error when the agent does not exist', async () => {
+    const result = await resetRemoteControl('missing');
+    expect('error' in result).toBe(true);
+    if ('error' in result) expect(result.error).toBe('Agent not found');
+    expect(mockSession.rpc.remote.disable).not.toHaveBeenCalled();
+    expect(mockSession.rpc.remote.enable).not.toHaveBeenCalled();
+  });
+
+  it('disables then re-enables remote, emits a single remote-changed event, and reports changed=true when URL rotates', async () => {
+    seed('agent-rotate', 'https://old.example/url-A');
+    mockSession.rpc.remote.enable.mockResolvedValue({
+      remoteSteerable: true,
+      url: 'https://new.example/url-B',
+    });
+
+    const result = await resetRemoteControl('agent-rotate');
+
+    expect(mockSession.rpc.remote.disable).toHaveBeenCalledTimes(1);
+    expect(mockSession.rpc.remote.enable).toHaveBeenCalledTimes(1);
+    expect(mockSession.rpc.remote.enable).toHaveBeenCalledWith({ mode: 'on' });
+
+    // Verify exactly ONE agent:remote-changed event was emitted (the final one).
+    // This is the anti-flicker invariant — overlays must not see an intermediate disabled state.
+    const remoteEvents = notifySpy.mock.calls.filter(c => c[0] === 'agent:remote-changed');
+    expect(remoteEvents).toHaveLength(1);
+    expect(remoteEvents[0][1]).toMatchObject({
+      agentId: 'agent-rotate',
+      enabled: true,
+      remoteSteerable: true,
+      url: 'https://new.example/url-B',
+    });
+
+    if (!('error' in result)) {
+      expect(result.enabled).toBe(true);
+      expect(result.url).toBe('https://new.example/url-B');
+      expect(result.changed).toBe(true);
+    }
+
+    // Registry state is updated to the new URL.
+    const record = testRegistry.get('agent-rotate');
+    expect(record?.remote).toMatchObject({
+      enabled: true,
+      remoteSteerable: true,
+      url: 'https://new.example/url-B',
+    });
+  });
+
+  it('reports changed=false when the SDK returns the same URL', async () => {
+    seed('agent-same', 'https://same.example/url-X');
+    mockSession.rpc.remote.enable.mockResolvedValue({
+      remoteSteerable: true,
+      url: 'https://same.example/url-X',
+    });
+
+    const result = await resetRemoteControl('agent-same');
+
+    if (!('error' in result)) {
+      expect(result.changed).toBe(false);
+      expect(result.url).toBe('https://same.example/url-X');
+    }
+  });
+
+  it('returns an error and marks the agent disabled if re-enable fails after disable succeeds', async () => {
+    seed('agent-enable-fails', 'https://old.example/url-Z');
+    mockSession.rpc.remote.enable.mockRejectedValueOnce(new Error('enable boom'));
+
+    const result = await resetRemoteControl('agent-enable-fails');
+
+    expect('error' in result).toBe(true);
+    if ('error' in result) {
+      expect(result.error).toContain('enable boom');
+    }
+
+    // The state must reflect the failed-to-enable reality (remote is off).
+    const record = testRegistry.get('agent-enable-fails');
+    expect(record?.remote).toEqual({ enabled: false, remoteSteerable: false });
+
+    // And a single disabled event must have been emitted so the renderer
+    // doesn't keep showing an outdated URL.
+    const remoteEvents = notifySpy.mock.calls.filter(c => c[0] === 'agent:remote-changed');
+    expect(remoteEvents).toHaveLength(1);
+    expect(remoteEvents[0][1]).toMatchObject({
+      agentId: 'agent-enable-fails',
+      enabled: false,
+    });
+  });
+
+  it('returns an error and emits NO events if disable itself fails', async () => {
+    seed('agent-disable-fails', 'https://before.example/url-Q');
+    mockSession.rpc.remote.disable.mockRejectedValueOnce(new Error('disable boom'));
+
+    const result = await resetRemoteControl('agent-disable-fails');
+
+    expect('error' in result).toBe(true);
+    expect(mockSession.rpc.remote.enable).not.toHaveBeenCalled();
+
+    // No events emitted — original URL is still presumably valid from the
+    // SDK's perspective.  Registry state is unchanged.
+    const remoteEvents = notifySpy.mock.calls.filter(c => c[0] === 'agent:remote-changed');
+    expect(remoteEvents).toHaveLength(0);
+    const record = testRegistry.get('agent-disable-fails');
+    expect(record?.remote?.url).toBe('https://before.example/url-Q');
   });
 });

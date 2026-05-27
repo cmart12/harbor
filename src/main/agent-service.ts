@@ -32,7 +32,7 @@ initCliRunner({ registry, notifier, persistence });
 initCommentWorkflow({ registry, notifier, persistence, broker, setupAgentEventListeners });
 
 // ── Re-exports from SDK runner ─────────────────────────
-export { buildCliToolsPrompt, launchAgent, launchQuickAgent, launchDocumentAgent, sendChatMessage, setAgentModel, getAgentHistory, enableRemoteControl, disableRemoteControl, disableSandboxForSession } from './agents/sdk-runner';
+export { buildCliToolsPrompt, launchAgent, launchQuickAgent, launchDocumentAgent, sendChatMessage, setAgentModel, getAgentHistory, enableRemoteControl, disableRemoteControl, getRemoteState, resetRemoteControl, disableSandboxForSession } from './agents/sdk-runner';
 
 // ── App-level remote control ──────────────────────────
 
