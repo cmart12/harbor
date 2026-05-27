@@ -2748,6 +2748,10 @@ body.dark .workers-badge {
   margin-top: 4px;
 }
 
+.schedule-no-runs {
+  font-style: italic;
+}
+
 .schedule-picker-footer {
   padding: 12px 16px;
   display: flex;

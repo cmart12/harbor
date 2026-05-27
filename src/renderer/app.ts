@@ -3422,8 +3422,13 @@ async function renderSkillsList(filterQuery?: string): Promise<void> {
   }
 
   listEl.innerHTML = skills.map((skill, i) => {
+    const scheduleLabel = skill.schedule ? formatScheduleLabel(skill.schedule, skill.schedule_time, skill.schedule_day) : '';
+    const tooltipParts: string[] = [];
+    if (skill.schedule) tooltipParts.push(`Scheduled: ${scheduleLabel}`);
+    if (skill.next_run_at) tooltipParts.push(`Next: ${formatRelativeDate(skill.next_run_at)}`);
+    if (skill.last_run_at) tooltipParts.push(`Last run: ${formatRelativeDate(skill.last_run_at)}`);
     const scheduleBadge = skill.schedule
-      ? `<span class="schedule-badge" title="Scheduled: ${formatScheduleLabel(skill.schedule, skill.schedule_time, skill.schedule_day)}${skill.next_run_at ? '\nNext: ' + formatRelativeDate(skill.next_run_at) : ''}">🔄 ${formatScheduleLabel(skill.schedule, skill.schedule_time, skill.schedule_day)}</span>`
+      ? `<span class="schedule-badge" title="${escapeHtml(tooltipParts.join('\n'))}">🔄 ${scheduleLabel}</span>`
       : '';
     return `
     <div class="space-item skill-card" data-skill-id="${skill.id}" tabindex="0" data-skill-index="${i}">
@@ -3697,6 +3702,7 @@ function openSchedulePicker(skillId: string): void {
         </div>
 
         ${skill.next_run_at ? `<div class="schedule-next-run">Next run: ${formatRelativeDate(skill.next_run_at)}</div>` : ''}
+        ${skill.schedule ? (skill.last_run_at ? `<div class="schedule-next-run">Last run: ${formatRelativeDate(skill.last_run_at)}</div>` : '<div class="schedule-next-run schedule-no-runs">Never run yet</div>') : ''}
       </div>
       <div class="schedule-picker-footer">
         ${skill.schedule ? '<button class="schedule-clear-btn" onclick="clearSchedule()">Remove schedule</button>' : ''}
