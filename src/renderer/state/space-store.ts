@@ -1,13 +1,17 @@
 import type { Space } from '../../shared/types';
 
-export type SpaceFilter = 'open' | 'agents' | 'closed';
+export type SpaceFilter = 'open' | 'agents' | 'skills' | 'closed';
 
 export interface SpaceState {
   spaces: Space[];
   filter: SpaceFilter;
   searchResults: Space[] | null;
+  searchMode: boolean;
+  activeSearchQuery: string;
   focusedSpaceId: string | null;
   canvasSpaceId: string | null;
+  /** Index of the keyboard-selected row in the currently displayed list (-1 = none). */
+  selectedIndex: number;
 }
 
 type Listener = () => void;
@@ -17,10 +21,16 @@ class SpaceStore {
     spaces: [],
     filter: 'open',
     searchResults: null,
+    searchMode: false,
+    activeSearchQuery: '',
     focusedSpaceId: null,
     canvasSpaceId: null,
+    selectedIndex: -1,
   };
   private listeners: Set<Listener> = new Set();
+  /** Monotonic counter for stale-fetch detection (replaces app.ts:renderGeneration). */
+  private requestCounter = 0;
+  private latestRequestId = 0;
 
   getState(): Readonly<SpaceState> {
     return this.state;
@@ -41,6 +51,16 @@ class SpaceStore {
     this.notify();
   }
 
+  setSearchMode(searchMode: boolean): void {
+    this.state = { ...this.state, searchMode };
+    this.notify();
+  }
+
+  setActiveSearchQuery(query: string): void {
+    this.state = { ...this.state, activeSearchQuery: query };
+    this.notify();
+  }
+
   setFocusedSpace(id: string | null): void {
     this.state = { ...this.state, focusedSpaceId: id };
     this.notify();
@@ -49,6 +69,25 @@ class SpaceStore {
   setCanvasSpace(id: string | null): void {
     this.state = { ...this.state, canvasSpaceId: id };
     this.notify();
+  }
+
+  setSelectedIndex(index: number): void {
+    this.state = { ...this.state, selectedIndex: index };
+    this.notify();
+  }
+
+  // -- Stale-fetch guards (replaces app.ts:renderGeneration) ------------------
+
+  /** Reserve a new request id. Latest reservation wins. */
+  nextRequestId(): number {
+    this.requestCounter += 1;
+    this.latestRequestId = this.requestCounter;
+    return this.latestRequestId;
+  }
+
+  /** True if the given id is still the latest reserved id. */
+  isCurrentRequest(id: number): boolean {
+    return id === this.latestRequestId;
   }
 
   /** Subscribe to state changes. Returns an unsubscribe function (useSyncExternalStore-compatible). */
@@ -72,6 +111,7 @@ class SpaceStore {
       case 'closed':
         return spaces.filter(i => i.status === 'done');
       case 'agents':
+      case 'skills':
         return spaces;
       default:
         return spaces;

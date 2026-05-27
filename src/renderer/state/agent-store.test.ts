@@ -35,6 +35,12 @@ describe('AgentStore', () => {
     for (const id of agentStore.getState().presence.keys()) {
       agentStore.clearPresence(id);
     }
+    for (const id of agentStore.getState().yoloMode.keys()) {
+      agentStore.setYoloMode(id, false);
+    }
+    for (const id of agentStore.getState().remoteState.keys()) {
+      agentStore.setRemoteState(id, null);
+    }
     // Steps: overwrite with empty arrays, then set a fresh agents list to drop stale keys
     for (const id of agentStore.getState().steps.keys()) {
       agentStore.setSteps(id, []);
@@ -51,6 +57,8 @@ describe('AgentStore', () => {
     expect(state.approvals.size).toBe(0);
     expect(state.steps.size).toBe(0);
     expect(state.presence.size).toBe(0);
+    expect(state.yoloMode.size).toBe(0);
+    expect(state.remoteState.size).toBe(0);
   });
 
   // -- setAgents() ------------------------------------------------------------
@@ -162,6 +170,66 @@ describe('AgentStore', () => {
   it('clearPresence() is safe when agentId is not present', () => {
     agentStore.clearPresence('nonexistent');
     expect(agentStore.getState().presence.size).toBe(0);
+  });
+
+  // -- Yolo mode --------------------------------------------------------------
+
+  it('setYoloMode(true) records the agent; setYoloMode(false) removes it', () => {
+    agentStore.setYoloMode('a1', true);
+    expect(agentStore.getState().yoloMode.get('a1')).toBe(true);
+
+    agentStore.setYoloMode('a1', false);
+    expect(agentStore.getState().yoloMode.has('a1')).toBe(false);
+  });
+
+  // -- Remote control ---------------------------------------------------------
+
+  it('setRemoteState() with enabled=true records the agent', () => {
+    agentStore.setRemoteState('a1', { enabled: true, url: 'https://x.example' });
+    expect(agentStore.getState().remoteState.get('a1')).toEqual({ enabled: true, url: 'https://x.example' });
+  });
+
+  it('setRemoteState() with enabled=false removes the agent', () => {
+    agentStore.setRemoteState('a1', { enabled: true, url: 'https://x.example' });
+    agentStore.setRemoteState('a1', { enabled: false });
+    expect(agentStore.getState().remoteState.has('a1')).toBe(false);
+  });
+
+  it('setRemoteState(null) removes the agent', () => {
+    agentStore.setRemoteState('a1', { enabled: true });
+    agentStore.setRemoteState('a1', null);
+    expect(agentStore.getState().remoteState.has('a1')).toBe(false);
+  });
+
+  // -- Stale-fetch guards -----------------------------------------------------
+
+  it('nextRequestId() returns monotonically increasing ids', () => {
+    const id1 = agentStore.nextRequestId();
+    const id2 = agentStore.nextRequestId();
+    expect(id2).toBeGreaterThan(id1);
+  });
+
+  it('isCurrentRequest() recognizes only the latest reservation', () => {
+    const stale = agentStore.nextRequestId();
+    const fresh = agentStore.nextRequestId();
+
+    expect(agentStore.isCurrentRequest(fresh)).toBe(true);
+    expect(agentStore.isCurrentRequest(stale)).toBe(false);
+  });
+
+  // -- getAgentsBySpace() -----------------------------------------------------
+
+  it('getAgentsBySpace() groups agents by space and skips workspace pseudo-space', () => {
+    const a1 = makeAgent({ agentId: 'a1', spaceId: 'i1' });
+    const a2 = makeAgent({ agentId: 'a2', spaceId: 'i1' });
+    const a3 = makeAgent({ agentId: 'a3', spaceId: 'i2' });
+    const a4 = makeAgent({ agentId: 'a4', spaceId: '__workspace__' });
+    agentStore.setAgents([a1, a2, a3, a4]);
+
+    const groups = agentStore.getAgentsBySpace();
+    expect(groups.get('i1')).toEqual([a1, a2]);
+    expect(groups.get('i2')).toEqual([a3]);
+    expect(groups.has('__workspace__')).toBe(false);
   });
 
   // -- Subscribe / unsubscribe ------------------------------------------------

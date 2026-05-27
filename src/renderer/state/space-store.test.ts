@@ -32,8 +32,11 @@ describe('SpaceStore', () => {
     spaceStore.setSpaces([]);
     spaceStore.setFilter('open');
     spaceStore.setSearchResults(null);
+    spaceStore.setSearchMode(false);
+    spaceStore.setActiveSearchQuery('');
     spaceStore.setFocusedSpace(null);
     spaceStore.setCanvasSpace(null);
+    spaceStore.setSelectedIndex(-1);
   });
 
   // -- Initial state ----------------------------------------------------------
@@ -43,8 +46,11 @@ describe('SpaceStore', () => {
     expect(state.spaces).toEqual([]);
     expect(state.filter).toBe('open');
     expect(state.searchResults).toBeNull();
+    expect(state.searchMode).toBe(false);
+    expect(state.activeSearchQuery).toBe('');
     expect(state.focusedSpaceId).toBeNull();
     expect(state.canvasSpaceId).toBeNull();
+    expect(state.selectedIndex).toBe(-1);
   });
 
   // -- Setters ----------------------------------------------------------------
@@ -150,6 +156,12 @@ describe('SpaceStore', () => {
       expect(result).toEqual([captured, inProgress, done]);
     });
 
+    it('filter "skills" returns all spaces', () => {
+      spaceStore.setFilter('skills');
+      const result = spaceStore.getFilteredSpaces();
+      expect(result).toEqual([captured, inProgress, done]);
+    });
+
     it('returns searchResults when set, regardless of filter', () => {
       const searchHit = makeSpace({ id: 'search-1', status: 'done' });
       spaceStore.setSearchResults([searchHit]);
@@ -185,5 +197,44 @@ describe('SpaceStore', () => {
     // Original snapshot is unchanged
     expect(state.filter).toBe('open');
     expect(state2.filter).toBe('closed');
+  });
+
+  // -- Search state -----------------------------------------------------------
+
+  it('setSearchMode() / setActiveSearchQuery() update search state', () => {
+    spaceStore.setSearchMode(true);
+    spaceStore.setActiveSearchQuery('hello');
+
+    const state = spaceStore.getState();
+    expect(state.searchMode).toBe(true);
+    expect(state.activeSearchQuery).toBe('hello');
+  });
+
+  // -- Selection --------------------------------------------------------------
+
+  it('setSelectedIndex() updates selection', () => {
+    spaceStore.setSelectedIndex(2);
+    expect(spaceStore.getState().selectedIndex).toBe(2);
+
+    spaceStore.setSelectedIndex(-1);
+    expect(spaceStore.getState().selectedIndex).toBe(-1);
+  });
+
+  // -- Stale-fetch guards -----------------------------------------------------
+
+  it('nextRequestId() returns monotonically increasing ids', () => {
+    const id1 = spaceStore.nextRequestId();
+    const id2 = spaceStore.nextRequestId();
+    const id3 = spaceStore.nextRequestId();
+    expect(id2).toBeGreaterThan(id1);
+    expect(id3).toBeGreaterThan(id2);
+  });
+
+  it('isCurrentRequest() recognizes only the latest reservation', () => {
+    const stale = spaceStore.nextRequestId();
+    const fresh = spaceStore.nextRequestId();
+
+    expect(spaceStore.isCurrentRequest(fresh)).toBe(true);
+    expect(spaceStore.isCurrentRequest(stale)).toBe(false);
   });
 });

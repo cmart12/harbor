@@ -20,6 +20,11 @@ export interface AgentPresence {
   persona: { name: string; handle: string; color?: string; imageUrl?: string };
 }
 
+export interface AgentRemoteInfo {
+  enabled: boolean;
+  url?: string;
+}
+
 export interface AgentState {
   agents: AgentListAllItem[];
   processingSpaces: Set<string>;
@@ -27,6 +32,8 @@ export interface AgentState {
   approvals: Map<string, AgentApproval>;
   steps: Map<string, AgentStep[]>;
   presence: Map<string, AgentPresence>;
+  yoloMode: Map<string, boolean>;
+  remoteState: Map<string, AgentRemoteInfo>;
 }
 
 type Listener = () => void;
@@ -39,8 +46,13 @@ class AgentStore {
     approvals: new Map(),
     steps: new Map(),
     presence: new Map(),
+    yoloMode: new Map(),
+    remoteState: new Map(),
   };
   private listeners: Set<Listener> = new Set();
+  /** Monotonic counter for stale-fetch detection (replaces app.ts:renderGeneration). */
+  private requestCounter = 0;
+  private latestRequestId = 0;
 
   getState(): Readonly<AgentState> {
     return this.state;
@@ -123,6 +135,46 @@ class AgentStore {
     this.notify();
   }
 
+  // -- Yolo mode -------------------------------------------------------------
+
+  setYoloMode(agentId: string, enabled: boolean): void {
+    const next = new Map(this.state.yoloMode);
+    if (enabled) {
+      next.set(agentId, true);
+    } else {
+      next.delete(agentId);
+    }
+    this.state = { ...this.state, yoloMode: next };
+    this.notify();
+  }
+
+  // -- Remote control --------------------------------------------------------
+
+  setRemoteState(agentId: string, info: AgentRemoteInfo | null): void {
+    const next = new Map(this.state.remoteState);
+    if (info && info.enabled) {
+      next.set(agentId, info);
+    } else {
+      next.delete(agentId);
+    }
+    this.state = { ...this.state, remoteState: next };
+    this.notify();
+  }
+
+  // -- Stale-fetch guards (replaces app.ts:renderGeneration) -----------------
+
+  /** Reserve a new request id. Latest reservation wins. */
+  nextRequestId(): number {
+    this.requestCounter += 1;
+    this.latestRequestId = this.requestCounter;
+    return this.latestRequestId;
+  }
+
+  /** True if the given id is still the latest reserved id. */
+  isCurrentRequest(id: number): boolean {
+    return id === this.latestRequestId;
+  }
+
   /** Subscribe to state changes. Returns an unsubscribe function (useSyncExternalStore-compatible). */
   subscribe(listener: Listener): () => void {
     this.listeners.add(listener);
@@ -141,6 +193,18 @@ class AgentStore {
     return this.state.agents.some(
       a => a.spaceId === spaceId && (a.status === 'running' || a.status === 'waiting-approval'),
     );
+  }
+
+  /** Group agents by spaceId (skipping the workspace-level pseudo space). */
+  getAgentsBySpace(): Map<string, AgentListAllItem[]> {
+    const map = new Map<string, AgentListAllItem[]>();
+    for (const agent of this.state.agents) {
+      if (!agent.spaceId || agent.spaceId === '__workspace__') continue;
+      const list = map.get(agent.spaceId);
+      if (list) list.push(agent);
+      else map.set(agent.spaceId, [agent]);
+    }
+    return map;
   }
 
   private notify(): void {
