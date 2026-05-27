@@ -208,7 +208,9 @@ interface WhimAPI {
   onAgentRemoteChanged(callback: (data: { agentId: string; enabled: boolean; remoteSteerable: boolean; url?: string }) => void): void;
   enableRemote(agentId: string): Promise<{ enabled?: boolean; remoteSteerable?: boolean; url?: string; error?: string }>;
   disableRemote(agentId: string): Promise<{ ok?: boolean; error?: string }>;
-  onNotificationApprovalClicked(callback: (data: { agentId: string }) => void): void;
+  setAppRemote(enabled: boolean): Promise<{ ok: boolean; enabled: boolean; agents: Array<{ agentId: string; url?: string }> } | { error: string }>;
+  getAppRemoteStatus(): Promise<{ enabled: boolean; agents: Array<{ agentId: string; url?: string }> }>;
+  onAppRemoteChanged(callback: (data: { enabled: boolean; agents: Array<{ agentId: string; url?: string }> }) => void): void;  onNotificationApprovalClicked(callback: (data: { agentId: string }) => void): void;
   onAgentPresenceStarted(callback: (data: { agentId: string; spaceId: string; persona: { name: string; handle: string; color?: string; imageUrl?: string }; anchor: { prefix?: string; suffix?: string }; threadId?: string }) => void): void;
   onAgentPresenceEnded(callback: (data: { agentId: string; spaceId: string }) => void): void;
   onAgentReplyReady(callback: (data: { agentId: string; spaceId: string; threadId: string | null; body: string }) => void): void;
@@ -287,6 +289,7 @@ const timelineView = document.getElementById('timeline-view') as HTMLDivElement;
 const timelineBack = document.getElementById('timeline-back') as HTMLButtonElement;
 const timelineContent = document.getElementById('timeline-content') as HTMLDivElement;
 const pinBtn = document.getElementById('pin-btn') as HTMLButtonElement;
+const remoteBtn = document.getElementById('remote-btn') as HTMLButtonElement;
 
 // ── Welcome view refs ───────────────────────────────────
 const welcomeView = document.getElementById('welcome-view') as HTMLDivElement;
@@ -784,6 +787,27 @@ async function loadPinState(): Promise<void> {
   const pinned = await whimAPI.getPinned();
   pinBtn.classList.toggle('active', pinned);
   pinBtn.title = pinned ? 'Unpin window' : 'Pin window (keep visible)';
+}
+
+// ── Remote toggle ───────────────────────────────────────
+remoteBtn.addEventListener('click', async () => {
+  const current = remoteBtn.classList.contains('active');
+  await whimAPI.setAppRemote(!current);
+});
+
+whimAPI.onAppRemoteChanged((data: { enabled: boolean; agents: Array<{ agentId: string; url?: string }> }) => {
+  remoteBtn.classList.toggle('active', data.enabled);
+  remoteBtn.title = data.enabled ? 'Remote control ON — click to disable' : 'Enable remote control';
+});
+
+async function loadRemoteState(): Promise<void> {
+  try {
+    const status = await whimAPI.getAppRemoteStatus();
+    if ('enabled' in status) {
+      remoteBtn.classList.toggle('active', status.enabled);
+      remoteBtn.title = status.enabled ? 'Remote control ON — click to disable' : 'Enable remote control';
+    }
+  } catch { /* not critical */ }
 }
 
 modelSelect.addEventListener('change', async () => {
@@ -6215,6 +6239,7 @@ descInput.focus();
 loadSettings();
 loadFocusState();
 loadPinState();
+loadRemoteState();
 
 // Flush canvas saves when the window is about to close (app quit, reload)
 window.addEventListener('beforeunload', () => {

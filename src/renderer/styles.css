@@ -1354,7 +1354,6 @@ body.dark .persona-form-checkbox-label {
   align-items: center;
   gap: 12px;
   padding: 10px 14px;
-  margin-bottom: 8px;
   background: var(--card-bg);
   border: var(--card-border);
   border-radius: var(--card-radius);
@@ -1392,7 +1391,7 @@ body.dark .persona-form-checkbox-label {
   color: rgba(0, 0, 0, 0.5);
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  padding: 14px 0 6px;
+  padding: 6px 0 2px;
   position: sticky;
   top: 0;
   z-index: 1;
@@ -1410,8 +1409,7 @@ body.dark .persona-form-checkbox-label {
   background: var(--card-bg);
   border: var(--card-border);
   border-radius: var(--card-radius);
-  padding: 10px 14px;
-  margin-bottom: 6px;
+  padding: var(--card-padding);
   cursor: pointer;
   transition: var(--card-transition);
   backdrop-filter: var(--card-backdrop);

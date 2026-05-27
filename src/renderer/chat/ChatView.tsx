@@ -1242,7 +1242,7 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
             <div className="remote-overlay-body">
               {remoteState.url ? (
                 <>
-                  <p className="remote-overlay-desc">Scan the QR code or click the link to control this session from another device.</p>
+                  <p className="remote-overlay-desc">Scan the QR code or click the link to control this session from another device. Remote is enabled across all spaces in this workspace.</p>
                   {qrDataUrl && (
                     <div className="remote-overlay-qr">
                       <img src={qrDataUrl} alt="QR Code for remote session" />
@@ -1260,7 +1260,7 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
                   </button>
                 </>
               ) : (
-                <p className="remote-overlay-desc">Remote control is enabled but no link is available yet. The session may not be in a GitHub repository working directory.</p>
+                <p className="remote-overlay-desc">Remote control is enabled across all spaces but no link is available for this session yet. The session may not be in a GitHub repository working directory.</p>
               )}
               <button className="remote-overlay-disable" onClick={async () => { await handleToggleRemote(); setShowRemoteOverlay(false); }}>
                 Disable Remote Control
