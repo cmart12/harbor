@@ -1249,7 +1249,7 @@ export async function enableRemoteControl(agentId: string): Promise<{ enabled: b
   if (!record) return { error: 'Agent not found' };
 
   try {
-    const result = await record.session.rpc.remote.enable();
+    const result = await record.session.rpc.remote.enable({});
     record.remote = {
       enabled: true,
       remoteSteerable: result.remoteSteerable,

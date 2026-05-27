@@ -5964,6 +5964,29 @@ body.dark .chat-loading-history {
   margin-bottom: 2px;
 }
 
+.chat-assistant-content table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 8px 0;
+  font-size: 13px;
+}
+
+.chat-assistant-content th,
+.chat-assistant-content td {
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  padding: 6px 10px;
+  text-align: left;
+}
+
+.chat-assistant-content th {
+  background: rgba(0, 0, 0, 0.04);
+  font-weight: 600;
+}
+
+.chat-assistant-content tr:nth-child(even) {
+  background: rgba(0, 0, 0, 0.02);
+}
+
 .chat-inline-code {
   background: rgba(0, 0, 0, 0.06);
   padding: 1px 5px;
@@ -6540,6 +6563,10 @@ body.dark .chat-user-bubble { background: #7c66dc; }
 
 body.dark .chat-assistant-content { color: #e0e0e0; }
 body.dark .chat-assistant-content a { color: #a594e8; }
+body.dark .chat-assistant-content th,
+body.dark .chat-assistant-content td { border-color: rgba(255, 255, 255, 0.15); }
+body.dark .chat-assistant-content th { background: rgba(255, 255, 255, 0.06); }
+body.dark .chat-assistant-content tr:nth-child(even) { background: rgba(255, 255, 255, 0.03); }
 
 body.dark .chat-inline-code { background: rgba(255, 255, 255, 0.1); color: #cdd6f4; }
 body.dark .chat-code-block { background: #11111b; }

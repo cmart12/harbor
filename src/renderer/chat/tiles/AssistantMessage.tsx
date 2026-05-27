@@ -1,5 +1,6 @@
 import React from 'react';
 import Markdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface AssistantMessageProps {
   content: string;
@@ -11,6 +12,7 @@ export function AssistantMessage({ content, isStreaming }: AssistantMessageProps
     <div className="chat-assistant-message">
       <div className="chat-assistant-content">
         <Markdown
+          remarkPlugins={[remarkGfm]}
           components={{
             code({ className, children, ...props }) {
               const isInline = !className;

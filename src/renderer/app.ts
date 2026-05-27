@@ -5213,7 +5213,7 @@ function renderSkillChips(): void {
     chip.addEventListener('click', () => {
       const skillId = (chip as HTMLElement).dataset.skillId!;
       const skill = cachedSkills.find(s => s.id === skillId);
-      whimAPI.openCanvasWindow({ kind: 'skill', id: skillId, title: skill?.name || skillId });
+      whimAPI.openNewCanvasWindow({ kind: 'skill', id: skillId, title: skill?.name || skillId });
     });
   });
 }
