@@ -18,6 +18,7 @@ export interface MountCanvasOptions {
   onAgentMentioned?: (event: MentionEvent) => void;
   onInlineMention?: (handle: string, lineMarkdown: string, lineNumber: number) => void;
   onForkSelection?: (selectedText: string) => void;
+  onExtractToPage?: (selectedText: string) => void;
 }
 
 export function mountCanvas(container: HTMLElement, options: MountCanvasOptions): void {
@@ -41,6 +42,7 @@ export function mountCanvas(container: HTMLElement, options: MountCanvasOptions)
       onAgentMentioned={options.onAgentMentioned}
       onInlineMention={options.onInlineMention}
       onForkSelection={options.onForkSelection}
+      onExtractToPage={options.onExtractToPage}
     />
   );
 }
@@ -95,4 +97,12 @@ export function toggleCanvasMode(): { mode: string; error?: string } {
 
 export function getCanvasEditorMode(): string {
   return canvasRef.current?.getEditorMode() ?? 'rendered';
+}
+
+export function appendCanvasLink(label: string, url: string): void {
+  canvasRef.current?.appendLink(label, url);
+}
+
+export function replaceCanvasText(search: string, replacement: string): void {
+  canvasRef.current?.replaceText(search, replacement);
 }

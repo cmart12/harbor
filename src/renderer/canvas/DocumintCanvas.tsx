@@ -18,7 +18,7 @@ import {
   type DocumintActions,
   type DocumintDecoration,
 } from 'documint';
-import { GitFork } from 'lucide-react';
+import { GitFork, FileOutput } from 'lucide-react';
 import { FrontmatterEditor } from './FrontmatterEditor';
 import { VoiceRecorderButton, type VoiceRecordingResult } from './VoiceRecorderButton';
 import { SpaceLinkPicker, type SpaceResult } from './SpaceLinkPicker';
@@ -73,6 +73,7 @@ export interface DocumintCanvasProps {
   onAgentMentioned?: (event: MentionEvent) => void;
   onInlineMention?: (handle: string, lineMarkdown: string, lineNumber: number) => void;
   onForkSelection?: (selectedText: string) => void;
+  onExtractToPage?: (selectedText: string) => void;
 }
 
 export interface DocumintCanvasHandle {
@@ -86,6 +87,8 @@ export interface DocumintCanvasHandle {
   updateAgentUsers(users: DocumentUser[]): void;
   addCommentReply(threadId: string, body: string): void;
   replaceContent(content: string): void;
+  appendLink(label: string, url: string): void;
+  replaceText(search: string, replacement: string): void;
 }
 
 const AUTOSAVE_DELAY_MS = 2000;
@@ -148,7 +151,7 @@ function formatAttachmentRef(filename: string, relativePath: string, mimeType: s
 }
 
 export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasProps>(
-  function DocumintCanvas({ spaceId, initialContent, initialFrontmatter, theme, personas: initialPersonas, agentPresence: initialPresence, decorations: initialDecorations, onDirtyChange, onSaveStatus, onAgentMentioned, onInlineMention, onForkSelection }, ref) {
+  function DocumintCanvas({ spaceId, initialContent, initialFrontmatter, theme, personas: initialPersonas, agentPresence: initialPresence, decorations: initialDecorations, onDirtyChange, onSaveStatus, onAgentMentioned, onInlineMention, onForkSelection, onExtractToPage }, ref) {
     const hasFrontmatter = initialFrontmatter !== undefined;
     const [content, setContent] = useState(initialContent);
     const [frontmatter, setFrontmatter] = useState<Record<string, unknown>>(initialFrontmatter ?? {});
@@ -392,17 +395,26 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
       onInlineMention(event.userId, event.lineMarkdown, event.lineNumber);
     }, [onInlineMention, personas]);
 
-    // Selection actions (Fork to new space)
+    // Selection actions (Fork to new space, Extract to page)
     const actions: DocumintActions | undefined = React.useMemo(() => {
-      if (!onForkSelection) return undefined;
-      return {
-        selection: {
+      const selectionActions: DocumintActions['selection'] & any[] = [];
+      if (onForkSelection) {
+        selectionActions.push({
           icon: GitFork,
           label: 'Fork to new space',
           onClick: onForkSelection,
-        },
-      };
-    }, [onForkSelection]);
+        });
+      }
+      if (onExtractToPage) {
+        selectionActions.push({
+          icon: FileOutput,
+          label: 'Extract to page',
+          onClick: onExtractToPage,
+        });
+      }
+      if (selectionActions.length === 0) return undefined;
+      return { selection: selectionActions };
+    }, [onForkSelection, onExtractToPage]);
 
     useImperativeHandle(ref, () => ({
       saveNow,
@@ -485,6 +497,19 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
           lastSavedRef.current = fullMerged;
           onDirtyChange(false);
         }
+      },
+      appendLink: (label: string, url: string) => {
+        const link = `[${label}](${url})`;
+        const current = contentRef.current;
+        const separator = current.endsWith('\n') || current === '' ? '' : '\n';
+        handleContentChange(current + separator + link);
+      },
+      replaceText: (search: string, replacement: string) => {
+        const current = contentRef.current;
+        const idx = current.indexOf(search);
+        if (idx === -1) return;
+        const updated = current.slice(0, idx) + replacement + current.slice(idx + search.length);
+        handleContentChange(updated);
       },
     }), [saveNow, handleContentChange, scheduleSave, hasFrontmatter, onDirtyChange]);
 

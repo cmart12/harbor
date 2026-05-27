@@ -4913,7 +4913,7 @@ async function unarchiveIntent(id: string): Promise<void> {
 (window as any).unarchiveIntent = unarchiveIntent;
 
 // ── Canvas view ─────────────────────────────────────────
-import { mountCanvas, unmountCanvas, getCanvasContent, saveCanvas as saveCanvasEditor, updateCanvasPresence, updateCanvasDecorations, updateCanvasAgentUsers, addCanvasCommentReply, toggleCanvasMode, getCanvasEditorMode, replaceCanvasContent } from './canvas/mount.tsx';
+import { mountCanvas, unmountCanvas, getCanvasContent, saveCanvas as saveCanvasEditor, updateCanvasPresence, updateCanvasDecorations, updateCanvasAgentUsers, addCanvasCommentReply, toggleCanvasMode, getCanvasEditorMode, replaceCanvasContent, appendCanvasLink, replaceCanvasText } from './canvas/mount.tsx';
 import { mountCanvasWorkerPanel, unmountCanvasWorkerPanel, isCanvasChatPaneOpen, closeCanvasChatPane } from './canvas/worker-panel-mount.tsx';
 import type { DocumentPresence, DocumentUser, DocumintDecoration } from 'documint';
 
@@ -5311,6 +5311,62 @@ async function createAndOpenCanvas(): Promise<void> {
   canvasIsNewIntent = true;
 }
 
+/** Show an in-page input dialog (replaces window.prompt which Electron doesn't support). */
+function showCanvasInputDialog(label: string, onSubmit: (value: string) => void): void {
+  const existing = document.getElementById('canvas-input-overlay');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'canvas-input-overlay';
+  Object.assign(overlay.style, {
+    position: 'fixed', inset: '0', zIndex: '99999',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    background: 'rgba(0,0,0,0.45)',
+  });
+
+  const box = document.createElement('div');
+  Object.assign(box.style, {
+    background: '#1e1e1e', borderRadius: '8px', padding: '16px 20px',
+    minWidth: '300px', boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+    fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif',
+  });
+
+  const labelEl = document.createElement('div');
+  labelEl.textContent = label;
+  Object.assign(labelEl.style, { color: '#ccc', marginBottom: '8px', fontSize: '13px' });
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  Object.assign(input.style, {
+    width: '100%', boxSizing: 'border-box', padding: '6px 8px',
+    background: '#2a2a2a', border: '1px solid #444', borderRadius: '4px',
+    color: '#eee', fontSize: '14px', outline: 'none',
+  });
+
+  const close = () => overlay.remove();
+
+  input.addEventListener('keydown', (ev) => {
+    ev.stopPropagation();
+    if (ev.key === 'Enter') {
+      const val = input.value.trim();
+      close();
+      if (val) onSubmit(val);
+    } else if (ev.key === 'Escape') {
+      close();
+    }
+  });
+
+  overlay.addEventListener('click', (ev) => {
+    if (ev.target === overlay) close();
+  });
+
+  box.appendChild(labelEl);
+  box.appendChild(input);
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+  input.focus();
+}
+
 async function openCanvas(spaceId: string, expanded = false): Promise<void> {
   const space = spaces.find(i => i.id === spaceId);
   if (!space) return;
@@ -5405,6 +5461,19 @@ async function openCanvas(spaceId: string, expanded = false): Promise<void> {
       if (!space || (space as any).error || !space.id) return;
       await loadSpaces();
       whimAPI.openNewCanvasWindow({ kind: 'space', id: space.id, title: space.description });
+    },
+    onExtractToPage: (selectedText) => {
+      if (!canvasSpaceId) return;
+      const sid = canvasSpaceId;
+      showCanvasInputDialog('Page name for extracted text', (name) => {
+        whimAPI.createPage(sid, name).then(async (result) => {
+          if (result.error) return;
+          await whimAPI.writePage(sid, result.page, selectedText);
+          const pageUrl = `whim://page/${encodeURIComponent(sid)}/${encodeURIComponent(result.page)}`;
+          replaceCanvasText(selectedText, `[${name}](${pageUrl})`);
+          whimAPI.openPageWindow({ kind: 'page', spaceId: sid, page: result.page, title: name });
+        });
+      });
     },
   });
 
@@ -5820,6 +5889,19 @@ async function exitPreview(): Promise<void> {
       if (!space || (space as any).error || !space.id) return;
       await loadSpaces();
       whimAPI.openNewCanvasWindow({ kind: 'space', id: space.id, title: space.description });
+    },
+    onExtractToPage: (selectedText) => {
+      const sid = canvasPageSpaceId || canvasSpaceId;
+      if (!sid) return;
+      showCanvasInputDialog('Page name for extracted text', (name) => {
+        whimAPI.createPage(sid, name).then(async (result) => {
+          if (result.error) return;
+          await whimAPI.writePage(sid, result.page, selectedText);
+          const pageUrl = `whim://page/${encodeURIComponent(sid)}/${encodeURIComponent(result.page)}`;
+          replaceCanvasText(selectedText, `[${name}](${pageUrl})`);
+          whimAPI.openPageWindow({ kind: 'page', spaceId: sid, page: result.page, title: name });
+        });
+      });
     },
   });
 }
@@ -6716,63 +6798,6 @@ if (isCanvasMode) {
 
   canvasPinTopBtn.addEventListener('click', toggleCanvasOnTop);
 
-  /** Show an in-page input dialog (replaces window.prompt which Electron doesn't support). */
-  function showCanvasInputDialog(label: string, onSubmit: (value: string) => void): void {
-    // Prevent stacking
-    const existing = document.getElementById('canvas-input-overlay');
-    if (existing) existing.remove();
-
-    const overlay = document.createElement('div');
-    overlay.id = 'canvas-input-overlay';
-    Object.assign(overlay.style, {
-      position: 'fixed', inset: '0', zIndex: '99999',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: 'rgba(0,0,0,0.45)',
-    });
-
-    const box = document.createElement('div');
-    Object.assign(box.style, {
-      background: '#1e1e1e', borderRadius: '8px', padding: '16px 20px',
-      minWidth: '300px', boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
-      fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif',
-    });
-
-    const labelEl = document.createElement('div');
-    labelEl.textContent = label;
-    Object.assign(labelEl.style, { color: '#ccc', marginBottom: '8px', fontSize: '13px' });
-
-    const input = document.createElement('input');
-    input.type = 'text';
-    Object.assign(input.style, {
-      width: '100%', boxSizing: 'border-box', padding: '6px 8px',
-      background: '#2a2a2a', border: '1px solid #444', borderRadius: '4px',
-      color: '#eee', fontSize: '14px', outline: 'none',
-    });
-
-    const close = () => overlay.remove();
-
-    input.addEventListener('keydown', (ev) => {
-      ev.stopPropagation();
-      if (ev.key === 'Enter') {
-        const val = input.value.trim();
-        close();
-        if (val) onSubmit(val);
-      } else if (ev.key === 'Escape') {
-        close();
-      }
-    });
-
-    overlay.addEventListener('click', (ev) => {
-      if (ev.target === overlay) close();
-    });
-
-    box.appendChild(labelEl);
-    box.appendChild(input);
-    overlay.appendChild(box);
-    document.body.appendChild(overlay);
-    input.focus();
-  }
-
   // Canvas keyboard shortcuts — use capture phase so the editor can't swallow them
   window.addEventListener('keydown', (e) => {
     if (!(e.metaKey || e.ctrlKey) || !e.shiftKey) return;
@@ -6793,6 +6818,8 @@ if (isCanvasMode) {
       showCanvasInputDialog('New page name', (name) => {
         whimAPI.createPage(spaceId, name).then(result => {
           if (result.error) return;
+          const pageUrl = `whim://page/${encodeURIComponent(spaceId)}/${encodeURIComponent(result.page)}`;
+          appendCanvasLink(name, pageUrl);
           whimAPI.openPageWindow({ kind: 'page', spaceId, page: result.page, title: name });
         });
       });
