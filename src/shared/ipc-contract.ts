@@ -432,6 +432,9 @@ export interface IpcEvents {
     intention?: string;
     allowedDecisions?: Array<'allow-once' | 'allow-for-session' | 'disable'>;
     layer?: SandboxLayer;
+    /** Handle of the persona that launched this agent. Used by the renderer
+     *  to open the persona editor on "Edit sandbox config". */
+    personaHandle?: string;
   };
   'agent:completed': { agentId: string; summary: string };
   'agent:yolo-changed': { agentId: string; enabled: boolean };

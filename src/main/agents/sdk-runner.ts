@@ -478,6 +478,7 @@ export async function launchQuickAgent(
       summary,
       ...(sandboxState ? { sandbox: sandboxState } : {}),
       ...(persona?.yolo ? { yoloMode: true } : {}),
+      ...(persona?.handle ? { personaHandle: persona.handle } : {}),
       ...(isEphemeral ? { ephemeral: true } : {}),
     };
     registry.set(agentId, record);

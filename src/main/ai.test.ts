@@ -1,0 +1,159 @@
+import { describe, it, expect, vi } from 'vitest';
+import * as os from 'os';
+import * as path from 'path';
+import type { SandboxPolicy } from '../shared/ipc-contract';
+
+// ai.ts indirectly imports electron via ./config. Mock before the import.
+vi.mock('electron', () => ({
+  app: { getPath: () => path.join(os.tmpdir(), 'whim-ai-test') },
+}));
+
+// The SDK is imported as values (CopilotClient etc.) at module top level.
+// We never call them in these tests — provide stubs that satisfy the imports
+// without dragging the real SDK into the test process.
+vi.mock('@github/copilot-sdk', () => ({
+  CopilotClient: class {},
+  CopilotSession: class {},
+  RuntimeConnection: class {},
+}));
+
+vi.mock('./config', () => ({
+  getConfigValue: vi.fn(() => null),
+  setConfigValue: vi.fn(),
+}));
+
+vi.mock('./session', () => ({
+  resolveCopilotCliPath: vi.fn(() => '/mock/cli'),
+}));
+
+import { previewSandboxConfig } from './ai';
+
+const basePolicy: SandboxPolicy = {
+  scopeToSpaceFolder: true,
+  extraReadwritePaths: [],
+  extraReadonlyPaths: [],
+  extraDeniedPaths: [],
+  allowMcpServers: false,
+  allowWebFetch: false,
+  allowOutbound: false,
+  allowLocalNetwork: false,
+  enforcementMode: 'both',
+};
+
+describe('previewSandboxConfig / materializeRuntimeConfig shape', () => {
+  // These tests exist primarily to lock the `sandbox.userPolicy.*` nesting
+  // contract. A previous version of materializeRuntimeConfig wrote the policy
+  // fields at `sandbox.filesystem` / `sandbox.network` directly. The runtime's
+  // zod schema accepts that shape with passthrough but the policy loader reads
+  // `userPolicy.filesystem` / `userPolicy.network` — so the whole policy was
+  // silently ignored and every sandbox fell back to runtime defaults
+  // (notably allowOutbound:true). The shape assertions below catch regressions.
+
+  it('nests filesystem and network under sandbox.userPolicy (NOT directly under sandbox)', () => {
+    const cfg = previewSandboxConfig(basePolicy) as any;
+
+    // Positive: the userPolicy nesting must exist.
+    expect(cfg.sandbox).toBeDefined();
+    expect(cfg.sandbox.userPolicy).toBeDefined();
+    expect(cfg.sandbox.userPolicy.filesystem).toBeDefined();
+    expect(cfg.sandbox.userPolicy.network).toBeDefined();
+
+    // Negative: the flat shape (the historical bug) must NOT be present.
+    // If someone "cleans up" by hoisting filesystem/network up a level, this
+    // test fails loudly instead of letting the policy silently no-op.
+    expect(cfg.sandbox.filesystem).toBeUndefined();
+    expect(cfg.sandbox.network).toBeUndefined();
+  });
+
+  it('marks the sandbox as enabled in the preview', () => {
+    const cfg = previewSandboxConfig(basePolicy) as any;
+    expect(cfg.sandbox.enabled).toBe(true);
+  });
+
+  it('includes the workspace placeholder in readwritePaths when scopeToSpaceFolder is true', () => {
+    const cfg = previewSandboxConfig({
+      ...basePolicy,
+      scopeToSpaceFolder: true,
+      extraReadwritePaths: [],
+    }) as any;
+    expect(cfg.sandbox.userPolicy.filesystem.readwritePaths).toEqual([
+      '<space folder — replaced at agent launch>',
+    ]);
+  });
+
+  it('omits the workspace placeholder when scopeToSpaceFolder is false', () => {
+    const cfg = previewSandboxConfig({
+      ...basePolicy,
+      scopeToSpaceFolder: false,
+      extraReadwritePaths: ['/extra/path'],
+    }) as any;
+    expect(cfg.sandbox.userPolicy.filesystem.readwritePaths).toEqual(['/extra/path']);
+  });
+
+  it('deduplicates extra readwrite paths against the workspace placeholder', () => {
+    // If a user adds the workspace placeholder string explicitly into extras,
+    // it should not appear twice. This guards against unbounded duplication
+    // when a future caller passes an actual cwd into both scoped + extras.
+    const cfg = previewSandboxConfig({
+      ...basePolicy,
+      scopeToSpaceFolder: true,
+      extraReadwritePaths: ['<space folder — replaced at agent launch>', '/other'],
+    }) as any;
+    expect(cfg.sandbox.userPolicy.filesystem.readwritePaths).toEqual([
+      '<space folder — replaced at agent launch>',
+      '/other',
+    ]);
+  });
+
+  it('copies extraReadonlyPaths and extraDeniedPaths into the filesystem block', () => {
+    const cfg = previewSandboxConfig({
+      ...basePolicy,
+      extraReadonlyPaths: ['/ro1', '/ro2'],
+      extraDeniedPaths: ['/secret'],
+    }) as any;
+    expect(cfg.sandbox.userPolicy.filesystem.readonlyPaths).toEqual(['/ro1', '/ro2']);
+    expect(cfg.sandbox.userPolicy.filesystem.deniedPaths).toEqual(['/secret']);
+  });
+
+  it('always sets clearPolicyOnExit: true so policy is not persisted across runs', () => {
+    const cfg = previewSandboxConfig(basePolicy) as any;
+    expect(cfg.sandbox.userPolicy.filesystem.clearPolicyOnExit).toBe(true);
+  });
+
+  it('propagates allowOutbound: false into network.allowOutbound', () => {
+    const cfg = previewSandboxConfig({ ...basePolicy, allowOutbound: false }) as any;
+    expect(cfg.sandbox.userPolicy.network.allowOutbound).toBe(false);
+  });
+
+  it('propagates allowOutbound: true into network.allowOutbound', () => {
+    const cfg = previewSandboxConfig({ ...basePolicy, allowOutbound: true }) as any;
+    expect(cfg.sandbox.userPolicy.network.allowOutbound).toBe(true);
+  });
+
+  it('propagates allowLocalNetwork into network.allowLocalNetwork', () => {
+    const denied = previewSandboxConfig({ ...basePolicy, allowLocalNetwork: false }) as any;
+    const allowed = previewSandboxConfig({ ...basePolicy, allowLocalNetwork: true }) as any;
+    expect(denied.sandbox.userPolicy.network.allowLocalNetwork).toBe(false);
+    expect(allowed.sandbox.userPolicy.network.allowLocalNetwork).toBe(true);
+  });
+
+  it('does not mutate the input policy arrays (defensive copy)', () => {
+    const policy: SandboxPolicy = {
+      ...basePolicy,
+      extraReadwritePaths: ['/rw'],
+      extraReadonlyPaths: ['/ro'],
+      extraDeniedPaths: ['/deny'],
+    };
+    previewSandboxConfig(policy);
+    expect(policy.extraReadwritePaths).toEqual(['/rw']);
+    expect(policy.extraReadonlyPaths).toEqual(['/ro']);
+    expect(policy.extraDeniedPaths).toEqual(['/deny']);
+  });
+
+  it('produces a JSON-serializable object (no functions, classes, or circular refs)', () => {
+    const cfg = previewSandboxConfig(basePolicy);
+    expect(() => JSON.stringify(cfg)).not.toThrow();
+    const roundTripped = JSON.parse(JSON.stringify(cfg));
+    expect(roundTripped).toEqual(cfg);
+  });
+});

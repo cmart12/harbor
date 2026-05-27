@@ -108,6 +108,7 @@ export interface AppConfig {
   personas: AgentPersona[];
   personasSeeded: boolean;          // true after default personas have been injected once
   personasMigratedV2: boolean;      // true after legacy runLocation rename (cloud→cca) has run
+  personasSandboxSeeded: boolean;   // true after @sandbox demo persona has been topped up once for existing installs
   cliRuntimes: CliRuntime[];
   cliTools: CliToolDefinition[];
   mcpServers: CustomMcpServer[];   // user-added MCP servers
@@ -235,6 +236,35 @@ Guidelines:
     emoji: '🕵️',
     ephemeral: true,
   },
+  {
+    id: 'default-sandbox',
+    handle: 'sandbox',
+    instructions: `You are a demo agent for the MXC sandbox. The MXC sandbox is the SOLE enforcer for your shell calls — host-side path/permission guardrails are disabled (enforcementMode: 'mxc-only').
+
+When asked to demonstrate the sandbox:
+- Run each command as a SEPARATE \`bash\` tool call so the user can see allowed vs. denied results one at a time. Do NOT chain with \`&&\` (a single denial would mask later commands).
+- Start with something that should succeed inside the workspace (e.g. \`ls\` of the workspace, \`cat\` a file in scope).
+- Then try something the policy should block: writing outside the workspace (e.g. \`echo hi > ~/whim-sandbox-denied.txt\`) or an outbound network call (e.g. \`curl https://example.com\`).
+- Report what happened for each command — the sandbox emits a clear footer when it blocks you, and the UI will bubble up a banner letting the user adjust policy.
+- Do NOT attempt workarounds when a command is denied. The point of the demo is to show that the sandbox is enforcing.
+
+This persona is for demonstrating MXC enforcement, not for general-purpose safe work — host-side approvals are off.`,
+    model: '',
+    runLocation: 'local',
+    emoji: '🧪',
+    sandboxed: true,
+    sandboxPolicyOverride: {
+      scopeToSpaceFolder: true,
+      extraReadwritePaths: [],
+      extraReadonlyPaths: [],
+      extraDeniedPaths: [],
+      allowMcpServers: true,
+      allowWebFetch: true,
+      allowOutbound: false,
+      allowLocalNetwork: false,
+      enforcementMode: 'mxc-only',
+    },
+  },
 ];
 
 const DEFAULT_CONFIG: AppConfig = {
@@ -250,6 +280,7 @@ const DEFAULT_CONFIG: AppConfig = {
   personas: [],
   personasSeeded: false,
   personasMigratedV2: false,
+  personasSandboxSeeded: false,
   cliRuntimes: [],
   cliTools: [],
   mcpServers: [],

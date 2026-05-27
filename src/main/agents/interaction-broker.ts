@@ -53,6 +53,12 @@ export interface SandboxBlockRequest {
    * it through the renderer event makes verification visible end-to-end.
    */
   layer?: SandboxLayer;
+  /**
+   * Handle of the persona that owns this agent.  Surfaced in the renderer
+   * so the bubble-up banner's "Edit sandbox config" button can open the
+   * persona editor for the correct entry.
+   */
+  personaHandle?: string;
 }
 
 export type SandboxResolutionDecision = 'allow-once' | 'allow-for-session' | 'disable';
@@ -85,6 +91,7 @@ export class InteractionBroker {
       ...req,
       requestId,
       agentId: record.agentId,
+      ...(record.personaHandle ? { personaHandle: record.personaHandle } : {}),
     };
     record.status = 'waiting-approval';
     this.persistence.updateStatus(record);

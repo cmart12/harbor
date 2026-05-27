@@ -77,24 +77,43 @@ suffixes signal that breaking changes can land in any release. Intent pins the
 
 ## 2. Runtime sandbox config (`copilot-agent-runtime`)
 
-The runtime stores its own simplified slice in
-`UserSettings.sandbox` (see
-`../copilot-agent-runtime/src/core/persistence/userSettings.ts`):
+The runtime stores its own simplified slice in `UserSettings.sandbox` (see
+`../copilot-agent-runtime/src/core/persistence/userSettings.ts` for the
+authoritative zod schema and `src/core/sandbox/index.ts` for the resolved-view
+loader):
 
 ```ts
 sandbox?: {
   enabled?: boolean;
-  filesystem?: {
-    readwritePaths?: string[];
-    readonlyPaths?:  string[];
-    deniedPaths?:    string[];
-    clearPolicyOnExit?: boolean;
+  /**
+   * User-managed sandbox policy fragment. The runtime reads policy from
+   * `userPolicy.{filesystem,network,experimental}` — not directly from
+   * `sandbox.{filesystem,network}`. Writing the flat shape (without
+   * `userPolicy`) means the runtime silently falls back to defaults
+   * (notably `allowOutbound: true`).
+   */
+  userPolicy?: {
+    filesystem?: {
+      readwritePaths?: string[];
+      readonlyPaths?:  string[];
+      deniedPaths?:    string[];
+      clearPolicyOnExit?: boolean;
+    };
+    network?: {
+      allowOutbound?:     boolean;
+      allowLocalNetwork?: boolean;
+      allowedHosts?:      string[];
+      blockedHosts?:      string[];
+    };
+    experimental?: {
+      seatbelt?: { keychainAccess?: boolean };
+    };
   };
-  network?: {
-    allowOutbound?:     boolean;
-    allowLocalNetwork?: boolean;
-  };
-}
+  /** Raw ContainerConfig passthrough — takes precedence over userPolicy. */
+  config?: Record<string, unknown>;
+  /** Auto-add cwd to readwritePaths. Default: true. */
+  addCurrentWorkingDirectory?: boolean;
+};
 ```
 
 Persisted as JSON under `${configDir}/config.json` (legacy) or
@@ -108,27 +127,31 @@ The runtime only consults `sandbox` for **shell** tool calls:
 
 - `src/tools/interactiveShell.ts` (`if (config.sandbox?.enabled)` branch) calls
   `spawnSandboxedShell()` (`src/core/sandbox/sandboxSpawn.ts`).
-- `spawnSandboxedShell` dynamically imports `@microsoft/mxc-sdk` and calls
-  `sdk.spawnSandbox(script, { version: "0.4.0-alpha", filesystem: merged }, …)`,
-  where `merged` is the user policy plus tool/profile/temp paths the SDK
-  computes via `getAvailableToolsPolicy`, `getUserProfilePolicy`,
-  `getTemporaryFilesPolicy`.
+- `spawnSandboxedShell` reads `userPolicy.filesystem` and `userPolicy.network`,
+  merges them with auto-discovered tool/profile/temp paths, then dynamically
+  imports `@microsoft/mxc-sdk` and calls `sdk.spawnSandbox(...)`.
 
 Tools like `view`, `edit`, `create`, `str_replace_editor`, `applyPatch`,
 `glob`, `grep`, `show_file`, and `web_fetch` use Node `fs` / `fetch` directly
-and **do not** consult `sandbox`. These have to be policed host-side by Intent.
+and **do not** consult `sandbox`. These have to be policed host-side by Whim
+(or skipped entirely under `enforcementMode: 'mxc-only'`).
 
 ### Important runtime quirks
 
 - `clearPolicyOnExit`: defaults to true; tells the SDK to wipe AppContainer
   policies after the shell exits.
-- `network.allowedHosts` is **NOT** part of the runtime's schema today, even
-  though MXC supports it. Intent therefore drops `allowedHosts` from its v1
-  policy.
+- `network.allowedHosts` is exposed by the runtime schema but **not used by
+  the macOS Seatbelt backend** (Seatbelt cannot filter per-host). On darwin,
+  only `allowOutbound: false` actually restricts network traffic. Whim's
+  v1 policy therefore omits `allowedHosts`.
 - The runtime caches `UserSettings` keyed by `configDir`. Switching `configDir`
   on `resumeSession` is the supported way to swap policies; mutating
   `config.json` under the same `configDir` mid-session is not guaranteed to
   re-read.
+- **Wrong shape = silent no-op.** If Whim writes `sandbox.filesystem`
+  directly instead of `sandbox.userPolicy.filesystem`, the runtime's zod
+  schema accepts the file (passthrough) but the policy loader sees
+  `userPolicy` as undefined and falls back to defaults. There is no error.
 
 ---
 

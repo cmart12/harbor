@@ -493,6 +493,53 @@ describe('InteractionBroker', () => {
       expect(channels).toContain('agent:sandbox-blocked');
       expect(channels).toContain('chat:event:agent-1');
     });
+
+    it('propagates personaHandle from the record into the agent:sandbox-blocked payload', async () => {
+      // The renderer's "Edit sandbox config" button relies on this field to
+      // know which persona to open. If it's missing, the button silently
+      // becomes a no-op.
+      const record = makeRecord({ personaHandle: 'sandbox' });
+      broker.emitSandboxBlock(record, {
+        source: 'post-tool-shell',
+        kind: 'shell',
+        toolName: 'bash',
+        target: 'echo hi > ~/whim-sandbox-denied.txt',
+      });
+      const blockedCall = (notifier.notifyRenderer as any).mock.calls.find(
+        (c: any[]) => c[0] === 'agent:sandbox-blocked',
+      );
+      expect(blockedCall).toBeDefined();
+      expect(blockedCall[1].personaHandle).toBe('sandbox');
+
+      // Same field must also be present on the chat-event mirror so any
+      // future chat-side UI that surfaces the block can use it too.
+      const chatCall = (notifier.notifyRenderer as any).mock.calls.find(
+        (c: any[]) => c[0] === 'chat:event:agent-1',
+      );
+      expect(chatCall).toBeDefined();
+      expect(chatCall[1].personaHandle).toBe('sandbox');
+    });
+
+    it('omits personaHandle from the payload when the record has none', async () => {
+      // Quick-launch agents and records that pre-date the persona field both
+      // arrive without a handle. The payload should not include the key (vs.
+      // include `personaHandle: undefined`), so the renderer's
+      // `if (data.personaHandle)` check works and the Edit button is hidden.
+      const record = makeRecord();
+      expect(record.personaHandle).toBeUndefined();
+
+      broker.emitSandboxBlock(record, {
+        source: 'permission',
+        kind: 'write',
+        target: 'C:\\foo\\bar.txt',
+      });
+      const blockedCall = (notifier.notifyRenderer as any).mock.calls.find(
+        (c: any[]) => c[0] === 'agent:sandbox-blocked',
+      );
+      expect(blockedCall).toBeDefined();
+      // The key should not be present at all (not `personaHandle: undefined`).
+      expect('personaHandle' in blockedCall[1]).toBe(false);
+    });
   });
 
   describe('createPathAwareSandboxPermissionHandler', () => {

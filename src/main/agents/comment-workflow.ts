@@ -149,6 +149,7 @@ If you make changes to the document, clearly describe what you changed.${cliTool
       summary: 'Starting...',
       ...(sandboxState ? { sandbox: sandboxState } : {}),
       ...(persona.yolo ? { yoloMode: true } : {}),
+      personaHandle: persona.handle,
       commentContext: {
         threadId,
         personaHandle: persona.handle,

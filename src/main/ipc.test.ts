@@ -595,8 +595,23 @@ describe('IPC handlers', () => {
         expect.objectContaining({ id: 'default-pr', handle: 'pr', runLocation: 'cca', emoji: '🔀' }),
         expect.objectContaining({ id: 'default-cloud', handle: 'cloud', runLocation: 'cloud', emoji: '☁️' }),
         expect.objectContaining({ id: 'default-secret-agent', handle: 'secret-agent', ephemeral: true, emoji: '🕵️' }),
+        expect.objectContaining({
+          id: 'default-sandbox',
+          handle: 'sandbox',
+          sandboxed: true,
+          emoji: '🧪',
+          // The whole point of @sandbox is mxc-only enforcement with no
+          // outbound network. If a future refactor strips these from the
+          // default persona the demo silently degrades into "@agent with
+          // a different emoji".
+          sandboxPolicyOverride: expect.objectContaining({
+            enforcementMode: 'mxc-only',
+            allowOutbound: false,
+            scopeToSpaceFolder: true,
+          }),
+        }),
       ]));
-      expect(result).toHaveLength(6);
+      expect(result).toHaveLength(7);
 
       expect(setConfigValue).toHaveBeenCalledWith('personas', expect.arrayContaining([
         expect.objectContaining({ id: 'default-agent', handle: 'agent' }),
@@ -605,8 +620,12 @@ describe('IPC handlers', () => {
         expect.objectContaining({ handle: 'pr' }),
         expect.objectContaining({ handle: 'cloud' }),
         expect.objectContaining({ handle: 'secret-agent' }),
+        expect.objectContaining({ handle: 'sandbox' }),
       ]));
       expect(setConfigValue).toHaveBeenCalledWith('personasSeeded', true);
+      // First-time seed also flips personasSandboxSeeded so the existing-install
+      // top-up never runs as a no-op on subsequent loads.
+      expect(setConfigValue).toHaveBeenCalledWith('personasSandboxSeeded', true);
     });
 
     it('does not re-seed when personasSeeded flag is true', () => {
@@ -619,6 +638,10 @@ describe('IPC handlers', () => {
       cfg.mockImplementation((key: string) => {
         if (key === 'personas') return agentOnly as any;
         if (key === 'personasSeeded') return true as any;
+        // personasSandboxSeeded must also be true; otherwise the top-up
+        // migration would write personas + flip the flag and break this
+        // assertion. The top-up has its own dedicated test below.
+        if (key === 'personasSandboxSeeded') return true as any;
         return null as any;
       });
 
@@ -649,6 +672,7 @@ describe('IPC handlers', () => {
       cfg.mockImplementation((key: string) => {
         if (key === 'personas') return noAgent as any;
         if (key === 'personasSeeded') return true as any;
+        if (key === 'personasSandboxSeeded') return true as any;
         return null as any;
       });
 
@@ -673,7 +697,7 @@ describe('IPC handlers', () => {
     it('merges defaults with existing personas during first seed', () => {
       vi.mocked(setConfigValue).mockClear();
       // Existing user who already has @agent and a custom persona but
-      // personasSeeded is false → gets @editor, @dev, @cloud added
+      // personasSeeded is false → gets the rest of the default personas added.
       const cfg = vi.mocked(getConfigValue);
       const existing = [
         { id: 'default-agent', handle: 'agent', instructions: 'custom agent', model: '', runLocation: 'local' as const },
@@ -686,7 +710,7 @@ describe('IPC handlers', () => {
       });
 
       const result = invoke('personas:list');
-      // Existing ones preserved, missing defaults added
+      // Existing ones preserved, missing defaults added (including @sandbox)
       expect(result).toEqual(expect.arrayContaining([
         expect.objectContaining({ handle: 'agent', instructions: 'custom agent' }),
         expect.objectContaining({ handle: 'reviewer' }),
@@ -695,9 +719,95 @@ describe('IPC handlers', () => {
         expect.objectContaining({ handle: 'pr' }),
         expect.objectContaining({ handle: 'cloud' }),
         expect.objectContaining({ handle: 'secret-agent' }),
+        expect.objectContaining({ handle: 'sandbox' }),
       ]));
-      expect(result).toHaveLength(7);
+      expect(result).toHaveLength(8);
       expect(setConfigValue).toHaveBeenCalledWith('personasSeeded', true);
+      expect(setConfigValue).toHaveBeenCalledWith('personasSandboxSeeded', true);
+
+      // Restore default mock
+      cfg.mockImplementation((key: string) => {
+        if (key === 'workspace') return '/mock/workspace';
+        if (key === 'theme') return 'dark';
+        if (key === 'model') return 'gpt-4';
+        if (key === 'personas') return [];
+        if (key === 'mcpServers') return [];
+        if (key === 'cliTools') return [];
+        return null;
+      });
+    });
+
+    it('tops up @sandbox for existing installs (personasSeeded=true, personasSandboxSeeded=false)', () => {
+      vi.mocked(setConfigValue).mockClear();
+      const cfg = vi.mocked(getConfigValue);
+      // Pre-sandbox install: seeded long ago, no sandbox persona, flag missing.
+      const preSandbox = [
+        { id: 'default-agent', handle: 'agent', instructions: 'a', model: '', runLocation: 'local' as const },
+        { id: 'default-editor', handle: 'editor', instructions: 'b', model: '', runLocation: 'local' as const },
+      ];
+      cfg.mockImplementation((key: string) => {
+        if (key === 'personas') return preSandbox as any;
+        if (key === 'personasSeeded') return true as any;
+        if (key === 'personasMigratedV2') return true as any;
+        if (key === 'personasSandboxSeeded') return false as any;
+        return null as any;
+      });
+
+      const result = invoke('personas:list');
+      expect(result).toEqual(expect.arrayContaining([
+        expect.objectContaining({ handle: 'agent' }),
+        expect.objectContaining({ handle: 'editor' }),
+        expect.objectContaining({
+          handle: 'sandbox',
+          sandboxed: true,
+          // Top-up must use the full DEFAULT_PERSONAS entry, not a stripped-
+          // down version. If a future change to the migration writes only
+          // the bare handle/sandboxed=true, the demo would launch with the
+          // wrong enforcement mode and silently break.
+          sandboxPolicyOverride: expect.objectContaining({
+            enforcementMode: 'mxc-only',
+            allowOutbound: false,
+          }),
+        }),
+      ]));
+      // Top-up wrote both the personas array (with @sandbox prepended) and
+      // the gate flag.
+      expect(setConfigValue).toHaveBeenCalledWith('personas',
+        expect.arrayContaining([expect.objectContaining({ handle: 'sandbox' })]));
+      expect(setConfigValue).toHaveBeenCalledWith('personasSandboxSeeded', true);
+
+      // Restore default mock
+      cfg.mockImplementation((key: string) => {
+        if (key === 'workspace') return '/mock/workspace';
+        if (key === 'theme') return 'dark';
+        if (key === 'model') return 'gpt-4';
+        if (key === 'personas') return [];
+        if (key === 'mcpServers') return [];
+        if (key === 'cliTools') return [];
+        return null;
+      });
+    });
+
+    it('does not re-add @sandbox after top-up has run', () => {
+      // User intentionally deleted @sandbox post-top-up — respect that.
+      vi.mocked(setConfigValue).mockClear();
+      const cfg = vi.mocked(getConfigValue);
+      const withoutSandbox = [
+        { id: 'default-agent', handle: 'agent', instructions: 'a', model: '', runLocation: 'local' as const },
+      ];
+      cfg.mockImplementation((key: string) => {
+        if (key === 'personas') return withoutSandbox as any;
+        if (key === 'personasSeeded') return true as any;
+        if (key === 'personasMigratedV2') return true as any;
+        if (key === 'personasSandboxSeeded') return true as any;
+        return null as any;
+      });
+
+      const result = invoke('personas:list');
+      expect(result).toEqual(withoutSandbox);
+      expect(setConfigValue).not.toHaveBeenCalledWith('personasSandboxSeeded', true);
+      expect(setConfigValue).not.toHaveBeenCalledWith('personas',
+        expect.arrayContaining([expect.objectContaining({ handle: 'sandbox' })]));
 
       // Restore default mock
       cfg.mockImplementation((key: string) => {

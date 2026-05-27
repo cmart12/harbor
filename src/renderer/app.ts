@@ -6367,7 +6367,8 @@ function renderSandboxBlockBanner(data: {
   target: string;
   intention?: string;
   allowedDecisions?: Array<'allow-once' | 'allow-for-session' | 'disable'>;
-  layer?: 'host:readonly-classifier' | 'host:path-policy' | 'host:web-fetch' | 'host:permission' | 'mxc:shell-denial-suspected';
+  layer?: 'host:readonly-classifier' | 'host:path-policy' | 'host:web-fetch' | 'host:permission' | 'mxc:shell-denial-suspected' | 'mxc:shell-denial-high' | 'mxc:shell-denial-medium' | 'mxc:shell-denial-network' | 'mxc-only:auto-approve';
+  personaHandle?: string;
 }): void {
   const banner = document.createElement('div');
   banner.className = 'sandbox-block-banner';
@@ -6379,6 +6380,15 @@ function renderSandboxBlockBanner(data: {
     : `🔒 Sandbox blocked: ${data.kind}${data.toolName ? ` (${data.toolName})` : ''}`;
   banner.appendChild(title);
 
+  if (data.personaHandle) {
+    const personaTag = document.createElement('div');
+    personaTag.className = 'sandbox-block-banner-persona';
+    personaTag.style.fontSize = '11px';
+    personaTag.style.opacity = '0.75';
+    personaTag.textContent = `Persona: @${data.personaHandle}`;
+    banner.appendChild(personaTag);
+  }
+
   // Show which enforcement layer fired so the user can verify whether MXC
   // actually denied (mxc:*) vs the host intercepted before MXC (host:*).
   if (data.layer) {
@@ -6387,7 +6397,7 @@ function renderSandboxBlockBanner(data: {
     layerTag.style.fontSize = '11px';
     layerTag.style.opacity = '0.75';
     layerTag.style.fontFamily = 'monospace';
-    const layerLabel = data.layer.startsWith('mxc:')
+    const layerLabel = data.layer.startsWith('mxc:') || data.layer.startsWith('mxc-only:')
       ? `Enforced by: MXC (${data.layer})`
       : `Enforced by: host (${data.layer})`;
     layerTag.textContent = layerLabel;
@@ -6432,6 +6442,42 @@ function renderSandboxBlockBanner(data: {
       banner.remove();
     });
     actions.appendChild(ignoreBtn);
+  }
+
+  if (data.personaHandle) {
+    const editBtn = document.createElement('button');
+    editBtn.className = 'sandbox-block-banner-btn';
+    editBtn.textContent = 'Edit sandbox config';
+    editBtn.title =
+      `Open the @${data.personaHandle} persona to tweak its sandbox policy. ` +
+      'Changes apply to FUTURE sessions launched with this persona — they do ' +
+      'not modify the currently blocked agent. The banner stays visible so ' +
+      'you can still Allow / Disable for this call.';
+    editBtn.addEventListener('click', async () => {
+      // Make sure personas[] is hydrated — the user may not have visited the
+      // Agents tab yet this session.
+      if (personas.length === 0) {
+        try { await loadPersonas(); } catch { /* fall through; lookup may fail */ }
+      }
+      const persona = personas.find(p => p.handle === data.personaHandle);
+      if (persona) {
+        setFilter('agents');
+        selectAgent(persona.id);
+        setTimeout(() => {
+          // `.persona-sandbox-row` is the row that starts the sandbox section
+          // of the persona editor (where the "Sandboxed" checkbox lives).
+          // `.sandbox-policy-form` lives just below it when the persona has
+          // a custom override. Either is a fine scroll target.
+          const sandboxSection = document.querySelector('.persona-sandbox-row') as HTMLElement | null;
+          sandboxSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 50);
+      }
+      // Do NOT remove the banner or resolve the pending callback — the user
+      // is reconfiguring policy, not deciding on this specific blocked call.
+      editBtn.disabled = true;
+      editBtn.textContent = 'Editor opened';
+    });
+    actions.appendChild(editBtn);
   }
 
   banner.appendChild(actions);

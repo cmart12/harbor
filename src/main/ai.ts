@@ -20,7 +20,14 @@ export interface SandboxConfigDirs {
 /**
  * Build the runtime-format sandbox config object for a given policy and space
  * working directory. Mirrors the shape consumed by `copilot-agent-runtime`'s
- * `UserSettings.sandbox` (see docs/mxc-sandbox-schema.md).
+ * `UserSettings.sandbox` schema (see
+ * `copilot-agent-runtime/src/core/persistence/userSettings.ts` zod for the
+ * authoritative shape, and docs/mxc-sandbox-schema.md for the project doc).
+ *
+ * The runtime reads `sandbox.userPolicy.{filesystem,network,experimental}` —
+ * NOT `sandbox.filesystem`/`sandbox.network` directly. Writing the flat shape
+ * means the runtime silently ignores the policy and falls back to defaults
+ * (notably `allowOutbound: true`), making the per-agent overrides a no-op.
  */
 function materializeRuntimeConfig(
   enabled: boolean,
@@ -36,15 +43,17 @@ function materializeRuntimeConfig(
   return {
     sandbox: {
       enabled,
-      filesystem: {
-        readwritePaths,
-        readonlyPaths: [...policy.extraReadonlyPaths],
-        deniedPaths: [...policy.extraDeniedPaths],
-        clearPolicyOnExit: true,
-      },
-      network: {
-        allowOutbound: policy.allowOutbound,
-        allowLocalNetwork: policy.allowLocalNetwork,
+      userPolicy: {
+        filesystem: {
+          readwritePaths,
+          readonlyPaths: [...policy.extraReadonlyPaths],
+          deniedPaths: [...policy.extraDeniedPaths],
+          clearPolicyOnExit: true,
+        },
+        network: {
+          allowOutbound: policy.allowOutbound,
+          allowLocalNetwork: policy.allowLocalNetwork,
+        },
       },
     },
   };

@@ -65,6 +65,12 @@ export interface AgentRecord {
   restarted?: boolean;
   /** Sandbox runtime state — present iff the agent was launched as sandboxed. */
   sandbox?: SandboxRuntimeState;
+  /**
+   * Handle of the persona that launched this agent, when known. Used by the
+   * sandbox-block bubble-up so the renderer can open the persona editor on
+   * "Edit sandbox config".
+   */
+  personaHandle?: string;
   /** When true, all permission requests are auto-approved without user interaction. Session-only. */
   yoloMode?: boolean;
   /** Remote control state — tracks Mission Control integration per session. */

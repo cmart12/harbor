@@ -115,6 +115,23 @@ export function registerSettingsHandlers(): void {
       setConfigValue('personasMigratedV2', true);
     }
 
+    // One-time top-up: add @sandbox to existing installs that have already
+    // been seeded (personasSeeded=true) but predate the demo persona.
+    // Brand-new users hit the first-time seed block below, which already
+    // contains @sandbox. Users who intentionally delete @sandbox after the
+    // top-up are respected because the flag is set after the first attempt.
+    const sandboxSeeded = getConfigValue('personasSandboxSeeded');
+    if (seeded && !sandboxSeeded) {
+      if (!personas.some((p: AgentPersona) => p.handle === 'sandbox')) {
+        const def = DEFAULT_PERSONAS.find(p => p.handle === 'sandbox');
+        if (def) {
+          personas = [def, ...personas];
+          setConfigValue('personas', personas);
+        }
+      }
+      setConfigValue('personasSandboxSeeded', true);
+    }
+
     if (!seeded) {
       // One-time seed: merge any defaults whose handle doesn't already exist
       const existing = new Set(personas.map((p: AgentPersona) => p.handle));
@@ -122,6 +139,9 @@ export function registerSettingsHandlers(): void {
       const merged = [...toAdd, ...personas];
       setConfigValue('personas', merged);
       setConfigValue('personasSeeded', true);
+      // First-time seed includes @sandbox via DEFAULT_PERSONAS, so the
+      // existing-install top-up never needs to run for this user.
+      setConfigValue('personasSandboxSeeded', true);
       return merged;
     }
 
