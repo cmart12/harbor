@@ -10,7 +10,6 @@ import { listAllRunningAgents, updateCanvasAgentStatus } from './database';
 import { initSdkRunner, setupAgentEventListeners } from './agents/sdk-runner';
 import { initCliRunner } from './agents/cli-runner';
 import { initCommentWorkflow } from './agents/comment-workflow';
-import { initConduitRunner } from './agents/conduit-runner';
 
 export type { AgentStatus } from './agents/agent-registry';
 
@@ -31,7 +30,6 @@ subagentTracker.onChange((parentAgentId) => {
 initSdkRunner({ registry, notifier, persistence, broker, subagentTracker });
 initCliRunner({ registry, notifier, persistence });
 initCommentWorkflow({ registry, notifier, persistence, broker, setupAgentEventListeners });
-initConduitRunner({ registry, notifier, persistence, broker });
 
 // ── Re-exports from SDK runner ─────────────────────────
 export { buildCliToolsPrompt, launchAgent, launchQuickAgent, launchDocumentAgent, sendChatMessage, setAgentModel, getAgentHistory, enableRemoteControl, disableRemoteControl, disableSandboxForSession } from './agents/sdk-runner';
@@ -50,7 +48,7 @@ export async function setAppRemote(enabled: boolean): Promise<{ enabled: boolean
   const agents: Array<{ agentId: string; url?: string }> = [];
 
   for (const record of registry.values()) {
-    // Only manage SDK agents (not CLI, CCA, or Conduit)
+    // Only manage SDK agents (not CLI or CCA)
     if (record.status !== 'running' && record.status !== 'waiting-approval') continue;
 
     try {
@@ -95,22 +93,6 @@ export { launchCliSession, startCliExitMonitor, stopCliExitMonitor, openAgentCli
 
 // ── Re-exports from comment workflow ───────────────────
 export { launchCommentAgent } from './agents/comment-workflow';
-
-// ── Re-exports from Conduit runner ─────────────────────
-export {
-  launchConduitAgent,
-  joinConduitSession,
-  sendConduitChatMessage,
-  abortConduitAgent,
-  disconnectConduitAgent,
-  listConduitSessions,
-  listConduitProfiles,
-  getConduitHostStatus,
-  getConduitAgentHistory,
-  approveConduitPermission,
-  respondToConduitUserInput,
-  openConduitAgentCli,
-} from './agents/conduit-runner';
 
 // ── Interaction passthrough ────────────────────────────
 
@@ -210,7 +192,7 @@ export function getAgentSessionId(agentId: string): string | null {
   return registry.get(agentId)?.sessionId ?? null;
 }
 
-export function listAllAgents(): Array<{ agentId: string; sessionId: string; status: import('./agents/agent-registry').AgentStatus; summary: string; selectedText: string; quotedText: string; spaceId: string; createdAt: string; pendingApprovalId: string | null; pendingPermissionKind: string | null; pendingIntention: string | null; pendingPath: string | null; source: 'sdk' | 'cli' | 'cca' | 'conduit'; personaHandle: string | null; yoloMode: boolean; sandboxed: boolean }> {
+export function listAllAgents(): Array<{ agentId: string; sessionId: string; status: import('./agents/agent-registry').AgentStatus; summary: string; selectedText: string; quotedText: string; spaceId: string; createdAt: string; pendingApprovalId: string | null; pendingPermissionKind: string | null; pendingIntention: string | null; pendingPath: string | null; source: 'sdk' | 'cli' | 'cca'; personaHandle: string | null; yoloMode: boolean; sandboxed: boolean }> {
   // Read persisted sessions from DB (sorted newest first)
   let persisted: AgentSession[] = [];
   try {
@@ -219,7 +201,7 @@ export function listAllAgents(): Array<{ agentId: string; sessionId: string; sta
 
   // Build result: overlay live in-memory state on top of DB records
   const seen = new Set<string>();
-  const result: Array<{ agentId: string; sessionId: string; status: import('./agents/agent-registry').AgentStatus; summary: string; selectedText: string; quotedText: string; spaceId: string; createdAt: string; pendingApprovalId: string | null; pendingPermissionKind: string | null; pendingIntention: string | null; pendingPath: string | null; source: 'sdk' | 'cli' | 'cca' | 'conduit'; personaHandle: string | null; yoloMode: boolean; sandboxed: boolean }> = [];
+  const result: Array<{ agentId: string; sessionId: string; status: import('./agents/agent-registry').AgentStatus; summary: string; selectedText: string; quotedText: string; spaceId: string; createdAt: string; pendingApprovalId: string | null; pendingPermissionKind: string | null; pendingIntention: string | null; pendingPath: string | null; source: 'sdk' | 'cli' | 'cca'; personaHandle: string | null; yoloMode: boolean; sandboxed: boolean }> = [];
 
   for (const row of persisted) {
     seen.add(row.id);

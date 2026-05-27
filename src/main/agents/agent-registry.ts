@@ -2,7 +2,6 @@ import type { CopilotSession } from '@github/copilot-sdk';
 import type { AgentAnchor } from '../../shared/types';
 import type { ResolvedPathPolicy } from './sandbox-policies';
 import type { SandboxConfigDirs } from '../ai';
-import type { ConduitAgentSession, ConduitClientInfo } from '../conduit-client';
 
 export type AgentStatus = 'running' | 'waiting-approval' | 'completed' | 'failed';
 
@@ -68,12 +67,6 @@ export interface AgentRecord {
   sandbox?: SandboxRuntimeState;
   /** When true, all permission requests are auto-approved without user interaction. Session-only. */
   yoloMode?: boolean;
-  /** Conduit session handle — present when source is 'conduit'. */
-  conduitSession?: ConduitAgentSession;
-  /** Connected client roster — updated via client.roster notifications. */
-  connectedClients?: ConduitClientInfo[];
-  /** Set when the user intentionally disconnects a conduit session. */
-  _intentionalDisconnect?: boolean;
   /** Remote control state — tracks Mission Control integration per session. */
   remote?: { enabled: boolean; remoteSteerable: boolean; url?: string };
   /** When true, this agent is ephemeral — no DB persistence, in-memory session FS. */

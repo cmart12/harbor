@@ -2,14 +2,6 @@ import { ipcMain } from 'electron';
 
 export function registerChatHandlers(): void {
   ipcMain.handle('chat:send-message', async (_event, agentId: string, prompt: string, attachments?: Array<{ type: 'file'; path: string }>) => {
-    // Check if this is a conduit agent and route accordingly
-    const { sendConduitChatMessage } = await import('../agent-service');
-    const { getAgentSession } = await import('../database');
-    const session = getAgentSession(agentId);
-    if (session?.source === 'conduit') {
-      return sendConduitChatMessage(agentId, prompt);
-    }
-
     const { sendChatMessage } = await import('../agent-service');
     return sendChatMessage(agentId, prompt, attachments);
   });

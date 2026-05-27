@@ -18,8 +18,6 @@ export function registerSettingsHandlers(): void {
       theme: 'theme',
       model: 'model',
       cli_path: 'cliPath',
-      conduit_host_url: 'conduitHostUrl',
-      conduit_profile: 'conduitProfile',
       auto_hide_side_pane: 'autoHideSidePane',
       auto_download_updates: 'autoDownloadUpdates',
     };
@@ -46,10 +44,6 @@ export function registerSettingsHandlers(): void {
       // Reinitialize the SDK so it picks up the new CLI
       await reinitCopilot();
       return resolved;
-    } else if (key === 'conduit_host_url') {
-      setConfigValue('conduitHostUrl', value || null);
-    } else if (key === 'conduit_profile') {
-      setConfigValue('conduitProfile', value || null);
     } else if (key === 'auto_hide_side_pane') {
       const enabled = value === 'true';
       setConfigValue('autoHideSidePane', enabled);
@@ -152,7 +146,6 @@ export function registerSettingsHandlers(): void {
         : '';
       const model = typeof raw.model === 'string' ? raw.model.trim() : '';
       const runLocation = raw.runLocation === 'cca' ? 'cca' as const
-        : raw.runLocation === 'conduit' ? 'conduit' as const
         : raw.runLocation === 'cloud' ? 'cloud' as const
         : 'local' as const;
 

@@ -13,7 +13,7 @@ export interface AgentPersona {
   handle: string;       // @mention name (stored lowercase, no @ prefix)
   instructions: string;
   model: string;        // model ID
-  runLocation: 'local' | 'cca' | 'cloud' | 'conduit';  // where to execute the agent
+  runLocation: 'local' | 'cca' | 'cloud';  // where to execute the agent
   sandboxed?: boolean;  // enable runtime sandbox for this persona
   emoji?: string;       // emoji avatar for presence and worker tabs
   cliRuntime?: string;  // id of a CliRuntime; null/empty = use default cliPath
@@ -66,8 +66,6 @@ export interface AppConfig {
   mcpServers: CustomMcpServer[];   // user-added MCP servers
   sandboxDefaultPolicy: SandboxPolicy;  // default policy for sandboxed personas
   autoDownloadUpdates: boolean;     // auto-download updates in the background (vs. notify only)
-  conduitHostUrl: string | null;    // URL of the Conduit host (e.g. "http://localhost:8080")
-  conduitProfile: string | null;    // optional Conduit profile name for agent sessions
   remoteEnabled: boolean;           // app-level remote: enable Mission Control on all workspace-level agents
 }
 
@@ -207,8 +205,6 @@ const DEFAULT_CONFIG: AppConfig = {
   mcpServers: [],
   sandboxDefaultPolicy: { ...DEFAULT_SANDBOX_POLICY },
   autoDownloadUpdates: true,
-  conduitHostUrl: null,
-  conduitProfile: null,
   remoteEnabled: false,
 };
 

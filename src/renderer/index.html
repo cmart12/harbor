@@ -73,9 +73,6 @@
         <div class="header-actions">
           <button id="pin-btn" class="header-icon-btn" title="Pin window (keep visible)">📌</button>
           <button id="remote-btn" class="header-icon-btn" title="Enable remote control">📱</button>
-          <div id="conduit-status" class="conduit-status hidden" title="Conduit host">
-            <span class="conduit-dot"></span>
-          </div>
           <button id="settings-btn" class="header-icon-btn" title="Settings">⚙</button>
         </div>
       </header>
@@ -211,25 +208,6 @@
               <div class="settings-hint">Register alternative CLI binaries for use with different agents.</div>
               <div id="runtimes-list" class="personas-list"></div>
               <button id="runtime-add-btn" class="persona-add-btn" type="button">+ Add Runtime</button>
-            </div>
-
-            <div class="settings-group">
-              <div class="settings-group-title">Conduit</div>
-              <div class="settings-row">
-                <div class="cli-path-display">
-                  <input id="conduit-host-input" class="cli-path-input" type="text" placeholder="http://localhost:8080" spellcheck="false" />
-                  <span id="conduit-host-status-dot" class="conduit-settings-dot" title="Not configured"></span>
-                </div>
-              </div>
-              <div class="settings-hint">URL of the Conduit host. Leave empty to disable. <span id="conduit-host-status-text">Not configured.</span></div>
-              <div id="conduit-profile-row" class="settings-row hidden">
-                <label>Profile</label>
-                <select id="conduit-profile-select">
-                  <option value="">Loading…</option>
-                </select>
-              </div>
-              <div id="conduit-profile-hint" class="settings-hint hidden">Select a profile to enable Conduit agents.</div>
-              <div id="conduit-no-profiles" class="settings-hint hidden" style="color: #d29922;">⚠ No profiles found on the host. Create one in Conduit before using agents.</div>
             </div>
           </div>
 

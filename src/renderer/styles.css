@@ -466,54 +466,6 @@ header h1 {
   -webkit-app-region: no-drag;
 }
 
-/* ── Conduit status indicator (header dot) ───────────── */
-.conduit-status {
-  display: flex;
-  align-items: center;
-  cursor: default;
-  padding: 2px;
-}
-.conduit-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #9ca3af;
-  transition: background 0.3s ease, box-shadow 0.3s ease;
-}
-.conduit-status.connected .conduit-dot {
-  background: #22c55e;
-  box-shadow: 0 0 6px rgba(34, 197, 94, 0.4);
-}
-.conduit-status.disconnected .conduit-dot {
-  background: #ef4444;
-  box-shadow: 0 0 6px rgba(239, 68, 68, 0.3);
-}
-.conduit-status.checking .conduit-dot {
-  background: #f59e0b;
-  animation: conduit-pulse 1.2s ease-in-out infinite;
-}
-@keyframes conduit-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
-}
-
-/* ── Conduit settings dot ────────────────────────────── */
-.conduit-settings-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: #9ca3af;
-  flex-shrink: 0;
-  margin-left: 6px;
-  transition: background 0.3s ease;
-}
-.conduit-settings-dot.connected {
-  background: #22c55e;
-}
-.conduit-settings-dot.disconnected {
-  background: #ef4444;
-}
-
 .badge {
   background: rgba(124, 102, 220, 0.12);
   color: #7c66dc;
@@ -1219,19 +1171,6 @@ body.dark .sandbox-block-banner-btn:hover {
 
 body.dark .persona-form-checkbox-label {
   color: rgba(255, 255, 255, 0.85);
-}
-
-/* Conduit profile row (replaces inline styles) */
-#conduit-profile-row {
-  margin-top: 8px;
-}
-
-#conduit-profile-row label {
-  white-space: nowrap;
-}
-
-#conduit-profile-select {
-  flex: 1;
 }
 
 .theme-toggle {
@@ -4706,96 +4645,6 @@ body.dark .canvas-voice-transcribing-spinner {
   white-space: nowrap;
 }
 
-/* ── Conduit Sessions section in Workers tab ─────────── */
-.conduit-sessions-section {
-  margin-bottom: 12px;
-  padding: 10px;
-  background: var(--card-bg, rgba(255, 255, 255, 0.6));
-  border: var(--card-border, 1px solid rgba(0, 0, 0, 0.06));
-  border-radius: var(--card-radius, 10px);
-  backdrop-filter: var(--card-backdrop, blur(12px));
-}
-.conduit-sessions-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 8px;
-  font-size: 11px;
-  font-weight: 600;
-  color: rgba(0, 0, 0, 0.65);
-  text-transform: uppercase;
-  letter-spacing: 0.4px;
-}
-.conduit-sessions-header .conduit-sessions-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #22c55e;
-  box-shadow: 0 0 4px rgba(34, 197, 94, 0.4);
-}
-.conduit-sessions-header .conduit-sessions-count {
-  margin-left: auto;
-  font-size: 10px;
-  font-weight: 500;
-  background: rgba(0, 0, 0, 0.04);
-  padding: 1px 6px;
-  border-radius: 3px;
-}
-.conduit-session-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: background 0.15s ease;
-  font-size: 12px;
-}
-.conduit-session-item:hover {
-  background: rgba(0, 0, 0, 0.04);
-}
-.conduit-session-item .session-id {
-  font-family: 'SF Mono', 'Menlo', 'Monaco', monospace;
-  font-size: 11px;
-  color: rgba(0, 0, 0, 0.6);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1;
-}
-.conduit-session-item .session-summary {
-  font-size: 11px;
-  color: rgba(0, 0, 0, 0.5);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 120px;
-}
-.conduit-session-item .session-join-btn {
-  font-size: 10px;
-  background: rgba(37, 99, 235, 0.08);
-  color: #2563eb;
-  border: none;
-  border-radius: 4px;
-  padding: 2px 8px;
-  cursor: pointer;
-  font-weight: 500;
-  opacity: 0;
-  transition: opacity 0.15s ease, background 0.15s ease;
-}
-.conduit-session-item:hover .session-join-btn {
-  opacity: 1;
-}
-.conduit-session-item .session-join-btn:hover {
-  background: rgba(37, 99, 235, 0.15);
-}
-.conduit-sessions-empty {
-  font-size: 11px;
-  color: rgba(0, 0, 0, 0.4);
-  text-align: center;
-  padding: 6px 0;
-}
-
 .agent-card-persona-emoji {
   font-size: 14px;
 }
@@ -5035,13 +4884,6 @@ body.dark .step-label { color: #e0e0e0; }
 body.dark .step-connector { border-left-color: rgba(255, 255, 255, 0.1); }
 body.dark .agent-card-summary { color: rgba(255, 255, 255, 0.55); }
 body.dark .agent-card-source { color: rgba(255, 255, 255, 0.55); background: rgba(255, 255, 255, 0.06); }
-body.dark .conduit-sessions-section { background: rgba(255, 255, 255, 0.04); border-color: rgba(255, 255, 255, 0.08); }
-body.dark .conduit-sessions-header { color: rgba(255, 255, 255, 0.6); }
-body.dark .conduit-sessions-header .conduit-sessions-count { background: rgba(255, 255, 255, 0.08); }
-body.dark .conduit-session-item:hover { background: rgba(255, 255, 255, 0.06); }
-body.dark .conduit-session-item .session-id { color: rgba(255, 255, 255, 0.6); }
-body.dark .conduit-session-item .session-summary { color: rgba(255, 255, 255, 0.4); }
-body.dark .conduit-sessions-empty { color: rgba(255, 255, 255, 0.35); }
 body.dark .agent-card-approval { background: rgba(245, 158, 11, 0.08); border-color: rgba(245, 158, 11, 0.2); }
 body.dark .approval-label { color: #fbbf24; }
 body.dark .approval-kind { color: #e0e0e0; }
@@ -5466,10 +5308,6 @@ body.dark .chat-loading-history {
   padding: 1px 6px;
   border-radius: 3px;
   margin-left: 6px;
-}
-.chat-source-badge.conduit {
-  background: rgba(37, 99, 235, 0.1);
-  color: #2563eb;
 }
 
 .chat-abort-btn {
@@ -6871,7 +6709,6 @@ body.dark .chat-status-badge.running { background: rgba(124, 102, 220, 0.2); col
 body.dark .chat-status-badge.completed { background: rgba(34, 197, 94, 0.15); color: #4ade80; }
 body.dark .chat-status-badge.failed { background: rgba(239, 68, 68, 0.15); color: #f87171; }
 body.dark .chat-status-badge.waiting-approval { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
-body.dark .chat-source-badge.conduit { background: rgba(37, 99, 235, 0.2); color: #60a5fa; }
 
 body.dark .chat-status-bar { border-bottom-color: rgba(255, 255, 255, 0.06); }
 body.dark .chat-status-bar-item { color: #ccc; }

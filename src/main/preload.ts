@@ -129,22 +129,6 @@ export interface WhimAPI {
   getAppRemoteStatus(): Promise<IpcCommandResult<'app:get-remote-status'>>;
   onAppRemoteChanged(callback: (data: { enabled: boolean; agents: Array<{ agentId: string; url?: string }> }) => void): void;
 
-  // ── Conduit ─────────────────────────────────────────────
-  getConduitHostStatus(): Promise<IpcCommandResult<'conduit:host-status'>>;
-  listConduitSessions(): Promise<IpcCommandResult<'conduit:list-sessions'>>;
-  listConduitProfiles(): Promise<IpcCommandResult<'conduit:list-profiles'>>;
-  setConduitProfile(profileId: string): Promise<IpcCommandResult<'conduit:set-profile'>>;
-  listConduitProfileModels(profileId: string): Promise<IpcCommandResult<'conduit:list-profile-models'>>;
-  getConduitSessionSettings(sessionId: string): Promise<IpcCommandResult<'conduit:get-session-settings'>>;
-  updateConduitSessionSettings(sessionId: string, settings: Record<string, unknown>): Promise<IpcCommandResult<'conduit:update-session-settings'>>;
-  updateConduitSessionProfile(sessionId: string, profileId: string): Promise<IpcCommandResult<'conduit:update-session-profile'>>;
-  getConduitSessionClients(sessionId: string): Promise<IpcCommandResult<'conduit:get-session-clients'>>;
-  launchConduitAgent(spaceId: string, prompt: string, personaHandle?: string): Promise<IpcCommandResult<'conduit:launch-agent'>>;
-  joinConduitSession(conduitSessionId: string, spaceId: string): Promise<IpcCommandResult<'conduit:join-session'>>;
-  sendConduitMessage(agentId: string, prompt: string, attachments?: Array<{ type: string; [key: string]: unknown }>): Promise<IpcCommandResult<'conduit:send-message'>>;
-  abortConduitAgent(agentId: string): Promise<IpcCommandResult<'conduit:abort-agent'>>;
-  disconnectConduitAgent(agentId: string): Promise<IpcCommandResult<'conduit:disconnect-agent'>>;
-
   // ── CLI session ──────────────────────────────────────────
   launchCliSession(): Promise<IpcCommandResult<'cli:launch-session'>>;
 
@@ -173,8 +157,8 @@ export interface WhimAPI {
   getCanvasAlwaysOnTop(): Promise<boolean>;
   notifyCanvasThemeChanged(theme: string): void;
   onCanvasThemeChanged(callback: (theme: string) => void): void;
-  openAgentChatInPanel(data: { agentId: string; agentPrompt: string; agentStatus: string; agentSource?: 'sdk' | 'cli' | 'conduit'; spaceId?: string }): void;
-  onOpenAgentChatInPanel(callback: (data: { agentId: string; agentPrompt: string; agentStatus: string; agentSource?: 'sdk' | 'cli' | 'conduit'; spaceId?: string }) => void): void;
+  openAgentChatInPanel(data: { agentId: string; agentPrompt: string; agentStatus: string; agentSource?: 'sdk' | 'cli'; spaceId?: string }): void;
+  onOpenAgentChatInPanel(callback: (data: { agentId: string; agentPrompt: string; agentStatus: string; agentSource?: 'sdk' | 'cli'; spaceId?: string }) => void): void;
 
   // ── Canvas child pages ──────────────────────────────────
   createPage(spaceId: string, pageName: string): Promise<{ success: boolean; page: string; error?: string }>;
@@ -374,36 +358,6 @@ const api: WhimAPI = {
   onAppRemoteChanged: (callback) => {
     ipcRenderer.on('app:remote-changed', (_event: unknown, data: any) => callback(data));
   },
-
-  // ── Conduit ─────────────────────────────────────────────
-  getConduitHostStatus: () =>
-    ipcRenderer.invoke('conduit:host-status'),
-  listConduitSessions: () =>
-    ipcRenderer.invoke('conduit:list-sessions'),
-  listConduitProfiles: () =>
-    ipcRenderer.invoke('conduit:list-profiles'),
-  setConduitProfile: (profileId) =>
-    ipcRenderer.invoke('conduit:set-profile', profileId),
-  listConduitProfileModels: (profileId) =>
-    ipcRenderer.invoke('conduit:list-profile-models', profileId),
-  getConduitSessionSettings: (sessionId) =>
-    ipcRenderer.invoke('conduit:get-session-settings', sessionId),
-  updateConduitSessionSettings: (sessionId, settings) =>
-    ipcRenderer.invoke('conduit:update-session-settings', sessionId, settings),
-  updateConduitSessionProfile: (sessionId, profileId) =>
-    ipcRenderer.invoke('conduit:update-session-profile', sessionId, profileId),
-  getConduitSessionClients: (sessionId) =>
-    ipcRenderer.invoke('conduit:get-session-clients', sessionId),
-  launchConduitAgent: (spaceId, prompt, personaHandle?) =>
-    ipcRenderer.invoke('conduit:launch-agent', spaceId, prompt, personaHandle),
-  joinConduitSession: (conduitSessionId, spaceId) =>
-    ipcRenderer.invoke('conduit:join-session', conduitSessionId, spaceId),
-  sendConduitMessage: (agentId, prompt, attachments?) =>
-    ipcRenderer.invoke('conduit:send-message', agentId, prompt, attachments),
-  abortConduitAgent: (agentId) =>
-    ipcRenderer.invoke('conduit:abort-agent', agentId),
-  disconnectConduitAgent: (agentId) =>
-    ipcRenderer.invoke('conduit:disconnect-agent', agentId),
 
   // ── CLI session ──────────────────────────────────────────
   launchCliSession: () =>

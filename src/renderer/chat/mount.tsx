@@ -8,7 +8,7 @@ export interface MountChatOptions {
   agentId?: string;
   agentPrompt: string;
   agentStatus: string;
-  agentSource?: 'sdk' | 'cli' | 'cca' | 'conduit';
+  agentSource?: 'sdk' | 'cli' | 'cca';
   spaceId?: string;
   sandboxed?: boolean;
   pendingApprovalId?: string;

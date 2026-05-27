@@ -50,7 +50,7 @@ interface AgentPersona {
   handle: string;
   instructions: string;
   model: string;
-  runLocation: 'local' | 'cca' | 'cloud' | 'conduit';
+  runLocation: 'local' | 'cca' | 'cloud';  // where to execute the agent
   sandboxed?: boolean;
   emoji?: string;
   cliRuntime?: string;
@@ -337,8 +337,6 @@ let searchTimeout: ReturnType<typeof setTimeout> | null = null;
 let searchMode = false;
 let activeSearchQuery = '';
 const workersBadge = document.getElementById('workers-badge') as HTMLSpanElement;
-const conduitStatusEl = document.getElementById('conduit-status') as HTMLDivElement;
-const conduitDotEl = conduitStatusEl?.querySelector('.conduit-dot') as HTMLSpanElement;
 
 // ── Git sync bar refs ───────────────────────────────────
 const gitSyncBar = document.getElementById('git-sync-bar') as HTMLDivElement;
@@ -1095,16 +1093,11 @@ function renderAgentEditor(persona: AgentPersona): void {
   const cloudOpt = document.createElement('option');
   cloudOpt.value = 'cloud';
   cloudOpt.textContent = '☁️ Cloud';
-  const conduitOpt = document.createElement('option');
-  conduitOpt.value = 'conduit';
-  conduitOpt.textContent = '🔗 Conduit';
   locationSelect.appendChild(localOpt);
   locationSelect.appendChild(ccaOpt);
   locationSelect.appendChild(cloudOpt);
-  locationSelect.appendChild(conduitOpt);
   if (persona.runLocation === 'cca') ccaOpt.selected = true;
   else if (persona.runLocation === 'cloud') cloudOpt.selected = true;
-  else if (persona.runLocation === 'conduit') conduitOpt.selected = true;
   locationRow.appendChild(locationLabel);
   locationRow.appendChild(locationSelect);
 
@@ -1252,7 +1245,7 @@ function renderAgentEditor(persona: AgentPersona): void {
   // Ephemeral mode checkbox
   const ephemeralRow = document.createElement('div');
   ephemeralRow.className = 'persona-form-row persona-ephemeral-row';
-  if (persona.runLocation === 'cca' || persona.runLocation === 'conduit') {
+  if (persona.runLocation === 'cca') {
     ephemeralRow.style.display = 'none';
   }
   const ephemeralLabel = document.createElement('label');
@@ -1264,9 +1257,9 @@ function renderAgentEditor(persona: AgentPersona): void {
   ephemeralLabel.appendChild(document.createTextNode(' 🕵️ Ephemeral mode (no session history — nothing persisted to disk or DB)'));
   ephemeralRow.appendChild(ephemeralLabel);
 
-  // Hide ephemeral option for CCA/conduit personas
+  // Hide ephemeral option for CCA personas
   locationSelect.addEventListener('change', () => {
-    if (locationSelect.value === 'cca' || locationSelect.value === 'conduit') {
+    if (locationSelect.value === 'cca') {
       ephemeralRow.style.display = 'none';
       ephemeralCheck.checked = false;
     } else {
@@ -1289,7 +1282,7 @@ function renderAgentEditor(persona: AgentPersona): void {
     const rawHandle = isDefault ? DEFAULT_AGENT_HANDLE : handleInput.value.trim().replace(/^@/, '').toLowerCase();
     const instructions = instrInput.value.trim();
     const model = modelSelect.value;
-    const runLocation = locationSelect.value as 'local' | 'cca' | 'cloud' | 'conduit';
+    const runLocation = locationSelect.value as 'local' | 'cca' | 'cloud';
     const sandboxed = sandboxCheck.checked && runLocation === 'local';
     const emoji = selectedEmoji;
     const cliRuntime = runtimeSelect.value;
@@ -2764,14 +2757,12 @@ function render(): void {
     if (spaceAgents.length > 0) {
       const agentCards = spaceAgents.map(agent => {
         const isCca = agent.source === 'cca';
-        const isConduit = agent.source === 'conduit';
         const aIcon = isCca ? '🔀' :
-                      isConduit ? '🔗' :
                       agent.status === 'running' ? '⚡' :
                       agent.status === 'waiting-approval' ? '⏳' :
                       agent.status === 'completed' ? '✓' :
                       '✗';
-        const aClass = agent.status === 'running' ? (isCca ? 'mini-agent-cloud' : isConduit ? 'mini-agent-cloud' : 'mini-agent-running') :
+        const aClass = agent.status === 'running' ? (isCca ? 'mini-agent-cloud' : 'mini-agent-running') :
                        agent.status === 'waiting-approval' ? 'mini-agent-waiting' :
                        agent.status === 'completed' ? 'mini-agent-completed' :
                        'mini-agent-failed';
@@ -3486,7 +3477,7 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
   countEl.textContent = String(spaces.filter(i => i.status !== 'done').length);
 
   // Gather all agents (including workspace-level ones)
-  let allAgents: Array<{ agentId: string; sessionId: string; status: string; summary: string; selectedText: string; quotedText?: string; spaceId: string; createdAt?: string; pendingApprovalId?: string | null; pendingPermissionKind?: string | null; source?: 'sdk' | 'cli' | 'cca' | 'conduit'; personaHandle?: string | null; sandboxed?: boolean }> = [];
+  let allAgents: Array<{ agentId: string; sessionId: string; status: string; summary: string; selectedText: string; quotedText?: string; spaceId: string; createdAt?: string; pendingApprovalId?: string | null; pendingPermissionKind?: string | null; source?: 'sdk' | 'cli' | 'cca'; personaHandle?: string | null; sandboxed?: boolean }> = [];
 
   try {
     allAgents = await whimAPI.listAllAgents();
@@ -3564,21 +3555,18 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
                        agent.status === 'completed' ? '<svg class="agent-icon-svg" width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="9" fill="#22c55e"/><path d="M5.5 9.5L7.8 11.8L12.5 6.5" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' :
                        '<svg class="agent-icon-svg" width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="9" fill="#ef4444"/><path d="M6 6L12 12M12 6L6 12" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>';
 
-    // Source label (cloud/cli/conduit/local)
+    // Source label (cloud/cli/local)
     const sourceLabel = agent.source === 'cca' ? '<span class="agent-card-source">🔀 PR</span>'
       : agent.source === 'cli' ? '<span class="agent-card-source">🖥 CLI</span>'
-      : agent.source === 'conduit' ? '<span class="agent-card-source">🔗 Conduit</span>'
       : '';
 
     const intentLabel = agent.source === 'cli'
       ? 'CLI Session'
       : agent.source === 'cca'
         ? 'PR Agent'
-        : agent.source === 'conduit'
-          ? 'Conduit Agent'
-          : agent.spaceId === '__workspace__'
-            ? 'Workspace'
-            : escapeHtml(intentMap.get(agent.spaceId) || agent.spaceId);
+        : agent.spaceId === '__workspace__'
+          ? 'Workspace'
+          : escapeHtml(intentMap.get(agent.spaceId) || agent.spaceId);
 
     const title = agent.selectedText.length > 80
       ? agent.selectedText.slice(0, 77) + '...'
@@ -3687,7 +3675,7 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
         return;
       }
 
-      openAgentChat(agentId, agent.selectedText, agent.status, agent.source as any, agent.spaceId, agent.source === 'conduit' ? agent.sessionId : undefined);
+      openAgentChat(agentId, agent.selectedText, agent.status, agent.source as any, agent.spaceId);
     });
   });
 
@@ -3781,95 +3769,9 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
     }
   }
 
-  // ── Conduit remote sessions section ─────────────────────
-  // Show joinable conduit sessions that aren't already represented as local agents
-  if (!filterQuery) {
-    renderConduitSessionsSection(allAgents);
-  }
 }
 
-let renderedAgents: Array<{ agentId: string; sessionId: string; status: string; summary: string; selectedText: string; spaceId: string; createdAt?: string; source?: 'sdk' | 'cli' | 'cca' | 'conduit' }> = [];
-
-/**
- * Render a "Conduit Sessions" panel at the bottom of the Workers tab,
- * showing running sessions on the host that the user can join.
- */
-async function renderConduitSessionsSection(
-  localAgents: Array<{ sessionId: string; source?: string }>,
-): Promise<void> {
-  // Only show if conduit is configured
-  let status: { configured: boolean; connected: boolean; url: string | null };
-  try {
-    status = await whimAPI.getConduitHostStatus();
-  } catch { return; }
-  if (!status.configured || !status.connected) return;
-
-  // Fetch remote sessions
-  let sessions: Array<{ id: string; status: string; summary?: string; createdAt: string; clientCount?: number }>;
-  try {
-    const result = await whimAPI.listConduitSessions();
-    if ('error' in result) return;
-    sessions = result;
-  } catch { return; }
-
-  // Filter out sessions already tracked locally
-  const localSessionIds = new Set(
-    localAgents.filter(a => a.source === 'conduit').map(a => a.sessionId),
-  );
-  const remoteSessions = sessions.filter(s => !localSessionIds.has(s.id));
-
-  // Build the section HTML
-  const sectionEl = document.createElement('div');
-  sectionEl.className = 'conduit-sessions-section';
-
-  const itemsHtml = remoteSessions.length > 0
-    ? remoteSessions.map(s => {
-        const shortId = s.id.length > 16 ? s.id.slice(0, 14) + '…' : s.id;
-        const summaryText = s.summary ? escapeHtml(s.summary) : '';
-        const clientsBadge = s.clientCount != null ? `<span class="session-clients-badge" title="${s.clientCount} connected client${s.clientCount !== 1 ? 's' : ''}">👥 ${s.clientCount}</span>` : '';
-        return `<div class="conduit-session-item" data-session-id="${escapeHtml(s.id)}">
-          <span class="session-id" title="${escapeHtml(s.id)}">${shortId}</span>
-          ${clientsBadge}
-          ${summaryText ? `<span class="session-summary" title="${summaryText}">${summaryText}</span>` : ''}
-          <button class="session-join-btn" data-session-id="${escapeHtml(s.id)}">Join</button>
-        </div>`;
-      }).join('')
-    : '<div class="conduit-sessions-empty">No other sessions on host</div>';
-
-  const totalCount = remoteSessions.length + localSessionIds.size;
-
-  sectionEl.innerHTML = `
-    <div class="conduit-sessions-header">
-      <span class="conduit-sessions-dot"></span>
-      <span>Conduit Sessions</span>
-      <span class="conduit-sessions-count">${totalCount}</span>
-    </div>
-    ${itemsHtml}
-  `;
-
-  listEl.appendChild(sectionEl);
-
-  // Wire up join buttons
-  sectionEl.querySelectorAll('.session-join-btn').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const sessionId = (e.currentTarget as HTMLElement).dataset.sessionId!;
-      (e.currentTarget as HTMLButtonElement).textContent = '…';
-      (e.currentTarget as HTMLButtonElement).disabled = true;
-      try {
-        const result = await whimAPI.joinConduitSession(sessionId, '__workspace__');
-        if ('error' in result) {
-          showStatus(`Join failed: ${result.error}`, true);
-          return;
-        }
-        // Refresh the list to show the newly joined agent
-        renderAgentsList();
-      } catch (err: any) {
-        showStatus(`Join failed: ${err.message}`, true);
-      }
-    });
-  });
-}
+let renderedAgents: Array<{ agentId: string; sessionId: string; status: string; summary: string; selectedText: string; spaceId: string; createdAt?: string; source?: 'sdk' | 'cli' | 'cca' }> = [];
 
 function updateAgentSelection(): void {
   const items = listEl.querySelectorAll('.agent-card');
@@ -4277,168 +4179,6 @@ async function loadAutoHideSetting(): Promise<void> {
 if (autoHideSidePaneCb) {
   autoHideSidePaneCb.addEventListener('change', () => {
     whimAPI.setSetting('auto_hide_side_pane', String(autoHideSidePaneCb.checked));
-  });
-}
-
-// ── Conduit host settings ────────────────────────────────
-const conduitHostInput = document.getElementById('conduit-host-input') as HTMLInputElement | null;
-const conduitProfileSelect = document.getElementById('conduit-profile-select') as HTMLSelectElement | null;
-const conduitProfileRow = document.getElementById('conduit-profile-row') as HTMLDivElement | null;
-const conduitProfileHint = document.getElementById('conduit-profile-hint') as HTMLDivElement | null;
-const conduitNoProfiles = document.getElementById('conduit-no-profiles') as HTMLDivElement | null;
-const conduitHostStatusDot = document.getElementById('conduit-host-status-dot') as HTMLSpanElement | null;
-const conduitHostStatusText = document.getElementById('conduit-host-status-text') as HTMLSpanElement | null;
-
-let conduitPollTimer: ReturnType<typeof setInterval> | null = null;
-
-async function loadConduitSettings(): Promise<void> {
-  if (conduitHostInput) {
-    const url = await whimAPI.getSetting('conduit_host_url');
-    conduitHostInput.value = url || '';
-  }
-  await pollConduitStatus();
-}
-
-async function pollConduitStatus(): Promise<void> {
-  try {
-    const status = await whimAPI.getConduitHostStatus();
-    updateConduitIndicator(status);
-  } catch {
-    updateConduitIndicator({ configured: false, connected: false, url: null, hasProfiles: false, profileId: null, profileName: null });
-  }
-}
-
-function updateConduitIndicator(status: {
-  configured: boolean;
-  connected: boolean;
-  url: string | null;
-  hasProfiles: boolean;
-  profileId: string | null;
-  profileName: string | null;
-}): void {
-  // Header dot (main window only)
-  if (!status.configured) {
-    conduitStatusEl?.classList.add('hidden');
-  } else if (status.connected && status.hasProfiles && status.profileId) {
-    conduitStatusEl?.classList.remove('hidden', 'disconnected', 'checking');
-    conduitStatusEl?.classList.add('connected');
-    if (conduitStatusEl) conduitStatusEl.title = `Conduit: ${status.profileName || status.profileId} (${status.url})`;
-  } else if (status.connected && !status.hasProfiles) {
-    conduitStatusEl?.classList.remove('hidden', 'connected', 'checking');
-    conduitStatusEl?.classList.add('disconnected');
-    if (conduitStatusEl) conduitStatusEl.title = `Conduit: no profiles — configure in Conduit`;
-  } else if (status.configured) {
-    conduitStatusEl?.classList.remove('hidden', 'connected', 'checking');
-    conduitStatusEl?.classList.add('disconnected');
-    if (conduitStatusEl) conduitStatusEl.title = `Conduit: cannot reach ${status.url}`;
-  }
-
-  // Settings panel elements
-  if (conduitHostStatusDot) {
-    if (!status.configured) {
-      conduitHostStatusDot.className = 'conduit-settings-dot';
-      conduitHostStatusDot.title = 'Not configured';
-    } else if (status.connected && status.hasProfiles && status.profileId) {
-      conduitHostStatusDot.className = 'conduit-settings-dot connected';
-      conduitHostStatusDot.title = 'Connected';
-    } else if (status.connected) {
-      conduitHostStatusDot.className = 'conduit-settings-dot disconnected';
-      conduitHostStatusDot.title = 'No profile selected';
-    } else {
-      conduitHostStatusDot.className = 'conduit-settings-dot disconnected';
-      conduitHostStatusDot.title = 'Disconnected';
-    }
-  }
-  if (conduitHostStatusText) {
-    if (!status.configured) {
-      conduitHostStatusText.textContent = 'Not configured.';
-    } else if (!status.connected) {
-      conduitHostStatusText.textContent = `Cannot reach ${status.url}`;
-    } else if (!status.hasProfiles) {
-      conduitHostStatusText.textContent = 'Connected — no profiles found.';
-    } else if (status.profileId) {
-      conduitHostStatusText.textContent = `Connected — profile: ${status.profileName || status.profileId}`;
-    } else {
-      conduitHostStatusText.textContent = 'Connected — select a profile.';
-    }
-  }
-
-  // Profile row visibility
-  const showProfileRow = status.configured && status.connected;
-  conduitProfileRow?.classList.toggle('hidden', !showProfileRow);
-  conduitNoProfiles?.classList.toggle('hidden', !showProfileRow || status.hasProfiles);
-  conduitProfileHint?.classList.toggle('hidden', !showProfileRow || !status.hasProfiles);
-
-  // Load profiles into dropdown when connected
-  if (showProfileRow && status.hasProfiles) {
-    loadConduitProfiles(status.profileId);
-  }
-}
-
-async function loadConduitProfiles(selectedId: string | null): Promise<void> {
-  if (!conduitProfileSelect) return;
-
-  try {
-    const result = await whimAPI.listConduitProfiles();
-    if ('error' in result) return;
-
-    const enabledProfiles = result.filter(p => p.enabled);
-    conduitProfileSelect.innerHTML = '';
-
-    if (enabledProfiles.length === 0) {
-      conduitProfileSelect.innerHTML = '<option value="">No profiles available</option>';
-      return;
-    }
-
-    for (const p of enabledProfiles) {
-      const opt = document.createElement('option');
-      opt.value = p.id;
-      opt.textContent = p.name + (p.agentAdapter ? ` (${p.agentAdapter})` : '');
-      if (p.id === selectedId) opt.selected = true;
-      conduitProfileSelect.appendChild(opt);
-    }
-
-    // If nothing was selected but we have profiles, select the first
-    if (!selectedId && enabledProfiles.length > 0) {
-      conduitProfileSelect.value = enabledProfiles[0]!.id;
-      await whimAPI.setConduitProfile(enabledProfiles[0]!.id);
-    }
-  } catch { /* ignore */ }
-}
-
-// Start periodic conduit polling
-function startConduitPoll(): void {
-  if (conduitPollTimer) return;
-  pollConduitStatus();
-  conduitPollTimer = setInterval(pollConduitStatus, 15_000);
-}
-
-function stopConduitPoll(): void {
-  if (conduitPollTimer) {
-    clearInterval(conduitPollTimer);
-    conduitPollTimer = null;
-  }
-}
-
-if (conduitHostInput) {
-  let conduitDebounce: ReturnType<typeof setTimeout> | null = null;
-  conduitHostInput.addEventListener('input', () => {
-    if (conduitDebounce) clearTimeout(conduitDebounce);
-    conduitDebounce = setTimeout(async () => {
-      const val = conduitHostInput.value.trim();
-      await whimAPI.setSetting('conduit_host_url', val);
-      conduitStatusEl?.classList.remove('connected', 'disconnected');
-      conduitStatusEl?.classList.add('checking');
-      await pollConduitStatus();
-    }, 600);
-  });
-}
-
-if (conduitProfileSelect) {
-  conduitProfileSelect.addEventListener('change', async () => {
-    const val = conduitProfileSelect.value;
-    await whimAPI.setConduitProfile(val);
-    await pollConduitStatus();
   });
 }
 
@@ -5811,13 +5551,11 @@ modeToggleRaw.addEventListener('click', () => {
 
 // ── Agent Chat View ────────────────────────────────────
 import { mountChat, unmountChat } from './chat/mount.tsx';
-import { mountConduitChat, unmountConduitChat } from './chat/conduit-mount.tsx';
 
 const chatView = document.getElementById('chat-view') as HTMLDivElement;
 const chatRoot = document.getElementById('chat-root') as HTMLDivElement;
-let activeConduitChat = false;
 
-async function openAgentChat(agentId: string | undefined, agentPrompt: string, agentStatus: string, agentSource?: 'sdk' | 'cli' | 'cca' | 'conduit', spaceId?: string, conduitSessionId?: string): Promise<void> {
+async function openAgentChat(agentId: string | undefined, agentPrompt: string, agentStatus: string, agentSource?: 'sdk' | 'cli' | 'cca', spaceId?: string): Promise<void> {
   // Hide other views, show chat inline
   mainView.classList.add('hidden');
   hideSettings();
@@ -5828,27 +5566,10 @@ async function openAgentChat(agentId: string | undefined, agentPrompt: string, a
   // Look up pending approval info if agent is waiting
   const approval = agentId ? agentApprovals.get(agentId) : undefined;
 
-  if (agentSource === 'conduit') {
-    activeConduitChat = true;
-    mountConduitChat(chatRoot, {
-      agentId,
-      conduitSessionId,
-      agentPrompt,
-      agentStatus,
-      spaceId,
-      pendingApprovalId: approval?.requestId,
-      pendingPermissionKind: approval?.permissionKind,
-      onClose: () => closeAgentChat(),
-      onOpenCli: (id: string) => whimAPI.openAgentCli(id),
-    });
-    return;
-  }
-
   // Look up sandbox state from the most recent agent list data
   const agentData = renderedAgents?.find((a: any) => a.agentId === agentId);
   const sandboxed = (agentData as any)?.sandboxed === true;
 
-  activeConduitChat = false;
   mountChat(chatRoot, {
     agentId,
     agentPrompt,
@@ -5870,12 +5591,7 @@ async function openAgentChat(agentId: string | undefined, agentPrompt: string, a
 }
 
 function closeAgentChat(): void {
-  if (activeConduitChat) {
-    unmountConduitChat();
-    activeConduitChat = false;
-  } else {
-    unmountChat();
-  }
+  unmountChat();
 
   chatView.classList.add('hidden');
   mainView.classList.remove('hidden');
@@ -6398,8 +6114,6 @@ whimAPI.onWindowShown((data) => {
   // Refresh active session state when window reappears
   loadSpaces();
   refreshGitSync();
-  // Re-check conduit status (settings may have changed)
-  pollConduitStatus();
 
   // Slide in from the appropriate edge
   if (!data.expanded) {
@@ -6601,7 +6315,6 @@ whimAPI.getSetting('workspace_root').then(ws => {
 // tab has data.  (Settings popout has its own loadPersonas() call.)
 if (!isCanvasMode && !isSettingsMode) {
   loadPersonas().catch(() => { /* leaves personas[] empty */ });
-  startConduitPoll();
 }
 
 // Refresh the space list when the canvas popout window is closed
@@ -6849,7 +6562,6 @@ if (isSettingsMode) {
   loadCliPathSetting();
   loadMcpServers();
   loadCliTools();
-  loadConduitSettings();
 
   // Close button closes the window
   settingsClose.addEventListener('click', () => window.close());

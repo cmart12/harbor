@@ -67,14 +67,6 @@ export function registerAgentHandlers(): void {
   });
 
   ipcMain.handle('agent:approve', async (_event, agentId: string, requestId: string, approved: boolean) => {
-    // Route conduit agents to conduit-specific approval
-    const { getAgentSession } = await import('../database');
-    const session = getAgentSession(agentId);
-    if (session?.source === 'conduit') {
-      const { approveConduitPermission } = await import('../agent-service');
-      approveConduitPermission(agentId, requestId, approved);
-      return;
-    }
     const { approveAgent } = await import('../agent-service');
     approveAgent(agentId, requestId, approved);
   });
@@ -109,26 +101,11 @@ export function registerAgentHandlers(): void {
   });
 
   ipcMain.handle('agent:abort', async (_event, agentId: string) => {
-    // Route conduit agents to conduit-specific abort
-    const { getAgentSession } = await import('../database');
-    const session = getAgentSession(agentId);
-    if (session?.source === 'conduit') {
-      const { abortConduitAgent } = await import('../agent-service');
-      await abortConduitAgent(agentId);
-      return;
-    }
     const { abortAgent } = await import('../agent-service');
     await abortAgent(agentId);
   });
 
   ipcMain.handle('agent:open-cli', async (_event, agentId: string) => {
-    // Route conduit agents to conduit-specific CLI opener
-    const { getAgentSession } = await import('../database');
-    const session = getAgentSession(agentId);
-    if (session?.source === 'conduit') {
-      const { openConduitAgentCli } = await import('../agent-service');
-      return openConduitAgentCli(agentId);
-    }
     const { openAgentCli } = await import('../agent-service');
     return openAgentCli(agentId);
   });
@@ -185,12 +162,6 @@ export function registerAgentHandlers(): void {
       notifyAllWindows('agent:status-changed', { agentId, status: 'running' });
 
       return { agentId, sessionId: result.sessionId };
-    }
-
-    // Route conduit personas to the Conduit runner
-    if (persona && persona.runLocation === 'conduit') {
-      const { launchConduitAgent } = await import('../agent-service');
-      return launchConduitAgent(null, prompt, workspace, '', persona);
     }
 
     const { launchQuickAgent } = await import('../agent-service');
@@ -308,13 +279,6 @@ export function registerAgentHandlers(): void {
 
   // ── Agent history ───────────────────────────────────────
   ipcMain.handle('agent:get-history', async (_event, agentId: string) => {
-    // Route conduit agents to conduit-specific history
-    const { getAgentSession } = await import('../database');
-    const session = getAgentSession(agentId);
-    if (session?.source === 'conduit') {
-      const { getConduitAgentHistory } = await import('../agent-service');
-      return getConduitAgentHistory(agentId);
-    }
     const { getAgentHistory } = await import('../agent-service');
     return getAgentHistory(agentId);
   });
@@ -325,146 +289,4 @@ export function registerAgentHandlers(): void {
     return session?.working_dir ?? null;
   });
 
-  // ── Conduit agent handlers ─────────────────────────────
-
-  ipcMain.handle('conduit:launch-agent', async (_event, spaceId: string, prompt: string, personaHandle?: string) => {
-    const workspace = getConfigValue('workspace');
-    if (!workspace || !isInitialized()) return { error: 'no_workspace' };
-
-    // Support workspace-level agents (no space folder)
-    let spaceFolder = '';
-    if (spaceId && spaceId !== '__workspace__') {
-      const space = getSpace(spaceId);
-      if (!space || !space.folder) return { error: 'space_not_found' };
-      spaceFolder = space.folder;
-    }
-
-    let persona;
-    if (personaHandle) {
-      const allPersonas = getConfigValue('personas') || [];
-      persona = allPersonas.find(p => p.handle === personaHandle);
-    }
-
-    const { launchConduitAgent } = await import('../agent-service');
-    return launchConduitAgent(spaceId, prompt, workspace, spaceFolder, persona);
-  });
-
-  ipcMain.handle('conduit:join-session', async (_event, conduitSessionId: string, spaceId: string) => {
-    const { joinConduitSession } = await import('../agent-service');
-    return joinConduitSession(conduitSessionId, spaceId);
-  });
-
-  ipcMain.handle('conduit:send-message', async (_event, agentId: string, prompt: string, attachments?: Array<{ type: string; [key: string]: unknown }>) => {
-    const { sendConduitChatMessage } = await import('../agent-service');
-    return sendConduitChatMessage(agentId, prompt, attachments);
-  });
-
-  ipcMain.handle('conduit:abort-agent', async (_event, agentId: string) => {
-    const { abortConduitAgent } = await import('../agent-service');
-    await abortConduitAgent(agentId);
-    return { ok: true };
-  });
-
-  ipcMain.handle('conduit:disconnect-agent', async (_event, agentId: string) => {
-    const { disconnectConduitAgent } = await import('../agent-service');
-    await disconnectConduitAgent(agentId);
-    return { ok: true };
-  });
-
-  ipcMain.handle('conduit:list-sessions', async () => {
-    const { listConduitSessions } = await import('../agent-service');
-    return listConduitSessions();
-  });
-
-  ipcMain.handle('conduit:host-status', async () => {
-    const { getConduitHostStatus } = await import('../agent-service');
-    return getConduitHostStatus();
-  });
-
-  ipcMain.handle('conduit:list-profiles', async () => {
-    const { listConduitProfiles } = await import('../agent-service');
-    return listConduitProfiles();
-  });
-
-  ipcMain.handle('conduit:set-profile', async (_event, profileId: string) => {
-    const { setConfigValue: scv } = await import('../config');
-    scv('conduitProfile', profileId || null);
-    return { ok: true };
-  });
-
-  ipcMain.handle('conduit:list-profile-models', async (_event, profileId: string) => {
-    const { getConduitHostClient } = await import('../conduit-client');
-    const client = getConduitHostClient();
-    if (!client) return { error: 'Conduit not configured' };
-    try {
-      const result = await client.listProfileModels(profileId);
-      // Flatten to a simple model list
-      const models: Array<{ id: string; name?: string; provider?: string }> = [];
-      for (const group of result) {
-        for (const m of group.models) {
-          models.push({ id: m.id, name: m.name, provider: group.providerName });
-        }
-      }
-      return models;
-    } catch (err: any) {
-      return { error: err.message };
-    }
-  });
-
-  ipcMain.handle('conduit:get-session-settings', async (_event, conduitSessionId: string) => {
-    const { getConduitHostClient } = await import('../conduit-client');
-    const client = getConduitHostClient();
-    if (!client) return { error: 'Conduit not configured' };
-    try {
-      return await client.getSessionSettings(conduitSessionId);
-    } catch (err: any) {
-      return { error: err.message };
-    }
-  });
-
-  ipcMain.handle('conduit:update-session-settings', async (_event, conduitSessionId: string, settings: Record<string, unknown>) => {
-    const { getConduitHostClient } = await import('../conduit-client');
-    const client = getConduitHostClient();
-    if (!client) return { error: 'Conduit not configured' };
-    try {
-      return await client.updateSessionSettings(conduitSessionId, settings);
-    } catch (err: any) {
-      return { error: err.message };
-    }
-  });
-
-  ipcMain.handle('conduit:update-session-profile', async (_event, conduitSessionId: string, profileId: string) => {
-    const { getConduitHostClient } = await import('../conduit-client');
-    const client = getConduitHostClient();
-    if (!client) return { error: 'Conduit not configured' };
-    try {
-      await client.updateSessionProfile(conduitSessionId, profileId);
-      return { ok: true };
-    } catch (err: any) {
-      return { error: err.message };
-    }
-  });
-
-  ipcMain.handle('conduit:approve-permission', async (_event, agentId: string, requestId: string, approved: boolean) => {
-    const { approveConduitPermission } = await import('../agent-service');
-    approveConduitPermission(agentId, requestId, approved);
-    return { ok: true };
-  });
-
-  ipcMain.handle('conduit:respond-input', async (_event, agentId: string, requestId: string, answer: string) => {
-    const { respondToConduitUserInput } = await import('../agent-service');
-    respondToConduitUserInput(agentId, requestId, answer);
-    return { ok: true };
-  });
-
-  ipcMain.handle('conduit:get-session-clients', async (_event, sessionId: string) => {
-    const { getConduitHostClient } = await import('../conduit-client');
-    const client = getConduitHostClient();
-    if (!client) return { error: 'Conduit not configured' };
-    try {
-      return await client.getSessionClients(sessionId);
-    } catch (err: any) {
-      return { error: err.message };
-    }
-  });
 }

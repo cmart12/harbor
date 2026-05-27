@@ -48,7 +48,7 @@ export interface AgentListAllItem extends AgentListItem {
   pendingPermissionKind: string | null;
   pendingIntention: string | null;
   pendingPath: string | null;
-  source: 'sdk' | 'cli' | 'cca' | 'conduit';
+  source: 'sdk' | 'cli' | 'cca';
   personaHandle: string | null;
   yoloMode: boolean;
   quotedText: string;
@@ -80,7 +80,7 @@ export interface AgentPersona {
   handle: string;
   instructions: string;
   model: string;
-  runLocation: 'local' | 'cca' | 'cloud' | 'conduit';
+  runLocation: 'local' | 'cca' | 'cloud';
   sandboxed?: boolean;  // enable runtime sandbox for this persona
   emoji?: string;
   cliRuntime?: string;
@@ -331,30 +331,6 @@ export interface IpcCommands {
     args: [];
     result: { enabled: boolean; agents: Array<{ agentId: string; url?: string }> };
   };
-
-  // ── Conduit ──────────────────────────────────────────────
-  'conduit:host-status': { args: []; result: { configured: boolean; connected: boolean; url: string | null; hasProfiles: boolean; profileId: string | null; profileName: string | null } };
-  'conduit:list-sessions': { args: []; result: Array<{ id: string; status: string; summary?: string; createdAt: string; clientCount?: number }> | { error: string } };
-  'conduit:list-profiles': { args: []; result: Array<{ id: string; name: string; description?: string; enabled: boolean; agentAdapter?: string }> | { error: string } };
-  'conduit:set-profile': { args: [profileId: string]; result: { ok: true } };
-  'conduit:launch-agent': {
-    args: [spaceId: string, prompt: string, personaHandle?: string];
-    result: { agentId: string; sessionId: string } | { error: string };
-  };
-  'conduit:join-session': {
-    args: [conduitSessionId: string, spaceId: string];
-    result: { agentId: string; sessionId: string } | { error: string };
-  };
-  'conduit:send-message': { args: [agentId: string, prompt: string, attachments?: Array<{ type: string; [key: string]: unknown }>]; result: { error?: string } };
-  'conduit:abort-agent': { args: [agentId: string]; result: { ok: true } };
-  'conduit:disconnect-agent': { args: [agentId: string]; result: { ok: true } };
-  'conduit:approve-permission': { args: [agentId: string, requestId: string, approved: boolean]; result: { ok: true } };
-  'conduit:respond-input': { args: [agentId: string, requestId: string, answer: string]; result: { ok: true } };
-  'conduit:list-profile-models': { args: [profileId: string]; result: Array<{ id: string; name?: string; provider?: string }> | { error: string } };
-  'conduit:get-session-settings': { args: [conduitSessionId: string]; result: Record<string, unknown> | { error: string } };
-  'conduit:update-session-settings': { args: [conduitSessionId: string, settings: Record<string, unknown>]; result: Record<string, unknown> | { error: string } };
-  'conduit:update-session-profile': { args: [conduitSessionId: string, profileId: string]; result: { ok: true } | { error: string } };
-  'conduit:get-session-clients': { args: [sessionId: string]; result: { clientCount: number; clients: Array<{ clientId: string; clientName: string; connectedAt: string }> } | { error: string } };
 
   // ── CLI session ──────────────────────────────────────────
   'cli:launch-session': { args: []; result: { agentId: string; sessionId: string } | { error: string } };
