@@ -124,6 +124,11 @@ export interface WhimAPI {
   enableRemote(agentId: string): Promise<IpcCommandResult<'agent:enable-remote'>>;
   disableRemote(agentId: string): Promise<IpcCommandResult<'agent:disable-remote'>>;
 
+  // ── App-level remote ────────────────────────────────────
+  setAppRemote(enabled: boolean): Promise<IpcCommandResult<'app:set-remote'>>;
+  getAppRemoteStatus(): Promise<IpcCommandResult<'app:get-remote-status'>>;
+  onAppRemoteChanged(callback: (data: { enabled: boolean; agents: Array<{ agentId: string; url?: string }> }) => void): void;
+
   // ── Conduit ─────────────────────────────────────────────
   getConduitHostStatus(): Promise<IpcCommandResult<'conduit:host-status'>>;
   listConduitSessions(): Promise<IpcCommandResult<'conduit:list-sessions'>>;
@@ -360,6 +365,15 @@ const api: WhimAPI = {
     ipcRenderer.invoke('agent:enable-remote', agentId),
   disableRemote: (agentId) =>
     ipcRenderer.invoke('agent:disable-remote', agentId),
+
+  // ── App-level remote ────────────────────────────────────
+  setAppRemote: (enabled) =>
+    ipcRenderer.invoke('app:set-remote', enabled),
+  getAppRemoteStatus: () =>
+    ipcRenderer.invoke('app:get-remote-status'),
+  onAppRemoteChanged: (callback) => {
+    ipcRenderer.on('app:remote-changed', (_event: unknown, data: any) => callback(data));
+  },
 
   // ── Conduit ─────────────────────────────────────────────
   getConduitHostStatus: () =>

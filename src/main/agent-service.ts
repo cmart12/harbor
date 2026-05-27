@@ -36,6 +36,60 @@ initConduitRunner({ registry, notifier, persistence, broker });
 // ── Re-exports from SDK runner ─────────────────────────
 export { buildCliToolsPrompt, launchAgent, launchQuickAgent, launchDocumentAgent, sendChatMessage, setAgentModel, getAgentHistory, enableRemoteControl, disableRemoteControl, disableSandboxForSession } from './agents/sdk-runner';
 
+// ── App-level remote control ──────────────────────────
+
+/**
+ * Enable or disable app-level remote for all active SDK workspace-level agents.
+ * Persists the setting and fires app:remote-changed.
+ */
+export async function setAppRemote(enabled: boolean): Promise<{ enabled: boolean; agents: Array<{ agentId: string; url?: string }> } | { error: string }> {
+  const { setConfigValue } = await import('./config');
+  setConfigValue('remoteEnabled', enabled);
+
+  const { enableRemoteControl, disableRemoteControl } = await import('./agents/sdk-runner');
+  const agents: Array<{ agentId: string; url?: string }> = [];
+
+  for (const record of registry.values()) {
+    // Only manage SDK agents (not CLI, CCA, or Conduit)
+    if (record.status !== 'running' && record.status !== 'waiting-approval') continue;
+
+    try {
+      if (enabled) {
+        const result = await enableRemoteControl(record.agentId);
+        if ('url' in result) {
+          agents.push({ agentId: record.agentId, url: result.url });
+        }
+      } else {
+        await disableRemoteControl(record.agentId);
+      }
+    } catch (err: any) {
+      console.error(`[agent-service] Failed to ${enabled ? 'enable' : 'disable'} remote for agent=${record.agentId}:`, err);
+    }
+  }
+
+  notifier.notifyRenderer('app:remote-changed', { enabled, agents });
+  return { enabled, agents };
+}
+
+/**
+ * Get the current app-level remote status and list of agents with remote URLs.
+ */
+export function getAppRemoteStatus(): { enabled: boolean; agents: Array<{ agentId: string; url?: string }> } {
+  const { getConfigValue } = require('./config');
+  const enabled = !!getConfigValue('remoteEnabled');
+  const agents: Array<{ agentId: string; url?: string }> = [];
+
+  if (enabled) {
+    for (const record of registry.values()) {
+      if (record.remote?.enabled && record.remote.url) {
+        agents.push({ agentId: record.agentId, url: record.remote.url });
+      }
+    }
+  }
+
+  return { enabled, agents };
+}
+
 // ── Re-exports from CLI runner ─────────────────────────
 export { launchCliSession, startCliExitMonitor, stopCliExitMonitor, openAgentCli } from './agents/cli-runner';
 

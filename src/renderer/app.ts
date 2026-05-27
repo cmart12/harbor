@@ -669,7 +669,13 @@ filterBar.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowDown') {
     e.preventDefault();
     e.stopPropagation();
-    descInput.focus();
+    if (currentFilter === 'closed') {
+      // Activity tab: form is hidden, focus first history card
+      const firstCard = listEl.querySelector('.history-card') as HTMLElement;
+      if (firstCard) firstCard.focus();
+    } else {
+      descInput.focus();
+    }
     return;
   }
 });
@@ -2869,12 +2875,17 @@ async function renderHistoryView(): Promise<void> {
       const isRecurring = !!space.recurrence;
       const completedAgo = space.completed_at ? timeAgo(space.completed_at) : timeAgo(space.updated_at);
 
-      // Determine card variant
+      // Agent count for this space
+      const spaceAgents = agentsBySpace.get(space.id) || [];
+      const agentCount = spaceAgents.length;
+
+      // Determine card variant (check agents too — session_id alone misses agent work)
       const hasDismissed = intentEvents.some((e: any) => e.event_type === 'recurrence_dismissed');
+      const hadAgentWork = hasSession || agentCount > 0;
       const cardVariant = hasDismissed ? 'dismissed' :
-                          hasSession ? 'session' :
+                          hadAgentWork ? 'session' :
                           isRecurring ? 'recurring' : 'completed';
-      const statusIcon = hasSession ? '▶' : isRecurring ? '↻' : '✓';
+      const statusIcon = hadAgentWork ? '▶' : isRecurring ? '↻' : '✓';
 
       // Compute active duration
       let durationStr = '';
@@ -2890,10 +2901,6 @@ async function renderHistoryView(): Promise<void> {
           }
         }
       }
-
-      // Agent count for this space
-      const spaceAgents = agentsBySpace.get(space.id) || [];
-      const agentCount = spaceAgents.length;
 
       // Build meta badges
       const metaParts: string[] = [];

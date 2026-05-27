@@ -68,6 +68,7 @@ export interface AppConfig {
   autoDownloadUpdates: boolean;     // auto-download updates in the background (vs. notify only)
   conduitHostUrl: string | null;    // URL of the Conduit host (e.g. "http://localhost:8080")
   conduitProfile: string | null;    // optional Conduit profile name for agent sessions
+  remoteEnabled: boolean;           // app-level remote: enable Mission Control on all workspace-level agents
 }
 
 const CONFIG_PATH = path.join(app.getPath('userData'), 'config.json');
@@ -208,6 +209,7 @@ const DEFAULT_CONFIG: AppConfig = {
   autoDownloadUpdates: true,
   conduitHostUrl: null,
   conduitProfile: null,
+  remoteEnabled: false,
 };
 
 let config: AppConfig = { ...DEFAULT_CONFIG };

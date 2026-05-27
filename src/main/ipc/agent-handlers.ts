@@ -237,6 +237,17 @@ export function registerAgentHandlers(): void {
     return disableRemoteControl(agentId);
   });
 
+  // ── App-level remote ──────────────────────────────────────
+  ipcMain.handle('app:set-remote', async (_event, enabled: boolean) => {
+    const { setAppRemote } = await import('../agent-service');
+    return setAppRemote(enabled);
+  });
+
+  ipcMain.handle('app:get-remote-status', async () => {
+    const { getAppRemoteStatus } = await import('../agent-service');
+    return getAppRemoteStatus();
+  });
+
   // ── Cloud agent launch ────────────────────────────────────
   ipcMain.handle('agent:launch-cloud', async (_event, spaceId: string, prompt: string) => {
     const workspace = getConfigValue('workspace');

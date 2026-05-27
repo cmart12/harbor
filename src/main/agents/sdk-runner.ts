@@ -155,6 +155,13 @@ export async function launchAgent(
     // Set up event listeners
     setupAgentEventListeners(session, record);
 
+    // Auto-enable remote if app-level remote is on
+    if (getConfigValue('remoteEnabled')) {
+      enableRemoteControl(agentId).catch((err: any) => {
+        console.error(`[sdk-runner] Auto-enable remote failed for agent=${agentId}:`, err);
+      });
+    }
+
     // Log to per-space activity log
     logIntentActivity(record, 'agent.launched', {
       sessionId,
@@ -311,7 +318,12 @@ export async function launchQuickAgent(
 
     setupAgentEventListeners(session, record);
 
-    // Fire-and-forget: return agentId immediately so the renderer can subscribe
+    // Auto-enable remote if app-level remote is on (workspace-level agents only)
+    if (getConfigValue('remoteEnabled')) {
+      enableRemoteControl(agentId).catch((err: any) => {
+        console.error(`[sdk-runner] Auto-enable remote failed for agent=${agentId}:`, err);
+      });
+    }
     // before events start flowing. Errors are handled by the session.error listener.
     session.send({ prompt }).catch((err: any) => {
       record.status = 'failed';
@@ -423,6 +435,13 @@ export async function launchDocumentAgent(
     });
 
     setupAgentEventListeners(session, record);
+
+    // Auto-enable remote if app-level remote is on
+    if (getConfigValue('remoteEnabled')) {
+      enableRemoteControl(agentId).catch((err: any) => {
+        console.error(`[sdk-runner] Auto-enable remote failed for agent=${agentId}:`, err);
+      });
+    }
 
     // Log to per-space activity log
     logIntentActivity(record, 'document.executed', {

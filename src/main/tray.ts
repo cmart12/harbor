@@ -1,6 +1,7 @@
-import { Tray, Menu, nativeImage, app } from 'electron';
+import { Tray, Menu, nativeImage, app, ipcMain } from 'electron';
 import * as path from 'path';
 import { toggleWindow } from './window-manager';
+import { getConfigValue } from './config';
 
 let tray: Tray | null = null;
 
@@ -13,6 +14,31 @@ function getIconPath(): string {
   return path.join(__dirname, '..', '..', 'src', 'assets', iconName);
 }
 
+function buildContextMenu(): Menu {
+  const remoteEnabled = !!getConfigValue('remoteEnabled');
+  return Menu.buildFromTemplate([
+    { label: 'Show/Hide', click: () => toggleWindow() },
+    { type: 'separator' },
+    {
+      label: remoteEnabled ? '📱 Remote Control ✓' : '📱 Remote Control',
+      click: async () => {
+        const { setAppRemote } = await import('./agent-service');
+        await setAppRemote(!remoteEnabled);
+        rebuildTrayMenu();
+      },
+    },
+    { type: 'separator' },
+    { label: 'Quit', click: () => app.quit() },
+  ]);
+}
+
+/** Rebuild the tray context menu (e.g. after remote state changes). */
+export function rebuildTrayMenu(): void {
+  if (tray) {
+    tray.setContextMenu(buildContextMenu());
+  }
+}
+
 /** Create and show the system tray icon. Call once after app is ready. */
 export function createTray(): void {
   const icon = nativeImage.createFromPath(getIconPath());
@@ -23,14 +49,7 @@ export function createTray(): void {
 
   tray = new Tray(icon);
   tray.setToolTip('Whim');
-
-  const contextMenu = Menu.buildFromTemplate([
-    { label: 'Show/Hide', click: () => toggleWindow() },
-    { type: 'separator' },
-    { label: 'Quit', click: () => app.quit() },
-  ]);
-
-  tray.setContextMenu(contextMenu);
+  tray.setContextMenu(buildContextMenu());
   tray.on('click', () => toggleWindow());
 }
 

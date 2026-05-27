@@ -322,6 +322,16 @@ export interface IpcCommands {
   'agent:enable-remote': { args: [agentId: string]; result: { enabled: boolean; remoteSteerable: boolean; url?: string } | { error: string } };
   'agent:disable-remote': { args: [agentId: string]; result: { ok: true } | { error: string } };
 
+  // ── App-level remote ────────────────────────────────────
+  'app:set-remote': {
+    args: [enabled: boolean];
+    result: { enabled: boolean; agents: Array<{ agentId: string; url?: string }> } | { error: string };
+  };
+  'app:get-remote-status': {
+    args: [];
+    result: { enabled: boolean; agents: Array<{ agentId: string; url?: string }> };
+  };
+
   // ── Conduit ──────────────────────────────────────────────
   'conduit:host-status': { args: []; result: { configured: boolean; connected: boolean; url: string | null; hasProfiles: boolean; profileId: string | null; profileName: string | null } };
   'conduit:list-sessions': { args: []; result: Array<{ id: string; status: string; summary?: string; createdAt: string; clientCount?: number }> | { error: string } };
@@ -428,6 +438,7 @@ export interface IpcEvents {
   'agent:completed': { agentId: string; summary: string };
   'agent:yolo-changed': { agentId: string; enabled: boolean };
   'agent:remote-changed': { agentId: string; enabled: boolean; remoteSteerable: boolean; url?: string };
+  'app:remote-changed': { enabled: boolean; agents: Array<{ agentId: string; url?: string }> };
   'notification:approval-clicked': { agentId: string };
   'agent:presence-started': { agentId: string; spaceId: string; persona: { name: string; handle: string }; anchor: AgentAnchor; threadId?: string };
   'agent:presence-ended': { agentId: string; spaceId: string };
