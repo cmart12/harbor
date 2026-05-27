@@ -9,7 +9,7 @@
  */
 
 import { type AgentPersona, resolveSandboxPolicy } from '../config';
-import { buildSandboxConfigs, type SandboxConfigDirs } from '../ai';
+import { buildSandboxConfigs, buildRuntimeSandboxConfig, type SandboxConfigDirs } from '../ai';
 import { getAllMcpServers } from '../mcp';
 import { getCustomTools, type CustomToolsContext } from '../tools';
 import type { SandboxPolicy } from '../../shared/ipc-contract';
@@ -31,6 +31,13 @@ export interface SandboxLaunchSetup {
   policy: SandboxPolicy | null;
   /** Sandbox config dirs to pass to client.createSession({ configDir }). */
   sandboxConfigs: SandboxConfigDirs | null;
+  /**
+   * Unwrapped runtime sandbox config to pass to
+   * `session.rpc.options.update({ sandboxConfig })` after createSession.
+   * The runtime does NOT auto-load sandbox enforcement from configDir; only
+   * options.update actually toggles MXC. Null when not sandboxed.
+   */
+  runtimeSandboxConfig: { enabled: boolean; userPolicy: Record<string, unknown> } | null;
   /** Filtered MCP servers (empty object if MCP is denied). */
   mcpServers: McpServersMap;
   /** Filtered custom tools list (drops web_fetch if denied). */
@@ -94,6 +101,7 @@ export function buildSandboxLaunchSetup(opts: {
       isSandboxed: false,
       policy: null,
       sandboxConfigs: null,
+      runtimeSandboxConfig: null,
       mcpServers: allMcpServers,
       customTools: allCustomTools,
       sandboxState: undefined,
@@ -104,6 +112,7 @@ export function buildSandboxLaunchSetup(opts: {
 
   const policy = resolveSandboxPolicy(persona);
   const sandboxConfigs = buildSandboxConfigs(agentId, workingDir, policy);
+  const runtimeSandboxConfig = buildRuntimeSandboxConfig(true, workingDir, policy);
   const enforcementMode = policy.enforcementMode === 'mxc-only' ? 'mxc-only' : 'both';
 
   // High-level launch summary — the "which config is being loaded?" question
@@ -173,7 +182,13 @@ export function buildSandboxLaunchSetup(opts: {
           : info.kind === 'network'
             ? `Sandbox network restriction: "${info.matchedPattern}"`
             : `Possible sandbox denial: "${info.matchedPattern}"`,
-        allowedDecisions: ['allow-once', 'disable'],
+        // post-tool fires AFTER the tool already ran and was denied by MXC.
+        // `allow-once` would be a no-op (the failure result has already been
+        // delivered to the assistant; there is nothing to gate). Offer only
+        // `disable`, which actually changes runtime state AND fires a retry
+        // prompt via `disableSandboxForSession`. The renderer adds an
+        // "Ignore" button separately for explicit dismissal.
+        allowedDecisions: ['disable'],
         layer: info.layer,
       });
     },
@@ -200,6 +215,7 @@ export function buildSandboxLaunchSetup(opts: {
     isSandboxed: true,
     policy,
     sandboxConfigs,
+    runtimeSandboxConfig,
     mcpServers,
     customTools,
     sandboxState,

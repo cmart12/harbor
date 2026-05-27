@@ -204,8 +204,10 @@ interface WhimAPI {
     target: string;
     intention?: string;
     allowedDecisions?: Array<'allow-once' | 'allow-for-session' | 'disable'>;
-    layer?: 'host:readonly-classifier' | 'host:path-policy' | 'host:web-fetch' | 'host:permission' | 'mxc:shell-denial-suspected';
+    layer?: string;
+    personaHandle?: string;
   }) => void): void;
+  onAgentSandboxResolved(callback: (data: { agentId: string; requestId: string; decision: string }) => void): void;
   onAgentCompleted(callback: (data: any) => void): void;
   onAgentYoloChanged(callback: (data: { agentId: string; enabled: boolean }) => void): void;
   onAgentRemoteChanged(callback: (data: { agentId: string; enabled: boolean; remoteSteerable: boolean; url?: string }) => void): void;
@@ -481,7 +483,8 @@ function hideStatus(): void {
 
 // ── Workers badge ───────────────────────────────────────
 function updateWorkersBadge(): void {
-  if (agentApprovals.size > 0 && currentFilter !== 'agents') {
+  const sandboxPending = agentStore.sandboxBlockCount();
+  if ((agentApprovals.size > 0 || sandboxPending > 0) && currentFilter !== 'agents') {
     workersBadge.classList.remove('hidden');
   } else {
     workersBadge.classList.add('hidden');
@@ -6341,151 +6344,40 @@ whimAPI.onAgentRemoteChanged((data: { agentId: string; enabled: boolean; remoteS
 });
 
 // ── Sandbox bubble-up handler ───────────────────────────
-// Renders a stacked banner asking the user to allow once / for session /
-// disable the sandbox. Lives at the top of <body>; multiple blocks stack.
-const sandboxBlockContainer = (() => {
-  const div = document.createElement('div');
-  div.id = 'sandbox-block-stack';
-  div.style.position = 'fixed';
-  div.style.top = '12px';
-  div.style.right = '12px';
-  div.style.maxWidth = '380px';
-  div.style.zIndex = '10000';
-  div.style.display = 'flex';
-  div.style.flexDirection = 'column';
-  div.style.gap = '6px';
-  document.body.appendChild(div);
-  return div;
-})();
+// Pending sandbox blocks live in agentStore.sandboxBlocks and render inline
+// on each worker tile (canvas) and agent card (main app) via React. Cross-
+// window dismissal is driven by the broker broadcasting both
+// 'agent:sandbox-blocked' (set) and 'agent:sandbox-resolved' (clear).
 
-function renderSandboxBlockBanner(data: {
-  agentId: string;
-  requestId: string;
-  source: 'permission' | 'pre-tool' | 'post-tool-shell';
-  kind: 'read' | 'write' | 'shell' | 'mcp' | 'url' | 'web-fetch';
-  toolName?: string;
-  target: string;
-  intention?: string;
-  allowedDecisions?: Array<'allow-once' | 'allow-for-session' | 'disable'>;
-  layer?: 'host:readonly-classifier' | 'host:path-policy' | 'host:web-fetch' | 'host:permission' | 'mxc:shell-denial-suspected' | 'mxc:shell-denial-high' | 'mxc:shell-denial-medium' | 'mxc:shell-denial-network' | 'mxc-only:auto-approve';
-  personaHandle?: string;
-}): void {
-  const banner = document.createElement('div');
-  banner.className = 'sandbox-block-banner';
-
-  const title = document.createElement('div');
-  title.style.fontWeight = '600';
-  title.textContent = data.source === 'post-tool-shell'
-    ? `🔒 Possible sandbox denial`
-    : `🔒 Sandbox blocked: ${data.kind}${data.toolName ? ` (${data.toolName})` : ''}`;
-  banner.appendChild(title);
-
-  if (data.personaHandle) {
-    const personaTag = document.createElement('div');
-    personaTag.className = 'sandbox-block-banner-persona';
-    personaTag.style.fontSize = '11px';
-    personaTag.style.opacity = '0.75';
-    personaTag.textContent = `Persona: @${data.personaHandle}`;
-    banner.appendChild(personaTag);
+/**
+ * Switch to the Agents tab and scroll the persona editor to its sandbox
+ * section, hydrating persona data first if needed. Used by the inline
+ * sandbox-block panel's "Edit sandbox config" button. The pending block
+ * stays in the store so the user can still Allow / Disable for that call.
+ */
+async function openPersonaEditorForSandbox(personaHandle: string): Promise<void> {
+  if (personas.length === 0) {
+    try { await loadPersonas(); } catch { /* fall through; lookup may fail */ }
   }
-
-  // Show which enforcement layer fired so the user can verify whether MXC
-  // actually denied (mxc:*) vs the host intercepted before MXC (host:*).
-  if (data.layer) {
-    const layerTag = document.createElement('div');
-    layerTag.className = 'sandbox-block-banner-layer';
-    layerTag.style.fontSize = '11px';
-    layerTag.style.opacity = '0.75';
-    layerTag.style.fontFamily = 'monospace';
-    const layerLabel = data.layer.startsWith('mxc:') || data.layer.startsWith('mxc-only:')
-      ? `Enforced by: MXC (${data.layer})`
-      : `Enforced by: host (${data.layer})`;
-    layerTag.textContent = layerLabel;
-    banner.appendChild(layerTag);
+  const persona = personas.find(p => p.handle === personaHandle);
+  if (persona) {
+    setFilter('agents');
+    selectAgent(persona.id);
+    setTimeout(() => {
+      const sandboxSection = document.querySelector('.persona-sandbox-row') as HTMLElement | null;
+      sandboxSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 50);
   }
-
-  const body = document.createElement('div');
-  body.style.fontSize = '12px';
-  body.style.lineHeight = '1.4';
-  body.textContent = (data.intention ? `${data.intention}\n` : '') + `Target: ${data.target}`;
-  body.style.whiteSpace = 'pre-wrap';
-  banner.appendChild(body);
-
-  const actions = document.createElement('div');
-  actions.className = 'sandbox-block-banner-actions';
-
-  const decisions: Array<'allow-once' | 'allow-for-session' | 'disable'> =
-    data.allowedDecisions ?? ['allow-once', 'allow-for-session', 'disable'];
-  const labels: Record<typeof decisions[number], string> = {
-    'allow-once': 'Allow once',
-    'allow-for-session': 'Allow for session',
-    'disable': 'Disable sandbox',
-  };
-  for (const d of decisions) {
-    const btn = document.createElement('button');
-    btn.className = 'sandbox-block-banner-btn';
-    btn.textContent = labels[d];
-    btn.addEventListener('click', async () => {
-      await whimAPI.resolveSandboxBlock(data.agentId, data.requestId, d);
-      banner.remove();
-    });
-    actions.appendChild(btn);
-  }
-
-  if (data.source === 'post-tool-shell') {
-    const ignoreBtn = document.createElement('button');
-    ignoreBtn.className = 'sandbox-block-banner-btn';
-    ignoreBtn.textContent = 'Ignore';
-    ignoreBtn.addEventListener('click', async () => {
-      // Soft signal — resolve as allow-once just to drain the broker callback.
-      await whimAPI.resolveSandboxBlock(data.agentId, data.requestId, 'allow-once');
-      banner.remove();
-    });
-    actions.appendChild(ignoreBtn);
-  }
-
-  if (data.personaHandle) {
-    const editBtn = document.createElement('button');
-    editBtn.className = 'sandbox-block-banner-btn';
-    editBtn.textContent = 'Edit sandbox config';
-    editBtn.title =
-      `Open the @${data.personaHandle} persona to tweak its sandbox policy. ` +
-      'Changes apply to FUTURE sessions launched with this persona — they do ' +
-      'not modify the currently blocked agent. The banner stays visible so ' +
-      'you can still Allow / Disable for this call.';
-    editBtn.addEventListener('click', async () => {
-      // Make sure personas[] is hydrated — the user may not have visited the
-      // Agents tab yet this session.
-      if (personas.length === 0) {
-        try { await loadPersonas(); } catch { /* fall through; lookup may fail */ }
-      }
-      const persona = personas.find(p => p.handle === data.personaHandle);
-      if (persona) {
-        setFilter('agents');
-        selectAgent(persona.id);
-        setTimeout(() => {
-          // `.persona-sandbox-row` is the row that starts the sandbox section
-          // of the persona editor (where the "Sandboxed" checkbox lives).
-          // `.sandbox-policy-form` lives just below it when the persona has
-          // a custom override. Either is a fine scroll target.
-          const sandboxSection = document.querySelector('.persona-sandbox-row') as HTMLElement | null;
-          sandboxSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }, 50);
-      }
-      // Do NOT remove the banner or resolve the pending callback — the user
-      // is reconfiguring policy, not deciding on this specific blocked call.
-      editBtn.disabled = true;
-      editBtn.textContent = 'Editor opened';
-    });
-    actions.appendChild(editBtn);
-  }
-
-  banner.appendChild(actions);
-  sandboxBlockContainer.appendChild(banner);
 }
 
 whimAPI.onAgentSandboxBlocked((data: any) => {
-  renderSandboxBlockBanner(data);
+  agentStore.setSandboxBlock(data);
+  updateWorkersBadge();
+});
+
+whimAPI.onAgentSandboxResolved((data: { agentId: string; requestId: string; decision: string }) => {
+  agentStore.clearSandboxBlock(data.agentId, data.requestId);
+  updateWorkersBadge();
 });
 
 // When the user clicks an OS notification, switch to Workers tab
@@ -6914,6 +6806,12 @@ function mountReactLists(): void {
         onToggleSandbox: async (agentId) => {
           await whimAPI.disableSandbox(agentId);
           renderAgentsList();
+        },
+        onResolveSandboxBlock: (agentId, requestId, decision) => {
+          whimAPI.resolveSandboxBlock(agentId, requestId, decision);
+        },
+        onEditSandboxConfig: (personaHandle) => {
+          openPersonaEditorForSandbox(personaHandle);
         },
         onToggleRemote: async (agentId, current, agent) => {
           if (current?.enabled) {

@@ -436,6 +436,14 @@ export interface IpcEvents {
      *  to open the persona editor on "Edit sandbox config". */
     personaHandle?: string;
   };
+  /** Companion to `agent:sandbox-blocked`. Broadcast to ALL renderer windows
+   *  on resolution so any window that rendered the block panel can dismiss it
+   *  when the user resolved it from another window (e.g. canvas → main app). */
+  'agent:sandbox-resolved': {
+    agentId: string;
+    requestId: string;
+    decision: 'allow-once' | 'allow-for-session' | 'disable';
+  };
   'agent:completed': { agentId: string; summary: string };
   'agent:yolo-changed': { agentId: string; enabled: boolean };
   'agent:remote-changed': { agentId: string; enabled: boolean; remoteSteerable: boolean; url?: string };

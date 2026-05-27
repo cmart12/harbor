@@ -459,6 +459,36 @@ export async function launchQuickAgent(
       ? await createCloudSession(client, sessionConfig)
       : await client.createSession(sessionConfig);
 
+    // The runtime does NOT auto-load sandbox enforcement from configDir. We
+    // must explicitly push the sandboxConfig via options.update so MXC
+    // wraps shell commands with sandbox-exec. This MUST resolve before
+    // session.send so the first tool call is gated.
+    // See cli/promptMode.ts:346 for the reference implementation; the
+    // configDir we set above only isolates per-session-state (events, hooks).
+    if (isSandboxed && sandboxSetup?.runtimeSandboxConfig && !isCloudSandbox) {
+      try {
+        const result = await (session as any).rpc.options.update({
+          sandboxConfig: sandboxSetup.runtimeSandboxConfig,
+        });
+        if (result?.success === false) {
+          console.error(
+            `[sandbox] options.update returned success=false for agent ${agentId}; ` +
+            `aborting launch to avoid running unsandboxed.`,
+          );
+          try { await (session as any).abort?.(); } catch { /* best-effort */ }
+          return { error: 'Failed to apply sandbox configuration (runtime rejected the update)' };
+        }
+        console.log(`[sandbox] applied runtime sandbox enforcement for agent ${agentId}`);
+      } catch (err: any) {
+        console.error(
+          `[sandbox] options.update threw for agent ${agentId}: ${err?.message ?? err}; ` +
+          `aborting launch to avoid running unsandboxed.`,
+        );
+        try { await (session as any).abort?.(); } catch { /* best-effort */ }
+        return { error: `Failed to apply sandbox configuration: ${err?.message ?? 'unknown error'}` };
+      }
+    }
+
     const sessionId = (session as any).sessionId || agentId;
     const now = new Date().toISOString();
 
@@ -719,13 +749,18 @@ export async function sendChatMessage(
 }
 
 /**
- * Disable the sandbox for the rest of an agent's session.  Resumes the SDK
- * session against the per-agent "off" configDir (whose `config.json` has
- * `sandbox.enabled: false`), swaps `record.session`, re-installs listeners,
- * and re-prompts the agent to retry its last operation.
+ * Disable the sandbox for the rest of an agent's session.  Calls
+ * `session.rpc.options.update({ sandboxConfig: { enabled: false } })` on the
+ * existing session — no session swap needed. The runtime drops its sandboxed
+ * shell context and restarts MCP stdio servers in response, so subsequent
+ * tool calls run unsandboxed.
  *
  * Idempotent: returns silently when the agent is unknown, already disabled,
  * or non-sandboxed.
+ *
+ * Ordering: callers should `await` this BEFORE resolving the pending
+ * sandbox-block broker callback so that the unblocked tool call runs after
+ * the runtime has actually disabled enforcement.
  */
 export async function disableSandboxForSession(agentId: string): Promise<void> {
   const record = registry.get(agentId);
@@ -738,40 +773,17 @@ export async function disableSandboxForSession(agentId: string): Promise<void> {
     return;
   }
 
-  const client = getCopilotClient();
-  if (!client) {
-    console.error('[agent-service] disableSandboxForSession: no Copilot client');
-    return;
-  }
-
-  // Drain any pending approval / interactive callbacks for this agent so the
-  // resume below doesn't race against an old wait. clearPendingInteractions
-  // already resolves them as deny / cancel / allow-once where appropriate.
-  broker.clearPendingInteractions(record);
-
   try {
-    const mcpServers = getAllMcpServers();
-    const findRecord = (sid: string) => registry.findBySessionId(sid);
-    const offDir = record.sandbox.configs.offDir;
-
-    // Resume the same session id against the off-dir; the runtime will reload
-    // its sandbox config (enabled=false) when it sees the new configDir.
-    const newSession = await client.resumeSession(record.sessionId, {
-      configDir: offDir,
-      workingDirectory: (await import('../config')).getConfig().workspace ?? undefined,
-      mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
-      tools: getCustomTools(createCustomToolsContext(agentId, shouldEnableWhimTools(record.spaceId))),
-      onPermissionRequest: broker.createPermissionHandler(findRecord),
-      onUserInputRequest: broker.createUserInputHandler(findRecord),
-      onElicitationRequest: broker.createElicitationHandler(findRecord),
+    const result = await (record.session as any).rpc.options.update({
+      sandboxConfig: { enabled: false },
     });
+    if (result?.success === false) {
+      throw new Error('runtime rejected sandbox disable');
+    }
 
-    record.session = newSession;
     record.sandbox.state = 'off';
     record.status = 'running';
     persistence.updateStatus(record);
-
-    setupAgentEventListeners(newSession, record);
 
     notifier.notifyRenderer(`chat:event:${agentId}`, {
       type: 'sandbox.disabled',
@@ -781,10 +793,13 @@ export async function disableSandboxForSession(agentId: string): Promise<void> {
       agentId, status: 'running', summary: 'Sandbox disabled',
     });
 
-    // Re-prompt the agent.  We use sendChatMessage so the existing pre-existing
-    // record reactivation path runs.
-    await newSession.send({
+    // Re-prompt the agent so it retries the just-blocked operation now that
+    // enforcement is off. Fire-and-forget; errors surface via the session
+    // error listener.
+    record.session.send({
       prompt: 'Sandbox is now disabled. Please retry the operation that was just blocked.',
+    }).catch((err: any) => {
+      console.error(`[agent-service] retry-after-disable send failed for ${agentId}:`, err);
     });
 
     console.log(`[agent-service] Disabled sandbox for agent ${agentId}`);

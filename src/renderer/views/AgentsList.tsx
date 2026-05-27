@@ -6,7 +6,7 @@ import { useStore } from './useStore';
 import { describeApproval } from './list-utils';
 import { AgentStatusIcon, StepIcon } from './icons';
 import type { AgentListAllItem } from '../../shared/ipc-contract';
-import type { AgentStep, AgentApproval, AgentRemoteInfo } from '../state/agent-store';
+import type { AgentStep, AgentApproval, AgentRemoteInfo, AgentSandboxBlock } from '../state/agent-store';
 
 export interface AgentsListActions {
   onAgentClick: (
@@ -19,6 +19,13 @@ export interface AgentsListActions {
   onToggleYolo: (agentId: string, currentlyEnabled: boolean) => void;
   onToggleSandbox: (agentId: string) => void;
   onToggleRemote: (agentId: string, current: AgentRemoteInfo | undefined, agent: AgentListAllItem) => void;
+  /**
+   * Resolve a pending sandbox block with the user's decision. Called from the
+   * inline SandboxBlockPanel on the agent card.
+   */
+  onResolveSandboxBlock: (agentId: string, requestId: string, decision: 'allow-once' | 'allow-for-session' | 'disable') => void;
+  /** Open the persona editor (Agents tab) scrolled to the sandbox section. */
+  onEditSandboxConfig: (personaHandle: string) => void;
 }
 
 interface AgentCardProps {
@@ -26,6 +33,7 @@ interface AgentCardProps {
   intentLabel: string;
   steps: AgentStep[];
   approval: AgentApproval | undefined;
+  sandboxBlocks: AgentSandboxBlock[];
   yoloMode: boolean;
   remote: AgentRemoteInfo | undefined;
   personaEmoji: string;
@@ -38,6 +46,7 @@ const AgentCard = React.memo(function AgentCard({
   intentLabel,
   steps,
   approval,
+  sandboxBlocks,
   yoloMode,
   remote,
   personaEmoji,
@@ -167,9 +176,96 @@ const AgentCard = React.memo(function AgentCard({
       ) : null}
       {showSummaryBox ? <div className="agent-card-summary">{agent.summary}</div> : null}
       {approval ? <ApprovalPanel agentId={agent.agentId} approval={approval} actions={actions} /> : null}
+      {sandboxBlocks.map(block => (
+        <SandboxBlockPanel
+          key={block.requestId}
+          block={block}
+          actions={actions}
+        />
+      ))}
     </div>
   );
 });
+
+function SandboxBlockPanel({
+  block,
+  actions,
+}: {
+  block: AgentSandboxBlock;
+  actions: AgentsListActions;
+}): React.ReactElement {
+  const decisions = block.allowedDecisions ?? ['allow-once', 'allow-for-session', 'disable'];
+  // For post-tool blocks, "Disable" actually disables sandbox AND fires a
+  // retry prompt at the agent (see `disableSandboxForSession`), so the
+  // button label is "Disable & retry" to set the right expectation. For
+  // pre-tool blocks, "Disable" just disables; the tool call that triggered
+  // the block proceeds via the broker callback's `allow` result.
+  const labels: Record<'allow-once' | 'allow-for-session' | 'disable', string> = {
+    'allow-once': 'Allow once',
+    'allow-for-session': 'Allow for session',
+    'disable': block.source === 'post-tool-shell' ? 'Disable sandbox & retry' : 'Disable sandbox',
+  };
+  const title = block.source === 'post-tool-shell'
+    ? 'Possible sandbox denial'
+    : `Sandbox blocked: ${block.kind}${block.toolName ? ` (${block.toolName})` : ''}`;
+  const layerLabel = block.layer
+    ? (block.layer.startsWith('mxc:') || block.layer.startsWith('mxc-only:')
+      ? `Enforced by: MXC (${block.layer})`
+      : `Enforced by: host (${block.layer})`)
+    : null;
+
+  return (
+    <div className="agent-card-sandbox-block" onClick={e => e.stopPropagation()}>
+      <div className="sandbox-block-header">
+        <span className="sandbox-block-icon">🔒</span>
+        <div className="sandbox-block-info">
+          <span className="sandbox-block-title">{title}</span>
+          {block.personaHandle ? (
+            <span className="sandbox-block-persona">@{block.personaHandle}</span>
+          ) : null}
+          {layerLabel ? <span className="sandbox-block-layer">{layerLabel}</span> : null}
+        </div>
+      </div>
+      <div className="sandbox-block-body">
+        {block.intention ? <div className="sandbox-block-intention">{block.intention}</div> : null}
+        <div className="sandbox-block-target">Target: {block.target}</div>
+      </div>
+      <div className="sandbox-block-actions">
+        {decisions.map(d => (
+          <button
+            key={d}
+            type="button"
+            className="sandbox-block-btn"
+            onClick={() => actions.onResolveSandboxBlock(block.agentId, block.requestId, d)}
+          >
+            {labels[d]}
+          </button>
+        ))}
+        {block.source === 'post-tool-shell' ? (
+          <button
+            type="button"
+            className="sandbox-block-btn"
+            onClick={() => actions.onResolveSandboxBlock(block.agentId, block.requestId, 'allow-once')}
+          >
+            Ignore
+          </button>
+        ) : null}
+        {block.personaHandle ? (
+          <button
+            type="button"
+            className="sandbox-block-btn sandbox-block-btn-edit"
+            title={`Open the @${block.personaHandle} persona to tweak its sandbox policy. ` +
+              'Changes apply to FUTURE sessions launched with this persona — they do ' +
+              'not modify the currently blocked agent.'}
+            onClick={() => actions.onEditSandboxConfig(block.personaHandle!)}
+          >
+            Edit sandbox config
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
 
 function ApprovalPanel({
   agentId,
@@ -271,6 +367,9 @@ export function AgentsList(props: AgentsListProps): React.ReactElement {
             intentLabel={intentLabel}
             steps={agentState.steps.get(agent.agentId) || []}
             approval={agentState.approvals.get(agent.agentId)}
+            sandboxBlocks={Array.from(
+              (agentState.sandboxBlocks.get(agent.agentId) ?? new Map()).values(),
+            )}
             yoloMode={agentState.yoloMode.get(agent.agentId) || false}
             remote={agentState.remoteState.get(agent.agentId)}
             personaEmoji={personaEmoji}

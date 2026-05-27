@@ -129,6 +129,14 @@ export class InteractionBroker {
     } else {
       console.warn(`[InteractionBroker] No sandbox-block callback for requestId=${requestId}`);
     }
+    // Broadcast to ALL renderer windows so any window that rendered the
+    // block panel (canvas + main app) can dismiss it. Without this, resolving
+    // from one window leaves an orphaned panel in the other.
+    this.notifier.notifyRenderer('agent:sandbox-resolved', {
+      agentId: _agentId,
+      requestId,
+      decision,
+    });
     this.notifier.notifyRenderer(`chat:event:${_agentId}`, {
       type: 'sandbox.resolved',
       requestId,

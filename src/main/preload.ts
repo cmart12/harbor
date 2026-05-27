@@ -191,6 +191,7 @@ export interface WhimAPI {
   onAgentStatusChanged(callback: (data: IpcEventPayload<'agent:status-changed'>) => void): void;
   onAgentApprovalNeeded(callback: (data: IpcEventPayload<'agent:approval-needed'>) => void): void;
   onAgentSandboxBlocked(callback: (data: IpcEventPayload<'agent:sandbox-blocked'>) => void): void;
+  onAgentSandboxResolved(callback: (data: IpcEventPayload<'agent:sandbox-resolved'>) => void): void;
   onAgentCompleted(callback: (data: IpcEventPayload<'agent:completed'>) => void): void;
   onAgentYoloChanged(callback: (data: IpcEventPayload<'agent:yolo-changed'>) => void): void;
   onAgentRemoteChanged(callback: (data: IpcEventPayload<'agent:remote-changed'>) => void): void;
@@ -482,6 +483,9 @@ const api: WhimAPI = {
   },
   onAgentSandboxBlocked: (callback) => {
     ipcRenderer.on('agent:sandbox-blocked', (_event: unknown, data: IpcEventPayload<'agent:sandbox-blocked'>) => callback(data));
+  },
+  onAgentSandboxResolved: (callback) => {
+    ipcRenderer.on('agent:sandbox-resolved', (_event: unknown, data: IpcEventPayload<'agent:sandbox-resolved'>) => callback(data));
   },
   onAgentCompleted: (callback) => {
     ipcRenderer.on('agent:completed', (_event: unknown, data: IpcEventPayload<'agent:completed'>) => callback(data));

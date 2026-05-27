@@ -132,6 +132,35 @@ If you make changes to the document, clearly describe what you changed.${cliTool
       },
     });
 
+    // The runtime does NOT auto-load sandbox enforcement from configDir. We
+    // must explicitly push the sandboxConfig via options.update so MXC
+    // wraps shell commands with sandbox-exec. This MUST resolve before
+    // session.send so the first tool call is gated.
+    // See cli/promptMode.ts:346 for the reference implementation.
+    if (isSandboxed && sandboxSetup.runtimeSandboxConfig && !isCloudSandbox) {
+      try {
+        const result = await (session as any).rpc.options.update({
+          sandboxConfig: sandboxSetup.runtimeSandboxConfig,
+        });
+        if (result?.success === false) {
+          console.error(
+            `[sandbox] options.update returned success=false for comment agent ${agentId}; ` +
+            `aborting launch to avoid running unsandboxed.`,
+          );
+          try { await (session as any).abort?.(); } catch { /* best-effort */ }
+          return { error: 'Failed to apply sandbox configuration (runtime rejected the update)' };
+        }
+        console.log(`[sandbox] applied runtime sandbox enforcement for comment agent ${agentId}`);
+      } catch (err: any) {
+        console.error(
+          `[sandbox] options.update threw for comment agent ${agentId}: ${err?.message ?? err}; ` +
+          `aborting launch to avoid running unsandboxed.`,
+        );
+        try { await (session as any).abort?.(); } catch { /* best-effort */ }
+        return { error: `Failed to apply sandbox configuration: ${err?.message ?? 'unknown error'}` };
+      }
+    }
+
     const sessionId = (session as any).sessionId || agentId;
     const now = new Date().toISOString();
 

@@ -270,24 +270,30 @@ export function setAgentYolo(agentId: string, enabled: boolean): { ok: true } | 
 }
 
 /**
- * Renderer-driven resolution of a sandbox block.  For `disable`, also
- * triggers the session-swap flow in sdk-runner asynchronously; the broker
- * resolves the pending permission/pre-tool callback as approve-once so the
- * runtime can return while the swap is in flight.
+ * Renderer-driven resolution of a sandbox block.
+ *
+ * For `'disable'`: await `disableSandboxForSession` FIRST so the runtime has
+ * actually flipped off enforcement, THEN resolve the broker callback. The
+ * broker callback resolves the pre-tool hook with `allow`, so resolving it
+ * before the disable completes would let the original tool call slip through
+ * while the runtime is still sandboxed. The retry prompt fires from inside
+ * `disableSandboxForSession` after the runtime update lands.
+ *
+ * For `'allow-once'` / `'allow-for-session'`: just resolve the broker
+ * callback; no runtime change needed.
  */
 export async function resolveSandboxBlock(
   agentId: string,
   requestId: string,
   decision: 'allow-once' | 'allow-for-session' | 'disable',
 ): Promise<void> {
-  // Resolve the pending broker callback first so the runtime unblocks.
-  broker.resolveSandboxBlock(agentId, requestId, decision);
   if (decision === 'disable') {
     const { disableSandboxForSession } = await import('./agents/sdk-runner');
     await disableSandboxForSession(agentId).catch((err) => {
       console.error('[agent-service] disableSandboxForSession failed:', err);
     });
   }
+  broker.resolveSandboxBlock(agentId, requestId, decision);
 }
 
 // ── Agent lifecycle ────────────────────────────────────

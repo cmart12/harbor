@@ -24,6 +24,23 @@ vi.mock('../ai', () => ({
     onDir: path.join('/tmp', 'sandbox-config', agentId, 'on'),
     offDir: path.join('/tmp', 'sandbox-config', agentId, 'off'),
   }),
+  // Mirror the real shape: unwrapped { enabled, userPolicy: { filesystem, network } }
+  // ready for `session.rpc.options.update({ sandboxConfig })`.
+  buildRuntimeSandboxConfig: (enabled: boolean, _workingDir: string, _policy: SandboxPolicy) => ({
+    enabled,
+    userPolicy: {
+      filesystem: {
+        readwritePaths: [],
+        readonlyPaths: [],
+        deniedPaths: [],
+        clearPolicyOnExit: true,
+      },
+      network: {
+        allowOutbound: false,
+        allowLocalNetwork: false,
+      },
+    },
+  }),
 }));
 
 import { buildSandboxLaunchSetup } from './sandbox-launch';
@@ -133,5 +150,108 @@ describe('buildSandboxLaunchSetup', () => {
       broker,
     });
     expect(setup.customTools.some((t: any) => t?.name === 'web_fetch')).toBe(true);
+  });
+
+  it('populates runtimeSandboxConfig for sandboxed personas so sdk-runner can pass it to session.rpc.options.update', () => {
+    // The runtime needs to receive the sandboxConfig via options.update after
+    // createSession — otherwise MXC enforcement stays off even though
+    // configDir is set. This test locks the field's presence + shape; if it
+    // ever regresses, curl + filesystem writes will silently succeed inside
+    // @sandbox sessions again (the original demo bug).
+    const setup = buildSandboxLaunchSetup({
+      agentId: 'a6',
+      workingDir: path.join(os.tmpdir(), 'a6-work'),
+      persona: makeSandboxedPersona({ enforcementMode: 'mxc-only' }),
+      registry,
+      broker,
+    });
+    expect(setup.runtimeSandboxConfig).toBeTruthy();
+    expect(setup.runtimeSandboxConfig).toEqual(
+      expect.objectContaining({
+        enabled: true,
+        userPolicy: expect.objectContaining({
+          filesystem: expect.any(Object),
+          network: expect.any(Object),
+        }),
+      }),
+    );
+  });
+
+  it('sets runtimeSandboxConfig=null for non-sandboxed personas', () => {
+    const setup = buildSandboxLaunchSetup({
+      agentId: 'a7',
+      workingDir: path.join(os.tmpdir(), 'a7-work'),
+      persona: { id: 'p1', handle: 'p', instructions: '', model: 'gpt', runLocation: 'local', sandboxed: false },
+      registry,
+      broker,
+    });
+    expect(setup.runtimeSandboxConfig).toBeNull();
+  });
+
+  it('post-tool-shell block payload offers only `disable` (not `allow-once`) because the tool has already failed', async () => {
+    // The post-tool hook fires AFTER MXC denied the command and the
+    // assistant has already seen the failure result. "Allow once" at that
+    // point would just dismiss the panel without retrying anything, which
+    // is misleading UX (the user expects the action to proceed). The only
+    // decision that meaningfully changes runtime state is `disable`, which
+    // also fires a retry prompt via `disableSandboxForSession`.
+    // Regression for: "when i allow once shouldnt it have allowed".
+    const notifyRenderer = vi.fn();
+    const localNotifier = { notifyRenderer, showApprovalNotification: vi.fn() } as unknown as AgentNotifier;
+    const localBroker = new InteractionBroker(localNotifier, makePersistence());
+    const localRegistry = new AgentRegistry();
+    // Use the production AgentRecord shape via the registry's helper.
+    const record: any = {
+      agentId: 'a8',
+      sessionId: 's8',
+      session: { send: vi.fn(), abort: vi.fn() },
+      spaceId: '__workspace__',
+      selectedText: '',
+      anchor: { quote: '', prefix: '', suffix: '' },
+      status: 'running',
+      pendingApprovalId: null,
+      events: [],
+      eventTimestamps: new Map(),
+      personaHandle: 'sandbox',
+      sandbox: {
+        policy: { ...DEFAULT_SANDBOX_POLICY, enforcementMode: 'mxc-only' },
+        allowList: { paths: new Set(), resources: new Set(), webFetch: false },
+        state: 'on',
+        allowOutbound: false,
+      },
+    };
+    localRegistry.set('a8', record);
+
+    const setup = buildSandboxLaunchSetup({
+      agentId: 'a8',
+      workingDir: path.join(os.tmpdir(), 'a8-work'),
+      persona: makeSandboxedPersona({ enforcementMode: 'mxc-only' }),
+      registry: localRegistry,
+      broker: localBroker,
+    });
+    const onPostToolUse = (setup.hooks as any).onPostToolUse;
+    expect(typeof onPostToolUse).toBe('function');
+
+    // Trigger a high-confidence MXC denial (Access denied). The hook will
+    // await broker.emitSandboxBlock, which will hang until we resolve it.
+    // We fire-and-forget the hook call and only inspect the notifyRenderer
+    // payload it produced before the await blocked.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    void onPostToolUse({
+      toolName: 'bash',
+      toolArgs: { command: 'echo hi > /tmp/blocked.txt' },
+      toolResult: { stderr: 'sandbox: bash(1234) deny file-write-data /tmp/blocked.txt' },
+    });
+    // Yield so the hook can push the emitSandboxBlock call into notifier.
+    await new Promise((r) => setTimeout(r, 0));
+    warn.mockRestore();
+
+    const blockedCall = notifyRenderer.mock.calls.find(
+      (c: any[]) => c[0] === 'agent:sandbox-blocked',
+    );
+    expect(blockedCall).toBeDefined();
+    expect(blockedCall![1].source).toBe('post-tool-shell');
+    expect(blockedCall![1].allowedDecisions).toEqual(['disable']);
+    expect(blockedCall![1].allowedDecisions).not.toContain('allow-once');
   });
 });

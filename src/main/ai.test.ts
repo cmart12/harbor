@@ -26,7 +26,7 @@ vi.mock('./session', () => ({
   resolveCopilotCliPath: vi.fn(() => '/mock/cli'),
 }));
 
-import { previewSandboxConfig } from './ai';
+import { previewSandboxConfig, buildRuntimeSandboxConfig } from './ai';
 
 const basePolicy: SandboxPolicy = {
   scopeToSpaceFolder: true,
@@ -155,5 +155,35 @@ describe('previewSandboxConfig / materializeRuntimeConfig shape', () => {
     expect(() => JSON.stringify(cfg)).not.toThrow();
     const roundTripped = JSON.parse(JSON.stringify(cfg));
     expect(roundTripped).toEqual(cfg);
+  });
+});
+
+describe('buildRuntimeSandboxConfig', () => {
+  // The runtime's options.update RPC takes the UNWRAPPED shape, NOT the
+  // `{ sandbox: {...} }` wrapper that the FILE format uses. This is the
+  // single most-easily-confused thing in the sandbox pipeline; locking it
+  // here prevents a tweak to materializeRuntimeConfig from accidentally
+  // re-wrapping the runtime payload (which would silently disable
+  // enforcement, just like the original demo bug).
+
+  it('returns the unwrapped shape (no `sandbox` wrapper key)', () => {
+    const cfg = buildRuntimeSandboxConfig(true, '/tmp/work', basePolicy) as any;
+    // Must NOT have the file-format wrapper.
+    expect(cfg.sandbox).toBeUndefined();
+    // Must have the top-level enabled / userPolicy keys the runtime expects.
+    expect(cfg.enabled).toBe(true);
+    expect(cfg.userPolicy).toBeDefined();
+    expect(cfg.userPolicy.filesystem).toBeDefined();
+    expect(cfg.userPolicy.network).toBeDefined();
+  });
+
+  it('respects enabled=false (used by disableSandboxForSession)', () => {
+    const cfg = buildRuntimeSandboxConfig(false, '/tmp/work', basePolicy) as any;
+    expect(cfg.enabled).toBe(false);
+  });
+
+  it('produces a payload accepted by session.rpc.options.update (JSON-serializable)', () => {
+    const cfg = buildRuntimeSandboxConfig(true, '/tmp/work', basePolicy);
+    expect(() => JSON.stringify(cfg)).not.toThrow();
   });
 });

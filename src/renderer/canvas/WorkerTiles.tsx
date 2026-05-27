@@ -27,13 +27,29 @@ interface ApprovalInfo {
   path?: string;
 }
 
+interface SandboxBlockInfo {
+  agentId: string;
+  requestId: string;
+  source: 'permission' | 'pre-tool' | 'post-tool-shell';
+  kind: 'read' | 'write' | 'shell' | 'mcp' | 'url' | 'web-fetch';
+  toolName?: string;
+  target: string;
+  intention?: string;
+  allowedDecisions?: Array<'allow-once' | 'allow-for-session' | 'disable'>;
+  layer?: string;
+  personaHandle?: string;
+}
+
 declare const whimAPI: {
   listAgents(spaceId: string): Promise<AgentInfo[]>;
   onChatEvent(agentId: string, callback: (event: any) => void): () => void;
   onAgentStatusChanged(callback: (data: any) => void): void;
   onAgentApprovalNeeded(callback: (data: any) => void): void;
   onAgentCompleted(callback: (data: any) => void): void;
+  onAgentSandboxBlocked(callback: (data: SandboxBlockInfo) => void): void;
+  onAgentSandboxResolved(callback: (data: { agentId: string; requestId: string; decision: string }) => void): void;
   approveAgent(agentId: string, requestId: string, approved: boolean): Promise<void>;
+  resolveSandboxBlock(agentId: string, requestId: string, decision: 'allow-once' | 'allow-for-session' | 'disable'): Promise<{ ok?: boolean; error?: string }>;
   [key: string]: any;
 };
 
@@ -83,6 +99,10 @@ export function WorkerTiles({ spaceId, onSelectAgent, selectedAgentId }: WorkerT
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [steps, setSteps] = useState<Map<string, AgentStep[]>>(new Map());
   const [approvals, setApprovals] = useState<Map<string, ApprovalInfo>>(new Map());
+  // Pending sandbox blocks keyed agentId → requestId → block. Multiple
+  // concurrent blocks per agent are possible (mxc-only parallel tool calls)
+  // so we don't collapse to one block per agent.
+  const [sandboxBlocks, setSandboxBlocks] = useState<Map<string, Map<string, SandboxBlockInfo>>>(new Map());
   const chatUnsubsRef = useRef<Map<string, () => void>>(new Map());
 
   // Load agents for this space
@@ -202,6 +222,27 @@ export function WorkerTiles({ spaceId, onSelectAgent, selectedAgentId }: WorkerT
       });
       loadAgents();
     });
+    whimAPI.onAgentSandboxBlocked((data: SandboxBlockInfo) => {
+      setSandboxBlocks(prev => {
+        const next = new Map(prev);
+        const perAgent = new Map(next.get(data.agentId) ?? new Map<string, SandboxBlockInfo>());
+        perAgent.set(data.requestId, data);
+        next.set(data.agentId, perAgent);
+        return next;
+      });
+    });
+    whimAPI.onAgentSandboxResolved((data: { agentId: string; requestId: string; decision: string }) => {
+      setSandboxBlocks(prev => {
+        const perAgent = prev.get(data.agentId);
+        if (!perAgent || !perAgent.has(data.requestId)) return prev;
+        const next = new Map(prev);
+        const updated = new Map(perAgent);
+        updated.delete(data.requestId);
+        if (updated.size === 0) next.delete(data.agentId);
+        else next.set(data.agentId, updated);
+        return next;
+      });
+    });
   }, [loadAgents]);
 
   // Cleanup all subs on unmount
@@ -220,6 +261,17 @@ export function WorkerTiles({ spaceId, onSelectAgent, selectedAgentId }: WorkerT
       return next;
     });
   }, []);
+
+  const handleResolveSandbox = useCallback(
+    async (agentId: string, requestId: string, decision: 'allow-once' | 'allow-for-session' | 'disable') => {
+      // Fire-and-forget; the broker will broadcast `agent:sandbox-resolved`
+      // which clears the row via the listener above. We do NOT optimistically
+      // clear here — if `disable` triggers a runtime error the block stays
+      // visible so the user can retry.
+      whimAPI.resolveSandboxBlock(agentId, requestId, decision);
+    },
+    [],
+  );
 
   if (agents.length === 0) return null;
 
@@ -270,6 +322,45 @@ export function WorkerTiles({ spaceId, onSelectAgent, selectedAgentId }: WorkerT
                   >✗</button>
                 </div>
               )}
+              {Array.from(sandboxBlocks.get(agent.agentId)?.values() ?? []).map(block => (
+                <div
+                  key={block.requestId}
+                  className="worker-tile-sandbox-block"
+                  onClick={e => e.stopPropagation()}
+                >
+                  <div className="sandbox-block-title">
+                    🔒 {block.source === 'post-tool-shell'
+                      ? 'Possible sandbox denial'
+                      : `Sandbox blocked: ${block.kind}${block.toolName ? ` (${block.toolName})` : ''}`}
+                  </div>
+                  <div className="sandbox-block-target">{block.target}</div>
+                  <div className="sandbox-block-actions">
+                    {(block.allowedDecisions ?? ['allow-once', 'allow-for-session', 'disable']).map(d => (
+                      <button
+                        key={d}
+                        type="button"
+                        className="sandbox-block-btn"
+                        onClick={() => handleResolveSandbox(agent.agentId, block.requestId, d)}
+                      >
+                        {d === 'allow-once'
+                          ? 'Allow once'
+                          : d === 'allow-for-session'
+                            ? 'Allow session'
+                            : block.source === 'post-tool-shell' ? 'Disable & retry' : 'Disable'}
+                      </button>
+                    ))}
+                    {block.source === 'post-tool-shell' ? (
+                      <button
+                        type="button"
+                        className="sandbox-block-btn"
+                        onClick={() => handleResolveSandbox(agent.agentId, block.requestId, 'allow-once')}
+                      >
+                        Ignore
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         );

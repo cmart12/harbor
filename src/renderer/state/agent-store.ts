@@ -25,11 +25,31 @@ export interface AgentRemoteInfo {
   url?: string;
 }
 
+/** A sandbox enforcement block awaiting user resolution. */
+export interface AgentSandboxBlock {
+  agentId: string;
+  requestId: string;
+  source: 'permission' | 'pre-tool' | 'post-tool-shell';
+  kind: 'read' | 'write' | 'shell' | 'mcp' | 'url' | 'web-fetch';
+  toolName?: string;
+  target: string;
+  intention?: string;
+  allowedDecisions?: Array<'allow-once' | 'allow-for-session' | 'disable'>;
+  layer?: string;
+  personaHandle?: string;
+}
+
 export interface AgentState {
   agents: AgentListAllItem[];
   processingSpaces: Set<string>;
   activeSessionSpaces: Set<string>;
   approvals: Map<string, AgentApproval>;
+  /**
+   * Pending sandbox blocks indexed first by agentId, then by requestId. An
+   * agent can have multiple concurrent pending blocks (e.g. parallel tool
+   * calls in mxc-only mode), so we key by requestId to avoid losing UI.
+   */
+  sandboxBlocks: Map<string, Map<string, AgentSandboxBlock>>;
   steps: Map<string, AgentStep[]>;
   presence: Map<string, AgentPresence>;
   yoloMode: Map<string, boolean>;
@@ -44,6 +64,7 @@ class AgentStore {
     processingSpaces: new Set(),
     activeSessionSpaces: new Set(),
     approvals: new Map(),
+    sandboxBlocks: new Map(),
     steps: new Map(),
     presence: new Map(),
     yoloMode: new Map(),
@@ -100,6 +121,37 @@ class AgentStore {
     next.delete(agentId);
     this.state = { ...this.state, approvals: next };
     this.notify();
+  }
+
+  // -- Sandbox blocks --------------------------------------------------------
+
+  setSandboxBlock(block: AgentSandboxBlock): void {
+    const next = new Map(this.state.sandboxBlocks);
+    const existing = next.get(block.agentId);
+    const perAgent = existing ? new Map(existing) : new Map<string, AgentSandboxBlock>();
+    perAgent.set(block.requestId, block);
+    next.set(block.agentId, perAgent);
+    this.state = { ...this.state, sandboxBlocks: next };
+    this.notify();
+  }
+
+  clearSandboxBlock(agentId: string, requestId: string): void {
+    const existing = this.state.sandboxBlocks.get(agentId);
+    if (!existing || !existing.has(requestId)) return;
+    const next = new Map(this.state.sandboxBlocks);
+    const perAgent = new Map(existing);
+    perAgent.delete(requestId);
+    if (perAgent.size === 0) next.delete(agentId);
+    else next.set(agentId, perAgent);
+    this.state = { ...this.state, sandboxBlocks: next };
+    this.notify();
+  }
+
+  /** Returns total pending sandbox-block count across all agents. */
+  sandboxBlockCount(): number {
+    let n = 0;
+    for (const perAgent of this.state.sandboxBlocks.values()) n += perAgent.size;
+    return n;
   }
 
   // -- Steps -----------------------------------------------------------------

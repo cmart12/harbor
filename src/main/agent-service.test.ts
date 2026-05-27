@@ -20,6 +20,14 @@ const mockSession = {
       enable: vi.fn().mockResolvedValue({ remoteSteerable: true, url: 'https://mock-remote.example/initial' }),
       disable: vi.fn().mockResolvedValue(undefined),
     },
+    // Sandboxed sessions call rpc.options.update({ sandboxConfig }) right
+    // after createSession so MXC actually enforces. The runner aborts the
+    // session if this call rejects or returns success:false — provide a
+    // happy-path stub by default; specific tests can override via
+    // mockSession.rpc.options.update.mockResolvedValueOnce(...).
+    options: {
+      update: vi.fn().mockResolvedValue({ success: true }),
+    },
   },
 };
 
@@ -35,6 +43,16 @@ vi.mock('./ai', () => ({
   buildSandboxConfigs: (agentId: string) => ({
     onDir: `/mock/sandbox/${agentId}/on`,
     offDir: `/mock/sandbox/${agentId}/off`,
+  }),
+  // Stub for the runtime sandbox config that sandbox-launch.ts now builds
+  // and sdk-runner pushes via rpc.options.update. Return the unwrapped
+  // shape the runtime expects.
+  buildRuntimeSandboxConfig: () => ({
+    enabled: true,
+    userPolicy: {
+      filesystem: { readWritePaths: [], readOnlyPaths: [], deniedPaths: [] },
+      network: { allowOutbound: false, allowLocalNetwork: false },
+    },
   }),
 }));
 

@@ -542,6 +542,40 @@ describe('InteractionBroker', () => {
       // The key should not be present at all (not `personaHandle: undefined`).
       expect('personaHandle' in blockedCall[1]).toBe(false);
     });
+
+    it('broadcasts agent:sandbox-resolved on resolveSandboxBlock for cross-window dismissal', async () => {
+      // The main app and a canvas window can both render the same pending
+      // block. When the user resolves it in one window, the broker must
+      // notify the other so its UI clears. We assert the dedicated channel
+      // is broadcast with the agentId / requestId / decision.
+      const record = makeRecord();
+      const promise = broker.emitSandboxBlock(record, {
+        source: 'pre-tool',
+        kind: 'write',
+        toolName: 'edit',
+        target: 'C:\\foo\\bar.txt',
+      });
+      const blockedCall = (notifier.notifyRenderer as any).mock.calls.find(
+        (c: any[]) => c[0] === 'agent:sandbox-blocked',
+      );
+      const requestId = blockedCall[1].requestId;
+
+      // Reset mock call history so we only see post-resolve broadcasts.
+      (notifier.notifyRenderer as any).mockClear();
+
+      broker.resolveSandboxBlock('agent-1', requestId, 'disable');
+      await promise;
+
+      const resolvedCalls = (notifier.notifyRenderer as any).mock.calls.filter(
+        (c: any[]) => c[0] === 'agent:sandbox-resolved',
+      );
+      expect(resolvedCalls.length).toBe(1);
+      expect(resolvedCalls[0][1]).toEqual({
+        agentId: 'agent-1',
+        requestId,
+        decision: 'disable',
+      });
+    });
   });
 
   describe('createPathAwareSandboxPermissionHandler', () => {

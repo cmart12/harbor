@@ -18,22 +18,24 @@ export interface SandboxConfigDirs {
 }
 
 /**
- * Build the runtime-format sandbox config object for a given policy and space
- * working directory. Mirrors the shape consumed by `copilot-agent-runtime`'s
- * `UserSettings.sandbox` schema (see
- * `copilot-agent-runtime/src/core/persistence/userSettings.ts` zod for the
- * authoritative shape, and docs/mxc-sandbox-schema.md for the project doc).
+ * Build the unwrapped runtime sandbox config (`{ enabled, userPolicy }` shape)
+ * that the SDK's `session.rpc.options.update({ sandboxConfig })` expects.
+ *
+ * The runtime's `SandboxConfig` (copilot-agent-runtime/src/core/sandbox/sandboxConfig.ts)
+ * is the inner block of the settings-file shape — i.e. the contents of
+ * `sandbox: {...}` without the wrapper. This is what `userRequestedShell.ts`
+ * checks via `options.sandboxConfig?.enabled` for sandbox-exec wrapping.
  *
  * The runtime reads `sandbox.userPolicy.{filesystem,network,experimental}` —
  * NOT `sandbox.filesystem`/`sandbox.network` directly. Writing the flat shape
  * means the runtime silently ignores the policy and falls back to defaults
  * (notably `allowOutbound: true`), making the per-agent overrides a no-op.
  */
-function materializeRuntimeConfig(
+export function buildRuntimeSandboxConfig(
   enabled: boolean,
   intentWorkingDir: string,
   policy: SandboxPolicy,
-): Record<string, unknown> {
+): { enabled: boolean; userPolicy: Record<string, unknown> } {
   const readwritePaths: string[] = [];
   if (policy.scopeToSpaceFolder) readwritePaths.push(intentWorkingDir);
   for (const p of policy.extraReadwritePaths) {
@@ -41,22 +43,35 @@ function materializeRuntimeConfig(
   }
 
   return {
-    sandbox: {
-      enabled,
-      userPolicy: {
-        filesystem: {
-          readwritePaths,
-          readonlyPaths: [...policy.extraReadonlyPaths],
-          deniedPaths: [...policy.extraDeniedPaths],
-          clearPolicyOnExit: true,
-        },
-        network: {
-          allowOutbound: policy.allowOutbound,
-          allowLocalNetwork: policy.allowLocalNetwork,
-        },
+    enabled,
+    userPolicy: {
+      filesystem: {
+        readwritePaths,
+        readonlyPaths: [...policy.extraReadonlyPaths],
+        deniedPaths: [...policy.extraDeniedPaths],
+        clearPolicyOnExit: true,
+      },
+      network: {
+        allowOutbound: policy.allowOutbound,
+        allowLocalNetwork: policy.allowLocalNetwork,
       },
     },
   };
+}
+
+/**
+ * Build the file-format sandbox config object that `<configDir>/config.json`
+ * uses. Wraps `buildRuntimeSandboxConfig` in `{ sandbox: {...} }`. The settings
+ * file is still useful for "Open config preview" UX and for the runtime to
+ * pick up at startup IF it does config-discovery (it currently does NOT for
+ * per-session configDirs — enforcement is driven by options.update).
+ */
+function materializeRuntimeConfig(
+  enabled: boolean,
+  intentWorkingDir: string,
+  policy: SandboxPolicy,
+): Record<string, unknown> {
+  return { sandbox: buildRuntimeSandboxConfig(enabled, intentWorkingDir, policy) };
 }
 
 function getSandboxRoot(): string {

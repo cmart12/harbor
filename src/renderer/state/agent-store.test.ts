@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { AgentListAllItem } from '../../shared/ipc-contract';
 import { agentStore } from './agent-store';
-import type { AgentApproval, AgentStep, AgentPresence } from './agent-store';
+import type { AgentApproval, AgentStep, AgentPresence, AgentSandboxBlock } from './agent-store';
 
 function makeAgent(overrides: Partial<AgentListAllItem> & { agentId: string; spaceId: string }): AgentListAllItem {
   return {
@@ -48,6 +48,12 @@ describe('AgentStore', () => {
     for (const id of agentStore.getState().steps.keys()) {
       agentStore.setSteps(id, []);
     }
+    // Clear sandbox blocks (Map of Maps — clear all requestIds for each agent).
+    for (const [agentId, perAgent] of agentStore.getState().sandboxBlocks) {
+      for (const requestId of perAgent.keys()) {
+        agentStore.clearSandboxBlock(agentId, requestId);
+      }
+    }
   });
 
   // -- Initial state ----------------------------------------------------------
@@ -58,6 +64,7 @@ describe('AgentStore', () => {
     expect(state.processingSpaces.size).toBe(0);
     expect(state.activeSessionSpaces.size).toBe(0);
     expect(state.approvals.size).toBe(0);
+    expect(state.sandboxBlocks.size).toBe(0);
     expect(state.steps.size).toBe(0);
     expect(state.presence.size).toBe(0);
     expect(state.yoloMode.size).toBe(0);
@@ -128,6 +135,90 @@ describe('AgentStore', () => {
   it('clearApproval() is safe when agentId is not present', () => {
     agentStore.clearApproval('nonexistent');
     expect(agentStore.getState().approvals.size).toBe(0);
+  });
+
+  // -- Sandbox blocks --------------------------------------------------------
+
+  function makeBlock(overrides: Partial<AgentSandboxBlock> & { agentId: string; requestId: string }): AgentSandboxBlock {
+    return {
+      source: 'permission',
+      kind: 'shell',
+      target: '/some/path',
+      ...overrides,
+    };
+  }
+
+  it('setSandboxBlock() inserts a pending block for an agent', () => {
+    const block = makeBlock({ agentId: 'a1', requestId: 'r1' });
+    agentStore.setSandboxBlock(block);
+    const perAgent = agentStore.getState().sandboxBlocks.get('a1');
+    expect(perAgent?.get('r1')).toEqual(block);
+    expect(agentStore.sandboxBlockCount()).toBe(1);
+  });
+
+  it('setSandboxBlock() supports multiple concurrent blocks per agent (keyed by requestId)', () => {
+    agentStore.setSandboxBlock(makeBlock({ agentId: 'a1', requestId: 'r1', target: '/a' }));
+    agentStore.setSandboxBlock(makeBlock({ agentId: 'a1', requestId: 'r2', target: '/b' }));
+    const perAgent = agentStore.getState().sandboxBlocks.get('a1');
+    expect(perAgent?.size).toBe(2);
+    expect(perAgent?.get('r1')?.target).toBe('/a');
+    expect(perAgent?.get('r2')?.target).toBe('/b');
+    expect(agentStore.sandboxBlockCount()).toBe(2);
+  });
+
+  it('setSandboxBlock() updates in place when the same requestId fires twice', () => {
+    agentStore.setSandboxBlock(makeBlock({ agentId: 'a1', requestId: 'r1', target: '/a' }));
+    agentStore.setSandboxBlock(makeBlock({ agentId: 'a1', requestId: 'r1', target: '/a-updated' }));
+    expect(agentStore.getState().sandboxBlocks.get('a1')?.size).toBe(1);
+    expect(agentStore.getState().sandboxBlocks.get('a1')?.get('r1')?.target).toBe('/a-updated');
+  });
+
+  it('clearSandboxBlock() removes one block and keeps the agent entry when other blocks remain', () => {
+    agentStore.setSandboxBlock(makeBlock({ agentId: 'a1', requestId: 'r1' }));
+    agentStore.setSandboxBlock(makeBlock({ agentId: 'a1', requestId: 'r2' }));
+    agentStore.clearSandboxBlock('a1', 'r1');
+    const perAgent = agentStore.getState().sandboxBlocks.get('a1');
+    expect(perAgent?.has('r1')).toBe(false);
+    expect(perAgent?.has('r2')).toBe(true);
+    expect(agentStore.sandboxBlockCount()).toBe(1);
+  });
+
+  it('clearSandboxBlock() drops the agent entry when its last block is cleared', () => {
+    agentStore.setSandboxBlock(makeBlock({ agentId: 'a1', requestId: 'r1' }));
+    agentStore.clearSandboxBlock('a1', 'r1');
+    expect(agentStore.getState().sandboxBlocks.has('a1')).toBe(false);
+    expect(agentStore.sandboxBlockCount()).toBe(0);
+  });
+
+  it('clearSandboxBlock() is a no-op for unknown agentId / requestId and does NOT notify listeners', () => {
+    const listener = vi.fn();
+    const unsub = agentStore.subscribe(listener);
+    agentStore.clearSandboxBlock('nope', 'nope');
+    expect(listener).not.toHaveBeenCalled();
+
+    agentStore.setSandboxBlock(makeBlock({ agentId: 'a1', requestId: 'r1' }));
+    listener.mockClear();
+    agentStore.clearSandboxBlock('a1', 'other-request');
+    expect(listener).not.toHaveBeenCalled();
+    unsub();
+  });
+
+  it('clearSandboxBlock() does NOT clobber blocks for other agents', () => {
+    agentStore.setSandboxBlock(makeBlock({ agentId: 'a1', requestId: 'r1' }));
+    agentStore.setSandboxBlock(makeBlock({ agentId: 'a2', requestId: 'r1' }));
+    agentStore.clearSandboxBlock('a1', 'r1');
+    expect(agentStore.getState().sandboxBlocks.has('a1')).toBe(false);
+    expect(agentStore.getState().sandboxBlocks.get('a2')?.has('r1')).toBe(true);
+  });
+
+  it('setSandboxBlock() and clearSandboxBlock() notify listeners', () => {
+    const listener = vi.fn();
+    const unsub = agentStore.subscribe(listener);
+    agentStore.setSandboxBlock(makeBlock({ agentId: 'a1', requestId: 'r1' }));
+    expect(listener).toHaveBeenCalledTimes(1);
+    agentStore.clearSandboxBlock('a1', 'r1');
+    expect(listener).toHaveBeenCalledTimes(2);
+    unsub();
   });
 
   // -- Steps ------------------------------------------------------------------

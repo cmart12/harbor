@@ -8189,6 +8189,118 @@ body.dark.canvas-window .canvas-pin-top-btn.active {
   background: rgba(224, 68, 58, 0.25);
 }
 
+/* Inline sandbox-block panel — both worker-tile (canvas) and agent-card. */
+.worker-tile-sandbox-block,
+.agent-card-sandbox-block {
+  background: #fff7e6;
+  border: 1px solid #f3c87a;
+  border-left: 3px solid #d68a00;
+  border-radius: 4px;
+  padding: 8px 10px;
+  margin-top: 6px;
+  color: #5b3500;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+
+body.dark .worker-tile-sandbox-block,
+body.dark .agent-card-sandbox-block {
+  background: #3a2d10;
+  border-color: #6c4d12;
+  border-left-color: #f3c87a;
+  color: #ffd97a;
+}
+
+.worker-tile-sandbox-block .sandbox-block-title,
+.agent-card-sandbox-block .sandbox-block-title {
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.agent-card-sandbox-block .sandbox-block-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.agent-card-sandbox-block .sandbox-block-icon {
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.agent-card-sandbox-block .sandbox-block-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.agent-card-sandbox-block .sandbox-block-persona,
+.agent-card-sandbox-block .sandbox-block-layer {
+  font-size: 11px;
+  opacity: 0.75;
+}
+
+.agent-card-sandbox-block .sandbox-block-layer {
+  font-family: monospace;
+}
+
+.agent-card-sandbox-block .sandbox-block-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  line-height: 1.4;
+}
+
+.agent-card-sandbox-block .sandbox-block-intention {
+  white-space: pre-wrap;
+}
+
+.worker-tile-sandbox-block .sandbox-block-target,
+.agent-card-sandbox-block .sandbox-block-target {
+  font-family: monospace;
+  font-size: 11px;
+  opacity: 0.85;
+  word-break: break-all;
+}
+
+.worker-tile-sandbox-block .sandbox-block-actions,
+.agent-card-sandbox-block .sandbox-block-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.worker-tile-sandbox-block .sandbox-block-btn,
+.agent-card-sandbox-block .sandbox-block-btn {
+  background: rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  color: inherit;
+}
+
+.worker-tile-sandbox-block .sandbox-block-btn:hover,
+.agent-card-sandbox-block .sandbox-block-btn:hover {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+body.dark .worker-tile-sandbox-block .sandbox-block-btn,
+body.dark .agent-card-sandbox-block .sandbox-block-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+body.dark .worker-tile-sandbox-block .sandbox-block-btn:hover,
+body.dark .agent-card-sandbox-block .sandbox-block-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
 /* ── Canvas Chat Side Pane ───────────────────────────────── */
 
 .canvas-chat-pane {
