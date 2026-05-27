@@ -587,7 +587,7 @@ body.dark .settings-overlay.settings-fullpage .settings-modal {
 
 /* Leave room for macOS traffic lights in popout settings window */
 body.platform-darwin.settings-window .settings-modal header {
-  padding-left: 78px;
+  padding-left: 92px;
 }
 
 .settings-window .settings-modal header button {
@@ -7892,9 +7892,16 @@ body.canvas-window .canvas-view > header {
   margin-bottom: 0;
 }
 
-/* Leave room for macOS traffic lights */
+/* Leave room for macOS traffic lights (positioned at x:16 with ~52px width = ends near 68px) */
 body.platform-darwin.canvas-window .canvas-view > header {
-  padding-left: 78px;
+  padding-left: 92px;
+}
+
+/* Neutralize the h1's negative left margin in canvas-window mode so the
+   hover/click area doesn't bleed back into the traffic-light zone */
+body.platform-darwin.canvas-window .canvas-view header h1 {
+  margin-left: 0;
+  padding-left: 0;
 }
 
 body.canvas-window .canvas-view > header * {
