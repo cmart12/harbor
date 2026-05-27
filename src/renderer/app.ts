@@ -3547,11 +3547,15 @@ async function createSpaceFromSkill(skillId: string): Promise<void> {
     showStatus(`Failed: ${result.error}`, true);
     return;
   }
-  showStatus(`✓ Created space from skill`);
+  showStatus(`✓ Created space with linked skill`);
   setTimeout(hideStatus, 2000);
-  // Switch to Spaces tab first, then reload so render() uses the correct filter
+  // Switch to Spaces tab and reload, then open the new canvas
   setFilter('open');
   await loadSpaces();
+  const space = result as any;
+  if (space.id) {
+    whimAPI.openNewCanvasWindow({ kind: 'space', id: space.id, title: space.description || '' });
+  }
 }
 
 async function deleteSkill(skillId: string): Promise<void> {
@@ -3568,7 +3572,7 @@ async function launchSkillAsSpace(skillId: string): Promise<void> {
     showStatus(`Failed: ${result.error}`, true);
     return;
   }
-  showStatus(`✓ Launched skill as new space`);
+  showStatus(`✓ Launched space with linked skill`);
   setTimeout(hideStatus, 2000);
   // Switch to Spaces tab first, then reload so render() uses the correct filter
   setFilter('open');
@@ -4913,7 +4917,7 @@ async function unarchiveIntent(id: string): Promise<void> {
 (window as any).unarchiveIntent = unarchiveIntent;
 
 // ── Canvas view ─────────────────────────────────────────
-import { mountCanvas, unmountCanvas, getCanvasContent, saveCanvas as saveCanvasEditor, updateCanvasPresence, updateCanvasDecorations, updateCanvasAgentUsers, addCanvasCommentReply, toggleCanvasMode, getCanvasEditorMode, replaceCanvasContent, appendCanvasLink, replaceCanvasText } from './canvas/mount.tsx';
+import { mountCanvas, unmountCanvas, getCanvasContent, saveCanvas as saveCanvasEditor, updateCanvasPresence, updateCanvasDecorations, updateCanvasAgentUsers, addCanvasCommentReply, toggleCanvasMode, getCanvasEditorMode, replaceCanvasContent, appendCanvasLink, replaceCanvasText, getCanvasSelectedText } from './canvas/mount.tsx';
 import { mountCanvasWorkerPanel, unmountCanvasWorkerPanel, isCanvasChatPaneOpen, closeCanvasChatPane } from './canvas/worker-panel-mount.tsx';
 import type { DocumentPresence, DocumentUser, DocumintDecoration } from 'documint';
 
@@ -5465,13 +5469,12 @@ async function openCanvas(spaceId: string, expanded = false): Promise<void> {
     onExtractToPage: (selectedText) => {
       if (!canvasSpaceId) return;
       const sid = canvasSpaceId;
-      showCanvasInputDialog('Page name for extracted text', (name) => {
-        whimAPI.createPage(sid, name).then(async (result) => {
-          if (result.error) return;
-          await whimAPI.writePage(sid, result.page, selectedText);
-          replaceCanvasText(selectedText, `[${name}](${result.page}.md)`);
-          whimAPI.openPageWindow({ kind: 'page', spaceId: sid, page: result.page, title: name });
-        });
+      const pageName = selectedText.trim().split(/\s+/).slice(0, 5).join(' ');
+      whimAPI.createPage(sid, pageName).then(async (result) => {
+        if (result.error) return;
+        await whimAPI.writePage(sid, result.page, selectedText);
+        replaceCanvasText(selectedText, `[${selectedText}](${result.page}.md)`);
+        whimAPI.openPageWindow({ kind: 'page', spaceId: sid, page: result.page, title: pageName });
       });
     },
   });
@@ -5892,13 +5895,12 @@ async function exitPreview(): Promise<void> {
     onExtractToPage: (selectedText) => {
       const sid = canvasPageSpaceId || canvasSpaceId;
       if (!sid) return;
-      showCanvasInputDialog('Page name for extracted text', (name) => {
-        whimAPI.createPage(sid, name).then(async (result) => {
-          if (result.error) return;
-          await whimAPI.writePage(sid, result.page, selectedText);
-          replaceCanvasText(selectedText, `[${name}](${result.page}.md)`);
-          whimAPI.openPageWindow({ kind: 'page', spaceId: sid, page: result.page, title: name });
-        });
+      const pageName = selectedText.trim().split(/\s+/).slice(0, 5).join(' ');
+      whimAPI.createPage(sid, pageName).then(async (result) => {
+        if (result.error) return;
+        await whimAPI.writePage(sid, result.page, selectedText);
+        replaceCanvasText(selectedText, `[${selectedText}](${result.page}.md)`);
+        whimAPI.openPageWindow({ kind: 'page', spaceId: sid, page: result.page, title: pageName });
       });
     },
   });
@@ -6813,13 +6815,26 @@ if (isCanvasMode) {
       e.preventDefault();
       e.stopPropagation();
       const spaceId = canvasSpaceId;
-      showCanvasInputDialog('New page name', (name) => {
-        whimAPI.createPage(spaceId, name).then(result => {
+      const selected = getCanvasSelectedText().trim();
+
+      if (selected) {
+        // Derive page name from first few words of selection
+        const pageName = selected.split(/\s+/).slice(0, 5).join(' ');
+        whimAPI.createPage(spaceId, pageName).then(async (result) => {
           if (result.error) return;
-          appendCanvasLink(name, `${result.page}.md`);
-          whimAPI.openPageWindow({ kind: 'page', spaceId, page: result.page, title: name });
+          await whimAPI.writePage(spaceId, result.page, selected);
+          replaceCanvasText(selected, `[${selected}](${result.page}.md)`);
+          whimAPI.openPageWindow({ kind: 'page', spaceId, page: result.page, title: pageName });
         });
-      });
+      } else {
+        showCanvasInputDialog('New page name', (name) => {
+          whimAPI.createPage(spaceId, name).then(result => {
+            if (result.error) return;
+            appendCanvasLink(name, `${result.page}.md`);
+            whimAPI.openPageWindow({ kind: 'page', spaceId, page: result.page, title: name });
+          });
+        });
+      }
     }
   }, true);
 

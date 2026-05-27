@@ -106,3 +106,7 @@ export function appendCanvasLink(label: string, url: string): void {
 export function replaceCanvasText(search: string, replacement: string): void {
   canvasRef.current?.replaceText(search, replacement);
 }
+
+export function getCanvasSelectedText(): string {
+  return canvasRef.current?.getSelectedText() ?? '';
+}

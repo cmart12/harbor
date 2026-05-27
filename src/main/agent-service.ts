@@ -56,15 +56,18 @@ export async function setAppRemote(enabled: boolean): Promise<{ enabled: boolean
         break;
       }
     }
+    console.log(`[agent-service] setAppRemote: hasRunning=${hasRunning}`);
 
     // Auto-launch a workspace-level agent if none are running
     if (!hasRunning) {
       const workspace = getConfigValue('workspace');
       if (workspace) {
+        console.log(`[agent-service] Auto-launching workspace agent in: ${workspace}`);
         const result = await launchQuickAgent(
           'You are the remote management assistant for this workspace. Help the user manage their spaces and workers. Start by listing the current spaces and any active workers.',
           workspace,
         );
+        console.log(`[agent-service] launchQuickAgent result:`, JSON.stringify('agentId' in result ? { agentId: result.agentId } : result));
         if ('agentId' in result) {
           // Explicitly enable remote on the newly launched agent
           try {

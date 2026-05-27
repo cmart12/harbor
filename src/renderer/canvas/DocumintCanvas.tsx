@@ -89,6 +89,7 @@ export interface DocumintCanvasHandle {
   replaceContent(content: string): void;
   appendLink(label: string, url: string): void;
   replaceText(search: string, replacement: string): void;
+  getSelectedText(): string;
 }
 
 const AUTOSAVE_DELAY_MS = 2000;
@@ -502,6 +503,10 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
         if (idx === -1) return;
         const updated = current.slice(0, idx) + replacement + current.slice(idx + search.length);
         handleContentChange(updated);
+      },
+      getSelectedText: () => {
+        const sel = window.getSelection();
+        return sel ? sel.toString() : '';
       },
     }), [saveNow, handleContentChange, scheduleSave, hasFrontmatter, onDirtyChange]);
 
