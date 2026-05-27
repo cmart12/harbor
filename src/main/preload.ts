@@ -168,6 +168,13 @@ export interface WhimAPI {
   openAgentChatInPanel(data: { agentId: string; agentPrompt: string; agentStatus: string; agentSource?: 'sdk' | 'cli'; spaceId?: string }): void;
   onOpenAgentChatInPanel(callback: (data: { agentId: string; agentPrompt: string; agentStatus: string; agentSource?: 'sdk' | 'cli'; spaceId?: string }) => void): void;
 
+  /** Cross-window: ask the main window to focus its Agents tab and open the
+   *  sandbox section of the persona editor for the given personaHandle.
+   *  Used by canvas worker-tile sandbox blocks so the user can edit the
+   *  sandbox config without context-switching out of the demo flow. */
+  openPersonaSandboxEditor(personaHandle: string): void;
+  onOpenPersonaSandboxEditor(callback: (data: { personaHandle: string }) => void): void;
+
   // ── Canvas child pages ──────────────────────────────────
   createPage(spaceId: string, pageName: string): Promise<{ success: boolean; page: string; error?: string }>;
   readPage(spaceId: string, pageName: string): Promise<{ content: string; error?: string }>;
@@ -443,6 +450,14 @@ const api: WhimAPI = {
   openAgentChatInPanel: (data) => ipcRenderer.send('main-window:open-agent-chat', data),
   onOpenAgentChatInPanel: (callback) => {
     ipcRenderer.on('main-window:open-agent-chat', (_event: unknown, data: { agentId: string; agentPrompt: string; agentStatus: string; agentSource?: 'sdk' | 'cli'; spaceId?: string }) => callback(data));
+  },
+  openPersonaSandboxEditor: (personaHandle) =>
+    ipcRenderer.send('main-window:open-persona-sandbox-editor', { personaHandle }),
+  onOpenPersonaSandboxEditor: (callback) => {
+    ipcRenderer.on(
+      'main-window:open-persona-sandbox-editor',
+      (_event: unknown, data: { personaHandle: string }) => callback(data),
+    );
   },
 
   // ── Canvas child pages ──────────────────────────────────

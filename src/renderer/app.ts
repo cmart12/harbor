@@ -178,6 +178,8 @@ interface WhimAPI {
   onCanvasThemeChanged(callback: (theme: string) => void): void;
   openAgentChatInPanel(data: { agentId: string; agentPrompt: string; agentStatus: string; agentSource?: 'sdk' | 'cli'; spaceId?: string }): void;
   onOpenAgentChatInPanel(callback: (data: { agentId: string; agentPrompt: string; agentStatus: string; agentSource?: 'sdk' | 'cli'; spaceId?: string }) => void): void;
+  openPersonaSandboxEditor(personaHandle: string): void;
+  onOpenPersonaSandboxEditor(callback: (data: { personaHandle: string }) => void): void;
   createPage(spaceId: string, pageName: string): Promise<{ success: boolean; page: string; error?: string }>;
   readPage(spaceId: string, pageName: string): Promise<{ content: string; error?: string }>;
   writePage(spaceId: string, pageName: string, content: string): Promise<{ success?: boolean; error?: string }>;
@@ -6082,6 +6084,15 @@ function closeAgentChat(): void {
 if (!isCanvasMode) {
   whimAPI.onOpenAgentChatInPanel((data) => {
     openAgentChat(data.agentId, data.agentPrompt, data.agentStatus, data.agentSource, data.spaceId);
+  });
+
+  // Canvas can ask the main window to open the persona sandbox editor for the
+  // persona that launched a blocked agent. Routed through the same renderer
+  // helper used by AgentsList's "Edit sandbox config" button.
+  whimAPI.onOpenPersonaSandboxEditor(({ personaHandle }) => {
+    if (personaHandle) {
+      openPersonaEditorForSandbox(personaHandle);
+    }
   });
 }
 

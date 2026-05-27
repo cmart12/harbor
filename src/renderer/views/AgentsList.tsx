@@ -5,6 +5,11 @@ import { personaStore } from '../state/persona-store';
 import { useStore } from './useStore';
 import { describeApproval } from './list-utils';
 import { AgentStatusIcon, StepIcon } from './icons';
+import {
+  aggregateSandboxBlocks,
+  planIncidentResolve,
+  type SandboxResolveDecision,
+} from '../lib/sandbox-incidents';
 import type { AgentListAllItem } from '../../shared/ipc-contract';
 import type { AgentStep, AgentApproval, AgentRemoteInfo, AgentSandboxBlock } from '../state/agent-store';
 
@@ -176,10 +181,12 @@ const AgentCard = React.memo(function AgentCard({
       ) : null}
       {showSummaryBox ? <div className="agent-card-summary">{agent.summary}</div> : null}
       {approval ? <ApprovalPanel agentId={agent.agentId} approval={approval} actions={actions} /> : null}
-      {sandboxBlocks.map(block => (
+      {aggregateSandboxBlocks(sandboxBlocks).map(incident => (
         <SandboxBlockPanel
-          key={block.requestId}
-          block={block}
+          key={incident.key}
+          block={incident.sample}
+          count={incident.count}
+          extraRequestIds={incident.requestIds.slice(1)}
           actions={actions}
         />
       ))}
@@ -189,9 +196,15 @@ const AgentCard = React.memo(function AgentCard({
 
 function SandboxBlockPanel({
   block,
+  count,
+  extraRequestIds,
   actions,
 }: {
   block: AgentSandboxBlock;
+  /** Total number of blocks collapsed into this incident (1 when not aggregated). */
+  count: number;
+  /** Additional requestIds beyond `block.requestId`, in insertion order. */
+  extraRequestIds: string[];
   actions: AgentsListActions;
 }): React.ReactElement {
   const decisions = block.allowedDecisions ?? ['allow-once', 'allow-for-session', 'disable'];
@@ -214,12 +227,30 @@ function SandboxBlockPanel({
       : `Enforced by: host (${block.layer})`)
     : null;
 
+  const allRequestIds = [block.requestId, ...extraRequestIds];
+  const resolveIncident = (d: SandboxResolveDecision) => {
+    const plan = planIncidentResolve({ requestIds: allRequestIds }, d);
+    for (const step of plan) {
+      actions.onResolveSandboxBlock(block.agentId, step.requestId, step.decision);
+    }
+  };
+
   return (
     <div className="agent-card-sandbox-block" onClick={e => e.stopPropagation()}>
       <div className="sandbox-block-header">
         <span className="sandbox-block-icon">🔒</span>
         <div className="sandbox-block-info">
-          <span className="sandbox-block-title">{title}</span>
+          <span className="sandbox-block-title">
+            {title}
+            {count > 1 ? (
+              <span
+                className="sandbox-incident-count"
+                title={`${count} identical attempts collapsed into this incident`}
+              >
+                ×{count}
+              </span>
+            ) : null}
+          </span>
           {block.personaHandle ? (
             <span className="sandbox-block-persona">@{block.personaHandle}</span>
           ) : null}
@@ -236,7 +267,7 @@ function SandboxBlockPanel({
             key={d}
             type="button"
             className="sandbox-block-btn"
-            onClick={() => actions.onResolveSandboxBlock(block.agentId, block.requestId, d)}
+            onClick={() => resolveIncident(d)}
           >
             {labels[d]}
           </button>
@@ -245,7 +276,7 @@ function SandboxBlockPanel({
           <button
             type="button"
             className="sandbox-block-btn"
-            onClick={() => actions.onResolveSandboxBlock(block.agentId, block.requestId, 'allow-once')}
+            onClick={() => resolveIncident('allow-once')}
           >
             Ignore
           </button>

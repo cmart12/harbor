@@ -1,4 +1,10 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  aggregateSandboxBlocks,
+  planIncidentResolve,
+  truncateCommandPreview,
+  type SandboxResolveDecision,
+} from '../lib/sandbox-incidents';
 
 // ── Types ──────────────────────────────────────────────────
 
@@ -50,6 +56,10 @@ declare const whimAPI: {
   onAgentSandboxResolved(callback: (data: { agentId: string; requestId: string; decision: string }) => void): void;
   approveAgent(agentId: string, requestId: string, approved: boolean): Promise<void>;
   resolveSandboxBlock(agentId: string, requestId: string, decision: 'allow-once' | 'allow-for-session' | 'disable'): Promise<{ ok?: boolean; error?: string }>;
+  /** Cross-window: ask main window to open the sandbox section of the
+   *  persona editor for the given handle. Wired by main/preload.ts +
+   *  window-manager.ts via `main-window:open-persona-sandbox-editor`. */
+  openPersonaSandboxEditor(personaHandle: string): void;
   [key: string]: any;
 };
 
@@ -262,16 +272,26 @@ export function WorkerTiles({ spaceId, onSelectAgent, selectedAgentId }: WorkerT
     });
   }, []);
 
-  const handleResolveSandbox = useCallback(
-    async (agentId: string, requestId: string, decision: 'allow-once' | 'allow-for-session' | 'disable') => {
-      // Fire-and-forget; the broker will broadcast `agent:sandbox-resolved`
-      // which clears the row via the listener above. We do NOT optimistically
-      // clear here — if `disable` triggers a runtime error the block stays
-      // visible so the user can retry.
-      whimAPI.resolveSandboxBlock(agentId, requestId, decision);
+  /** Resolve a multi-block incident with a single decision.  Staged fan-out:
+   *  the first requestId carries the real decision (which triggers at most
+   *  one `disableSandboxForSession` flip in the runtime), and the rest dismiss
+   *  with `'allow-once'` so we don't race multiple retry prompts. */
+  const handleResolveIncident = useCallback(
+    (agentId: string, requestIds: string[], decision: SandboxResolveDecision) => {
+      const plan = planIncidentResolve({ requestIds }, decision);
+      for (const step of plan) {
+        whimAPI.resolveSandboxBlock(agentId, step.requestId, step.decision);
+      }
     },
     [],
   );
+
+  const handleOpenSandboxEditor = useCallback((personaHandle: string | undefined) => {
+    if (!personaHandle) return;
+    if (typeof whimAPI.openPersonaSandboxEditor === 'function') {
+      whimAPI.openPersonaSandboxEditor(personaHandle);
+    }
+  }, []);
 
   if (agents.length === 0) return null;
 
@@ -288,6 +308,11 @@ export function WorkerTiles({ spaceId, onSelectAgent, selectedAgentId }: WorkerT
         const preview = agent.selectedText.length > 50
           ? agent.selectedText.slice(0, 47) + '…'
           : agent.selectedText;
+
+        const blocksForAgent = sandboxBlocks.get(agent.agentId);
+        const incidents = blocksForAgent
+          ? aggregateSandboxBlocks(blocksForAgent.values())
+          : [];
 
         return (
           <div
@@ -322,45 +347,80 @@ export function WorkerTiles({ spaceId, onSelectAgent, selectedAgentId }: WorkerT
                   >✗</button>
                 </div>
               )}
-              {Array.from(sandboxBlocks.get(agent.agentId)?.values() ?? []).map(block => (
-                <div
-                  key={block.requestId}
-                  className="worker-tile-sandbox-block"
-                  onClick={e => e.stopPropagation()}
-                >
-                  <div className="sandbox-block-title">
-                    🔒 {block.source === 'post-tool-shell'
-                      ? 'Possible sandbox denial'
-                      : `Sandbox blocked: ${block.kind}${block.toolName ? ` (${block.toolName})` : ''}`}
+              {incidents.map(incident => {
+                const block = incident.sample;
+                const isPostTool = block.source === 'post-tool-shell';
+                const decisions = (block.allowedDecisions ?? ['allow-once', 'allow-for-session', 'disable']);
+                const truncated = truncateCommandPreview(block.target, 40);
+                const layerTip = [
+                  block.layer ? `Layer: ${block.layer}` : null,
+                  block.intention ? `Why: ${block.intention}` : null,
+                  block.personaHandle ? `Persona: @${block.personaHandle}` : null,
+                  block.kind ? `Kind: ${block.kind}` : null,
+                  block.toolName ? `Tool: ${block.toolName}` : null,
+                ].filter(Boolean).join('\n');
+                return (
+                  <div
+                    key={incident.key}
+                    className="worker-tile-sandbox-incident"
+                    onClick={e => e.stopPropagation()}
+                    title={layerTip || undefined}
+                  >
+                    <div className="sandbox-incident-cmd-row">
+                      <span className="sandbox-incident-lock" aria-hidden="true">🔒</span>
+                      <span className="sandbox-incident-cmd" title={block.target}>{truncated}</span>
+                      {incident.count > 1 && (
+                        <span
+                          className="sandbox-incident-count"
+                          title={`${incident.count} identical attempts`}
+                        >
+                          ×{incident.count}
+                        </span>
+                      )}
+                    </div>
+                    <div className="sandbox-incident-actions">
+                      {decisions.map(d => (
+                        <button
+                          key={d}
+                          type="button"
+                          className="sandbox-incident-btn"
+                          onClick={() =>
+                            handleResolveIncident(agent.agentId, incident.requestIds, d)
+                          }
+                        >
+                          {d === 'allow-once'
+                            ? 'Allow once'
+                            : d === 'allow-for-session'
+                              ? 'Allow session'
+                              : isPostTool ? 'Disable & retry' : 'Disable'}
+                        </button>
+                      ))}
+                      {isPostTool && (
+                        <button
+                          type="button"
+                          className="sandbox-incident-btn ignore"
+                          onClick={() =>
+                            handleResolveIncident(agent.agentId, incident.requestIds, 'allow-once')
+                          }
+                        >
+                          Ignore
+                        </button>
+                      )}
+                      {block.personaHandle && (
+                        <button
+                          type="button"
+                          className="sandbox-incident-btn icon"
+                          title="Edit sandbox config in main window"
+                          aria-label="Edit sandbox config"
+                          onClick={() => handleOpenSandboxEditor(block.personaHandle)}
+                        >
+                          ⚙
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <div className="sandbox-block-target">{block.target}</div>
-                  <div className="sandbox-block-actions">
-                    {(block.allowedDecisions ?? ['allow-once', 'allow-for-session', 'disable']).map(d => (
-                      <button
-                        key={d}
-                        type="button"
-                        className="sandbox-block-btn"
-                        onClick={() => handleResolveSandbox(agent.agentId, block.requestId, d)}
-                      >
-                        {d === 'allow-once'
-                          ? 'Allow once'
-                          : d === 'allow-for-session'
-                            ? 'Allow session'
-                            : block.source === 'post-tool-shell' ? 'Disable & retry' : 'Disable'}
-                      </button>
-                    ))}
-                    {block.source === 'post-tool-shell' ? (
-                      <button
-                        type="button"
-                        className="sandbox-block-btn"
-                        onClick={() => handleResolveSandbox(agent.agentId, block.requestId, 'allow-once')}
-                      >
-                        Ignore
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         );

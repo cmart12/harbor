@@ -361,6 +361,19 @@ export function registerWindowIpcHandlers(preloadPath: string): void {
 
     mainWindow.webContents.send('main-window:open-agent-chat', data);
   });
+
+  // Canvas window requests opening the persona sandbox editor in the main panel.
+  // Used by canvas worker-tile sandbox-block panels so the user can edit the
+  // sandbox policy for the persona that launched the blocked agent without
+  // leaving the demo flow. Targeted send only — no broadcast.
+  ipcMain.on('main-window:open-persona-sandbox-editor', (_event, data: { personaHandle: string }) => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (!mainWindow.isVisible()) {
+      mainWindow.show();
+    }
+    mainWindow.focus();
+    mainWindow.webContents.send('main-window:open-persona-sandbox-editor', data);
+  });
 }
 
 // ── Internal helpers ─────────────────────────────────────

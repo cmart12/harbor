@@ -8308,6 +8308,131 @@ body.dark .agent-card-sandbox-block .sandbox-block-btn:hover {
   background: rgba(255, 255, 255, 0.1);
 }
 
+/* ── Compact sandbox-incident row (canvas worker tile only) ─────
+ * Replaces the legacy `.worker-tile-sandbox-block` panel inside
+ * canvas worker tiles. Two rows (command + actions) so the chip
+ * doesn't grow horizontally past 320px. Identical post-tool-shell
+ * blocks are collapsed into a single incident with a ×N badge so
+ * retries don't stack panels. */
+.worker-tile-sandbox-incident {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: #fff7e6;
+  border: 1px solid #f3c87a;
+  border-left: 3px solid #d68a00;
+  border-radius: 6px;
+  padding: 4px 6px;
+  margin-top: 4px;
+  color: #5b3500;
+  font-size: 11px;
+  line-height: 1.3;
+  min-width: 0;
+}
+
+body.dark .worker-tile-sandbox-incident {
+  background: #3a2d10;
+  border-color: #6c4d12;
+  border-left-color: #f3c87a;
+  color: #ffd97a;
+}
+
+.worker-tile-sandbox-incident .sandbox-incident-cmd-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.worker-tile-sandbox-incident .sandbox-incident-lock {
+  font-size: 11px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.worker-tile-sandbox-incident .sandbox-incident-cmd {
+  flex: 1;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.sandbox-incident-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+  margin-left: 6px;
+  height: 14px;
+  border-radius: 7px;
+  background: rgba(214, 138, 0, 0.85);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  flex-shrink: 0;
+  letter-spacing: 0.02em;
+}
+
+body.dark .sandbox-incident-count {
+  background: rgba(243, 200, 122, 0.9);
+  color: #2a1f08;
+}
+
+.worker-tile-sandbox-incident .sandbox-incident-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.worker-tile-sandbox-incident .sandbox-incident-btn {
+  background: rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 10px;
+  padding: 1px 7px;
+  font-size: 10.5px;
+  line-height: 1.4;
+  cursor: pointer;
+  color: inherit;
+  font-family: inherit;
+}
+
+.worker-tile-sandbox-incident .sandbox-incident-btn:hover {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+body.dark .worker-tile-sandbox-incident .sandbox-incident-btn {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+body.dark .worker-tile-sandbox-incident .sandbox-incident-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.worker-tile-sandbox-incident .sandbox-incident-btn.icon {
+  padding: 1px 5px;
+  font-size: 11px;
+  min-width: 22px;
+  text-align: center;
+}
+
+.worker-tile-sandbox-incident .sandbox-incident-btn.ignore {
+  opacity: 0.8;
+}
+
+/* Count badge inside the larger agent-card sandbox-block panel */
+.agent-card-sandbox-block .sandbox-block-title .sandbox-incident-count {
+  height: 16px;
+  font-size: 11px;
+  padding: 0 6px;
+  border-radius: 8px;
+  vertical-align: middle;
+}
+
 /* ── Canvas Chat Side Pane ───────────────────────────────── */
 
 .canvas-chat-pane {
