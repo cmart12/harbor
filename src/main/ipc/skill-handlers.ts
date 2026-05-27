@@ -174,7 +174,7 @@ export function registerSkillHandlers(): void {
     const skill = getSkill(skillId);
     if (!skill) return { error: 'not_found' };
 
-    // Create a new space with the skill name as description, linked to the source skill
+    // Create a new space linked to the source skill
     const space = createSpace({ body: skill.name }, skillId);
 
     // Create the space folder
@@ -182,22 +182,11 @@ export function registerSkillHandlers(): void {
     assignSpaceFolder(space.id, folder);
     space.folder = folder;
 
-    // Copy skill folder contents to the space folder
-    const skillFolderPath = path.join(workspace, skill.folder);
-    const intentFolderPath = path.join(workspace, folder);
-
-    copyDirContents(skillFolderPath, intentFolderPath);
-
-    // Rename SKILL.md → canvas.md in the space folder
-    const skillMdPath = path.join(intentFolderPath, SKILL_FILE);
-    const canvasMdPath = path.join(intentFolderPath, 'canvas.md');
-    if (fs.existsSync(skillMdPath)) {
-      // Read the skill file, strip frontmatter, write as canvas.md
-      const content = fs.readFileSync(skillMdPath, 'utf-8');
-      const { body } = parseFrontmatter(content);
-      fs.writeFileSync(canvasMdPath, body, 'utf-8');
-      fs.unlinkSync(skillMdPath);
-    }
+    // Write canvas.md with frontmatter linking the skill (no content copy)
+    const canvasBody = `# ${skill.name}\n`;
+    const canvasContent = serializeFrontmatter({ skills: [skillId] }, canvasBody);
+    const canvasMdPath = path.join(workspace, folder, 'canvas.md');
+    fs.writeFileSync(canvasMdPath, canvasContent, 'utf-8');
 
     scheduleAutoCommit(workspace);
     return space;
@@ -210,26 +199,18 @@ export function registerSkillHandlers(): void {
     const skill = getSkill(skillId);
     if (!skill) return { error: 'not_found' };
 
-    // Create the space from the skill (same as skill:create-space)
+    // Create a new space linked to the source skill
     const space = createSpace({ body: skill.name }, skillId);
 
     const folder = createSpaceFolder(workspace, space.id, skill.name);
     assignSpaceFolder(space.id, folder);
     space.folder = folder;
 
-    const skillFolderPath = path.join(workspace, skill.folder);
-    const intentFolderPath = path.join(workspace, folder);
-
-    copyDirContents(skillFolderPath, intentFolderPath);
-
-    const skillMdPath = path.join(intentFolderPath, SKILL_FILE);
-    const canvasMdPath = path.join(intentFolderPath, 'canvas.md');
-    if (fs.existsSync(skillMdPath)) {
-      const content = fs.readFileSync(skillMdPath, 'utf-8');
-      const { body } = parseFrontmatter(content);
-      fs.writeFileSync(canvasMdPath, body, 'utf-8');
-      fs.unlinkSync(skillMdPath);
-    }
+    // Write canvas.md with frontmatter linking the skill (no content copy)
+    const canvasBody = `# ${skill.name}\n`;
+    const canvasContent = serializeFrontmatter({ skills: [skillId] }, canvasBody);
+    const canvasMdPath = path.join(workspace, folder, 'canvas.md');
+    fs.writeFileSync(canvasMdPath, canvasContent, 'utf-8');
 
     scheduleAutoCommit(workspace);
 
