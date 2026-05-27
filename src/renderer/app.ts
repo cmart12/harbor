@@ -2809,8 +2809,8 @@ async function renderHistoryView(): Promise<void> {
   if (closedSpaces.length === 0 && events.length === 0) {
     listEl.innerHTML = `
       <div class="empty-state">
-        <span class="icon">📋</span>
-        <span>No history yet.</span>
+        <span class="icon">✨</span>
+        <span>Complete your first space to see activity here.</span>
       </div>
     `;
     return;
@@ -2821,54 +2821,127 @@ async function renderHistoryView(): Promise<void> {
     (b.completed_at || b.updated_at).localeCompare(a.completed_at || a.updated_at)
   );
 
-  let html = '';
+  // ── Summary stats ────────────────────────────────────
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const weekStart = todayStart - (now.getDay() * 86400000);
+  let completedToday = 0;
+  let completedThisWeek = 0;
+  for (const s of sorted) {
+    const t = new Date(s.completed_at || s.updated_at).getTime();
+    if (t >= todayStart) completedToday++;
+    if (t >= weekStart) completedThisWeek++;
+  }
 
+  let html = `<div class="activity-summary">`;
+  html += `<div class="activity-summary-stat"><span class="stat-value">${completedToday}</span> today</div>`;
+  html += `<div class="activity-summary-sep"></div>`;
+  html += `<div class="activity-summary-stat"><span class="stat-value">${completedThisWeek}</span> this week</div>`;
+  html += `<div class="activity-summary-sep"></div>`;
+  html += `<div class="activity-summary-stat"><span class="stat-value">${sorted.length}</span> total</div>`;
+  html += `</div>`;
+
+  // ── Group by date ────────────────────────────────────
+  const dateGroups = new Map<string, typeof sorted>();
   for (const space of sorted) {
-    const intentEvents = eventsBySpace.get(space.id) || [];
-    // Sort events oldest first for step display
-    intentEvents.sort((a: any, b: any) => a.created_at.localeCompare(b.created_at));
-
-    const hasSession = !!space.session_id;
-    const typeIcon = hasSession ? '▶' : space.recurrence ? '↻' : '✓';
-    const typeLabel = hasSession ? 'Session' : space.recurrence ? 'Recurring' : 'Completed';
-    const completedAgo = space.completed_at ? timeAgo(space.completed_at) : timeAgo(space.updated_at);
-
-    // Build activity steps from events
-    let stepsHtml = '';
-    if (intentEvents.length > 0) {
-      const steps = intentEvents.slice(-5).map((ev: any) => {
-        const evIcon = ev.event_type === 'completed' ? '✅' :
-                       ev.event_type === 'recycled' ? '↻' :
-                       ev.event_type === 'recurrence_dismissed' ? '✕' : '•';
-        const evLabel = ev.event_type === 'completed' ? 'Completed' :
-                        ev.event_type === 'recycled' ? 'Rescheduled' :
-                        ev.event_type === 'recurrence_dismissed' ? 'Dismissed' :
-                        ev.event_type;
-        return `<div class="history-card-step"><span class="history-step-icon">${evIcon}</span><span>${evLabel}</span></div>`;
-      });
-      stepsHtml = `<div class="history-card-steps">${steps.join('<div class="history-step-connector"></div>')}</div>`;
+    const dt = new Date(space.completed_at || space.updated_at);
+    const dayStart = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate()).getTime();
+    let label: string;
+    if (dayStart === todayStart) {
+      label = 'Today';
+    } else if (dayStart === todayStart - 86400000) {
+      label = 'Yesterday';
+    } else {
+      label = dt.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
     }
+    if (!dateGroups.has(label)) dateGroups.set(label, []);
+    dateGroups.get(label)!.push(space);
+  }
 
-    html += `
-      <div class="history-card" data-id="${space.id}" onclick="openCanvas('${space.id}', true)">
-        <button class="history-card-restore" onclick="event.stopPropagation(); unarchiveIntent('${space.id}')" title="Restore to Spaces">↺</button>
-        <div class="history-card-type"><span class="history-type-icon">${typeIcon}</span> ${typeLabel}</div>
-        <div class="history-card-title">${escapeHtml(space.description)}</div>
-        ${space.client ? `<div class="history-card-client">👤 ${escapeHtml(space.client)}</div>` : ''}
-        ${stepsHtml}
-        <div class="history-card-meta">${completedAgo}</div>
-      </div>
-    `;
+  for (const [dateLabel, groupSpaces] of dateGroups) {
+    html += `<div class="history-date-label">${dateLabel}</div>`;
+
+    for (const space of groupSpaces) {
+      const intentEvents = eventsBySpace.get(space.id) || [];
+      intentEvents.sort((a: any, b: any) => a.created_at.localeCompare(b.created_at));
+
+      const hasSession = !!space.session_id;
+      const isRecurring = !!space.recurrence;
+      const completedAgo = space.completed_at ? timeAgo(space.completed_at) : timeAgo(space.updated_at);
+
+      // Determine card variant
+      const hasDismissed = intentEvents.some((e: any) => e.event_type === 'recurrence_dismissed');
+      const cardVariant = hasDismissed ? 'dismissed' :
+                          hasSession ? 'session' :
+                          isRecurring ? 'recurring' : 'completed';
+      const statusIcon = hasSession ? '▶' : isRecurring ? '↻' : '✓';
+
+      // Compute active duration
+      let durationStr = '';
+      if (space.completed_at && space.created_at) {
+        const diffMs = new Date(space.completed_at).getTime() - new Date(space.created_at).getTime();
+        if (diffMs > 0) {
+          const diffMins = Math.floor(diffMs / 60000);
+          if (diffMins < 60) durationStr = `${diffMins}m`;
+          else {
+            const diffHrs = Math.floor(diffMins / 60);
+            if (diffHrs < 24) durationStr = `${diffHrs}h`;
+            else durationStr = `${Math.floor(diffHrs / 24)}d`;
+          }
+        }
+      }
+
+      // Agent count for this space
+      const spaceAgents = agentsBySpace.get(space.id) || [];
+      const agentCount = spaceAgents.length;
+
+      // Build meta badges
+      const metaParts: string[] = [];
+      if (space.client) metaParts.push(`<span>👤 ${escapeHtml(space.client)}</span>`);
+      if (agentCount > 0) metaParts.push(`<span class="history-meta-badge history-meta-badge--agents">⚡ ${agentCount}</span>`);
+      if (hasSession) metaParts.push(`<span class="history-meta-badge history-meta-badge--session">● session</span>`);
+      if (durationStr) metaParts.push(`<span class="history-meta-badge history-meta-badge--duration">⏱ ${durationStr}</span>`);
+      metaParts.push(`<span>${completedAgo}</span>`);
+      const metaHtml = metaParts.join('<span class="meta-sep">·</span>');
+
+      // Only show steps box when there are multiple distinct event types (not just a single "completed")
+      let stepsHtml = '';
+      const distinctTypes = new Set(intentEvents.map((e: any) => e.event_type));
+      if (distinctTypes.size > 1 || (distinctTypes.size === 1 && !distinctTypes.has('completed'))) {
+        const steps = intentEvents.slice(-4).map((ev: any) => {
+          const evIcon = ev.event_type === 'completed' ? '✅' :
+                         ev.event_type === 'recycled' ? '↻' :
+                         ev.event_type === 'recurrence_dismissed' ? '✕' : '•';
+          const evLabel = ev.event_type === 'completed' ? 'Completed' :
+                          ev.event_type === 'recycled' ? 'Rescheduled' :
+                          ev.event_type === 'recurrence_dismissed' ? 'Dismissed' :
+                          ev.event_type;
+          return `<div class="history-card-step"><span class="history-step-icon">${evIcon}</span><span>${evLabel}</span></div>`;
+        });
+        stepsHtml = `<div class="history-card-steps">${steps.join('<div class="history-step-connector"></div>')}</div>`;
+      }
+
+      html += `
+        <div class="history-card history-card--${cardVariant}" data-id="${space.id}" onclick="openCanvas('${space.id}', true)">
+          <span class="history-card-icon">${statusIcon}</span>
+          <div class="history-card-body">
+            <div class="history-card-title">${escapeHtml(space.description)}</div>
+            ${stepsHtml}
+            <div class="history-card-meta">${metaHtml}</div>
+          </div>
+          <button class="history-card-restore" onclick="event.stopPropagation(); unarchiveIntent('${space.id}')" title="Restore to Spaces">↺</button>
+        </div>
+      `;
+    }
   }
 
   // Add orphan timeline events not tied to a closed space
   const orphanEvents = events.filter(e => e.space_id && !closedIds.has(e.space_id));
   if (orphanEvents.length > 0) {
-    // Group by date for context
     const groups = new Map<string, typeof orphanEvents>();
     for (const event of orphanEvents) {
       const date = new Date(event.created_at).toLocaleDateString('en-US', {
-        weekday: 'long', month: 'short', day: 'numeric'
+        weekday: 'short', month: 'short', day: 'numeric'
       });
       if (!groups.has(date)) groups.set(date, []);
       groups.get(date)!.push(event);
@@ -2881,11 +2954,14 @@ async function renderHistoryView(): Promise<void> {
                      event.event_type === 'recycled' ? '↻' : '•';
         const desc = event.space_description ? escapeHtml(event.space_description) : 'Unknown';
         const time = new Date(event.created_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+        const variant = event.event_type === 'completed' ? 'completed' : 'dismissed';
         html += `
-          <div class="history-card history-card-mini">
-            <div class="history-card-type"><span class="history-type-icon">${icon}</span> ${escapeHtml(event.event_type)}</div>
-            <div class="history-card-title">${desc}</div>
-            <div class="history-card-meta">${time}</div>
+          <div class="history-card history-card-mini history-card--${variant}">
+            <span class="history-card-icon">${icon}</span>
+            <div class="history-card-body">
+              <div class="history-card-title">${desc}</div>
+              <div class="history-card-meta"><span>${time}</span></div>
+            </div>
           </div>
         `;
       }

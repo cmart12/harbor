@@ -1347,17 +1347,79 @@ body.dark .persona-form-checkbox-label {
 
 /* ── Past view cards ──────────────────────────────────── */
 
+/* ── Activity summary bar ────────────────────────────── */
+
+.activity-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  margin-bottom: 8px;
+  background: var(--card-bg);
+  border: var(--card-border);
+  border-radius: var(--card-radius);
+  backdrop-filter: var(--card-backdrop);
+  box-shadow: var(--card-shadow);
+}
+
+.activity-summary-stat {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.65);
+  font-weight: 500;
+}
+
+.activity-summary-stat .stat-value {
+  font-weight: 700;
+  color: #1d1d1f;
+  font-size: 15px;
+}
+
+.activity-summary-sep {
+  width: 1px;
+  height: 16px;
+  background: rgba(0, 0, 0, 0.1);
+  flex-shrink: 0;
+}
+
+/* ── Activity date group headers ─────────────────────── */
+
+.history-date-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 14px 0 6px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: inherit;
+}
+
+.history-date-label:first-child {
+  padding-top: 2px;
+}
+
+/* ── History cards (compact redesign) ────────────────── */
+
 .history-card {
   position: relative;
   background: var(--card-bg);
   border: var(--card-border);
   border-radius: var(--card-radius);
-  padding: var(--card-padding);
-  margin-bottom: 10px;
+  padding: 10px 14px;
+  margin-bottom: 6px;
   cursor: pointer;
   transition: var(--card-transition);
   backdrop-filter: var(--card-backdrop);
   box-shadow: var(--card-shadow);
+  border-left: 3px solid transparent;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
 }
 
 .history-card:hover {
@@ -1365,17 +1427,35 @@ body.dark .persona-form-checkbox-label {
   box-shadow: var(--card-hover-shadow);
 }
 
+/* Status-color left borders */
+.history-card--completed { border-left-color: #34c759; }
+.history-card--session { border-left-color: #a594e8; }
+.history-card--recurring { border-left-color: #ff9f0a; }
+.history-card--dismissed { border-left-color: rgba(0, 0, 0, 0.15); }
+
+.history-card-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+  margin-top: 1px;
+  line-height: 1;
+}
+
+.history-card-body {
+  flex: 1;
+  min-width: 0;
+}
+
 .history-card-restore {
   position: absolute;
-  top: 10px;
-  right: 10px;
-  width: 28px;
-  height: 28px;
+  top: 8px;
+  right: 8px;
+  width: 24px;
+  height: 24px;
   border: none;
   border-radius: var(--btn-radius);
   background: rgba(0, 0, 0, 0.06);
   color: rgba(0, 0, 0, 0.65);
-  font-size: 16px;
+  font-size: 14px;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -1407,11 +1487,52 @@ body.dark .persona-form-checkbox-label {
 }
 
 .history-card-title {
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 600;
   color: #1d1d1f;
+  line-height: 1.35;
+  margin-bottom: 3px;
+}
+
+.history-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: rgba(0, 0, 0, 0.5);
+  margin-top: 2px;
   line-height: 1.4;
-  margin-bottom: 4px;
+}
+
+.history-card-meta .meta-sep {
+  color: rgba(0, 0, 0, 0.2);
+  font-size: 8px;
+}
+
+.history-meta-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.history-meta-badge--agents {
+  background: rgba(124, 102, 220, 0.1);
+  color: #7c66dc;
+}
+
+.history-meta-badge--session {
+  background: rgba(90, 156, 246, 0.1);
+  color: #5a9cf6;
+}
+
+.history-meta-badge--duration {
+  background: rgba(0, 0, 0, 0.04);
+  color: rgba(0, 0, 0, 0.55);
 }
 
 .history-card-client {
@@ -1420,57 +1541,43 @@ body.dark .persona-form-checkbox-label {
   margin-bottom: 8px;
 }
 
+/* Only show steps when there are multiple interesting events */
 .history-card-steps {
   background: var(--card-inner-bg);
   border-radius: var(--card-inner-radius);
-  padding: 10px 12px;
-  margin: 8px 0;
+  padding: 8px 10px;
+  margin: 6px 0 2px;
 }
 
 .history-card-step {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 12.5px;
+  gap: 6px;
+  font-size: 11.5px;
   color: #2c2c3a;
-  padding: 4px 0;
+  padding: 2px 0;
 }
 
 .history-step-icon {
-  font-size: 13px;
+  font-size: 12px;
   flex-shrink: 0;
 }
 
 .history-step-connector {
   width: 1px;
-  height: 8px;
-  margin-left: 6px;
-  background: rgba(0, 0, 0, 0.1);
+  height: 6px;
+  margin-left: 5px;
+  background: rgba(0, 0, 0, 0.08);
   border-radius: 1px;
 }
 
-.history-card-meta {
-  font-size: 11px;
-  color: rgba(0, 0, 0, 0.5);
-  margin-top: 6px;
-}
-
 .history-card-mini {
-  padding: 10px 14px;
+  padding: 8px 14px;
 }
 
 .history-card-mini .history-card-title {
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 500;
-}
-
-.history-date-label {
-  font-size: 11px;
-  font-weight: 600;
-  color: rgba(0, 0, 0, 0.5);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  padding: 12px 0 6px;
 }
 
 .input-wrapper {
@@ -5011,8 +5118,16 @@ body.dark .agent-summary-header { color: #a594e8; }
 body.dark .agent-summary-body { color: #e0e0e0; }
 
 /* Dark past cards */
+body.dark .activity-summary { background: var(--card-bg); border-color: rgba(255, 255, 255, 0.06); box-shadow: var(--card-shadow); }
+body.dark .activity-summary-stat { color: rgba(255, 255, 255, 0.6); }
+body.dark .activity-summary-stat .stat-value { color: #e0e0e0; }
+body.dark .activity-summary-sep { background: rgba(255, 255, 255, 0.08); }
 body.dark .history-card { background: var(--card-bg); border-color: rgba(255, 255, 255, 0.06); box-shadow: var(--card-shadow); }
 body.dark .history-card:hover { background: var(--card-hover-bg); box-shadow: var(--card-hover-shadow); }
+body.dark .history-card--completed { border-left-color: #30d158; }
+body.dark .history-card--session { border-left-color: #a594e8; }
+body.dark .history-card--recurring { border-left-color: #ff9f0a; }
+body.dark .history-card--dismissed { border-left-color: rgba(255, 255, 255, 0.15); }
 body.dark .history-card-restore { background: rgba(255, 255, 255, 0.08); color: rgba(255, 255, 255, 0.65); }
 body.dark .history-card-restore:hover { background: rgba(255, 255, 255, 0.15); color: rgba(255, 255, 255, 0.9); }
 body.dark .history-card-type { color: rgba(255, 255, 255, 0.6); }
@@ -5022,6 +5137,10 @@ body.dark .history-card-steps { background: var(--card-inner-bg); }
 body.dark .history-card-step { color: #d0d0d0; }
 body.dark .history-step-connector { background: rgba(255, 255, 255, 0.08); }
 body.dark .history-card-meta { color: rgba(255, 255, 255, 0.45); }
+body.dark .history-card-meta .meta-sep { color: rgba(255, 255, 255, 0.15); }
+body.dark .history-meta-badge--agents { background: rgba(124, 102, 220, 0.15); color: #b5a5f0; }
+body.dark .history-meta-badge--session { background: rgba(90, 156, 246, 0.15); color: #7ab8ff; }
+body.dark .history-meta-badge--duration { background: rgba(255, 255, 255, 0.06); color: rgba(255, 255, 255, 0.5); }
 body.dark .history-date-label { color: rgba(255, 255, 255, 0.5); }
 
 /* Dark settings */
