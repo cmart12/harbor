@@ -9,13 +9,16 @@ function makeAgent(overrides: Partial<AgentListAllItem> & { agentId: string; spa
     status: 'running',
     summary: 'Test agent',
     selectedText: '',
-    anchor: { type: 'space' } as AgentListAllItem['anchor'],
+    quotedText: '',
+    anchor: { quote: '', prefix: '', suffix: '' },
     createdAt: '2024-01-01T00:00:00Z',
     pendingApprovalId: null,
     pendingPermissionKind: null,
     pendingIntention: null,
     pendingPath: null,
     source: 'sdk',
+    personaHandle: null,
+    yoloMode: false,
     ...overrides,
   };
 }

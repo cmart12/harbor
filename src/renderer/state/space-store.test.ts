@@ -18,6 +18,7 @@ function makeSpace(overrides: Partial<Space> & { id: string }): Space {
     completed_at: null,
     folder: null,
     session_id: null,
+    source_skill_id: null,
     attachments: [],
     status: 'captured',
     created_at: '2024-01-01T00:00:00Z',

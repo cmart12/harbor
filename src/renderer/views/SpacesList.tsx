@@ -1,0 +1,236 @@
+import React from 'react';
+import { spaceStore } from '../state/space-store';
+import { agentStore } from '../state/agent-store';
+import { skillStore } from '../state/skill-store';
+import { useStore } from './useStore';
+import { formatDueDate, timeAgo } from './list-utils';
+import type { Space } from '../../shared/types';
+import type { AgentListAllItem } from '../../shared/ipc-contract';
+
+export interface SpacesListActions {
+  onSpaceClick: (spaceId: string) => void;
+  onToggleStatus: (spaceId: string) => void;
+  onDelete: (spaceId: string) => void;
+  onFocus: (spaceId: string) => void;
+  onAgentClick: (
+    agentId: string,
+    selectedText: string,
+    status: string,
+    source: 'sdk' | 'cli' | 'cca',
+    spaceId: string,
+  ) => void;
+}
+
+interface MiniAgentInfo {
+  agentId: string;
+  status: string;
+  summary: string;
+  selectedText: string;
+  quotedText?: string;
+  source?: 'sdk' | 'cli' | 'cca';
+}
+
+function miniAgentVisual(agent: MiniAgentInfo): { icon: string; className: string } {
+  const isCca = agent.source === 'cca';
+  const icon = isCca ? '🔀' :
+    agent.status === 'running' ? '⚡' :
+    agent.status === 'waiting-approval' ? '⏳' :
+    agent.status === 'completed' ? '✓' : '✗';
+  const className = agent.status === 'running' ? (isCca ? 'mini-agent-cloud' : 'mini-agent-running') :
+    agent.status === 'waiting-approval' ? 'mini-agent-waiting' :
+    agent.status === 'completed' ? 'mini-agent-completed' : 'mini-agent-failed';
+  return { icon, className };
+}
+
+const MiniAgent = React.memo(function MiniAgent({
+  agent,
+  spaceId,
+  onClick,
+}: {
+  agent: MiniAgentInfo;
+  spaceId: string;
+  onClick: SpacesListActions['onAgentClick'];
+}) {
+  const { icon, className } = miniAgentVisual(agent);
+  const label = agent.selectedText.length > 50 ? agent.selectedText.slice(0, 47) + '...' : agent.selectedText;
+  const tooltip = agent.quotedText ? `${agent.selectedText}\n\nOn: "${agent.quotedText}"` : agent.selectedText;
+  return (
+    <div
+      className={`mini-agent ${className}`}
+      data-agent-id={agent.agentId}
+      title={tooltip}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick(agent.agentId, agent.selectedText, agent.status, (agent.source ?? 'sdk') as 'sdk' | 'cli' | 'cca', spaceId);
+      }}
+    >
+      <span className="mini-agent-icon">{icon}</span>
+      <span className="mini-agent-label">{label || agent.summary || 'Agent'}</span>
+    </div>
+  );
+});
+
+const SpaceRow = React.memo(function SpaceRow({
+  space,
+  isProcessing,
+  isActiveSession,
+  isFocused,
+  spaceAgents,
+  sourceSkill,
+  actions,
+}: {
+  space: Space;
+  isProcessing: boolean;
+  isActiveSession: boolean;
+  isFocused: boolean;
+  spaceAgents: AgentListAllItem[];
+  sourceSkill: { name: string; emoji: string } | null;
+  actions: SpacesListActions;
+}) {
+  const isRecurring = !!space.recurrence;
+  const dueInfo = formatDueDate(space.due_at_utc, space.due_at);
+  const hasDue = dueInfo.text !== '';
+  const hasRunningAgents = spaceAgents.some(a => a.status === 'running');
+  const hasWaitingAgents = spaceAgents.some(a => a.status === 'waiting-approval');
+  const hasFailedAgents = spaceAgents.some(a => a.status === 'failed');
+  const runningCount = spaceAgents.filter(a => a.status === 'running').length;
+
+  const classes = [
+    'space-item',
+    space.status === 'done' ? 'done' : '',
+    isProcessing ? 'processing' : '',
+    isFocused ? 'focused' : '',
+    hasRunningAgents ? 'has-running-agents' : '',
+    hasWaitingAgents ? 'has-waiting-agents' : '',
+  ].filter(Boolean).join(' ');
+
+  return (
+    <div
+      className={classes}
+      data-id={space.id}
+      role="button"
+      tabIndex={0}
+      onClick={() => actions.onSpaceClick(space.id)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          actions.onSpaceClick(space.id);
+        }
+      }}
+    >
+      <div
+        className={`space-check ${space.status === 'done' ? 'checked' : ''}`}
+        onClick={(e) => { e.stopPropagation(); actions.onToggleStatus(space.id); }}
+      >
+        {space.status === 'done' ? '✓' : ''}
+      </div>
+      <div className="space-content">
+        <div className={`space-desc ${hasRunningAgents ? 'agent-active' : ''}`}>{space.description}</div>
+        <div className="space-meta">
+          {sourceSkill ? (
+            <span className="source-skill-badge" title={`From skill: ${sourceSkill.name}`}>
+              {sourceSkill.emoji || '🧩'} {sourceSkill.name}
+            </span>
+          ) : null}
+          {space.client ? <span>👤 {space.client}</span> : null}
+          {hasDue ? <span className={`due-badge ${dueInfo.overdue ? 'overdue' : ''}`}>📅 {dueInfo.text}</span> : null}
+          {isRecurring ? <span className="recurring-badge">↻</span> : null}
+          {isActiveSession
+            ? <span className="session-badge running">● running</span>
+            : space.session_id
+              ? <span className="session-badge">○ session</span>
+              : null}
+          {hasRunningAgents ? <span className="session-badge running">⚡ {runningCount} working</span> : null}
+          {hasWaitingAgents ? <span className="session-badge agent-attention">⏳ needs attention</span> : null}
+          {hasFailedAgents ? <span className="session-badge agent-failed-badge">✗ failed</span> : null}
+          {isProcessing ? <span className="processing-badge">refining...</span> : null}
+          <span>{timeAgo(space.updated_at)}</span>
+        </div>
+        {spaceAgents.length > 0 ? (
+          <div className="space-agents">
+            {spaceAgents.map(agent => (
+              <MiniAgent
+                key={agent.agentId}
+                agent={agent}
+                spaceId={space.id}
+                onClick={actions.onAgentClick}
+              />
+            ))}
+          </div>
+        ) : null}
+        <div className="recall-hint hidden" data-recall-for={space.id} />
+      </div>
+      {space.status !== 'done' ? (
+        <button
+          type="button"
+          className={`space-focus ${isFocused ? 'is-focused' : ''}`}
+          title={isFocused ? 'Unfocus' : 'Focus'}
+          onClick={(e) => { e.stopPropagation(); actions.onFocus(space.id); }}
+        >
+          🎯
+        </button>
+      ) : null}
+      <button
+        type="button"
+        className="space-delete"
+        onClick={(e) => { e.stopPropagation(); actions.onDelete(space.id); }}
+      >
+        ✕
+      </button>
+    </div>
+  );
+});
+
+export interface SpacesListProps extends SpacesListActions {
+  /** When non-null, render these search results instead of the filtered list. */
+  searchResults?: Space[] | null;
+}
+
+export function SpacesList(props: SpacesListProps): React.ReactElement {
+  const { spaces, focusedSpaceId } = useStore(spaceStore);
+  const agentState = useStore(agentStore);
+  const { skills } = useStore(skillStore);
+
+  const displayList = React.useMemo<Space[]>(() => {
+    if (props.searchResults) return props.searchResults;
+    return spaces.filter(s => s.status !== 'done');
+  }, [spaces, props.searchResults]);
+
+  const agentsBySpace = React.useMemo(
+    () => agentStore.getAgentsBySpace(),
+    [agentState.agents],
+  );
+
+  const skillByid = React.useMemo(() => {
+    const m = new Map<string, { name: string; emoji: string }>();
+    for (const s of skills) m.set(s.id, { name: s.name, emoji: s.emoji });
+    return m;
+  }, [skills]);
+
+  if (displayList.length === 0) {
+    const emptyMsg = props.searchResults ? 'No matching spaces.' : 'No spaces yet. Type or speak one above.';
+    return (
+      <div className="empty-state">
+        <span className="icon">🎯</span>
+        <span>{emptyMsg}</span>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {displayList.map(space => (
+        <SpaceRow
+          key={space.id}
+          space={space}
+          isProcessing={agentState.processingSpaces.has(space.id)}
+          isActiveSession={agentState.activeSessionSpaces.has(space.id)}
+          isFocused={space.id === focusedSpaceId}
+          spaceAgents={agentsBySpace.get(space.id) || []}
+          sourceSkill={space.source_skill_id ? skillByid.get(space.source_skill_id) || null : null}
+          actions={props}
+        />
+      ))}
+    </>
+  );
+}

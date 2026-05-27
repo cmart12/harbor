@@ -1,0 +1,281 @@
+import React from 'react';
+import { agentStore } from '../state/agent-store';
+import { spaceStore } from '../state/space-store';
+import { personaStore } from '../state/persona-store';
+import { useStore } from './useStore';
+import { describeApproval } from './list-utils';
+import { AgentStatusIcon, StepIcon } from './icons';
+import type { AgentListAllItem } from '../../shared/ipc-contract';
+import type { AgentStep, AgentApproval, AgentRemoteInfo } from '../state/agent-store';
+
+export interface AgentsListActions {
+  onAgentClick: (
+    agent: AgentListAllItem,
+  ) => void;
+  onApprove: (agentId: string, requestId: string) => void;
+  onDeny: (agentId: string, requestId: string) => void;
+  onDelete: (agentId: string) => void;
+  onCanvas: (spaceId: string) => void;
+  onToggleYolo: (agentId: string, currentlyEnabled: boolean) => void;
+  onToggleSandbox: (agentId: string) => void;
+  onToggleRemote: (agentId: string, current: AgentRemoteInfo | undefined, agent: AgentListAllItem) => void;
+}
+
+interface AgentCardProps {
+  agent: AgentListAllItem;
+  intentLabel: string;
+  steps: AgentStep[];
+  approval: AgentApproval | undefined;
+  yoloMode: boolean;
+  remote: AgentRemoteInfo | undefined;
+  personaEmoji: string;
+  actions: AgentsListActions;
+}
+
+const AgentCard = React.memo(function AgentCard({
+  agent,
+  intentLabel,
+  steps,
+  approval,
+  yoloMode,
+  remote,
+  personaEmoji,
+  actions,
+}: AgentCardProps) {
+  const statusClass = agent.status === 'running' ? 'agent-running' :
+    agent.status === 'waiting-approval' ? 'agent-waiting' :
+    agent.status === 'completed' ? 'agent-completed' : 'agent-failed';
+
+  const sourceLabel = agent.source === 'cca'
+    ? <span className="agent-card-source">🔀 PR</span>
+    : agent.source === 'cli'
+      ? <span className="agent-card-source">🖥 CLI</span>
+      : null;
+
+  const title = agent.selectedText.length > 80 ? agent.selectedText.slice(0, 77) + '...' : agent.selectedText;
+
+  const visibleSteps = steps.slice(-6);
+  const showSummaryBox = (agent.status === 'completed' || agent.status === 'failed')
+    && agent.summary
+    && !['Completed', 'Failed', 'Starting...', ''].includes(agent.summary);
+
+  const showLiveStatus = visibleSteps.length === 0 && agent.status === 'running';
+
+  const canShowCanvas = agent.spaceId && agent.spaceId !== '__workspace__' && agent.source !== 'cli';
+  const showYolo = agent.status === 'running' || agent.status === 'waiting-approval';
+  const showRemote = agent.source === 'sdk' && (agent.status === 'running' || agent.status === 'waiting-approval');
+  // sandboxed lives on AgentListAllItem at runtime (added by main); cast for the field access.
+  const sandboxed = (agent as unknown as { sandboxed?: boolean }).sandboxed === true;
+  const showSandbox = sandboxed && (agent.status === 'running' || agent.status === 'waiting-approval');
+
+  const isYolo = yoloMode;
+  const isRemote = !!remote?.enabled;
+
+  const cardTitle = agent.source === 'cca' ? 'Click to open in browser' : 'Click to open chat';
+
+  return (
+    <div
+      className={`agent-card ${statusClass}`}
+      data-agent-id={agent.agentId}
+      title={cardTitle}
+      onClick={() => actions.onAgentClick(agent)}
+    >
+      <div className="agent-card-header">
+        <span className="agent-card-icon"><AgentStatusIcon status={agent.status} /></span>
+        <span className="agent-card-name">{intentLabel}</span>
+        {sourceLabel}
+        <div className="agent-card-actions">
+          {showSandbox ? (
+            <button
+              type="button"
+              className="agent-card-sandbox-btn active"
+              title="Sandbox active — click to disable for this session"
+              onClick={(e) => { e.stopPropagation(); actions.onToggleSandbox(agent.agentId); }}
+            >
+              🔒
+            </button>
+          ) : null}
+          {showYolo ? (
+            <button
+              type="button"
+              className={`agent-card-yolo-btn${isYolo ? ' active' : ''}`}
+              title={isYolo ? 'Yolo mode ON — click to disable' : 'Enable yolo mode (auto-approve all)'}
+              onClick={(e) => { e.stopPropagation(); actions.onToggleYolo(agent.agentId, isYolo); }}
+            >
+              🔥
+            </button>
+          ) : null}
+          {showRemote ? (
+            <button
+              type="button"
+              className={`agent-card-remote-btn${isRemote ? ' active' : ''}`}
+              title={isRemote ? 'Remote control ON — click to view link' : 'Enable remote control'}
+              onClick={(e) => { e.stopPropagation(); actions.onToggleRemote(agent.agentId, remote, agent); }}
+            >
+              📱
+            </button>
+          ) : null}
+          {canShowCanvas ? (
+            <button
+              type="button"
+              className="agent-card-canvas-btn"
+              title="Open canvas"
+              onClick={(e) => { e.stopPropagation(); actions.onCanvas(agent.spaceId); }}
+            >
+              📄
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="agent-card-delete-btn"
+            title="Delete session"
+            onClick={(e) => { e.stopPropagation(); actions.onDelete(agent.agentId); }}
+          >
+            ✕
+          </button>
+        </div>
+      </div>
+      <div className="agent-card-title">
+        {personaEmoji ? <span className="agent-card-persona-emoji">{personaEmoji}</span> : null}
+        {personaEmoji ? ' ' : null}
+        {title}
+      </div>
+      {agent.quotedText ? (
+        <div className="agent-card-snippet" title={agent.quotedText}>{agent.quotedText}</div>
+      ) : null}
+      {visibleSteps.length > 0 ? (
+        <div className="agent-card-steps">
+          {visibleSteps.map((step, i) => (
+            <React.Fragment key={step.toolCallId}>
+              <div className="step-item">
+                <StepIcon status={step.status} />
+                <span className="step-label">{step.label}</span>
+              </div>
+              {i < visibleSteps.length - 1 ? <div className="step-connector" /> : null}
+            </React.Fragment>
+          ))}
+        </div>
+      ) : showLiveStatus ? (
+        <div className="agent-card-steps">
+          <div className="step-item">
+            <StepIcon status="running" />
+            <span className="step-label">{agent.summary}</span>
+          </div>
+        </div>
+      ) : null}
+      {showSummaryBox ? <div className="agent-card-summary">{agent.summary}</div> : null}
+      {approval ? <ApprovalPanel agentId={agent.agentId} approval={approval} actions={actions} /> : null}
+    </div>
+  );
+});
+
+function ApprovalPanel({
+  agentId,
+  approval,
+  actions,
+}: {
+  agentId: string;
+  approval: AgentApproval;
+  actions: AgentsListActions;
+}): React.ReactElement {
+  const { label, detail } = describeApproval(approval);
+  return (
+    <div className="agent-card-approval">
+      <div className="approval-header">
+        <span className="approval-icon">⚠️</span>
+        <div className="approval-info">
+          <span className="approval-label">Permission requested</span>
+          <span className="approval-kind">{label}</span>
+          {detail ? <span className="approval-detail">{detail}</span> : null}
+        </div>
+      </div>
+      <div className="approval-actions">
+        <button
+          type="button"
+          className="approval-btn approve"
+          onClick={(e) => { e.stopPropagation(); actions.onApprove(agentId, approval.requestId); }}
+        >
+          Approve
+        </button>
+        <button
+          type="button"
+          className="approval-btn deny"
+          onClick={(e) => { e.stopPropagation(); actions.onDeny(agentId, approval.requestId); }}
+        >
+          Deny
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export interface AgentsListProps extends AgentsListActions {
+  /** Optional search filter applied client-side. */
+  filterQuery?: string;
+}
+
+export function AgentsList(props: AgentsListProps): React.ReactElement {
+  const { spaces } = useStore(spaceStore);
+  const agentState = useStore(agentStore);
+  const { personas } = useStore(personaStore);
+
+  const intentMap = React.useMemo(() => new Map(spaces.map(s => [s.id, s.description])), [spaces]);
+  const personaByHandle = React.useMemo(() => {
+    const m = new Map<string, string>();
+    for (const p of personas) if (p.emoji) m.set(p.handle, p.emoji);
+    return m;
+  }, [personas]);
+
+  let allAgents = agentState.agents;
+  if (props.filterQuery) {
+    const q = props.filterQuery.toLowerCase();
+    allAgents = allAgents.filter(a =>
+      (a.selectedText || '').toLowerCase().includes(q) ||
+      (a.summary || '').toLowerCase().includes(q),
+    );
+  }
+
+  if (allAgents.length === 0) {
+    return (
+      <div className="empty-state">
+        <span className="icon">⚡</span>
+        <span>
+          {props.filterQuery ? 'No matching agents.' : 'No agents yet. Describe a task above to launch one.'}
+        </span>
+      </div>
+    );
+  }
+
+  // Newest first
+  const sorted = [...allAgents].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+
+  return (
+    <>
+      {sorted.map(agent => {
+        const intentLabel = agent.source === 'cli'
+          ? 'CLI Session'
+          : agent.source === 'cca'
+            ? 'PR Agent'
+            : agent.spaceId === '__workspace__'
+              ? 'Workspace'
+              : (intentMap.get(agent.spaceId) || agent.spaceId);
+
+        const personaEmoji = agent.personaHandle ? personaByHandle.get(agent.personaHandle) || '' : '';
+
+        return (
+          <AgentCard
+            key={agent.agentId}
+            agent={agent}
+            intentLabel={intentLabel}
+            steps={agentState.steps.get(agent.agentId) || []}
+            approval={agentState.approvals.get(agent.agentId)}
+            yoloMode={agentState.yoloMode.get(agent.agentId) || false}
+            remote={agentState.remoteState.get(agent.agentId)}
+            personaEmoji={personaEmoji}
+            actions={props}
+          />
+        );
+      })}
+    </>
+  );
+}
