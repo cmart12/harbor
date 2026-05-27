@@ -22,6 +22,7 @@ let canvasWindow: BrowserWindow | null = null;
 const canvasWindows = new Set<BrowserWindow>();
 const canvasUserPinned = new WeakSet<BrowserWindow>();
 let settingsWindow: BrowserWindow | null = null;
+let settingsWindowAllowClose = false;
 let isExpanded = false;
 let isSnapping = false;
 let showTimestamp = 0;
@@ -337,6 +338,7 @@ export function registerWindowIpcHandlers(preloadPath: string): void {
   // ── Settings popout window ─────────────────────────────
   ipcMain.on('settings-window:open', () => {
     if (settingsWindow && !settingsWindow.isDestroyed()) {
+      if (!settingsWindow.isVisible()) settingsWindow.show();
       settingsWindow.focus();
     } else {
       settingsWindow = createSettingsWindow(preloadPath);
@@ -666,9 +668,63 @@ function createSettingsWindow(preloadPath: string): BrowserWindow {
   win.loadURL('copilot-whim://app/renderer/index.html?mode=settings');
   attachExternalLinkHandler(win);
 
+  // Hide instead of destroy so subsequent opens are instant. The renderer
+  // process stays alive in the background; only an explicit `destroy()`
+  // (during app quit, see `releaseSettingsWindow`) actually closes it.
+  win.on('close', (event) => {
+    if (settingsWindowAllowClose) return;
+    if (win.isDestroyed()) return;
+    event.preventDefault();
+    win.hide();
+  });
+
   win.on('closed', () => {
     settingsWindow = null;
   });
 
   return win;
+}
+
+/**
+ * Pre-warm the settings window at app start so the first open is instant.
+ * Creates the window hidden; the renderer process and bundle load happen
+ * in the background. No-op if a settings window already exists.
+ */
+export function preWarmSettingsWindow(preloadPath: string): void {
+  if (settingsWindow && !settingsWindow.isDestroyed()) return;
+  settingsWindow = createSettingsWindow(preloadPath);
+}
+
+/**
+ * Allow the settings window to actually close (used during app quit so the
+ * hide-on-close interceptor doesn't prevent shutdown). After this is
+ * called, subsequent close events on the settings window will close it
+ * normally. Safe to call multiple times.
+ */
+export function releaseSettingsWindow(): void {
+  settingsWindowAllowClose = true;
+}
+
+/**
+ * Destroy the (possibly hidden) settings window. Use this when the
+ * underlying data the settings window depends on has changed in a way
+ * that the cached renderer state can't recover from (e.g. workspace
+ * switch) — the next `settings-window:open` will cold-start a fresh
+ * renderer with up-to-date data.
+ */
+export function destroySettingsWindow(): void {
+  if (!settingsWindow || settingsWindow.isDestroyed()) {
+    settingsWindow = null;
+    return;
+  }
+  const win = settingsWindow;
+  settingsWindowAllowClose = true;
+  try {
+    win.destroy();
+  } finally {
+    // Reset the flag — future settings windows should hide on close,
+    // not destroy, until `releaseSettingsWindow()` is called again.
+    settingsWindowAllowClose = false;
+    settingsWindow = null;
+  }
 }

@@ -11,7 +11,7 @@ import { registerIpcHandlers } from './ipc';
 import { preloadModel } from './voice';
 import { initCopilot, shutdownCopilot } from './ai';
 import { startCliExitMonitor, stopCliExitMonitor, reconcileStaleAgents } from './agent-service';
-import { createMainWindow, toggleWindow, setupSnapOnDrop, registerWindowIpcHandlers } from './window-manager';
+import { createMainWindow, toggleWindow, setupSnapOnDrop, registerWindowIpcHandlers, preWarmSettingsWindow, releaseSettingsWindow } from './window-manager';
 import { createTray, destroyTray } from './tray';
 import { initAutoUpdater, cleanupAutoUpdater } from './update-service';
 
@@ -177,6 +177,20 @@ app.whenReady().then(async () => {
   // Auto-show window on launch once content has loaded
   mainWin.webContents.once('did-finish-load', () => {
     toggleWindow();
+
+    // Pre-warm the settings window in the background so the first open is
+    // instant. Skip when no workspace is configured (welcome flow) to keep
+    // first-launch cheap for new users.
+    if (workspace && fs.existsSync(workspace)) {
+      // Defer to idle so the main window finishes animating in first.
+      setTimeout(() => {
+        try {
+          preWarmSettingsWindow(preloadPath);
+        } catch (err) {
+          console.warn('[main] Settings pre-warm failed:', err);
+        }
+      }, 1500);
+    }
   });
 
   // Dev mode: watch renderer files and auto-reload windows
@@ -199,6 +213,12 @@ app.whenReady().then(async () => {
       `The app failed to initialize:\n\n${err instanceof Error ? err.message : String(err)}`);
     app.quit();
   }
+});
+
+app.on('before-quit', () => {
+  // Let the settings window's `close` handler actually close it now that
+  // the app is quitting (normally we intercept close to hide for speed).
+  releaseSettingsWindow();
 });
 
 app.on('will-quit', async () => {

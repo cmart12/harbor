@@ -3911,11 +3911,37 @@ const cliPathClear = document.getElementById('cli-path-clear') as HTMLButtonElem
 const cliPathDetected = document.getElementById('cli-path-detected') as HTMLSpanElement;
 
 async function loadCliPathSetting(): Promise<void> {
-  const override = await whimAPI.getSetting('cli_path');
-  const info = await whimAPI.checkCliVersion();
+  await loadCliPathInputSync();
+  await runCliPathChecks();
+}
 
+/**
+ * Synchronous-ish part of CLI path setup — just sets the input value and
+ * paints a "checking…" detected-label placeholder. Cheap enough to run
+ * eagerly on settings-window init so the General tab renders without
+ * waiting on the CLI binary.
+ */
+async function loadCliPathInputSync(): Promise<void> {
+  const override = await whimAPI.getSetting('cli_path');
   cliPathInput.value = override || '';
   cliPathClear.classList.toggle('hidden', !override);
+  cliPathDetected.textContent = 'Checking…';
+  cliPathDetected.title = '';
+  cliPathDetected.style.color = '';
+  if (cliMxcIndicator) {
+    cliMxcIndicator.textContent = 'checking…';
+    cliMxcIndicator.className = 'cli-mxc-indicator';
+  }
+}
+
+/**
+ * Run the slow CLI subprocess probes (version check + MXC capability
+ * check). Each spawns the CLI binary, so these can take ~200ms each on
+ * cold disk caches. Settings-window init defers these to idle so the
+ * General tab is interactive immediately.
+ */
+async function runCliPathChecks(): Promise<void> {
+  const info = await whimAPI.checkCliVersion();
 
   if (!info.path) {
     cliPathDetected.textContent = 'Not found';
@@ -7095,17 +7121,36 @@ if (isSettingsMode) {
     document.body.classList.add('dark');
   });
 
-  // Load settings data
-  loadModels();
-  loadWorkspaceSetting();
-  loadThemeSetting();
-  loadAutoHideSetting();
-  loadAutoRemoteSetting();
-  loadPersonas();
-  loadRuntimes();
-  loadCliPathSetting();
-  loadMcpServers();
-  loadCliTools();
+  // Fire all settings data loads in parallel so the slow ones (listModels
+  // network call, MCP fs reads) overlap. Use allSettled so one failure
+  // doesn't break sibling loads.
+  // Note: loadCliPathInputSync() paints the input + "checking…" labels
+  // immediately; the actual CLI subprocess probes (checkCliVersion +
+  // checkCliMxcCapable, each spawns the CLI binary) are deferred below
+  // so the General tab is interactive without waiting on them.
+  Promise.allSettled([
+    loadModels(),
+    loadWorkspaceSetting(),
+    loadThemeSetting(),
+    loadAutoHideSetting(),
+    loadAutoRemoteSetting(),
+    loadPersonas(),
+    loadRuntimes(),
+    loadCliPathInputSync(),
+    loadMcpServers(),
+    loadCliTools(),
+  ]);
+
+  // Defer the CLI subprocess probes to idle so they don't block first
+  // paint. requestIdleCallback isn't on the WebKit type lib by default,
+  // so fall back to setTimeout when unavailable.
+  const runChecks = () => runCliPathChecks();
+  const ric = (window as unknown as { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number }).requestIdleCallback;
+  if (typeof ric === 'function') {
+    ric(runChecks, { timeout: 2000 });
+  } else {
+    setTimeout(runChecks, 0);
+  }
 
   // Close button closes the window
   settingsClose.addEventListener('click', () => window.close());
