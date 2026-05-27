@@ -787,15 +787,121 @@ async function loadPinState(): Promise<void> {
   pinBtn.title = pinned ? 'Unpin window' : 'Pin window (keep visible)';
 }
 
-// ── Remote toggle ───────────────────────────────────────
+// ── Remote toggle + QR overlay ──────────────────────────
+let appRemoteUrl: string | null = null;
+let appRemoteOverlayEl: HTMLDivElement | null = null;
+
+function hideAppRemoteOverlay(): void {
+  if (appRemoteOverlayEl) {
+    appRemoteOverlayEl.remove();
+    appRemoteOverlayEl = null;
+  }
+}
+
+async function showAppRemoteOverlay(): Promise<void> {
+  hideAppRemoteOverlay();
+
+  const overlay = document.createElement('div');
+  overlay.className = 'remote-overlay app-remote-overlay';
+  overlay.style.position = 'fixed';
+  overlay.style.inset = '0';
+
+  const backdrop = document.createElement('div');
+  backdrop.className = 'remote-overlay-backdrop';
+  backdrop.addEventListener('click', hideAppRemoteOverlay);
+  overlay.appendChild(backdrop);
+
+  const panel = document.createElement('div');
+  panel.className = 'remote-overlay-panel';
+
+  const header = document.createElement('div');
+  header.className = 'remote-overlay-header';
+  header.innerHTML = `<span class="remote-overlay-title">📱 Remote Control</span>`;
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'remote-overlay-close';
+  closeBtn.textContent = '✕';
+  closeBtn.addEventListener('click', hideAppRemoteOverlay);
+  header.appendChild(closeBtn);
+  panel.appendChild(header);
+
+  const body = document.createElement('div');
+  body.className = 'remote-overlay-body';
+
+  if (appRemoteUrl) {
+    const desc = document.createElement('p');
+    desc.className = 'remote-overlay-desc';
+    desc.textContent = 'Scan the QR code or click the link to control this workspace from another device. Remote is enabled across all spaces.';
+    body.appendChild(desc);
+
+    try {
+      const QRCode = (await import('qrcode')).default;
+      const dataUrl = await QRCode.toDataURL(appRemoteUrl, { width: 200, margin: 2 });
+      const qrWrap = document.createElement('div');
+      qrWrap.className = 'remote-overlay-qr';
+      const img = document.createElement('img');
+      img.src = dataUrl;
+      img.alt = 'QR Code for remote session';
+      qrWrap.appendChild(img);
+      body.appendChild(qrWrap);
+    } catch { /* QR generation failed */ }
+
+    const link = document.createElement('a');
+    link.className = 'remote-overlay-link';
+    link.href = '#';
+    link.textContent = appRemoteUrl;
+    link.addEventListener('click', (e) => { e.preventDefault(); whimAPI.openExternal(appRemoteUrl!); });
+    body.appendChild(link);
+
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'remote-overlay-copy';
+    copyBtn.textContent = 'Copy link';
+    copyBtn.addEventListener('click', () => navigator.clipboard.writeText(appRemoteUrl!));
+    body.appendChild(copyBtn);
+  } else {
+    const desc = document.createElement('p');
+    desc.className = 'remote-overlay-desc';
+    desc.textContent = 'Remote control is enabled across all spaces but no link is available yet. Launch a workspace-level agent first, or check that the workspace is a GitHub repository.';
+    body.appendChild(desc);
+  }
+
+  const disableBtn = document.createElement('button');
+  disableBtn.className = 'remote-overlay-disable';
+  disableBtn.textContent = 'Disable Remote Control';
+  disableBtn.addEventListener('click', async () => {
+    await whimAPI.setAppRemote(false);
+    hideAppRemoteOverlay();
+  });
+  body.appendChild(disableBtn);
+
+  panel.appendChild(body);
+  overlay.appendChild(panel);
+  document.body.appendChild(overlay);
+  appRemoteOverlayEl = overlay;
+}
+
 remoteBtn.addEventListener('click', async () => {
-  const current = remoteBtn.classList.contains('active');
-  await whimAPI.setAppRemote(!current);
+  const isActive = remoteBtn.classList.contains('active');
+  if (isActive) {
+    showAppRemoteOverlay();
+  } else {
+    const result = await whimAPI.setAppRemote(true);
+    if ('agents' in result) {
+      const urlAgent = result.agents.find((a: { url?: string }) => a.url);
+      if (urlAgent?.url) appRemoteUrl = urlAgent.url;
+      showAppRemoteOverlay();
+    }
+  }
 });
 
 whimAPI.onAppRemoteChanged((data: { enabled: boolean; agents: Array<{ agentId: string; url?: string }> }) => {
   remoteBtn.classList.toggle('active', data.enabled);
-  remoteBtn.title = data.enabled ? 'Remote control ON — click to disable' : 'Enable remote control';
+  remoteBtn.title = data.enabled ? 'Remote control ON — click to view link' : 'Enable remote control';
+  if (data.enabled) {
+    const urlAgent = data.agents.find(a => a.url);
+    if (urlAgent?.url) appRemoteUrl = urlAgent.url;
+  } else {
+    appRemoteUrl = null;
+  }
 });
 
 async function loadRemoteState(): Promise<void> {
@@ -803,7 +909,11 @@ async function loadRemoteState(): Promise<void> {
     const status = await whimAPI.getAppRemoteStatus();
     if ('enabled' in status) {
       remoteBtn.classList.toggle('active', status.enabled);
-      remoteBtn.title = status.enabled ? 'Remote control ON — click to disable' : 'Enable remote control';
+      remoteBtn.title = status.enabled ? 'Remote control ON — click to view link' : 'Enable remote control';
+      if (status.enabled) {
+        const urlAgent = status.agents.find(a => a.url);
+        if (urlAgent?.url) appRemoteUrl = urlAgent.url;
+      }
     }
   } catch { /* not critical */ }
 }
@@ -5835,6 +5945,10 @@ whimAPI.onAgentYoloChanged((data: { agentId: string; enabled: boolean }) => {
 
 whimAPI.onAgentRemoteChanged((data: { agentId: string; enabled: boolean; remoteSteerable: boolean; url?: string }) => {
   agentRemoteState.set(data.agentId, { enabled: data.enabled, url: data.url });
+  // Track the latest remote URL for the app-level overlay
+  if (data.enabled && data.url && !appRemoteUrl) {
+    appRemoteUrl = data.url;
+  }
   // Update the remote button if visible
   const btn = document.querySelector(`.agent-card-remote-btn[data-agent-id="${data.agentId}"]`) as HTMLElement | null;
   if (btn) {
