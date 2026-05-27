@@ -114,7 +114,7 @@ export function buildCliToolsPrompt(): string {
  * `skillDirectories` + `disabledSkills` config for createSession.
  * Returns undefined if no skills are linked (avoids auto-loading).
  */
-function resolveLinkedSkillConfig(
+export function resolveLinkedSkillConfig(
   canvasContent: string,
   workspaceRoot: string,
 ): { skillDirectories: string[]; disabledSkills: string[] } | undefined {
@@ -151,10 +151,14 @@ export async function launchAgent(
   // Snapshot canvas hash for change detection on completion
   const canvasPath = path.join(workingDir, 'canvas.md');
   let canvasHashBefore = '';
+  let canvasContentRaw = '';
   try {
-    const canvasContent = fs.readFileSync(canvasPath, 'utf-8');
-    canvasHashBefore = crypto.createHash('md5').update(canvasContent).digest('hex');
+    canvasContentRaw = fs.readFileSync(canvasPath, 'utf-8');
+    canvasHashBefore = crypto.createHash('md5').update(canvasContentRaw).digest('hex');
   } catch { /* file may not exist yet */ }
+
+  // Resolve linked skills from canvas frontmatter
+  const skillConfig = resolveLinkedSkillConfig(canvasContentRaw, workspaceRoot);
 
   try {
     const mcpServers = getAllMcpServers();
@@ -168,6 +172,7 @@ export async function launchAgent(
       onPermissionRequest: broker.createPermissionHandler(findRecord),
       onUserInputRequest: broker.createUserInputHandler(findRecord),
       onElicitationRequest: broker.createElicitationHandler(findRecord),
+      ...(skillConfig ? { skillDirectories: skillConfig.skillDirectories, disabledSkills: skillConfig.disabledSkills } : {}),
       systemMessage: {
         mode: 'append',
         content: `\nThe user selected the following text from their canvas document and wants you to work on it:\n\n---\n${selectedText}\n---\n\nThe full canvas document is available as canvas.md in the working directory.${cliToolsPrompt}`,
@@ -222,6 +227,13 @@ export async function launchAgent(
 
     // Set up event listeners
     setupAgentEventListeners(session, record);
+
+    // Auto-enable remote if the user has opted into auto-remote for all workers
+    if (getConfigValue('remoteAutoEnable')) {
+      enableRemoteControl(agentId).catch((err: any) => {
+        console.error(`[sdk-runner] Auto-enable remote failed for agent=${agentId}:`, err);
+      });
+    }
 
     // Log to per-space activity log
     logIntentActivity(record, 'agent.launched', {
@@ -387,6 +399,13 @@ export async function launchQuickAgent(
 
     setupAgentEventListeners(session, record);
 
+    // Auto-enable remote if the user has opted into auto-remote for all workers
+    if (getConfigValue('remoteAutoEnable')) {
+      enableRemoteControl(agentId).catch((err: any) => {
+        console.error(`[sdk-runner] Auto-enable remote failed for agent=${agentId}:`, err);
+      });
+    }
+
     // before events start flowing. Errors are handled by the session.error listener.
     session.send({ prompt }).catch((err: any) => {
       record.status = 'failed';
@@ -434,6 +453,9 @@ export async function launchDocumentAgent(
   // Snapshot canvas hash for change detection on completion
   const canvasHashBefore = crypto.createHash('md5').update(documentContent).digest('hex');
 
+  // Resolve linked skills from canvas frontmatter
+  const skillConfig = resolveLinkedSkillConfig(documentContent, workspaceRoot);
+
   try {
     const mcpServers = getAllMcpServers();
     const cliToolsPrompt = buildCliToolsPrompt();
@@ -446,6 +468,7 @@ export async function launchDocumentAgent(
       onPermissionRequest: broker.createPermissionHandler(findRecord),
       onUserInputRequest: broker.createUserInputHandler(findRecord),
       onElicitationRequest: broker.createElicitationHandler(findRecord),
+      ...(skillConfig ? { skillDirectories: skillConfig.skillDirectories, disabledSkills: skillConfig.disabledSkills } : {}),
       systemMessage: {
         mode: 'append',
         content: `\nThe user has pressed "Run" on their space document. Execute all instructions in the document below. The full document is also available as canvas.md in your working directory.\n\n---\n${documentContent}\n---\n${cliToolsPrompt}`,
@@ -498,6 +521,13 @@ export async function launchDocumentAgent(
     });
 
     setupAgentEventListeners(session, record);
+
+    // Auto-enable remote if the user has opted into auto-remote for all workers
+    if (getConfigValue('remoteAutoEnable')) {
+      enableRemoteControl(agentId).catch((err: any) => {
+        console.error(`[sdk-runner] Auto-enable remote failed for agent=${agentId}:`, err);
+      });
+    }
 
     // Log to per-space activity log
     logIntentActivity(record, 'document.executed', {
@@ -736,6 +766,20 @@ async function restartExpiredSession(
 
     const isCanvasAgent = persisted.space_id && persisted.space_id !== '__workspace__';
 
+    // Resolve linked skills for canvas agents (read from current canvas content)
+    let skillConfig: { skillDirectories: string[]; disabledSkills: string[] } | undefined;
+    if (isCanvasAgent) {
+      try {
+        const canvasPath = path.join(workingDir, 'canvas.md');
+        if (fs.existsSync(canvasPath)) {
+          const canvasContent = fs.readFileSync(canvasPath, 'utf-8');
+          // workingDir is workspace/spaceFolder — go up one level for workspace root
+          const workspaceRoot = path.dirname(workingDir);
+          skillConfig = resolveLinkedSkillConfig(canvasContent, workspaceRoot);
+        }
+      } catch { /* proceed without skills */ }
+    }
+
     // Build system message with previous context
     let systemContent: string;
     if (isCanvasAgent) {
@@ -763,6 +807,7 @@ async function restartExpiredSession(
       onPermissionRequest: broker.createPermissionHandler(findRecord),
       onUserInputRequest: broker.createUserInputHandler(findRecord),
       onElicitationRequest: broker.createElicitationHandler(findRecord),
+      ...(skillConfig ? { skillDirectories: skillConfig.skillDirectories, disabledSkills: skillConfig.disabledSkills } : {}),
       systemMessage: { mode: 'append', content: systemContent },
     });
 

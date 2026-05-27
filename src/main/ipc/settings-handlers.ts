@@ -20,6 +20,7 @@ export function registerSettingsHandlers(): void {
       cli_path: 'cliPath',
       auto_hide_side_pane: 'autoHideSidePane',
       auto_download_updates: 'autoDownloadUpdates',
+      remoteAutoEnable: 'remoteAutoEnable',
     };
     const configKey = configKeyMap[key];
     if (configKey) return getConfigValue(configKey);
@@ -52,6 +53,8 @@ export function registerSettingsHandlers(): void {
       const enabled = value === 'true';
       setConfigValue('autoDownloadUpdates', enabled);
       setAutoDownload(enabled);
+    } else if (key === 'remoteAutoEnable') {
+      setConfigValue('remoteAutoEnable', value === 'true');
     }
   });
 

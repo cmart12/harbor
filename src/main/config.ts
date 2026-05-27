@@ -67,6 +67,7 @@ export interface AppConfig {
   sandboxDefaultPolicy: SandboxPolicy;  // default policy for sandboxed personas
   autoDownloadUpdates: boolean;     // auto-download updates in the background (vs. notify only)
   remoteEnabled: boolean;           // app-level remote: enable Mission Control on all workspace-level agents
+  remoteAutoEnable: boolean;        // auto-enable remote on every new worker session
 }
 
 const CONFIG_PATH = path.join(app.getPath('userData'), 'config.json');
@@ -206,6 +207,7 @@ const DEFAULT_CONFIG: AppConfig = {
   sandboxDefaultPolicy: { ...DEFAULT_SANDBOX_POLICY },
   autoDownloadUpdates: true,
   remoteEnabled: false,
+  remoteAutoEnable: false,
 };
 
 let config: AppConfig = { ...DEFAULT_CONFIG };

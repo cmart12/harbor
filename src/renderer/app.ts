@@ -4304,6 +4304,20 @@ if (autoHideSidePaneCb) {
   });
 }
 
+const autoRemoteCb = document.getElementById('auto-remote-cb') as HTMLInputElement | null;
+
+async function loadAutoRemoteSetting(): Promise<void> {
+  if (!autoRemoteCb) return;
+  const val = await whimAPI.getSetting('remoteAutoEnable');
+  autoRemoteCb.checked = val === true || val === 'true';
+}
+
+if (autoRemoteCb) {
+  autoRemoteCb.addEventListener('change', () => {
+    whimAPI.setSetting('remoteAutoEnable', String(autoRemoteCb.checked));
+  });
+}
+
 // ── Settings tabs ───────────────────────────────────────
 const SETTINGS_TAB_KEY = 'whim.settingsTab';
 function initSettingsTabs(): void {
@@ -6885,6 +6899,7 @@ if (isSettingsMode) {
   loadWorkspaceSetting();
   loadThemeSetting();
   loadAutoHideSetting();
+  loadAutoRemoteSetting();
   loadPersonas();
   loadRuntimes();
   loadCliPathSetting();
