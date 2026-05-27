@@ -107,6 +107,7 @@ export interface AppConfig {
   windowWidth: number;
   personas: AgentPersona[];
   personasSeeded: boolean;          // true after default personas have been injected once
+  personasMigratedV2: boolean;      // true after legacy runLocation rename (cloud→cca) has run
   cliRuntimes: CliRuntime[];
   cliTools: CliToolDefinition[];
   mcpServers: CustomMcpServer[];   // user-added MCP servers
@@ -248,6 +249,7 @@ const DEFAULT_CONFIG: AppConfig = {
   windowWidth: 420,
   personas: [],
   personasSeeded: false,
+  personasMigratedV2: false,
   cliRuntimes: [],
   cliTools: [],
   mcpServers: [],
@@ -272,6 +274,13 @@ export function loadConfig(): AppConfig {
         ...DEFAULT_SANDBOX_POLICY,
         ...(parsed.sandboxDefaultPolicy || {}),
       };
+      // Auto-mark V2 migration done for existing installs (anyone past the
+      // initial seed). The legacy cca/cloud rename migration ran in their
+      // previous app launches, so re-running it now would clobber any
+      // intentional 'cloud' value the user just set.
+      if (parsed.personasMigratedV2 === undefined && parsed.personasSeeded === true) {
+        config.personasMigratedV2 = true;
+      }
     }
   } catch (err) {
     console.error('[config] Failed to load config:', err);

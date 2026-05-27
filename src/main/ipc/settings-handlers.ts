@@ -78,36 +78,42 @@ export function registerSettingsHandlers(): void {
   ipcMain.handle('personas:list', () => {
     let personas = (getConfigValue('personas') || []) as AgentPersona[];
     const seeded = getConfigValue('personasSeeded');
+    const migratedV2 = getConfigValue('personasMigratedV2');
 
-    // Migrate legacy runLocation values from before the cca/cloud rename
+    // One-time migration of legacy runLocation values from before the
+    // cca/cloud rename. Gated by `personasMigratedV2` so it never runs again
+    // after the first pass — otherwise a user-saved `runLocation: 'cloud'`
+    // would be reverted to `'cca'` on every subsequent list call.
     let migrated = false;
-    personas = personas.map(p => {
-      if ((p as any).runLocation === 'cloud-sandbox') {
-        migrated = true;
-        return { ...p, runLocation: 'cloud' as const };
-      }
-      // Old 'cloud' meant CCA (Copilot Coding Agent) — now 'cca'
-      // But only migrate if this is the old CCA persona (not the new cloud ephemeral).
-      // The old CCA persona never had ephemeral: true.
-      if (p.runLocation === 'cloud' && p.ephemeral !== true) {
-        migrated = true;
-        return { ...p, runLocation: 'cca' as const };
-      }
-      return p;
-    });
-    // Also migrate old default handles
-    personas = personas.map(p => {
-      if (p.id === 'default-cloud' && p.handle === 'cloud' && p.runLocation === 'cca') {
-        migrated = true;
-        return { ...p, id: 'default-pr', handle: 'pr', emoji: p.emoji === '☁️' ? '🔀' : p.emoji };
-      }
-      if (p.id === 'default-sandbox-cloud' && p.handle === 'sandbox-cloud' && p.runLocation === 'cloud') {
-        migrated = true;
-        return { ...p, id: 'default-cloud', handle: 'cloud', emoji: p.emoji === '📦' ? '☁️' : p.emoji };
-      }
-      return p;
-    });
-    if (migrated) setConfigValue('personas', personas);
+    if (!migratedV2) {
+      personas = personas.map(p => {
+        if ((p as any).runLocation === 'cloud-sandbox') {
+          migrated = true;
+          return { ...p, runLocation: 'cloud' as const };
+        }
+        // Old 'cloud' meant CCA (Copilot Coding Agent) — now 'cca'.
+        // The old CCA persona never had ephemeral: true.
+        if (p.runLocation === 'cloud' && p.ephemeral !== true) {
+          migrated = true;
+          return { ...p, runLocation: 'cca' as const };
+        }
+        return p;
+      });
+      // Also migrate old default handles
+      personas = personas.map(p => {
+        if (p.id === 'default-cloud' && p.handle === 'cloud' && p.runLocation === 'cca') {
+          migrated = true;
+          return { ...p, id: 'default-pr', handle: 'pr', emoji: p.emoji === '☁️' ? '🔀' : p.emoji };
+        }
+        if (p.id === 'default-sandbox-cloud' && p.handle === 'sandbox-cloud' && p.runLocation === 'cloud') {
+          migrated = true;
+          return { ...p, id: 'default-cloud', handle: 'cloud', emoji: p.emoji === '📦' ? '☁️' : p.emoji };
+        }
+        return p;
+      });
+      if (migrated) setConfigValue('personas', personas);
+      setConfigValue('personasMigratedV2', true);
+    }
 
     if (!seeded) {
       // One-time seed: merge any defaults whose handle doesn't already exist
