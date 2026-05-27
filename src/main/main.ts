@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, globalShortcut, session, protocol, net, systemPreferences } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
-import { loadConfig, getConfigValue, setConfigValue } from './config';
+import { loadConfig, getConfigValue, setConfigValue, getResolvedHotkeys } from './config';
 import { initDatabase, mergeSessionIds, syncCanvasContent } from './database';
 import { initWorkspace, getDbPath, getLogPath } from './workspace';
 import { startSkillWatcher } from './skill-watcher';
@@ -14,6 +14,30 @@ import { startCliExitMonitor, stopCliExitMonitor, reconcileStaleAgents } from '.
 import { createMainWindow, toggleWindow, setupSnapOnDrop, registerWindowIpcHandlers } from './window-manager';
 import { createTray, destroyTray } from './tray';
 import { initAutoUpdater, cleanupAutoUpdater } from './update-service';
+
+let currentToggleAccelerator: string | null = null;
+
+/**
+ * Register (or re-register) the global toggle-window shortcut.
+ * Only unregisters the previous toggle shortcut (not all global shortcuts).
+ * Returns true on success, false if the OS refused the binding.
+ */
+export function registerToggleShortcut(accelerator: string): boolean {
+  if (currentToggleAccelerator) {
+    globalShortcut.unregister(currentToggleAccelerator);
+  }
+  const registered = globalShortcut.register(accelerator, toggleWindow);
+  if (registered) {
+    currentToggleAccelerator = accelerator;
+  } else {
+    console.warn(`[main] Failed to register global shortcut "${accelerator}" — another process may be holding it`);
+    // Attempt to restore the previous shortcut
+    if (currentToggleAccelerator) {
+      globalShortcut.register(currentToggleAccelerator, toggleWindow);
+    }
+  }
+  return registered;
+}
 
 // Register custom scheme as privileged (must happen before app ready)
 protocol.registerSchemesAsPrivileged([
@@ -140,7 +164,7 @@ app.whenReady().then(async () => {
   const preloadPath = path.join(__dirname, 'preload.js');
 
   registerIpcHandlers();
-  createMainWindow({ preloadPath });
+  const mainWin = createMainWindow({ preloadPath });
   registerWindowIpcHandlers(preloadPath);
   setupSnapOnDrop();
   createTray();
@@ -150,10 +174,10 @@ app.whenReady().then(async () => {
   reconcileStaleAgents();
   initAutoUpdater();
 
-  // Auto-show window on first launch so new users see the welcome screen
-  if (!workspace) {
+  // Auto-show window on launch once content has loaded
+  mainWin.webContents.once('did-finish-load', () => {
     toggleWindow();
-  }
+  });
 
   // Dev mode: watch renderer files and auto-reload windows
   if (!app.isPackaged) {
@@ -167,10 +191,8 @@ app.whenReady().then(async () => {
     });
   }
 
-  const registered = globalShortcut.register('CommandOrControl+Shift+Space', toggleWindow);
-  if (!registered) {
-    console.warn('Failed to register Ctrl+Shift+Space — another process may be holding it');
-  }
+  const hotkeys = getResolvedHotkeys();
+  registerToggleShortcut(hotkeys.toggleWindow);
   } catch (err) {
     console.error('[main] Fatal startup error:', err);
     dialog.showErrorBox('Copilot Whim — Startup Error',

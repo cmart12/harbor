@@ -49,6 +49,52 @@ export interface CustomMcpServer {
   tools: string[];
 }
 
+export interface HotkeyConfig {
+  toggleWindow: string;        // Global: show/hide the app window
+  canvasPinToTop: string;      // Canvas: pin/unpin window to top
+  canvasNewPage: string;       // Canvas: create new page
+  popOutWindow: string;        // Main: pop out in new window
+  toggleSearch: string;        // Main: toggle search mode
+  close: string;               // Navigation: close/back
+  navigateUp: string;          // Navigation: move selection up
+  navigateDown: string;        // Navigation: move selection down
+  openSubmit: string;          // Navigation: open/submit
+  stopRecording: string;       // Voice: stop recording
+}
+
+export const DEFAULT_HOTKEYS: HotkeyConfig = {
+  toggleWindow: 'CommandOrControl+Shift+Space',
+  canvasPinToTop: 'CommandOrControl+Shift+T',
+  canvasNewPage: 'CommandOrControl+Shift+N',
+  popOutWindow: 'CommandOrControl+Enter',
+  toggleSearch: 'Shift+Tab',
+  close: 'Escape',
+  navigateUp: 'ArrowUp',
+  navigateDown: 'ArrowDown',
+  openSubmit: 'Enter',
+  stopRecording: 'Space',
+};
+
+export const HOTKEY_LABELS: Record<keyof HotkeyConfig, string> = {
+  toggleWindow: 'Toggle Window',
+  canvasPinToTop: 'Pin to Top (Canvas)',
+  canvasNewPage: 'New Page (Canvas)',
+  popOutWindow: 'Pop Out in New Window',
+  toggleSearch: 'Toggle Search',
+  close: 'Close / Back',
+  navigateUp: 'Navigate Up',
+  navigateDown: 'Navigate Down',
+  openSubmit: 'Open / Submit',
+  stopRecording: 'Stop Recording',
+};
+
+export const HOTKEY_CATEGORIES: Record<string, (keyof HotkeyConfig)[]> = {
+  'Global': ['toggleWindow'],
+  'Canvas': ['canvasPinToTop', 'canvasNewPage'],
+  'Actions': ['popOutWindow', 'toggleSearch'],
+  'Navigation': ['close', 'navigateUp', 'navigateDown', 'openSubmit', 'stopRecording'],
+};
+
 export interface AppConfig {
   workspace: string | null;
   theme: 'light' | 'dark';
@@ -68,6 +114,7 @@ export interface AppConfig {
   autoDownloadUpdates: boolean;     // auto-download updates in the background (vs. notify only)
   remoteEnabled: boolean;           // app-level remote: enable Mission Control on all workspace-level agents
   remoteAutoEnable: boolean;        // auto-enable remote on every new worker session
+  hotkeys: Partial<HotkeyConfig>;   // user hotkey overrides (missing keys fall back to DEFAULT_HOTKEYS)
 }
 
 const CONFIG_PATH = path.join(app.getPath('userData'), 'config.json');
@@ -208,6 +255,7 @@ const DEFAULT_CONFIG: AppConfig = {
   autoDownloadUpdates: true,
   remoteEnabled: false,
   remoteAutoEnable: false,
+  hotkeys: {},
 };
 
 let config: AppConfig = { ...DEFAULT_CONFIG };
@@ -251,6 +299,11 @@ export function getConfigValue<K extends keyof AppConfig>(key: K): AppConfig[K] 
 export function setConfigValue<K extends keyof AppConfig>(key: K, value: AppConfig[K]): void {
   config[key] = value;
   saveConfig();
+}
+
+/** Returns effective hotkeys with user overrides merged on top of defaults. */
+export function getResolvedHotkeys(): HotkeyConfig {
+  return { ...DEFAULT_HOTKEYS, ...(config.hotkeys || {}) };
 }
 
 export function getSessionId(spaceId: string): string | null {

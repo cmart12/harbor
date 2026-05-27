@@ -622,6 +622,51 @@ export function markSkillRun(id: string, lastRunAt: string, nextRunAt: string | 
   ).run(lastRunAt, nextRunAt, id);
 }
 
+/**
+ * Atomically claim a scheduled run via CAS on next_run_at.
+ * Returns true if this caller won the claim (was able to advance the row),
+ * false if another caller/tick already advanced it. This prevents duplicate
+ * launches from overlapping scheduler ticks.
+ */
+export function claimSkillRun(
+  id: string,
+  expectedNextRunAt: string,
+  newLastRunAt: string,
+  newNextRunAt: string | null
+): boolean {
+  const result = db.prepare(
+    `UPDATE skills SET last_run_at = ?, next_run_at = ? WHERE id = ? AND next_run_at = ?`
+  ).run(newLastRunAt, newNextRunAt, id, expectedNextRunAt);
+  return result.changes > 0;
+}
+
+/**
+ * Return scheduled skills missing a next_run_at — e.g. just rebuilt from disk
+ * after restart. Used by the scheduler to recover schedules on startup.
+ */
+export function getScheduledSkillsNeedingNextRun(): Skill[] {
+  return (db.prepare(
+    `SELECT id, name, description, emoji, folder_path, file_path, schedule, schedule_time, schedule_day, next_run_at, last_run_at, created_at, updated_at
+     FROM skills
+     WHERE schedule IS NOT NULL AND next_run_at IS NULL`
+  ).all() as Array<{ id: string; name: string; description: string; emoji: string; folder_path: string; file_path: string; schedule: string | null; schedule_time: string | null; schedule_day: number | null; next_run_at: string | null; last_run_at: string | null; created_at: string; updated_at: string }>)
+    .map(row => ({
+      id: row.id,
+      name: row.name,
+      description: row.description,
+      emoji: row.emoji,
+      folder: row.folder_path,
+      filePath: row.file_path,
+      schedule: row.schedule as Skill['schedule'],
+      schedule_time: row.schedule_time,
+      schedule_day: row.schedule_day,
+      next_run_at: row.next_run_at,
+      last_run_at: row.last_run_at,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    }));
+}
+
 // ── Subagent Records ────────────────────────────────────────
 
 export interface SubagentRecordRow {

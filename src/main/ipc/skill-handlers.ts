@@ -234,8 +234,22 @@ export function registerSkillHandlers(): void {
     const skill = getSkill(skillId);
     if (!skill) return { error: 'not_found' };
 
-    const nextRunAt = computeNextRunAt(frequency, time, day);
-    updateSkillSchedule(skillId, frequency, time, day, nextRunAt);
+    // Validate inputs to protect main process from arbitrary IPC payloads.
+    const validFrequencies: SkillScheduleFrequency[] = ['daily', 'weekdays', 'weekly', 'biweekly', 'monthly'];
+    if (!validFrequencies.includes(frequency)) {
+      return { error: 'invalid_frequency' };
+    }
+    if (typeof time !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) {
+      return { error: 'invalid_time' };
+    }
+    if (day !== null && (!Number.isInteger(day) || day < 0 || day > 6)) {
+      return { error: 'invalid_day' };
+    }
+    // weekly/biweekly require a day; daily/weekdays/monthly ignore it.
+    const normalizedDay = (frequency === 'weekly' || frequency === 'biweekly') ? day : null;
+
+    const nextRunAt = computeNextRunAt(frequency, time, normalizedDay);
+    updateSkillSchedule(skillId, frequency, time, normalizedDay, nextRunAt);
 
     // Also update the SKILL.md frontmatter so schedule is persisted to disk
     try {
@@ -243,8 +257,8 @@ export function registerSkillHandlers(): void {
       const { frontmatter, body } = parseFrontmatter<SkillFrontmatter>(content);
       frontmatter.schedule = frequency;
       frontmatter.schedule_time = time;
-      if (day !== null) {
-        frontmatter.schedule_day = day;
+      if (normalizedDay !== null) {
+        frontmatter.schedule_day = normalizedDay;
       } else {
         delete frontmatter.schedule_day;
       }

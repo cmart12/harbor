@@ -1,9 +1,9 @@
-import { ipcMain } from 'electron';
+import { ipcMain, globalShortcut } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import { setAIModel, listAvailableModels, reinitCopilot, previewSandboxConfig } from '../ai';
 import { resolveCopilotCliPath, invalidateCliPath, checkCliCompatibility, resolveCommandOnPath, resolveCmdToJs, isCliMxcCapable } from '../session';
-import { getConfigValue, setConfigValue, getConfig, DEFAULT_PERSONAS, type AgentPersona, type CliRuntime } from '../config';
+import { getConfigValue, setConfigValue, getConfig, getResolvedHotkeys, DEFAULT_PERSONAS, DEFAULT_HOTKEYS, HOTKEY_LABELS, type AgentPersona, type CliRuntime, type HotkeyConfig } from '../config';
 import { listDiscoveredMcpServers } from '../mcp';
 import { validateMcpServers, validateCliTools, validateSandboxPolicy } from '../validators';
 import { onAutoHideSidePaneChanged } from '../window-manager';
@@ -290,5 +290,80 @@ export function registerSettingsHandlers(): void {
     } catch (err: any) {
       return { error: err?.message || 'Failed to materialize sandbox config preview' };
     }
+  });
+
+  // ── Hotkeys ─────────────────────────────────────────────
+  ipcMain.handle('hotkeys:get', () => {
+    return getResolvedHotkeys();
+  });
+
+  ipcMain.handle('hotkeys:set', (_event, key: string, accelerator: string) => {
+    if (!(key in DEFAULT_HOTKEYS)) {
+      return { error: `Unknown hotkey: ${key}` };
+    }
+    if (typeof accelerator !== 'string' || !accelerator.trim()) {
+      return { error: 'Accelerator cannot be empty' };
+    }
+
+    // Global shortcuts must include a real modifier (not just Shift alone)
+    if (key === 'toggleWindow') {
+      const parts = accelerator.split('+').map(p => p.trim());
+      const hasRealModifier = parts.some(p =>
+        ['CommandOrControl', 'Control', 'Command', 'Alt', 'Meta', 'Super'].includes(p)
+      );
+      if (!hasRealModifier) {
+        return { error: 'Global shortcuts must include a modifier (Ctrl, Cmd, or Alt).' };
+      }
+    }
+
+    const hotkeyKey = key as keyof HotkeyConfig;
+    const previousOverrides = { ...(getConfigValue('hotkeys') || {}) };
+    const overrides = { ...previousOverrides };
+
+    // If it matches the default, remove the override instead of storing it
+    if (accelerator === DEFAULT_HOTKEYS[hotkeyKey]) {
+      delete overrides[hotkeyKey];
+    } else {
+      overrides[hotkeyKey] = accelerator;
+    }
+    setConfigValue('hotkeys', overrides);
+
+    // Re-register global shortcut if toggleWindow changed
+    if (hotkeyKey === 'toggleWindow') {
+      const { registerToggleShortcut } = require('../main');
+      const success = registerToggleShortcut(accelerator);
+      if (!success) {
+        // Revert to previous config state (not just delete override)
+        setConfigValue('hotkeys', previousOverrides);
+        return { error: `Failed to register shortcut "${accelerator}" — it may be held by another application.` };
+      }
+    }
+
+    return { ok: true as const };
+  });
+
+  ipcMain.handle('hotkeys:reset', (_event, key?: string) => {
+    if (key && !(key in DEFAULT_HOTKEYS)) {
+      return { error: `Unknown hotkey: ${key}` };
+    }
+
+    const overrides = { ...(getConfigValue('hotkeys') || {}) };
+    if (key) {
+      delete overrides[key as keyof HotkeyConfig];
+    } else {
+      // Reset all
+      for (const k of Object.keys(overrides)) {
+        delete overrides[k as keyof HotkeyConfig];
+      }
+    }
+    setConfigValue('hotkeys', overrides);
+
+    // Re-register global shortcut if toggleWindow was reset
+    if (!key || key === 'toggleWindow') {
+      const { registerToggleShortcut } = require('../main');
+      registerToggleShortcut(DEFAULT_HOTKEYS.toggleWindow);
+    }
+
+    return { ok: true as const, hotkeys: getResolvedHotkeys() };
   });
 }

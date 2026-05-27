@@ -105,6 +105,9 @@ interface WhimAPI {
   transcribe(audioData: number[]): Promise<string>;
   getSetting(key: string): Promise<string | null>;
   setSetting(key: string, value: string): Promise<string | null | undefined>;
+  getHotkeys(): Promise<Record<string, string>>;
+  setHotkey(key: string, accelerator: string): Promise<{ ok?: boolean; error?: string }>;
+  resetHotkeys(key?: string): Promise<{ ok?: boolean; hotkeys?: Record<string, string> }>;
   resolveCliPath(): Promise<string | null>;
   checkCliVersion(): Promise<{ path: string | null; version: string | null; compatible: boolean; minVersion: string }>;
   checkCliMxcCapable(): Promise<{ mxcCapable: boolean }>;
@@ -2591,8 +2594,8 @@ descInput.addEventListener('keydown', (e) => {
 });
 
 descInput.addEventListener('keydown', (e) => {
-  // Shift+Tab: toggle search mode on Spaces, Workers, and Skills tabs
-  if (e.key === 'Tab' && e.shiftKey) {
+  // Toggle search mode on Spaces, Workers, and Skills tabs
+  if (matchesHotkey(e, 'toggleSearch')) {
     if (currentFilter === 'closed') return; // no search on History tab
     e.preventDefault();
     if (searchMode) exitSearchMode();
@@ -2601,7 +2604,7 @@ descInput.addEventListener('keydown', (e) => {
   }
 
   // Up arrow: go to filter bar (tabs are above the prompt now)
-  if (e.key === 'ArrowUp') {
+  if (matchesHotkey(e, 'navigateUp')) {
     e.preventDefault();
     e.stopPropagation();
     focusActiveFilter();
@@ -2609,7 +2612,7 @@ descInput.addEventListener('keydown', (e) => {
   }
 
   // Down arrow: go to list items below
-  if (e.key === 'ArrowDown') {
+  if (matchesHotkey(e, 'navigateDown')) {
     e.preventDefault();
     e.stopPropagation();
     if (currentFilter === 'agents') {
@@ -3742,6 +3745,8 @@ async function saveSchedule(): Promise<void> {
   setTimeout(hideStatus, 2000);
   cachedSkills = await whimAPI.listSkills();
   if (currentFilter === 'skills') renderSkillsList();
+  // Refresh the canvas overflow menu label if we're viewing this skill
+  if (canvasSkillId) updateCanvasMenuContext(true);
 }
 
 async function clearSchedule(): Promise<void> {
@@ -3753,6 +3758,7 @@ async function clearSchedule(): Promise<void> {
   setTimeout(hideStatus, 2000);
   cachedSkills = await whimAPI.listSkills();
   if (currentFilter === 'skills') renderSkillsList();
+  if (canvasSkillId) updateCanvasMenuContext(true);
 }
 
 (window as any).closeSchedulePicker = closeSchedulePicker;
@@ -4519,6 +4525,285 @@ function initSettingsTabs(): void {
 }
 initSettingsTabs();
 
+// ── Hotkeys tab ────────────────────────────────────────
+const HOTKEY_LABELS: Record<string, string> = {
+  toggleWindow: 'Toggle Window',
+  canvasPinToTop: 'Pin to Top (Canvas)',
+  canvasNewPage: 'New Page (Canvas)',
+  popOutWindow: 'Pop Out in New Window',
+  toggleSearch: 'Toggle Search',
+  close: 'Close / Back',
+  navigateUp: 'Navigate Up',
+  navigateDown: 'Navigate Down',
+  openSubmit: 'Open / Submit',
+  stopRecording: 'Stop Recording',
+};
+
+const HOTKEY_CATEGORIES: Record<string, string[]> = {
+  'Global': ['toggleWindow'],
+  'Canvas': ['canvasPinToTop', 'canvasNewPage'],
+  'Actions': ['popOutWindow', 'toggleSearch'],
+  'Navigation': ['close', 'navigateUp', 'navigateDown', 'openSubmit', 'stopRecording'],
+};
+
+const DEFAULT_HOTKEYS: Record<string, string> = {
+  toggleWindow: 'CommandOrControl+Shift+Space',
+  canvasPinToTop: 'CommandOrControl+Shift+T',
+  canvasNewPage: 'CommandOrControl+Shift+N',
+  popOutWindow: 'CommandOrControl+Enter',
+  toggleSearch: 'Shift+Tab',
+  close: 'Escape',
+  navigateUp: 'ArrowUp',
+  navigateDown: 'ArrowDown',
+  openSubmit: 'Enter',
+  stopRecording: 'Space',
+};
+
+// Current hotkeys loaded from config — renderer-side cache
+let currentHotkeys: Record<string, string> = { ...DEFAULT_HOTKEYS };
+let hotkeyRecordingKey: string | null = null;
+
+const isMac = navigator.platform.toUpperCase().includes('MAC');
+
+function acceleratorToDisplay(accel: string): string {
+  return accel
+    .replace(/CommandOrControl/g, isMac ? '⌘' : 'Ctrl')
+    .replace(/CmdOrCtrl/g, isMac ? '⌘' : 'Ctrl')
+    .replace(/Command/g, '⌘')
+    .replace(/Control/g, isMac ? '⌃' : 'Ctrl')
+    .replace(/Shift/g, isMac ? '⇧' : 'Shift')
+    .replace(/Alt/g, isMac ? '⌥' : 'Alt')
+    .replace(/Meta/g, isMac ? '⌘' : 'Win')
+    .replace(/ArrowUp/g, '↑')
+    .replace(/ArrowDown/g, '↓')
+    .replace(/ArrowLeft/g, '←')
+    .replace(/ArrowRight/g, '→')
+    .replace(/Escape/g, 'Esc')
+    .replace(/\+/g, isMac ? '' : '+');
+}
+
+function keyEventToAccelerator(e: KeyboardEvent): string | null {
+  // Ignore modifier-only presses
+  if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) return null;
+
+  const parts: string[] = [];
+  if (e.ctrlKey || e.metaKey) parts.push('CommandOrControl');
+  if (e.shiftKey) parts.push('Shift');
+  if (e.altKey) parts.push('Alt');
+
+  let key = e.key;
+  // Normalize key names to Electron accelerator format
+  if (key === ' ') key = 'Space';
+  else if (key === 'Tab') key = 'Tab';
+  else if (key === 'Enter') key = 'Enter';
+  else if (key === 'Escape') key = 'Escape';
+  else if (key === 'Backspace') key = 'Backspace';
+  else if (key === 'Delete') key = 'Delete';
+  else if (key.startsWith('Arrow')) { /* already in correct format */ }
+  else if (key.length === 1) key = key.toUpperCase();
+
+  parts.push(key);
+  return parts.join('+');
+}
+
+function findConflict(accel: string, excludeKey: string): string | null {
+  for (const [k, v] of Object.entries(currentHotkeys)) {
+    if (k !== excludeKey && v === accel) {
+      return HOTKEY_LABELS[k] || k;
+    }
+  }
+  return null;
+}
+
+const hotkeysList = document.getElementById('hotkeys-list') as HTMLDivElement;
+const hotkeysResetAll = document.getElementById('hotkeys-reset-all') as HTMLButtonElement;
+
+function renderHotkeysTab(): void {
+  hotkeysList.innerHTML = '';
+  for (const [category, keys] of Object.entries(HOTKEY_CATEGORIES)) {
+    const titleEl = document.createElement('div');
+    titleEl.className = 'hotkey-group-title';
+    titleEl.textContent = category;
+    hotkeysList.appendChild(titleEl);
+
+    for (const key of keys) {
+      const row = document.createElement('div');
+      row.className = 'hotkey-row';
+      row.dataset.hotkeyKey = key;
+
+      const label = document.createElement('div');
+      label.className = 'hotkey-label';
+      label.textContent = HOTKEY_LABELS[key] || key;
+
+      const binding = document.createElement('div');
+      binding.className = 'hotkey-binding';
+      const accel = currentHotkeys[key] || DEFAULT_HOTKEYS[key];
+      binding.textContent = acceleratorToDisplay(accel);
+      if (accel !== DEFAULT_HOTKEYS[key]) {
+        binding.classList.add('modified');
+      }
+      binding.title = 'Click to change';
+
+      binding.addEventListener('click', () => {
+        startHotkeyRecording(key, binding);
+      });
+
+      const resetBtn = document.createElement('button');
+      resetBtn.className = 'hotkey-reset-btn';
+      resetBtn.textContent = '↩';
+      resetBtn.title = 'Reset to default';
+      if (accel === DEFAULT_HOTKEYS[key]) {
+        resetBtn.style.visibility = 'hidden';
+      }
+      resetBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        await whimAPI.resetHotkeys(key);
+        currentHotkeys[key] = DEFAULT_HOTKEYS[key];
+        renderHotkeysTab();
+      });
+
+      row.appendChild(label);
+      row.appendChild(binding);
+      row.appendChild(resetBtn);
+      hotkeysList.appendChild(row);
+    }
+  }
+}
+
+function startHotkeyRecording(key: string, bindingEl: HTMLElement): void {
+  // Cancel any previous recording
+  stopRecording_hotkey();
+
+  hotkeyRecordingKey = key;
+  bindingEl.classList.add('recording');
+  bindingEl.textContent = 'Press keys…';
+
+  const handler = async (e: KeyboardEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+
+    if (e.key === 'Escape') {
+      stopRecording_hotkey();
+      renderHotkeysTab();
+      return;
+    }
+
+    const accel = keyEventToAccelerator(e);
+    if (!accel) return; // modifier-only press
+
+    const conflict = findConflict(accel, key);
+    if (conflict) {
+      bindingEl.classList.remove('recording');
+      bindingEl.textContent = acceleratorToDisplay(accel);
+      // Show conflict warning — block the save, let user try again
+      const conflictEl = document.createElement('span');
+      conflictEl.className = 'hotkey-conflict';
+      conflictEl.textContent = `⚠ Conflicts with "${conflict}" — press a different combo`;
+      bindingEl.parentElement?.appendChild(conflictEl);
+      setTimeout(() => {
+        conflictEl.remove();
+        // Re-enter recording so user can try again
+        bindingEl.classList.add('recording');
+        bindingEl.textContent = 'Press keys…';
+      }, 1500);
+      return;
+    }
+
+    document.removeEventListener('keydown', handler, true);
+    await saveHotkeyAndStop(key, accel);
+  };
+
+  document.addEventListener('keydown', handler, true);
+
+  // Store cleanup reference
+  (bindingEl as any)._hotkeyCleanup = () => {
+    document.removeEventListener('keydown', handler, true);
+  };
+}
+
+async function saveHotkeyAndStop(key: string, accel: string): Promise<void> {
+  const result = await whimAPI.setHotkey(key, accel);
+  if (result.error) {
+    // Show error briefly
+    const row = hotkeysList.querySelector(`[data-hotkey-key="${key}"]`);
+    if (row) {
+      const errEl = document.createElement('span');
+      errEl.className = 'hotkey-conflict';
+      errEl.textContent = `⚠ ${result.error}`;
+      row.appendChild(errEl);
+      setTimeout(() => errEl.remove(), 3000);
+    }
+  } else {
+    currentHotkeys[key] = accel;
+  }
+  hotkeyRecordingKey = null;
+  renderHotkeysTab();
+}
+
+function stopRecording_hotkey(): void {
+  if (hotkeyRecordingKey) {
+    const bindingEl = hotkeysList.querySelector(
+      `[data-hotkey-key="${hotkeyRecordingKey}"] .hotkey-binding`
+    ) as HTMLElement | null;
+    if (bindingEl) {
+      bindingEl.classList.remove('recording');
+      (bindingEl as any)._hotkeyCleanup?.();
+    }
+    hotkeyRecordingKey = null;
+  }
+}
+
+async function loadHotkeys(): Promise<void> {
+  try {
+    const hotkeys = await whimAPI.getHotkeys();
+    currentHotkeys = hotkeys as Record<string, string>;
+  } catch {
+    currentHotkeys = { ...DEFAULT_HOTKEYS };
+  }
+  renderHotkeysTab();
+}
+
+hotkeysResetAll.addEventListener('click', async () => {
+  await whimAPI.resetHotkeys();
+  currentHotkeys = { ...DEFAULT_HOTKEYS };
+  renderHotkeysTab();
+});
+
+// Load hotkeys on init
+loadHotkeys();
+
+/**
+ * Check if a KeyboardEvent matches an Electron accelerator string from the hotkey config.
+ * e.g. matchesHotkey(e, 'toggleWindow') checks against currentHotkeys.toggleWindow
+ */
+function matchesHotkey(e: KeyboardEvent, hotkeyName: string): boolean {
+  const accel = currentHotkeys[hotkeyName];
+  if (!accel) return false;
+
+  const parts = accel.split('+');
+  const key = parts[parts.length - 1];
+  const mods = parts.slice(0, -1).map(m => m.toLowerCase());
+
+  const needsCtrlOrCmd = mods.includes('commandorcontrol') || mods.includes('cmdorctrl');
+  const needsShift = mods.includes('shift');
+  const needsAlt = mods.includes('alt');
+
+  const hasCtrlOrCmd = e.ctrlKey || e.metaKey;
+
+  if (needsCtrlOrCmd && !hasCtrlOrCmd) return false;
+  if (!needsCtrlOrCmd && hasCtrlOrCmd) return false;
+  if (needsShift !== e.shiftKey) return false;
+  if (needsAlt !== e.altKey) return false;
+
+  // Normalize key comparison
+  let eventKey = e.key;
+  if (eventKey === ' ') eventKey = 'Space';
+  else if (eventKey.length === 1) eventKey = eventKey.toUpperCase();
+
+  return eventKey === key;
+}
+
 // ── Sandbox policy form helpers ─────────────────────────
 
 function pathListToTextarea(paths: string[]): string {
@@ -5114,6 +5399,8 @@ const canvasSkillChips = document.getElementById('canvas-skill-chips') as HTMLDi
 const canvasSkillPicker = document.getElementById('canvas-skill-picker') as HTMLDivElement;
 const canvasPinLabel = document.getElementById('canvas-pin-label') as HTMLSpanElement;
 const canvasLaunchLabel = document.getElementById('canvas-launch-label') as HTMLSpanElement;
+const canvasScheduleBtn = document.getElementById('canvas-schedule') as HTMLButtonElement;
+const canvasScheduleLabel = document.getElementById('canvas-schedule-label') as HTMLSpanElement;
 let canvasSpaceId: string | null = null;
 let canvasSkillId: string | null = null;
 let canvasPageName: string | null = null;
@@ -5215,10 +5502,21 @@ document.addEventListener('click', (e) => {
 });
 
 function updateCanvasMenuContext(isSkill: boolean): void {
+  // Items tagged data-context="space" are shown only for spaces
   canvasMenuDropdown.querySelectorAll('[data-context="space"]').forEach(el => {
     el.classList.toggle('hidden', isSkill);
   });
+  // Items tagged data-context="skill" are shown only for skills
+  canvasMenuDropdown.querySelectorAll('[data-context="skill"]').forEach(el => {
+    el.classList.toggle('hidden', !isSkill);
+  });
   canvasLaunchLabel.textContent = isSkill ? 'Launch as Space' : 'Start Session';
+
+  // Update the schedule menu label based on whether this skill already has one
+  if (isSkill && canvasSkillId) {
+    const skill = cachedSkills.find(s => s.id === canvasSkillId);
+    canvasScheduleLabel.textContent = skill?.schedule ? 'Edit Schedule…' : 'Set Schedule…';
+  }
 }
 
 canvasMarkComplete.addEventListener('click', async () => {
@@ -5230,6 +5528,12 @@ canvasMarkComplete.addEventListener('click', async () => {
   showStatus('✓ Marked complete');
   setTimeout(hideStatus, 2000);
   closeCanvas();
+});
+
+canvasScheduleBtn.addEventListener('click', () => {
+  closeCanvasMenu();
+  if (!canvasSkillId) return;
+  openSchedulePicker(canvasSkillId);
 });
 
 canvasSaveAsSkill.addEventListener('click', async () => {
@@ -6559,9 +6863,9 @@ window.addEventListener('beforeunload', () => {
 });
 
 document.addEventListener('keydown', (e) => {
-  // When settings modal is open, only Escape is handled
+  // When settings modal is open, only close shortcut is handled
   if (settingsModalOpen) {
-    if (e.key === 'Escape') {
+    if (matchesHotkey(e, 'close')) {
       if (isSettingsMode) {
         window.close();
       } else {
@@ -6576,7 +6880,7 @@ document.addEventListener('keydown', (e) => {
     // Agent list navigation
     if (currentFilter === 'agents') {
       const agentItems = listEl.querySelectorAll('.agent-card');
-      if (e.key === 'ArrowDown' && selectedIndex >= 0) {
+      if (matchesHotkey(e, 'navigateDown') && selectedIndex >= 0) {
         e.preventDefault();
         if (selectedIndex < agentItems.length - 1) {
           selectedIndex++;
@@ -6584,7 +6888,7 @@ document.addEventListener('keydown', (e) => {
         }
         return;
       }
-      if (e.key === 'ArrowUp' && selectedIndex >= 0) {
+      if (matchesHotkey(e, 'navigateUp') && selectedIndex >= 0) {
         e.preventDefault();
         if (selectedIndex === 0) {
           selectedIndex = -1;
@@ -6596,8 +6900,8 @@ document.addEventListener('keydown', (e) => {
         }
         return;
       }
-      // Cmd+Enter: pop out agent chat in a new canvas window
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+      // Pop out agent chat in a new canvas window
+      if (matchesHotkey(e, 'popOutWindow')) {
         e.preventDefault();
         const agent = selectedIndex >= 0
           ? renderedAgents[selectedIndex]
@@ -6608,7 +6912,7 @@ document.addEventListener('keydown', (e) => {
         }
         return;
       }
-      if (e.key === 'Enter' && selectedIndex >= 0 && document.activeElement !== newAgentBtn) {
+      if (matchesHotkey(e, 'openSubmit') && selectedIndex >= 0 && document.activeElement !== newAgentBtn) {
         e.preventDefault();
         const agent = renderedAgents[selectedIndex];
         if (agent) {
@@ -6618,7 +6922,7 @@ document.addEventListener('keydown', (e) => {
       }
     } else {
       // Space list navigation
-      if (e.key === 'ArrowDown' && selectedIndex >= 0) {
+      if (matchesHotkey(e, 'navigateDown') && selectedIndex >= 0) {
         e.preventDefault();
         if (selectedIndex < displayedSpaces.length - 1) {
           selectedIndex++;
@@ -6626,7 +6930,7 @@ document.addEventListener('keydown', (e) => {
         }
         return;
       }
-      if (e.key === 'ArrowUp' && selectedIndex >= 0) {
+      if (matchesHotkey(e, 'navigateUp') && selectedIndex >= 0) {
         e.preventDefault();
         if (selectedIndex === 0) {
           selectedIndex = -1;
@@ -6638,8 +6942,8 @@ document.addEventListener('keydown', (e) => {
         }
         return;
       }
-      // Cmd+Enter: open canvas in a new window (even if one is already open)
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+      // Pop out: open canvas in a new window
+      if (matchesHotkey(e, 'popOutWindow')) {
         e.preventDefault();
         const target = selectedIndex >= 0
           ? displayedSpaces[selectedIndex]
@@ -6649,8 +6953,8 @@ document.addEventListener('keydown', (e) => {
         }
         return;
       }
-      // Enter: open full editor for selected space
-      if (e.key === 'Enter' && selectedIndex >= 0 && document.activeElement !== descInput) {
+      // Open/Submit: open full editor for selected space
+      if (matchesHotkey(e, 'openSubmit') && selectedIndex >= 0 && document.activeElement !== descInput) {
         e.preventDefault();
         const space = displayedSpaces[selectedIndex];
         if (space) openCanvas(space.id, true);
@@ -6659,14 +6963,14 @@ document.addEventListener('keydown', (e) => {
     }
   }
 
-  // Stop voice recording with Space from anywhere (descInput is hidden during recording)
-  if (e.key === ' ' && isRecording) {
+  // Stop voice recording
+  if (matchesHotkey(e, 'stopRecording') && isRecording) {
     e.preventDefault();
     stopRecording();
     return;
   }
 
-  if (e.key === 'Escape') {
+  if (matchesHotkey(e, 'close')) {
     if (isRecording) stopRecording();
     if (!chatView.classList.contains('hidden')) {
       closeAgentChat();
@@ -6962,17 +7266,14 @@ if (isCanvasMode) {
 
   // Canvas keyboard shortcuts — use capture phase so the editor can't swallow them
   window.addEventListener('keydown', (e) => {
-    if (!(e.metaKey || e.ctrlKey) || !e.shiftKey) return;
-    const key = e.key.toUpperCase();
-
-    if (key === 'T') {
+    if (matchesHotkey(e, 'canvasPinToTop')) {
       e.preventDefault();
       e.stopPropagation();
       toggleCanvasOnTop();
       return;
     }
 
-    if (key === 'N') {
+    if (matchesHotkey(e, 'canvasNewPage')) {
       if (!canvasSpaceId) return;
       e.preventDefault();
       e.stopPropagation();

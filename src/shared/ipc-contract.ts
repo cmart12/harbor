@@ -180,6 +180,19 @@ export interface DiscoveredMcpServer {
   url?: string;
 }
 
+export interface HotkeyConfig {
+  toggleWindow: string;
+  canvasPinToTop: string;
+  canvasNewPage: string;
+  popOutWindow: string;
+  toggleSearch: string;
+  close: string;
+  navigateUp: string;
+  navigateDown: string;
+  openSubmit: string;
+  stopRecording: string;
+}
+
 export interface CloudJobResult {
   jobId: string;
   sessionId: string;
@@ -227,6 +240,11 @@ export interface IpcCommands {
   // ── Settings ─────────────────────────────────────────────
   'settings:get': { args: [key: string]; result: unknown };
   'settings:set': { args: [key: string, value: string]; result: string | null | undefined };
+
+  // ── Hotkeys ──────────────────────────────────────────────
+  'hotkeys:get': { args: []; result: HotkeyConfig };
+  'hotkeys:set': { args: [key: string, accelerator: string]; result: { ok: true } | { error: string } };
+  'hotkeys:reset': { args: [key?: string]; result: { ok: true; hotkeys: HotkeyConfig } };
 
   // ── CLI / Models ─────────────────────────────────────────
   'cli:resolve-path': { args: []; result: string | null };

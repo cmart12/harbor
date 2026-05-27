@@ -147,6 +147,7 @@
           <button class="settings-tab-btn active" data-tab="general">General</button>
           <button class="settings-tab-btn" data-tab="tools">Tools</button>
           <button class="settings-tab-btn" data-tab="personas">Agents</button>
+          <button class="settings-tab-btn" data-tab="hotkeys">Hotkeys</button>
         </div>
 
         <div class="settings-content">
@@ -247,6 +248,13 @@
               </div>
             </div>
           </div>
+
+          <div class="settings-tab-panel" data-tab="hotkeys">
+            <div id="hotkeys-list" class="hotkeys-list"></div>
+            <div class="hotkeys-footer">
+              <button id="hotkeys-reset-all" class="persona-add-btn" type="button">Reset All to Defaults</button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -305,6 +313,10 @@
                 <span>Manage Skills</span>
               </button>
               <div class="canvas-menu-separator"></div>
+              <button id="canvas-schedule" class="canvas-menu-item" data-context="skill">
+                <span class="canvas-menu-icon">🕐</span>
+                <span class="canvas-menu-label" id="canvas-schedule-label">Set Schedule…</span>
+              </button>
               <button id="canvas-open-folder" class="canvas-menu-item">
                 <span class="canvas-menu-icon">📁</span>
                 <span>Open Folder</span>

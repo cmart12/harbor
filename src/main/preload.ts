@@ -6,6 +6,7 @@ import type {
   CliToolDefinition,
   CustomMcpServer,
   SandboxPolicy,
+  HotkeyConfig,
 } from '../shared/ipc-contract';
 import type { ChatEvent } from '../shared/chat-types';
 import type { AgentAnchor, RecurrenceResult, RecallMatch, Skill, SkillContent, SkillScheduleFrequency, CanvasTarget, UpdateState } from '../shared/types';
@@ -45,6 +46,11 @@ export interface WhimAPI {
   // ── Settings ─────────────────────────────────────────────
   getSetting(key: string): Promise<IpcCommandResult<'settings:get'>>;
   setSetting(key: string, value: string): Promise<IpcCommandResult<'settings:set'>>;
+
+  // ── Hotkeys ──────────────────────────────────────────────
+  getHotkeys(): Promise<IpcCommandResult<'hotkeys:get'>>;
+  setHotkey(key: string, accelerator: string): Promise<IpcCommandResult<'hotkeys:set'>>;
+  resetHotkeys(key?: string): Promise<IpcCommandResult<'hotkeys:reset'>>;
 
   // ── CLI / Models ─────────────────────────────────────────
   resolveCliPath(): Promise<IpcCommandResult<'cli:resolve-path'>>;
@@ -248,6 +254,11 @@ const api: WhimAPI = {
   // ── Settings ─────────────────────────────────────────────
   getSetting: (key) => ipcRenderer.invoke('settings:get', key),
   setSetting: (key, value) => ipcRenderer.invoke('settings:set', key, value),
+
+  // ── Hotkeys ──────────────────────────────────────────────
+  getHotkeys: () => ipcRenderer.invoke('hotkeys:get'),
+  setHotkey: (key, accelerator) => ipcRenderer.invoke('hotkeys:set', key, accelerator),
+  resetHotkeys: (key) => ipcRenderer.invoke('hotkeys:reset', key),
 
   // ── CLI / Models ─────────────────────────────────────────
   resolveCliPath: () => ipcRenderer.invoke('cli:resolve-path'),
