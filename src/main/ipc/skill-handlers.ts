@@ -1,13 +1,14 @@
 import { ipcMain, shell } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
-import { isInitialized, listSkills, getSkill, upsertSkill, removeSkill, createSpace, assignSpaceFolder } from '../database';
+import { isInitialized, listSkills, getSkill, upsertSkill, removeSkill, createSpace, assignSpaceFolder, updateSkillSchedule } from '../database';
 import { getConfigValue } from '../config';
 import { parseFrontmatter, serializeFrontmatter } from '../frontmatter';
 import { getSkillsDir, syncAllSkills } from '../skill-watcher';
 import { pickEmoji } from '../emoji-picker';
 import { createSpaceFolder, scheduleAutoCommit } from '../workspace';
-import type { SkillFrontmatter, Skill } from '../../shared/types';
+import { computeNextRunAt } from '../services/scheduler';
+import type { SkillFrontmatter, Skill, SkillScheduleFrequency } from '../../shared/types';
 
 const SKILL_FILE = 'SKILL.md';
 
@@ -86,6 +87,11 @@ export function registerSkillHandlers(): void {
       emoji: pickEmoji(name, ''),
       folder: path.join('.agents/skills', slug),
       filePath,
+      schedule: null,
+      schedule_time: null,
+      schedule_day: null,
+      next_run_at: null,
+      last_run_at: null,
       created_at: now,
       updated_at: now,
     };
@@ -219,5 +225,60 @@ export function registerSkillHandlers(): void {
     launchSession(space.id, workspace);
 
     return space;
+  });
+
+  ipcMain.handle('skill:set-schedule', (_event, skillId: string, frequency: SkillScheduleFrequency, time: string, day: number | null) => {
+    const workspace = getConfigValue('workspace');
+    if (!workspace || !isInitialized()) return { error: 'no_workspace' };
+
+    const skill = getSkill(skillId);
+    if (!skill) return { error: 'not_found' };
+
+    const nextRunAt = computeNextRunAt(frequency, time, day);
+    updateSkillSchedule(skillId, frequency, time, day, nextRunAt);
+
+    // Also update the SKILL.md frontmatter so schedule is persisted to disk
+    try {
+      const content = fs.readFileSync(skill.filePath, 'utf-8');
+      const { frontmatter, body } = parseFrontmatter<SkillFrontmatter>(content);
+      frontmatter.schedule = frequency;
+      frontmatter.schedule_time = time;
+      if (day !== null) {
+        frontmatter.schedule_day = day;
+      } else {
+        delete frontmatter.schedule_day;
+      }
+      const updated = serializeFrontmatter(frontmatter, body);
+      fs.writeFileSync(skill.filePath, updated, 'utf-8');
+    } catch {
+      // DB is updated even if frontmatter write fails
+    }
+
+    return getSkill(skillId)!;
+  });
+
+  ipcMain.handle('skill:clear-schedule', (_event, skillId: string) => {
+    const workspace = getConfigValue('workspace');
+    if (!workspace || !isInitialized()) return { error: 'no_workspace' };
+
+    const skill = getSkill(skillId);
+    if (!skill) return { error: 'not_found' };
+
+    updateSkillSchedule(skillId, null, null, null, null);
+
+    // Also remove schedule from SKILL.md frontmatter
+    try {
+      const content = fs.readFileSync(skill.filePath, 'utf-8');
+      const { frontmatter, body } = parseFrontmatter<SkillFrontmatter>(content);
+      delete frontmatter.schedule;
+      delete frontmatter.schedule_time;
+      delete frontmatter.schedule_day;
+      const updated = serializeFrontmatter(frontmatter, body);
+      fs.writeFileSync(skill.filePath, updated, 'utf-8');
+    } catch {
+      // DB is updated even if frontmatter write fails
+    }
+
+    return { success: true };
   });
 }

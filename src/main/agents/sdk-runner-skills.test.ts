@@ -38,6 +38,11 @@ function makeSkill(id: string, name: string) {
     emoji: '🔧',
     folder: id,
     filePath: `/workspace/.agents/skills/${id}/SKILL.md`,
+    schedule: null,
+    schedule_time: null,
+    schedule_day: null,
+    next_run_at: null,
+    last_run_at: null,
     created_at: '',
     updated_at: '',
   };

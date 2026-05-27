@@ -41,6 +41,7 @@ const sampleIntent = {
   completed_at: '2024-01-15T12:00:00Z',
   folder: null,
   session_id: null,
+  source_skill_id: null,
   attachments: [],
   status: 'done' as const,
   created_at: '2024-01-01',

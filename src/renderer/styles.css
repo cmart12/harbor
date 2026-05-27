@@ -2470,6 +2470,147 @@ body.dark .workers-badge {
   justify-content: center;
 }
 
+/* ── Schedule badge ──────────────────────────────────── */
+
+.schedule-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  color: #2563eb;
+  background: rgba(37, 99, 235, 0.08);
+  padding: 1px 6px;
+  border-radius: 8px;
+  margin-left: 6px;
+  white-space: nowrap;
+}
+
+/* ── Schedule picker overlay ─────────────────────────── */
+
+.schedule-picker-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.schedule-picker {
+  background: var(--bg, #fff);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  width: 280px;
+  overflow: hidden;
+}
+
+.schedule-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  font-weight: 600;
+  font-size: 13px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.schedule-picker-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  color: inherit;
+  opacity: 0.5;
+}
+
+.schedule-picker-close:hover {
+  opacity: 1;
+}
+
+.schedule-picker-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.schedule-picker-body label {
+  font-size: 11px;
+  font-weight: 500;
+  opacity: 0.6;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.schedule-picker-body select,
+.schedule-picker-body input[type="time"] {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 6px;
+  font-size: 13px;
+  background: var(--input-bg, #f8f8f8);
+  color: inherit;
+}
+
+.schedule-next-run {
+  font-size: 11px;
+  opacity: 0.5;
+  margin-top: 4px;
+}
+
+.schedule-picker-footer {
+  padding: 12px 16px;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.schedule-save-btn {
+  background: #2563eb;
+  color: white;
+  border: none;
+  padding: 6px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.schedule-save-btn:hover {
+  background: #1d4ed8;
+}
+
+.schedule-clear-btn {
+  background: none;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  color: #dc2626;
+}
+
+.schedule-clear-btn:hover {
+  background: rgba(220, 38, 38, 0.05);
+}
+
+/* ── Source skill badge on spaces ─────────────────────── */
+
+.source-skill-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 10px;
+  color: #7c3aed;
+  background: rgba(124, 58, 237, 0.08);
+  padding: 1px 6px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+
 /* ── Session badge ────────────────────────────────────── */
 
 .session-badge {

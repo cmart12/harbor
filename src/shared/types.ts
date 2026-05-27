@@ -109,6 +109,8 @@ export interface SkillFrontmatter {
   [key: string]: unknown;
 }
 
+export type SkillScheduleFrequency = 'daily' | 'weekdays' | 'weekly' | 'biweekly' | 'monthly';
+
 export interface Skill {
   /** Folder name inside .agents/skills/ (e.g. "pdf-processing") — used as primary key */
   id: string;
@@ -120,6 +122,16 @@ export interface Skill {
   folder: string;
   /** Absolute path to the SKILL.md file */
   filePath: string;
+  /** Schedule frequency (null = not scheduled) */
+  schedule: SkillScheduleFrequency | null;
+  /** Time of day to run in HH:MM format (local time, defaults to "09:00") */
+  schedule_time: string | null;
+  /** Day of week for weekly/biweekly (0=Sun, 1=Mon, ..., 6=Sat) */
+  schedule_day: number | null;
+  /** Next scheduled run time in UTC ISO 8601 */
+  next_run_at: string | null;
+  /** Last time this skill was auto-triggered in UTC ISO 8601 */
+  last_run_at: string | null;
   created_at: string;
   updated_at: string;
 }

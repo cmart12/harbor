@@ -8,7 +8,7 @@ import type {
   SandboxPolicy,
 } from '../shared/ipc-contract';
 import type { ChatEvent } from '../shared/chat-types';
-import type { AgentAnchor, RecurrenceResult, RecallMatch, Skill, SkillContent, CanvasTarget, UpdateState } from '../shared/types';
+import type { AgentAnchor, RecurrenceResult, RecallMatch, Skill, SkillContent, SkillScheduleFrequency, CanvasTarget, UpdateState } from '../shared/types';
 
 const { contextBridge, ipcRenderer } = require('electron');
 
@@ -208,6 +208,8 @@ export interface WhimAPI {
   openSkillFolder(skillId: string): Promise<IpcCommandResult<'skill:open-folder'>>;
   createSpaceFromSkill(skillId: string): Promise<IpcCommandResult<'skill:create-space'>>;
   launchSkill(skillId: string): Promise<IpcCommandResult<'skill:launch'>>;
+  setSkillSchedule(skillId: string, frequency: SkillScheduleFrequency, time: string, day: number | null): Promise<IpcCommandResult<'skill:set-schedule'>>;
+  clearSkillSchedule(skillId: string): Promise<IpcCommandResult<'skill:clear-schedule'>>;
   onSkillsChanged(callback: () => void): void;
 
   // ── Updates ──────────────────────────────────────────────
@@ -516,6 +518,8 @@ const api: WhimAPI = {
   openSkillFolder: (skillId) => ipcRenderer.invoke('skill:open-folder', skillId),
   createSpaceFromSkill: (skillId) => ipcRenderer.invoke('skill:create-space', skillId),
   launchSkill: (skillId) => ipcRenderer.invoke('skill:launch', skillId),
+  setSkillSchedule: (skillId, frequency, time, day) => ipcRenderer.invoke('skill:set-schedule', skillId, frequency, time, day),
+  clearSkillSchedule: (skillId) => ipcRenderer.invoke('skill:clear-schedule', skillId),
   onSkillsChanged: (callback) => {
     ipcRenderer.on('skills:changed', callback);
   },

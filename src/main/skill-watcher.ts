@@ -3,7 +3,7 @@ import * as path from 'path';
 import { parseFrontmatter } from './frontmatter';
 import { upsertSkill, removeSkill, listSkills } from './database';
 import { pickEmoji } from './emoji-picker';
-import type { Skill, SkillFrontmatter } from '../shared/types';
+import type { Skill, SkillFrontmatter, SkillScheduleFrequency } from '../shared/types';
 import { BrowserWindow } from 'electron';
 
 const SKILLS_DIR = '.agents/skills';
@@ -56,6 +56,18 @@ function parseSkillFolder(wsRoot: string, folderName: string): Skill | null {
     ? frontmatter.emoji
     : pickEmoji(name, description);
 
+  // Parse schedule fields from frontmatter
+  const validFrequencies: SkillScheduleFrequency[] = ['daily', 'weekdays', 'weekly', 'biweekly', 'monthly'];
+  const schedule = typeof frontmatter.schedule === 'string' && validFrequencies.includes(frontmatter.schedule as SkillScheduleFrequency)
+    ? frontmatter.schedule as SkillScheduleFrequency
+    : null;
+  const schedule_time = typeof frontmatter.schedule_time === 'string' && /^\d{2}:\d{2}$/.test(frontmatter.schedule_time)
+    ? frontmatter.schedule_time
+    : null;
+  const schedule_day = typeof frontmatter.schedule_day === 'number' && frontmatter.schedule_day >= 0 && frontmatter.schedule_day <= 6
+    ? frontmatter.schedule_day
+    : null;
+
   return {
     id: folderName,
     name,
@@ -63,6 +75,11 @@ function parseSkillFolder(wsRoot: string, folderName: string): Skill | null {
     emoji,
     folder: path.join(SKILLS_DIR, folderName),
     filePath,
+    schedule,
+    schedule_time,
+    schedule_day,
+    next_run_at: null,
+    last_run_at: null,
     created_at: stat.birthtime.toISOString(),
     updated_at: stat.mtime.toISOString(),
   };

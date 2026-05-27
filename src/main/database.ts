@@ -113,6 +113,11 @@ export function initDatabase(dbPath: string, eventLogPath: string): void {
       emoji TEXT NOT NULL DEFAULT '🧩',
       folder_path TEXT NOT NULL,
       file_path TEXT NOT NULL,
+      schedule TEXT,
+      schedule_time TEXT,
+      schedule_day INTEGER,
+      next_run_at TEXT,
+      last_run_at TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     )
@@ -504,16 +509,23 @@ export function deleteAgentSession(id: string): void {
 
 export function upsertSkill(skill: Skill): void {
   db.prepare(
-    `INSERT INTO skills (id, name, description, emoji, folder_path, file_path, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO skills (id, name, description, emoji, folder_path, file_path, schedule, schedule_time, schedule_day, next_run_at, last_run_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        name = excluded.name,
        description = excluded.description,
        emoji = excluded.emoji,
        folder_path = excluded.folder_path,
        file_path = excluded.file_path,
+       schedule = COALESCE(excluded.schedule, skills.schedule),
+       schedule_time = COALESCE(excluded.schedule_time, skills.schedule_time),
+       schedule_day = COALESCE(excluded.schedule_day, skills.schedule_day),
+       next_run_at = COALESCE(excluded.next_run_at, skills.next_run_at),
+       last_run_at = COALESCE(excluded.last_run_at, skills.last_run_at),
        updated_at = excluded.updated_at`
-  ).run(skill.id, skill.name, skill.description, skill.emoji, skill.folder, skill.filePath, skill.created_at, skill.updated_at);
+  ).run(skill.id, skill.name, skill.description, skill.emoji, skill.folder, skill.filePath,
+        skill.schedule, skill.schedule_time, skill.schedule_day, skill.next_run_at, skill.last_run_at,
+        skill.created_at, skill.updated_at);
 }
 
 export function removeSkill(id: string): void {
@@ -522,9 +534,9 @@ export function removeSkill(id: string): void {
 
 export function listSkills(): Skill[] {
   return (db.prepare(
-    `SELECT id, name, description, emoji, folder_path, file_path, created_at, updated_at
+    `SELECT id, name, description, emoji, folder_path, file_path, schedule, schedule_time, schedule_day, next_run_at, last_run_at, created_at, updated_at
      FROM skills ORDER BY name ASC`
-  ).all() as Array<{ id: string; name: string; description: string; emoji: string; folder_path: string; file_path: string; created_at: string; updated_at: string }>)
+  ).all() as Array<{ id: string; name: string; description: string; emoji: string; folder_path: string; file_path: string; schedule: string | null; schedule_time: string | null; schedule_day: number | null; next_run_at: string | null; last_run_at: string | null; created_at: string; updated_at: string }>)
     .map(row => ({
       id: row.id,
       name: row.name,
@@ -532,6 +544,11 @@ export function listSkills(): Skill[] {
       emoji: row.emoji,
       folder: row.folder_path,
       filePath: row.file_path,
+      schedule: row.schedule as Skill['schedule'],
+      schedule_time: row.schedule_time,
+      schedule_day: row.schedule_day,
+      next_run_at: row.next_run_at,
+      last_run_at: row.last_run_at,
       created_at: row.created_at,
       updated_at: row.updated_at,
     }));
@@ -539,9 +556,9 @@ export function listSkills(): Skill[] {
 
 export function getSkill(id: string): Skill | null {
   const row = db.prepare(
-    `SELECT id, name, description, emoji, folder_path, file_path, created_at, updated_at
+    `SELECT id, name, description, emoji, folder_path, file_path, schedule, schedule_time, schedule_day, next_run_at, last_run_at, created_at, updated_at
      FROM skills WHERE id = ?`
-  ).get(id) as { id: string; name: string; description: string; emoji: string; folder_path: string; file_path: string; created_at: string; updated_at: string } | undefined;
+  ).get(id) as { id: string; name: string; description: string; emoji: string; folder_path: string; file_path: string; schedule: string | null; schedule_time: string | null; schedule_day: number | null; next_run_at: string | null; last_run_at: string | null; created_at: string; updated_at: string } | undefined;
   if (!row) return null;
   return {
     id: row.id,
@@ -550,9 +567,59 @@ export function getSkill(id: string): Skill | null {
     emoji: row.emoji,
     folder: row.folder_path,
     filePath: row.file_path,
+    schedule: row.schedule as Skill['schedule'],
+    schedule_time: row.schedule_time,
+    schedule_day: row.schedule_day,
+    next_run_at: row.next_run_at,
+    last_run_at: row.last_run_at,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
+}
+
+/** Return skills whose next_run_at is at or before the given UTC timestamp. */
+export function getDueSkills(nowUtc: string): Skill[] {
+  return (db.prepare(
+    `SELECT id, name, description, emoji, folder_path, file_path, schedule, schedule_time, schedule_day, next_run_at, last_run_at, created_at, updated_at
+     FROM skills
+     WHERE schedule IS NOT NULL AND next_run_at IS NOT NULL AND next_run_at <= ?
+     ORDER BY next_run_at ASC`
+  ).all(nowUtc) as Array<{ id: string; name: string; description: string; emoji: string; folder_path: string; file_path: string; schedule: string | null; schedule_time: string | null; schedule_day: number | null; next_run_at: string | null; last_run_at: string | null; created_at: string; updated_at: string }>)
+    .map(row => ({
+      id: row.id,
+      name: row.name,
+      description: row.description,
+      emoji: row.emoji,
+      folder: row.folder_path,
+      filePath: row.file_path,
+      schedule: row.schedule as Skill['schedule'],
+      schedule_time: row.schedule_time,
+      schedule_day: row.schedule_day,
+      next_run_at: row.next_run_at,
+      last_run_at: row.last_run_at,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    }));
+}
+
+/** Update schedule fields for a skill. */
+export function updateSkillSchedule(
+  id: string,
+  schedule: string | null,
+  scheduleTime: string | null,
+  scheduleDay: number | null,
+  nextRunAt: string | null
+): void {
+  db.prepare(
+    `UPDATE skills SET schedule = ?, schedule_time = ?, schedule_day = ?, next_run_at = ? WHERE id = ?`
+  ).run(schedule, scheduleTime, scheduleDay, nextRunAt, id);
+}
+
+/** Mark a skill as having just run. */
+export function markSkillRun(id: string, lastRunAt: string, nextRunAt: string | null): void {
+  db.prepare(
+    `UPDATE skills SET last_run_at = ?, next_run_at = ? WHERE id = ?`
+  ).run(lastRunAt, nextRunAt, id);
 }
 
 // ── Subagent Records ────────────────────────────────────────

@@ -52,29 +52,46 @@ export async function setAppRemote(enabled: boolean): Promise<{ enabled: boolean
     // This agent gets the whim management tools (list spaces, list workers, approve, yolo, etc.)
     // so the remote user has a dedicated "supervisor" session.
     const workspace = getConfigValue('workspace') || process.cwd();
-    {
-      console.log(`[agent-service] Launching workspace management agent in: ${workspace}`);
-      const result = await launchQuickAgent(
-        'You are the remote management assistant for this workspace. Help the user manage their spaces and workers. Start by listing the current spaces and any active workers.',
-        workspace,
-      );
-      console.log(`[agent-service] launchQuickAgent result:`, JSON.stringify('agentId' in result ? { agentId: result.agentId } : result));
-      if ('agentId' in result) {
-        try {
-          const remoteResult = await enableRemoteControl(result.agentId);
-          console.log(`[agent-service] enableRemoteControl result:`, JSON.stringify(remoteResult));
-          if ('url' in remoteResult && remoteResult.url) {
-            agents.push({ agentId: result.agentId, url: remoteResult.url });
-          } else if ('error' in remoteResult) {
-            console.error(`[agent-service] enableRemoteControl error:`, remoteResult.error);
-            agents.push({ agentId: result.agentId });
-          } else {
-            agents.push({ agentId: result.agentId });
-          }
-        } catch (err: any) {
-          console.error(`[agent-service] enableRemoteControl threw:`, err);
-          agents.push({ agentId: result.agentId });
+    console.log(`[agent-service] Launching workspace management agent in: ${workspace}`);
+    const launchResult = await launchQuickAgent(
+      'You are the remote management assistant for this workspace. Help the user manage their spaces and workers. Start by listing the current spaces and any active workers.',
+      workspace,
+    );
+    if ('error' in launchResult) {
+      console.error(`[agent-service] launchQuickAgent FAILED:`, launchResult.error);
+    } else {
+      console.log(`[agent-service] launchQuickAgent succeeded: agentId=${launchResult.agentId}`);
+      // Notify the renderer that a new agent was created so the Workers tab refreshes
+      const record = registry.get(launchResult.agentId);
+      if (record) {
+        notifier.notifyRenderer('agent:status-changed', {
+          agentId: launchResult.agentId,
+          status: record.status,
+          summary: record.summary,
+          spaceId: record.spaceId,
+        });
+      }
+      // The agent is now registered and will appear in the Workers tab.
+      // Enable remote with a timeout — if the RPC hangs, we still return
+      // so the renderer can show the agent and wait for the async URL event.
+      agents.push({ agentId: launchResult.agentId });
+      try {
+        const remoteResult = await Promise.race([
+          enableRemoteControl(launchResult.agentId),
+          new Promise<{ error: string }>(resolve =>
+            setTimeout(() => resolve({ error: 'Timed out waiting for remote URL' }), 10_000)
+          ),
+        ]);
+        console.log(`[agent-service] enableRemoteControl result:`, JSON.stringify(remoteResult));
+        if ('url' in remoteResult && remoteResult.url) {
+          agents[agents.length - 1].url = remoteResult.url;
+        } else if ('error' in remoteResult) {
+          console.error(`[agent-service] enableRemoteControl error:`, remoteResult.error);
+        } else {
+          console.warn(`[agent-service] enableRemoteControl returned no URL`);
         }
+      } catch (err: any) {
+        console.error(`[agent-service] enableRemoteControl threw:`, err);
       }
     }
 

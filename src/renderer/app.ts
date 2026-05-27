@@ -227,6 +227,8 @@ interface WhimAPI {
   openSkillFolder(skillId: string): Promise<void>;
   createSpaceFromSkill(skillId: string): Promise<any>;
   launchSkill(skillId: string): Promise<any>;
+  setSkillSchedule(skillId: string, frequency: string, time: string, day: number | null): Promise<any>;
+  clearSkillSchedule(skillId: string): Promise<{ success: boolean } | { error: string }>;
   onSkillsChanged(callback: () => void): void;
   // ── Platform ─────────────────────────────────────────────
   getPlatform(): string;
@@ -252,6 +254,7 @@ interface Space {
   completed_at: string | null;
   folder: string | null;
   session_id: string | null;
+  source_skill_id: string | null;
   attachments: Attachment[];
   status: 'captured' | 'in_progress' | 'done';
   created_at: string;
@@ -886,16 +889,23 @@ remoteBtn.addEventListener('click', async () => {
   } else {
     // Show overlay immediately with loading state
     showAppRemoteOverlay();
-    const result = await whimAPI.setAppRemote(true);
-    if ('agents' in result) {
-      const urlAgent = result.agents.find((a: { url?: string }) => a.url);
-      if (urlAgent?.url) {
-        appRemoteUrl = urlAgent.url;
-        // Refresh overlay with the QR code
-        showAppRemoteOverlay();
+    try {
+      const result = await whimAPI.setAppRemote(true);
+      console.log('[remote] setAppRemote result:', JSON.stringify(result));
+      if ('agents' in result) {
+        const urlAgent = result.agents.find((a: { url?: string }) => a.url);
+        if (urlAgent?.url) {
+          appRemoteUrl = urlAgent.url;
+          // Refresh overlay with the QR code
+          showAppRemoteOverlay();
+        }
+        // If still no URL, the onAppRemoteChanged or onAgentRemoteChanged
+        // events will update appRemoteUrl and we refresh then
+      } else if ('error' in result) {
+        console.error('[remote] setAppRemote error:', result.error);
       }
-      // If still no URL, the onAppRemoteChanged or onAgentRemoteChanged
-      // events will update appRemoteUrl and we refresh then
+    } catch (err) {
+      console.error('[remote] setAppRemote threw:', err);
     }
   }
 });
@@ -2900,6 +2910,9 @@ function render(): void {
       agentsHtml = `<div class="space-agents">${agentCards}</div>`;
     }
 
+    // Source skill lookup for scheduled spaces
+    const sourceSkill = space.source_skill_id ? cachedSkills.find(s => s.id === space.source_skill_id) : null;
+
     return `
     <div class="space-item ${space.status === 'done' ? 'done' : ''} ${isProcessing ? 'processing' : ''} ${isFocused ? 'focused' : ''} ${hasRunningAgents ? 'has-running-agents' : ''} ${hasWaitingAgents ? 'has-waiting-agents' : ''}" data-id="${space.id}" onclick="openCanvas('${space.id}', true)">
       <div class="space-check ${space.status === 'done' ? 'checked' : ''}"
@@ -2907,6 +2920,7 @@ function render(): void {
       <div class="space-content">
         <div class="space-desc ${hasRunningAgents ? 'agent-active' : ''}">${escapeHtml(space.description)}</div>
         <div class="space-meta">
+          ${sourceSkill ? `<span class="source-skill-badge" title="From skill: ${escapeHtml(sourceSkill.name)}">${sourceSkill.emoji || '🧩'} ${escapeHtml(sourceSkill.name)}</span>` : ''}
           ${space.client ? `<span>👤 ${escapeHtml(space.client)}</span>` : ''}
           ${hasDue ? `<span class="due-badge ${dueInfo.overdue ? 'overdue' : ''}">📅 ${escapeHtml(dueInfo.text)}</span>` : ''}
           ${isRecurring ? '<span class="recurring-badge">↻</span>' : ''}
@@ -3354,8 +3368,14 @@ interface SkillData {
   id: string;
   name: string;
   description: string;
+  emoji: string;
   folder: string;
   filePath: string;
+  schedule: string | null;
+  schedule_time: string | null;
+  schedule_day: number | null;
+  next_run_at: string | null;
+  last_run_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -3398,20 +3418,26 @@ async function renderSkillsList(filterQuery?: string): Promise<void> {
     return;
   }
 
-  listEl.innerHTML = skills.map((skill, i) => `
+  listEl.innerHTML = skills.map((skill, i) => {
+    const scheduleBadge = skill.schedule
+      ? `<span class="schedule-badge" title="Scheduled: ${formatScheduleLabel(skill.schedule, skill.schedule_time, skill.schedule_day)}${skill.next_run_at ? '\nNext: ' + formatRelativeDate(skill.next_run_at) : ''}">🔄 ${formatScheduleLabel(skill.schedule, skill.schedule_time, skill.schedule_day)}</span>`
+      : '';
+    return `
     <div class="space-item skill-card" data-skill-id="${skill.id}" tabindex="0" data-skill-index="${i}">
       <div class="skill-icon">${skill.emoji || '🧩'}</div>
       <div class="space-content">
         <div class="space-desc">${escapeHtml(skill.name)}</div>
         <div class="space-meta">
           <span>${escapeHtml(skill.description.length > 100 ? skill.description.slice(0, 97) + '...' : skill.description)}</span>
+          ${scheduleBadge}
         </div>
       </div>
+      <button class="space-launch" onclick="event.stopPropagation(); openSchedulePicker('${skill.id}')" title="${skill.schedule ? 'Edit schedule' : 'Set schedule'}">🕐</button>
       <button class="space-launch" onclick="event.stopPropagation(); createSpaceFromSkill('${skill.id}')" title="Launch as new space">▶</button>
       <button class="space-launch" onclick="event.stopPropagation(); openSkillFolder('${skill.id}')" title="Open folder">📁</button>
       <button class="space-delete" onclick="event.stopPropagation(); deleteSkill('${skill.id}')">✕</button>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
 
   // Click + keyboard handler for skill cards
   listEl.querySelectorAll('.skill-card[data-skill-id]').forEach(el => {
@@ -3596,6 +3622,142 @@ whimAPI.onSkillsChanged(() => {
 (window as any).createSpaceFromSkill = createSpaceFromSkill;
 (window as any).launchSkillAsSpace = launchSkillAsSpace;
 (window as any).deleteSkill = deleteSkill;
+(window as any).openSchedulePicker = openSchedulePicker;
+
+// ── Skill Schedule Helpers ──────────────────────────────
+
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function formatScheduleLabel(frequency: string, time: string | null, day: number | null): string {
+  const timePart = time || '09:00';
+  switch (frequency) {
+    case 'daily': return `Daily at ${timePart}`;
+    case 'weekdays': return `Weekdays at ${timePart}`;
+    case 'weekly': return `${DAY_NAMES[day ?? 1]}s at ${timePart}`;
+    case 'biweekly': return `Every 2 wks, ${DAY_NAMES[day ?? 1]} at ${timePart}`;
+    case 'monthly': return `Monthly at ${timePart}`;
+    default: return frequency;
+  }
+}
+
+function formatRelativeDate(isoDate: string): string {
+  const date = new Date(isoDate);
+  const now = new Date();
+  const diffMs = date.getTime() - now.getTime();
+  const diffHours = Math.round(diffMs / (1000 * 60 * 60));
+  if (diffHours < 1) return 'soon';
+  if (diffHours < 24) return `in ${diffHours}h`;
+  const diffDays = Math.round(diffHours / 24);
+  if (diffDays === 1) return 'tomorrow';
+  if (diffDays < 7) return `in ${diffDays}d`;
+  return date.toLocaleDateString();
+}
+
+let activeSchedulePickerSkillId: string | null = null;
+
+function openSchedulePicker(skillId: string): void {
+  // Close any existing picker
+  closeSchedulePicker();
+  activeSchedulePickerSkillId = skillId;
+
+  const skill = cachedSkills.find(s => s.id === skillId);
+  if (!skill) return;
+
+  const overlay = document.createElement('div');
+  overlay.id = 'schedule-picker-overlay';
+  overlay.className = 'schedule-picker-overlay';
+  overlay.innerHTML = `
+    <div class="schedule-picker" onclick="event.stopPropagation()">
+      <div class="schedule-picker-header">
+        <span>Schedule: ${escapeHtml(skill.name)}</span>
+        <button class="schedule-picker-close" onclick="closeSchedulePicker()">✕</button>
+      </div>
+      <div class="schedule-picker-body">
+        <label>Frequency</label>
+        <select id="schedule-frequency">
+          <option value="">Off</option>
+          <option value="daily" ${skill.schedule === 'daily' ? 'selected' : ''}>Daily</option>
+          <option value="weekdays" ${skill.schedule === 'weekdays' ? 'selected' : ''}>Weekdays</option>
+          <option value="weekly" ${skill.schedule === 'weekly' ? 'selected' : ''}>Weekly</option>
+          <option value="biweekly" ${skill.schedule === 'biweekly' ? 'selected' : ''}>Every 2 weeks</option>
+          <option value="monthly" ${skill.schedule === 'monthly' ? 'selected' : ''}>Monthly</option>
+        </select>
+
+        <label>Time</label>
+        <input type="time" id="schedule-time" value="${skill.schedule_time || '09:00'}" />
+
+        <div id="schedule-day-row" style="${skill.schedule === 'weekly' || skill.schedule === 'biweekly' ? '' : 'display:none'}">
+          <label>Day</label>
+          <select id="schedule-day">
+            ${DAY_NAMES.map((name, i) => `<option value="${i}" ${(skill.schedule_day ?? 1) === i ? 'selected' : ''}>${name}</option>`).join('')}
+          </select>
+        </div>
+
+        ${skill.next_run_at ? `<div class="schedule-next-run">Next run: ${formatRelativeDate(skill.next_run_at)}</div>` : ''}
+      </div>
+      <div class="schedule-picker-footer">
+        ${skill.schedule ? '<button class="schedule-clear-btn" onclick="clearSchedule()">Remove schedule</button>' : ''}
+        <button class="schedule-save-btn" onclick="saveSchedule()">Save</button>
+      </div>
+    </div>
+  `;
+
+  overlay.addEventListener('click', closeSchedulePicker);
+
+  document.body.appendChild(overlay);
+
+  // Toggle day row visibility when frequency changes
+  const freqSelect = document.getElementById('schedule-frequency') as HTMLSelectElement;
+  freqSelect.addEventListener('change', () => {
+    const dayRow = document.getElementById('schedule-day-row') as HTMLDivElement;
+    dayRow.style.display = (freqSelect.value === 'weekly' || freqSelect.value === 'biweekly') ? '' : 'none';
+  });
+}
+
+function closeSchedulePicker(): void {
+  const existing = document.getElementById('schedule-picker-overlay');
+  if (existing) existing.remove();
+  activeSchedulePickerSkillId = null;
+}
+
+async function saveSchedule(): Promise<void> {
+  if (!activeSchedulePickerSkillId) return;
+
+  const freqSelect = document.getElementById('schedule-frequency') as HTMLSelectElement;
+  const timeInput = document.getElementById('schedule-time') as HTMLInputElement;
+  const daySelect = document.getElementById('schedule-day') as HTMLSelectElement;
+
+  const frequency = freqSelect.value;
+  if (!frequency) {
+    await clearSchedule();
+    return;
+  }
+
+  const time = timeInput.value || '09:00';
+  const day = (frequency === 'weekly' || frequency === 'biweekly') ? parseInt(daySelect.value, 10) : null;
+
+  await whimAPI.setSkillSchedule(activeSchedulePickerSkillId, frequency, time, day);
+  closeSchedulePicker();
+  showStatus('✓ Schedule saved');
+  setTimeout(hideStatus, 2000);
+  cachedSkills = await whimAPI.listSkills();
+  if (currentFilter === 'skills') renderSkillsList();
+}
+
+async function clearSchedule(): Promise<void> {
+  if (!activeSchedulePickerSkillId) return;
+
+  await whimAPI.clearSkillSchedule(activeSchedulePickerSkillId);
+  closeSchedulePicker();
+  showStatus('✓ Schedule removed');
+  setTimeout(hideStatus, 2000);
+  cachedSkills = await whimAPI.listSkills();
+  if (currentFilter === 'skills') renderSkillsList();
+}
+
+(window as any).closeSchedulePicker = closeSchedulePicker;
+(window as any).saveSchedule = saveSchedule;
+(window as any).clearSchedule = clearSchedule;
 
 async function renderAgentsList(filterQuery?: string): Promise<void> {
   const gen = ++renderGeneration;
