@@ -48,49 +48,43 @@ export async function setAppRemote(enabled: boolean): Promise<{ enabled: boolean
   const agents: Array<{ agentId: string; url?: string }> = [];
 
   if (enabled) {
-    // Check if there are any running agents to attach remote to
-    let hasRunning = false;
-    for (const record of registry.values()) {
-      if (record.status === 'running' || record.status === 'waiting-approval') {
-        hasRunning = true;
-        break;
-      }
-    }
-    console.log(`[agent-service] setAppRemote: hasRunning=${hasRunning}`);
-
-    // Auto-launch a workspace-level agent if none are running
-    if (!hasRunning) {
-      const workspace = getConfigValue('workspace');
-      if (workspace) {
-        console.log(`[agent-service] Auto-launching workspace agent in: ${workspace}`);
-        const result = await launchQuickAgent(
-          'You are the remote management assistant for this workspace. Help the user manage their spaces and workers. Start by listing the current spaces and any active workers.',
-          workspace,
-        );
-        console.log(`[agent-service] launchQuickAgent result:`, JSON.stringify('agentId' in result ? { agentId: result.agentId } : result));
-        if ('agentId' in result) {
-          // Explicitly enable remote on the newly launched agent
-          try {
-            const remoteResult = await enableRemoteControl(result.agentId);
-            if ('url' in remoteResult) {
-              agents.push({ agentId: result.agentId, url: remoteResult.url });
-            } else {
-              agents.push({ agentId: result.agentId });
-            }
-          } catch {
+    // Always launch a workspace-level management agent for remote control.
+    // This agent gets the whim management tools (list spaces, list workers, approve, yolo, etc.)
+    // so the remote user has a dedicated "supervisor" session.
+    const workspace = getConfigValue('workspace');
+    if (workspace) {
+      console.log(`[agent-service] Launching workspace management agent in: ${workspace}`);
+      const result = await launchQuickAgent(
+        'You are the remote management assistant for this workspace. Help the user manage their spaces and workers. Start by listing the current spaces and any active workers.',
+        workspace,
+      );
+      console.log(`[agent-service] launchQuickAgent result:`, JSON.stringify('agentId' in result ? { agentId: result.agentId } : result));
+      if ('agentId' in result) {
+        try {
+          const remoteResult = await enableRemoteControl(result.agentId);
+          console.log(`[agent-service] enableRemoteControl result:`, JSON.stringify(remoteResult));
+          if ('url' in remoteResult && remoteResult.url) {
+            agents.push({ agentId: result.agentId, url: remoteResult.url });
+          } else if ('error' in remoteResult) {
+            console.error(`[agent-service] enableRemoteControl error:`, remoteResult.error);
+            agents.push({ agentId: result.agentId });
+          } else {
             agents.push({ agentId: result.agentId });
           }
+        } catch (err: any) {
+          console.error(`[agent-service] enableRemoteControl threw:`, err);
+          agents.push({ agentId: result.agentId });
         }
       }
     }
 
-    // Enable remote on any other running agents
+    // Also enable remote on any other running agents
     for (const record of registry.values()) {
       if (record.status !== 'running' && record.status !== 'waiting-approval') continue;
       if (agents.some(a => a.agentId === record.agentId)) continue; // already handled
       try {
         const result = await enableRemoteControl(record.agentId);
-        if ('url' in result) {
+        if ('url' in result && result.url) {
           agents.push({ agentId: record.agentId, url: result.url });
         }
       } catch (err: any) {
