@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import * as os from 'os';
+import * as path from 'path';
 import { InteractionBroker } from './interaction-broker';
 import type { AgentNotifier } from './agent-notifier';
 import type { AgentPersistence } from './agent-persistence';
@@ -543,16 +545,22 @@ describe('InteractionBroker', () => {
   });
 
   describe('createPathAwareSandboxPermissionHandler', () => {
+    // Build platform-appropriate paths so isPathInside works on any host OS
+    // (the path-policy engine uses the host's path/realpath semantics).
+    const workspaceRoot = path.join(os.tmpdir(), 'whim-broker-test-workspace');
+    const spaceFolder = path.join(workspaceRoot, 'my-space');
+    const siblingFolder = path.join(workspaceRoot, 'sibling');
+
     function makeSandboxedRecord(): AgentRecord {
       const record = makeRecord();
       record.sandbox = {
-        policy: resolvePathPolicy('C:\\workspace\\my-space', {
+        policy: resolvePathPolicy(spaceFolder, {
           scopeToSpaceFolder: true,
           extraReadwritePaths: [],
           extraReadonlyPaths: [],
           extraDeniedPaths: [],
         }),
-        configs: { onDir: 'C:\\sb-on', offDir: 'C:\\sb-off' },
+        configs: { onDir: path.join(os.tmpdir(), 'sb-on'), offDir: path.join(os.tmpdir(), 'sb-off') },
         state: 'on',
         allowMcpServers: false,
         allowWebFetch: false,
@@ -578,7 +586,7 @@ describe('InteractionBroker', () => {
       const r = await handler({
         kind: 'read',
         toolCallId: 'tc',
-        path: 'C:\\workspace\\my-space\\canvas.md',
+        path: path.join(spaceFolder, 'canvas.md'),
       } as any, { sessionId: 'session-1' });
       expect(r).toEqual({ kind: 'approve-once' });
     });
@@ -589,7 +597,7 @@ describe('InteractionBroker', () => {
       const promise = handler({
         kind: 'read',
         toolCallId: 'tc',
-        path: 'C:\\workspace\\sibling\\secret.txt',
+        path: path.join(siblingFolder, 'secret.txt'),
       } as any, { sessionId: 'session-1' });
       // Find the requestId from the emitted block, then resolve it.
       const call = (notifier.notifyRenderer as any).mock.calls.find((c: any[]) => c[0] === 'agent:sandbox-blocked');
@@ -605,7 +613,7 @@ describe('InteractionBroker', () => {
       const promise = handler({
         kind: 'write',
         toolCallId: 'tc',
-        fileName: 'C:\\workspace\\sibling\\out.txt',
+        fileName: path.join(siblingFolder, 'out.txt'),
         intention: 'write log',
       } as any, { sessionId: 'session-1' });
       const call = (notifier.notifyRenderer as any).mock.calls.find((c: any[]) => c[0] === 'agent:sandbox-blocked');

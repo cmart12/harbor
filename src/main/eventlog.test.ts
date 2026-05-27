@@ -56,6 +56,8 @@ function createSchema(db: Database.Database): void {
       summary TEXT DEFAULT '',
       working_dir TEXT,
       source TEXT NOT NULL DEFAULT 'sdk',
+      persona_handle TEXT,
+      quoted_text TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     )

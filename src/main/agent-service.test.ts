@@ -13,7 +13,7 @@ const mockSession = {
   send: vi.fn().mockResolvedValue(undefined),
   abort: vi.fn().mockResolvedValue(undefined),
   setModel: vi.fn().mockResolvedValue(undefined),
-  getMessages: vi.fn().mockResolvedValue([{ type: 'assistant.message', content: 'hello' }]),
+  getEvents: vi.fn().mockResolvedValue([{ type: 'assistant.message', content: 'hello' }]),
   on: vi.fn(),
   rpc: {
     remote: {
@@ -897,7 +897,7 @@ describe('getAgentHistory', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockSession.send.mockResolvedValue(undefined);
-    mockSession.getMessages.mockResolvedValue([{ type: 'assistant.message', content: 'hello' }]);
+    mockSession.getEvents.mockResolvedValue([{ type: 'assistant.message', content: 'hello' }]);
     mockClient.createSession.mockResolvedValue(mockSession);
     mockClient.resumeSession.mockResolvedValue(mockSession);
     uuidCounter = 0;
@@ -905,14 +905,14 @@ describe('getAgentHistory', () => {
     vi.mocked(getAgentSession).mockReturnValue(null);
   });
 
-  it('returns events from session.getMessages()', async () => {
+  it('returns events from session.getEvents()', async () => {
     enableMockClient();
     const launched = await launchAgent('space-1', 'text', { quote: '', prefix: '', suffix: '' }, '/ws', 'folder');
     const agentId = (launched as any).agentId;
 
     const result = await getAgentHistory(agentId);
     expect(result).toEqual({ events: [{ type: 'assistant.message', content: 'hello' }] });
-    expect(mockSession.getMessages).toHaveBeenCalled();
+    expect(mockSession.getEvents).toHaveBeenCalled();
   });
 
   it('returns error when agent not found in DB', async () => {
