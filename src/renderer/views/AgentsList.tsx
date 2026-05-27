@@ -29,6 +29,7 @@ interface AgentCardProps {
   yoloMode: boolean;
   remote: AgentRemoteInfo | undefined;
   personaEmoji: string;
+  isSelected: boolean;
   actions: AgentsListActions;
 }
 
@@ -40,6 +41,7 @@ const AgentCard = React.memo(function AgentCard({
   yoloMode,
   remote,
   personaEmoji,
+  isSelected,
   actions,
 }: AgentCardProps) {
   const statusClass = agent.status === 'running' ? 'agent-running' :
@@ -75,7 +77,7 @@ const AgentCard = React.memo(function AgentCard({
 
   return (
     <div
-      className={`agent-card ${statusClass}`}
+      className={`agent-card ${statusClass}${isSelected ? ' kb-selected' : ''}`}
       data-agent-id={agent.agentId}
       title={cardTitle}
       onClick={() => actions.onAgentClick(agent)}
@@ -215,7 +217,7 @@ export interface AgentsListProps extends AgentsListActions {
 }
 
 export function AgentsList(props: AgentsListProps): React.ReactElement {
-  const { spaces } = useStore(spaceStore);
+  const { spaces, selectedIndex } = useStore(spaceStore);
   const agentState = useStore(agentStore);
   const { personas } = useStore(personaStore);
 
@@ -251,7 +253,7 @@ export function AgentsList(props: AgentsListProps): React.ReactElement {
 
   return (
     <>
-      {sorted.map(agent => {
+      {sorted.map((agent, idx) => {
         const intentLabel = agent.source === 'cli'
           ? 'CLI Session'
           : agent.source === 'cca'
@@ -272,6 +274,7 @@ export function AgentsList(props: AgentsListProps): React.ReactElement {
             yoloMode={agentState.yoloMode.get(agent.agentId) || false}
             remote={agentState.remoteState.get(agent.agentId)}
             personaEmoji={personaEmoji}
+            isSelected={idx === selectedIndex}
             actions={props}
           />
         );

@@ -3475,20 +3475,18 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
 let renderedAgents: Array<{ agentId: string; sessionId: string; status: string; summary: string; selectedText: string; spaceId: string; createdAt?: string; source?: 'sdk' | 'cli' | 'cca' }> = [];
 
 function updateAgentSelection(): void {
+  // Push the selection to spaceStore so React applies kb-selected via JSX.
+  // Then scroll the selected row into view (read-only DOM access — safe).
+  spaceStore.setSelectedIndex(selectedIndex);
   const items = listEl.querySelectorAll('.agent-card');
-  items.forEach((item, i) => {
-    item.classList.toggle('kb-selected', i === selectedIndex);
-  });
   if (selectedIndex >= 0 && items[selectedIndex]) {
     (items[selectedIndex] as HTMLElement).scrollIntoView({ block: 'nearest' });
   }
 }
 
 function updateSelection(): void {
+  spaceStore.setSelectedIndex(selectedIndex);
   const items = listEl.querySelectorAll('.space-item');
-  items.forEach((item, i) => {
-    item.classList.toggle('kb-selected', i === selectedIndex);
-  });
   if (selectedIndex >= 0 && items[selectedIndex]) {
     (items[selectedIndex] as HTMLElement).scrollIntoView({ block: 'nearest' });
   }

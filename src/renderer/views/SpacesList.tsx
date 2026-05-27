@@ -76,6 +76,7 @@ const SpaceRow = React.memo(function SpaceRow({
   isProcessing,
   isActiveSession,
   isFocused,
+  isSelected,
   spaceAgents,
   sourceSkill,
   recallHint,
@@ -85,6 +86,7 @@ const SpaceRow = React.memo(function SpaceRow({
   isProcessing: boolean;
   isActiveSession: boolean;
   isFocused: boolean;
+  isSelected: boolean;
   spaceAgents: AgentListAllItem[];
   sourceSkill: { name: string; emoji: string } | null;
   recallHint: RecallMatch | undefined;
@@ -103,6 +105,7 @@ const SpaceRow = React.memo(function SpaceRow({
     space.status === 'done' ? 'done' : '',
     isProcessing ? 'processing' : '',
     isFocused ? 'focused' : '',
+    isSelected ? 'kb-selected' : '',
     hasRunningAgents ? 'has-running-agents' : '',
     hasWaitingAgents ? 'has-waiting-agents' : '',
   ].filter(Boolean).join(' ');
@@ -194,7 +197,7 @@ export interface SpacesListProps extends SpacesListActions {
 }
 
 export function SpacesList(props: SpacesListProps): React.ReactElement {
-  const { spaces, focusedSpaceId, recallHints } = useStore(spaceStore);
+  const { spaces, focusedSpaceId, recallHints, selectedIndex } = useStore(spaceStore);
   const agentState = useStore(agentStore);
   const { skills } = useStore(skillStore);
 
@@ -226,13 +229,14 @@ export function SpacesList(props: SpacesListProps): React.ReactElement {
 
   return (
     <>
-      {displayList.map(space => (
+      {displayList.map((space, idx) => (
         <SpaceRow
           key={space.id}
           space={space}
           isProcessing={agentState.processingSpaces.has(space.id)}
           isActiveSession={agentState.activeSessionSpaces.has(space.id)}
           isFocused={space.id === focusedSpaceId}
+          isSelected={idx === selectedIndex}
           spaceAgents={agentsBySpace.get(space.id) || []}
           sourceSkill={space.source_skill_id ? skillByid.get(space.source_skill_id) || null : null}
           recallHint={recallHints.get(space.id)}
