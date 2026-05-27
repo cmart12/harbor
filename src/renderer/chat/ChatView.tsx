@@ -948,7 +948,25 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
 
     // If no agent yet, create one with this first message
     if (!currentAgentId) {
-      const launchResult = await whimAPI.quickLaunchAgent(message);
+      // Parse leading @persona mention (mirrors the workers-tab launcher in
+      // src/renderer/app.ts so chat-view first-message launches honor the
+      // persona's run location, model, sandboxing, etc.). The IPC handler
+      // validates the handle and returns `Persona @x not found` if invalid,
+      // in which case we surface the error instead of silently dropping it.
+      let prompt = message;
+      let personaHandle: string | undefined;
+      const mentionMatch = message.match(/^@([a-z0-9][a-z0-9-]{0,31})(?:\s+([\s\S]*))?$/i);
+      if (mentionMatch) {
+        personaHandle = mentionMatch[1].toLowerCase();
+        prompt = (mentionMatch[2] || '').trim();
+        if (!prompt) {
+          // "@handle" with no follow-up — keep the @mention as the prompt
+          // so the launcher has something to act on rather than failing.
+          prompt = message;
+          personaHandle = undefined;
+        }
+      }
+      const launchResult = await whimAPI.quickLaunchAgent(prompt, personaHandle);
       if ('error' in launchResult && launchResult.error) {
         setMessages(prev => [...prev, {
           id: genId(),
