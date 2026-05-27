@@ -11,7 +11,7 @@
 import { type AgentPersona, resolveSandboxPolicy } from '../config';
 import { buildSandboxConfigs, type SandboxConfigDirs } from '../ai';
 import { getAllMcpServers } from '../mcp';
-import { getCustomTools } from '../tools';
+import { getCustomTools, type CustomToolsContext } from '../tools';
 import type { SandboxPolicy } from '../../shared/ipc-contract';
 import { AgentRegistry, type SandboxRuntimeState } from './agent-registry';
 import { InteractionBroker } from './interaction-broker';
@@ -81,10 +81,11 @@ export function buildSandboxLaunchSetup(opts: {
   persona: AgentPersona;
   registry: AgentRegistry;
   broker: InteractionBroker;
+  customToolsContext?: CustomToolsContext;
 }): SandboxLaunchSetup {
-  const { agentId, workingDir, persona, registry, broker } = opts;
+  const { agentId, workingDir, persona, registry, broker, customToolsContext } = opts;
   const allMcpServers = getAllMcpServers();
-  const allCustomTools = getCustomTools({ agentId, broker });
+  const allCustomTools = getCustomTools(customToolsContext ?? { agentId, broker });
 
   const isSandboxed = persona.sandboxed === true;
 

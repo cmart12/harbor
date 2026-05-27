@@ -14,11 +14,11 @@ import { AgentNotifier } from './agent-notifier';
 import { AgentPersistence } from './agent-persistence';
 import { InteractionBroker } from './interaction-broker';
 import type { SubagentTracker } from '../subagent-service';
-import { getCustomTools } from '../tools';
+import { getCustomTools, type CustomToolsContext } from '../tools';
 import { appendSpaceActivity } from '../space-eventlog';
 import { buildSandboxLaunchSetup } from './sandbox-launch';
 import { SANDBOX_WORKSPACE_SYSTEM_PROMPT } from './sandbox-policies';
-import { updateCanvasContent } from '../database';
+import { listSpaces, updateCanvasContent } from '../database';
 import { getWorkspaceRepo } from '../cloud-agent';
 
 /**
@@ -54,6 +54,49 @@ export function initSdkRunner(deps: {
   persistence = deps.persistence;
   broker = deps.broker;
   subagentTracker = deps.subagentTracker;
+}
+
+function shouldEnableWhimTools(spaceId?: string | null): boolean {
+  return !spaceId || spaceId === '__workspace__';
+}
+
+function createCustomToolsContext(agentId: string, enableWhimTools = false): CustomToolsContext {
+  if (!enableWhimTools) {
+    return { agentId, broker };
+  }
+
+  return {
+    agentId,
+    broker,
+    enableWhimTools: true,
+    registry,
+    getSpaces: () =>
+      listSpaces().map((space) => ({
+        id: space.id,
+        description: space.description,
+        body: space.body,
+        status: space.status,
+        folder: space.folder,
+      })),
+    setYoloMode: async (targetAgentId: string, enabled: boolean) => {
+      const record = registry.get(targetAgentId);
+      if (!record) return { error: 'Agent not found' };
+
+      record.yoloMode = enabled;
+      console.log(`[agent-service] yolo mode ${enabled ? 'enabled' : 'disabled'} for agent=${targetAgentId}`);
+      notifier.notifyRenderer('agent:yolo-changed', { agentId: targetAgentId, enabled });
+
+      if (enabled && record.pendingApprovals.size > 0) {
+        for (const requestId of [...record.pendingApprovals.keys()]) {
+          broker.approveAgent(targetAgentId, requestId, true);
+        }
+      }
+
+      return { ok: true };
+    },
+    sendChatMessage: async (targetAgentId: string, prompt: string) => sendChatMessage(targetAgentId, prompt),
+    getAgentHistory: async (targetAgentId: string) => getAgentHistory(targetAgentId),
+  };
 }
 
 /** Build a system prompt fragment describing available CLI tools */
@@ -96,7 +139,7 @@ export async function launchAgent(
     const session = await client.createSession({
       workingDirectory: workingDir,
       mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
-      tools: getCustomTools({ agentId, broker }),
+      tools: getCustomTools(createCustomToolsContext(agentId)),
       onPermissionRequest: broker.createPermissionHandler(findRecord),
       onUserInputRequest: broker.createUserInputHandler(findRecord),
       onElicitationRequest: broker.createElicitationHandler(findRecord),
@@ -211,13 +254,21 @@ export async function launchQuickAgent(
     const cliToolsPrompt = buildCliToolsPrompt();
     const findRecord = (sid: string) => registry.findBySessionId(sid);
 
+    const customToolsContext = createCustomToolsContext(agentId, true);
     const sandboxSetup = persona
-      ? buildSandboxLaunchSetup({ agentId, workingDir: workspaceRoot, persona, registry, broker })
+      ? buildSandboxLaunchSetup({
+        agentId,
+        workingDir: workspaceRoot,
+        persona,
+        registry,
+        broker,
+        customToolsContext,
+      })
       : null;
     const isSandboxed = sandboxSetup?.isSandboxed === true;
     const sandboxConfigs = sandboxSetup?.sandboxConfigs ?? null;
     const mcpServers = sandboxSetup ? sandboxSetup.mcpServers : getAllMcpServers();
-    const customTools = sandboxSetup ? sandboxSetup.customTools : getCustomTools({ agentId, broker });
+    const customTools = sandboxSetup ? sandboxSetup.customTools : getCustomTools(customToolsContext);
     const sandboxState = sandboxSetup?.sandboxState;
     const hooks = sandboxSetup?.hooks;
     const enforcementMode = sandboxSetup?.enforcementMode ?? 'both';
@@ -379,7 +430,7 @@ export async function launchDocumentAgent(
     const session = await client.createSession({
       workingDirectory: workingDir,
       mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
-      tools: getCustomTools({ agentId, broker }),
+      tools: getCustomTools(createCustomToolsContext(agentId)),
       onPermissionRequest: broker.createPermissionHandler(findRecord),
       onUserInputRequest: broker.createUserInputHandler(findRecord),
       onElicitationRequest: broker.createElicitationHandler(findRecord),
@@ -560,7 +611,7 @@ export async function disableSandboxForSession(agentId: string): Promise<void> {
       configDir: offDir,
       workingDirectory: (await import('../config')).getConfig().workspace ?? undefined,
       mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
-      tools: getCustomTools({ agentId, broker }),
+      tools: getCustomTools(createCustomToolsContext(agentId, shouldEnableWhimTools(record.spaceId))),
       onPermissionRequest: broker.createPermissionHandler(findRecord),
       onUserInputRequest: broker.createUserInputHandler(findRecord),
       onElicitationRequest: broker.createElicitationHandler(findRecord),
@@ -616,13 +667,14 @@ async function resumeAgentSession(agentId: string): Promise<'resumed' | 'restart
   try {
     const mcpServers = getAllMcpServers();
     const findRecord = (sid: string) => registry.findBySessionId(sid);
+    const customToolsContext = createCustomToolsContext(agentId, shouldEnableWhimTools(persisted.space_id));
 
     // Use resumeSession to restore full conversation history (not createSession
     // which would start a fresh session with no history).
     const session = await client.resumeSession(persisted.session_id, {
       workingDirectory: workingDir,
       mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
-      tools: getCustomTools({ agentId, broker }),
+      tools: getCustomTools(customToolsContext),
       onPermissionRequest: broker.createPermissionHandler(findRecord),
       onUserInputRequest: broker.createUserInputHandler(findRecord),
       onElicitationRequest: broker.createElicitationHandler(findRecord),
@@ -675,6 +727,7 @@ async function restartExpiredSession(
     const mcpServers = getAllMcpServers();
     const cliToolsPrompt = buildCliToolsPrompt();
     const findRecord = (sid: string) => registry.findBySessionId(sid);
+    const customToolsContext = createCustomToolsContext(agentId, shouldEnableWhimTools(persisted.space_id));
 
     const isCanvasAgent = persisted.space_id && persisted.space_id !== '__workspace__';
 
@@ -701,7 +754,7 @@ async function restartExpiredSession(
     const session = await client.createSession({
       workingDirectory: workingDir,
       mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
-      tools: getCustomTools({ agentId, broker }),
+      tools: getCustomTools(customToolsContext),
       onPermissionRequest: broker.createPermissionHandler(findRecord),
       onUserInputRequest: broker.createUserInputHandler(findRecord),
       onElicitationRequest: broker.createElicitationHandler(findRecord),

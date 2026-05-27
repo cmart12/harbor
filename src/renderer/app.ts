@@ -680,6 +680,32 @@ filterBar.addEventListener('keydown', (e) => {
   }
 });
 
+// ── History card keyboard navigation (Activity tab) ─────
+listEl.addEventListener('keydown', (e) => {
+  const card = (e.target as HTMLElement).closest('.history-card') as HTMLElement;
+  if (!card || currentFilter !== 'closed') return;
+  const cards = Array.from(listEl.querySelectorAll('.history-card')) as HTMLElement[];
+  const idx = cards.indexOf(card);
+  if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    e.stopPropagation();
+    if (idx <= 0) {
+      focusActiveFilter();
+    } else {
+      cards[idx - 1].focus();
+    }
+  } else if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    e.stopPropagation();
+    if (idx < cards.length - 1) {
+      cards[idx + 1].focus();
+    }
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    card.click();
+  }
+});
+
 // ── New Agent button ────────────────────────────────────
 newAgentBtn.addEventListener('click', () => {
   openAgentChat(undefined as any, '', 'new');
@@ -2911,16 +2937,17 @@ async function renderHistoryView(): Promise<void> {
       metaParts.push(`<span>${completedAgo}</span>`);
       const metaHtml = metaParts.join('<span class="meta-sep">·</span>');
 
-      // Only show steps box when there are multiple distinct event types (not just a single "completed")
+      // Only show steps box for genuinely interesting event histories (e.g. recycled, dismissed)
+      // Filter out noise like "completed" and "unarchived" which don't add value
       let stepsHtml = '';
-      const distinctTypes = new Set(intentEvents.map((e: any) => e.event_type));
-      if (distinctTypes.size > 1 || (distinctTypes.size === 1 && !distinctTypes.has('completed'))) {
-        const steps = intentEvents.slice(-4).map((ev: any) => {
-          const evIcon = ev.event_type === 'completed' ? '✅' :
-                         ev.event_type === 'recycled' ? '↻' :
+      const interestingEvents = intentEvents.filter((e: any) =>
+        e.event_type === 'recycled' || e.event_type === 'recurrence_dismissed'
+      );
+      if (interestingEvents.length > 0) {
+        const steps = interestingEvents.slice(-4).map((ev: any) => {
+          const evIcon = ev.event_type === 'recycled' ? '↻' :
                          ev.event_type === 'recurrence_dismissed' ? '✕' : '•';
-          const evLabel = ev.event_type === 'completed' ? 'Completed' :
-                          ev.event_type === 'recycled' ? 'Rescheduled' :
+          const evLabel = ev.event_type === 'recycled' ? 'Rescheduled' :
                           ev.event_type === 'recurrence_dismissed' ? 'Dismissed' :
                           ev.event_type;
           return `<div class="history-card-step"><span class="history-step-icon">${evIcon}</span><span>${evLabel}</span></div>`;
@@ -2929,7 +2956,7 @@ async function renderHistoryView(): Promise<void> {
       }
 
       html += `
-        <div class="history-card history-card--${cardVariant}" data-id="${space.id}" onclick="openCanvas('${space.id}', true)">
+        <div class="history-card history-card--${cardVariant}" data-id="${space.id}" tabindex="0" onclick="openCanvas('${space.id}', true)">
           <span class="history-card-icon">${statusIcon}</span>
           <div class="history-card-body">
             <div class="history-card-title">${escapeHtml(space.description)}</div>
