@@ -878,7 +878,7 @@ export async function getAgentHistory(agentId: string): Promise<{ events: any[];
   const restarted = record.restarted === true;
 
   try {
-    const events = await (record.session as any).getMessages();
+    const events = await record.session.getEvents();
     return { events: events || [], ...(restarted ? { restarted: true } : {}) };
   } catch (err: any) {
     console.error('[agent-service] Failed to get history:', err);

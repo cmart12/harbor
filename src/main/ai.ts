@@ -221,9 +221,10 @@ async function getRecallSession(): Promise<CopilotSession | null> {
 export async function initCopilot(): Promise<void> {
   try {
     const cliPath = resolveCopilotCliPath();
-    // remote: false keeps sessions local-only by default; per-session
-    // remote access is enabled on demand via enableRemoteControl().
-    const opts: Record<string, unknown> = { useStdio: false, remote: false };
+    // enableRemoteSessions allows per-session remote access to be toggled
+    // on demand via session.rpc.remote.enable(). It does NOT auto-enable
+    // remote on every session — that's controlled separately.
+    const opts: Record<string, unknown> = { useStdio: false, enableRemoteSessions: true };
     if (cliPath) {
       opts.cliPath = cliPath;
       console.log(`[copilot-sdk] Using local CLI: ${cliPath}`);
