@@ -49,7 +49,7 @@ const AgentCard = React.memo(function AgentCard({
     agent.status === 'completed' ? 'agent-completed' : 'agent-failed';
 
   const sourceLabel = agent.source === 'cca'
-    ? <span className="agent-card-source">🔀 PR</span>
+    ? <span className="agent-card-source">🤖 Copilot Cloud Agent</span>
     : agent.source === 'cli'
       ? <span className="agent-card-source">🖥 CLI</span>
       : null;
@@ -257,7 +257,7 @@ export function AgentsList(props: AgentsListProps): React.ReactElement {
         const intentLabel = agent.source === 'cli'
           ? 'CLI Session'
           : agent.source === 'cca'
-            ? 'PR Agent'
+            ? 'Copilot Cloud Agent'
             : agent.spaceId === '__workspace__'
               ? 'Workspace'
               : (intentMap.get(agent.spaceId) || agent.spaceId);

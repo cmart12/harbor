@@ -235,7 +235,7 @@ Create @mentionable personas:
 - **Handle** — the @mention name (e.g., `coder`, `reviewer`, `cca`)
 - **Instructions** — what the persona does and how it behaves
 - **Model** — which AI model to use (or default)
-- **Run location** — 💻 Local or ☁️ Cloud (GitHub CCA)
+- **Run location** — 💻 Local, ☁️ Cloud, or 🤖 Copilot Cloud Agent
 
 ---
 
