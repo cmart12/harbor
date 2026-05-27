@@ -15,6 +15,12 @@ const mockSession = {
   setModel: vi.fn().mockResolvedValue(undefined),
   getMessages: vi.fn().mockResolvedValue([{ type: 'assistant.message', content: 'hello' }]),
   on: vi.fn(),
+  rpc: {
+    remote: {
+      enable: vi.fn().mockResolvedValue({ remoteSteerable: true, url: 'https://mock-remote.example/initial' }),
+      disable: vi.fn().mockResolvedValue(undefined),
+    },
+  },
 };
 
 const mockClient = {
@@ -55,14 +61,19 @@ vi.mock('./mcp', () => ({
 }));
 
 const mockCliTools = vi.fn().mockReturnValue([]);
+const mockSetConfigValue = vi.fn();
 vi.mock('./config', async () => {
   const { DEFAULT_SANDBOX_POLICY } = await vi.importActual<typeof import('../shared/ipc-contract')>('../shared/ipc-contract');
   return {
     getConfig: vi.fn().mockReturnValue({ workspace: null }),
     getConfigValue: (...args: any[]) => {
       if (args[0] === 'cliTools') return mockCliTools();
+      if (args[0] === 'workspace') return '/mock/workspace';
+      if (args[0] === 'remoteAutoEnable') return false;
+      if (args[0] === 'remoteEnabled') return false;
       return [];
     },
+    setConfigValue: (...args: any[]) => mockSetConfigValue(...args),
     // Resolve persona overrides defensively (matches the real impl) so
     // sandbox tests can pass a persona with sandboxPolicyOverride.
     resolveSandboxPolicy: (persona: any) =>
@@ -110,6 +121,8 @@ import {
   setAgentModel,
   getAgentHistory,
   setAgentYolo,
+  setAppRemote,
+  __resetAppRemoteForTests,
 } from './agent-service';
 import { getCopilotClient } from './ai';
 import { createCanvasAgent, createAgentSession, updateAgentSessionStatus, updateAgentSessionId, getAgentSession, listAgentSessions } from './database';
@@ -1130,5 +1143,117 @@ describe('getAgentHistory', () => {
 
     const resumeConfig = mockClient.resumeSession.mock.calls[0][1];
     expect(resumeConfig).not.toHaveProperty('systemMessage');
+  });
+});
+
+// ── setAppRemote (app-level remote reconciliation) ──────────────────────
+
+describe('setAppRemote', () => {
+  let uuidCounter: number;
+  let testRegistry: ReturnType<typeof __resetAppRemoteForTests>['registry'];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Reset shared in-flight + registry state between cases.
+    ({ registry: testRegistry } = __resetAppRemoteForTests());
+
+    uuidCounter = 0;
+    vi.mocked(uuid).mockImplementation(() => `app-remote-agent-${++uuidCounter}`);
+
+    mockSession.send.mockResolvedValue(undefined);
+    mockClient.createSession.mockResolvedValue(mockSession);
+    enableMockClient();
+
+    // Default: rpc.remote.enable returns a URL so the supervisor reuses it.
+    mockSession.rpc.remote.enable.mockResolvedValue({
+      remoteSteerable: true,
+      url: 'https://mock-remote.example/url-1',
+    });
+    mockSession.rpc.remote.disable.mockResolvedValue(undefined);
+  });
+
+  it('launches a new supervisor and enables remote when none exists', async () => {
+    const result = await setAppRemote(true);
+
+    expect('agents' in result).toBe(true);
+    expect(mockClient.createSession).toHaveBeenCalledTimes(1);
+    expect(mockSession.rpc.remote.enable).toHaveBeenCalledTimes(1);
+    if ('agents' in result) {
+      expect(result.enabled).toBe(true);
+      expect(result.agents).toHaveLength(1);
+      expect(result.agents[0]).toMatchObject({ url: 'https://mock-remote.example/url-1' });
+    }
+
+    // The newly-created agent must be flagged as the dedicated supervisor.
+    const records = [...testRegistry.values()];
+    const supervisor = records.find(r => r.appRemoteSupervisor === true);
+    expect(supervisor).toBeDefined();
+    expect(supervisor!.spaceId).toBe('__workspace__');
+  });
+
+  it('reuses an existing healthy supervisor with a URL (no new launch)', async () => {
+    // Bootstrap a supervisor first.
+    await setAppRemote(true);
+    expect(mockClient.createSession).toHaveBeenCalledTimes(1);
+
+    // Second call should NOT spawn another supervisor or re-enable remote.
+    mockClient.createSession.mockClear();
+    mockSession.rpc.remote.enable.mockClear();
+
+    const result = await setAppRemote(true);
+
+    expect(mockClient.createSession).not.toHaveBeenCalled();
+    expect(mockSession.rpc.remote.enable).not.toHaveBeenCalled();
+    if ('agents' in result) {
+      expect(result.agents).toHaveLength(1);
+      expect(result.agents[0].url).toBe('https://mock-remote.example/url-1');
+    }
+  });
+
+  it('retries enabling remote on a supervisor that has no URL (no new launch)', async () => {
+    // First launch the supervisor.
+    await setAppRemote(true);
+    expect(mockClient.createSession).toHaveBeenCalledTimes(1);
+
+    // Simulate the supervisor having lost its URL.
+    const supervisor = [...testRegistry.values()].find(r => r.appRemoteSupervisor === true);
+    expect(supervisor).toBeDefined();
+    supervisor!.remote = { enabled: true, remoteSteerable: true, url: undefined };
+
+    // Next enable returns the new URL on retry.
+    mockClient.createSession.mockClear();
+    mockSession.rpc.remote.enable.mockClear();
+    mockSession.rpc.remote.enable.mockResolvedValue({
+      remoteSteerable: true,
+      url: 'https://mock-remote.example/url-2',
+    });
+
+    const result = await setAppRemote(true);
+
+    // No new agent should be launched.
+    expect(mockClient.createSession).not.toHaveBeenCalled();
+    // The retry path must have invoked enable on the supervisor.
+    expect(mockSession.rpc.remote.enable).toHaveBeenCalledTimes(1);
+    if ('agents' in result) {
+      expect(result.agents).toHaveLength(1);
+      expect(result.agents[0].url).toBe('https://mock-remote.example/url-2');
+      expect(result.agents[0].agentId).toBe(supervisor!.agentId);
+    }
+  });
+
+  it('coalesces concurrent setAppRemote(true) calls into a single launch', async () => {
+    const [resultA, resultB] = await Promise.all([
+      setAppRemote(true),
+      setAppRemote(true),
+    ]);
+
+    // Both calls should share the same in-flight promise and observe the
+    // same single createSession invocation.
+    expect(mockClient.createSession).toHaveBeenCalledTimes(1);
+    expect(resultA).toEqual(resultB);
+
+    // Only one supervisor should exist in the registry.
+    const supervisors = [...testRegistry.values()].filter(r => r.appRemoteSupervisor === true);
+    expect(supervisors).toHaveLength(1);
   });
 });

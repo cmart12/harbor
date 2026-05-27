@@ -2636,6 +2636,22 @@ body.dark .workers-badge {
   flex-shrink: 0;
 }
 
+.space-item:hover .space-launch,
+.space-item:focus-within .space-launch {
+  opacity: 1;
+}
+
+.space-launch:hover {
+  color: rgba(0, 0, 0, 0.85);
+  background: rgba(0, 0, 0, 0.05);
+}
+
+body.dark .space-launch { color: rgba(255, 255, 255, 0.5); }
+body.dark .space-launch:hover {
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.08);
+}
+
 /* ── Skill card overrides ────────────────────────────── */
 
 .skill-card {
@@ -3650,6 +3666,63 @@ body.dark .emoji-picker-popup {
 
 .canvas-title-ai.hidden {
   display: none;
+}
+
+.canvas-schedule-indicator {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #2563eb;
+  background: rgba(37, 99, 235, 0.08);
+  border: none;
+  padding: 3px 9px;
+  border-radius: 10px;
+  cursor: pointer;
+  margin-left: 4px;
+  white-space: nowrap;
+  transition: background 0.12s ease;
+  font-family: inherit;
+}
+
+.canvas-schedule-indicator:hover {
+  background: rgba(37, 99, 235, 0.16);
+}
+
+.canvas-schedule-indicator.hidden {
+  display: none;
+}
+
+.canvas-schedule-icon {
+  font-size: 10px;
+}
+
+.canvas-skill-launch {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  padding: 2px 6px;
+  font-size: 13px;
+  cursor: pointer;
+  opacity: 0.7;
+  border-radius: 4px;
+  transition: opacity 0.15s ease, background 0.15s ease;
+  margin-left: 2px;
+  color: inherit;
+}
+
+.canvas-skill-launch:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.canvas-skill-launch.hidden {
+  display: none;
+}
+
+body.dark .canvas-skill-launch:hover {
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .canvas-save-status {

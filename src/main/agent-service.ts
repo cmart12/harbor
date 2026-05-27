@@ -37,10 +37,52 @@ export { buildCliToolsPrompt, launchAgent, launchQuickAgent, launchDocumentAgent
 // ── App-level remote control ──────────────────────────
 
 /**
- * Enable or disable app-level remote for all active SDK workspace-level agents.
- * Persists the setting and fires app:remote-changed.
+ * Reconcile shared state for the app-level remote-control flow.  Exported only
+ * for tests so the in-flight guard can be reset between cases.
  */
-export async function setAppRemote(enabled: boolean): Promise<{ enabled: boolean; agents: Array<{ agentId: string; url?: string }> } | { error: string }> {
+type AppRemoteResult = { enabled: boolean; agents: Array<{ agentId: string; url?: string }> } | { error: string };
+
+let appRemoteInFlight: Promise<AppRemoteResult> | null = null;
+
+function findRemoteSupervisor() {
+  for (const record of registry.values()) {
+    if (
+      record.appRemoteSupervisor === true &&
+      (record.status === 'running' || record.status === 'waiting-approval')
+    ) {
+      return record;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Enable or disable app-level remote for all active SDK workspace-level agents.
+ *
+ * `setAppRemote(true)` is idempotent — it acts as a reconciliation function:
+ *   1. If a healthy supervisor with a remote URL already exists, reuse it.
+ *   2. Else if a healthy supervisor exists without a URL, retry enabling
+ *      remote on it (don't launch a duplicate worker).
+ *   3. Else launch a new supervisor agent and enable remote on it.
+ *
+ * Concurrent calls share the same in-flight promise to avoid spawning
+ * duplicate supervisors from rapid clicks or multiple entry points (UI,
+ * tray menu, etc.).  Persists `remoteEnabled` and fires `app:remote-changed`.
+ */
+export function setAppRemote(enabled: boolean): Promise<AppRemoteResult> {
+  // Coalesce concurrent calls so multiple entry points (UI + tray + double
+  // click) cannot each spawn a workspace supervisor.
+  if (appRemoteInFlight) {
+    return appRemoteInFlight;
+  }
+  const p = doSetAppRemote(enabled).finally(() => {
+    appRemoteInFlight = null;
+  });
+  appRemoteInFlight = p;
+  return p;
+}
+
+async function doSetAppRemote(enabled: boolean): Promise<AppRemoteResult> {
   const { setConfigValue, getConfigValue } = await import('./config');
   setConfigValue('remoteEnabled', enabled);
 
@@ -48,54 +90,82 @@ export async function setAppRemote(enabled: boolean): Promise<{ enabled: boolean
   const agents: Array<{ agentId: string; url?: string }> = [];
 
   if (enabled) {
-    // Always launch a workspace-level management agent for remote control.
-    // This agent gets the whim management tools (list spaces, list workers, approve, yolo, etc.)
-    // so the remote user has a dedicated "supervisor" session.
-    const workspace = getConfigValue('workspace') || process.cwd();
-    console.log(`[agent-service] Launching workspace management agent in: ${workspace}`);
-    const launchResult = await launchQuickAgent(
-      'You are the remote management assistant for this workspace. Help the user manage their spaces and workers. Start by listing the current spaces and any active workers.',
-      workspace,
-    );
-    if ('error' in launchResult) {
-      console.error(`[agent-service] launchQuickAgent FAILED:`, launchResult.error);
-    } else {
-      console.log(`[agent-service] launchQuickAgent succeeded: agentId=${launchResult.agentId}`);
-      // Notify the renderer that a new agent was created so the Workers tab refreshes
-      const record = registry.get(launchResult.agentId);
-      if (record) {
-        notifier.notifyRenderer('agent:status-changed', {
-          agentId: launchResult.agentId,
-          status: record.status,
-          summary: record.summary,
-          spaceId: record.spaceId,
-        });
-      }
-      // The agent is now registered and will appear in the Workers tab.
-      // Enable remote with a timeout — if the RPC hangs, we still return
-      // so the renderer can show the agent and wait for the async URL event.
-      agents.push({ agentId: launchResult.agentId });
+    // ── Reconcile: find or create the dedicated supervisor ────────────
+    let supervisor = findRemoteSupervisor();
+
+    if (supervisor && supervisor.remote?.enabled && supervisor.remote.url) {
+      // (1) Healthy supervisor with URL — reuse it.
+      console.log(`[agent-service] Reusing existing remote supervisor: agentId=${supervisor.agentId}`);
+      agents.push({ agentId: supervisor.agentId, url: supervisor.remote.url });
+    } else if (supervisor) {
+      // (2) Supervisor exists without a URL — retry enabling remote on it.
+      console.log(`[agent-service] Retrying remote enable on existing supervisor: agentId=${supervisor.agentId}`);
+      agents.push({ agentId: supervisor.agentId });
       try {
         const remoteResult = await Promise.race([
-          enableRemoteControl(launchResult.agentId),
+          enableRemoteControl(supervisor.agentId),
           new Promise<{ error: string }>(resolve =>
             setTimeout(() => resolve({ error: 'Timed out waiting for remote URL' }), 10_000)
           ),
         ]);
-        console.log(`[agent-service] enableRemoteControl result:`, JSON.stringify(remoteResult));
         if ('url' in remoteResult && remoteResult.url) {
           agents[agents.length - 1].url = remoteResult.url;
         } else if ('error' in remoteResult) {
-          console.error(`[agent-service] enableRemoteControl error:`, remoteResult.error);
-        } else {
-          console.warn(`[agent-service] enableRemoteControl returned no URL`);
+          console.error(`[agent-service] enableRemoteControl retry error:`, remoteResult.error);
         }
       } catch (err: any) {
-        console.error(`[agent-service] enableRemoteControl threw:`, err);
+        console.error(`[agent-service] enableRemoteControl retry threw:`, err);
+      }
+    } else {
+      // (3) No supervisor — launch a new one and enable remote on it.
+      const workspace = getConfigValue('workspace') || process.cwd();
+      console.log(`[agent-service] Launching workspace management agent in: ${workspace}`);
+      const launchResult = await launchQuickAgent(
+        'You are the remote management assistant for this workspace. Help the user manage their spaces and workers. Start by listing the current spaces and any active workers.',
+        workspace,
+      );
+      if ('error' in launchResult) {
+        console.error(`[agent-service] launchQuickAgent FAILED:`, launchResult.error);
+      } else {
+        console.log(`[agent-service] launchQuickAgent succeeded: agentId=${launchResult.agentId}`);
+        const record = registry.get(launchResult.agentId);
+        if (record) {
+          // Mark this record as the dedicated supervisor so future
+          // setAppRemote(true) calls reuse it instead of spawning duplicates.
+          record.appRemoteSupervisor = true;
+          notifier.notifyRenderer('agent:status-changed', {
+            agentId: launchResult.agentId,
+            status: record.status,
+            summary: record.summary,
+            spaceId: record.spaceId,
+          });
+        }
+        // Enable remote with a timeout — if the RPC hangs, we still return
+        // so the renderer can show the agent and wait for the async URL event.
+        agents.push({ agentId: launchResult.agentId });
+        try {
+          const remoteResult = await Promise.race([
+            enableRemoteControl(launchResult.agentId),
+            new Promise<{ error: string }>(resolve =>
+              setTimeout(() => resolve({ error: 'Timed out waiting for remote URL' }), 10_000)
+            ),
+          ]);
+          console.log(`[agent-service] enableRemoteControl result:`, JSON.stringify(remoteResult));
+          if ('url' in remoteResult && remoteResult.url) {
+            agents[agents.length - 1].url = remoteResult.url;
+          } else if ('error' in remoteResult) {
+            console.error(`[agent-service] enableRemoteControl error:`, remoteResult.error);
+          } else {
+            console.warn(`[agent-service] enableRemoteControl returned no URL`);
+          }
+        } catch (err: any) {
+          console.error(`[agent-service] enableRemoteControl threw:`, err);
+        }
       }
     }
 
-    // Also enable remote on any other running agents
+    // Also enable remote on any other running agents (idempotent for those
+    // that already have remote on).
     for (const record of registry.values()) {
       if (record.status !== 'running' && record.status !== 'waiting-approval') continue;
       if (agents.some(a => a.agentId === record.agentId)) continue; // already handled
@@ -116,6 +186,10 @@ export async function setAppRemote(enabled: boolean): Promise<{ enabled: boolean
       } catch (err: any) {
         console.error(`[agent-service] Failed to disable remote for agent=${record.agentId}:`, err);
       }
+    }
+    // Clear supervisor flags so a future enable starts cleanly.
+    for (const record of registry.values()) {
+      if (record.appRemoteSupervisor) record.appRemoteSupervisor = false;
     }
   }
 
@@ -140,6 +214,16 @@ export function getAppRemoteStatus(): { enabled: boolean; agents: Array<{ agentI
   }
 
   return { enabled, agents };
+}
+
+/**
+ * Test-only helper.  Resets the in-flight guard and clears the agent registry
+ * so unit tests can run setAppRemote scenarios in isolation.  Not for production use.
+ */
+export function __resetAppRemoteForTests(): { registry: AgentRegistry } {
+  appRemoteInFlight = null;
+  registry.clear();
+  return { registry };
 }
 
 // ── Re-exports from CLI runner ─────────────────────────

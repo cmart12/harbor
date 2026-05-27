@@ -823,6 +823,8 @@ async function loadPinState(): Promise<void> {
 
 // ── Remote toggle + QR overlay ──────────────────────────
 let appRemoteUrl: string | null = null;
+let appRemoteAgentId: string | null = null;
+let appRemoteLoading = false;
 let appRemoteOverlayEl: HTMLDivElement | null = null;
 
 function hideAppRemoteOverlay(): void {
@@ -891,11 +893,22 @@ async function showAppRemoteOverlay(): Promise<void> {
     copyBtn.textContent = 'Copy link';
     copyBtn.addEventListener('click', () => navigator.clipboard.writeText(appRemoteUrl!));
     body.appendChild(copyBtn);
+  } else if (appRemoteLoading) {
+    const desc = document.createElement('p');
+    desc.className = 'remote-overlay-desc';
+    desc.textContent = 'Launching workspace agent and enabling remote control…';
+    body.appendChild(desc);
   } else {
     const desc = document.createElement('p');
     desc.className = 'remote-overlay-desc';
-    desc.textContent = 'Remote control is enabled across all spaces but no link is available yet. Launch a workspace-level agent first, or check that the workspace is a GitHub repository.';
+    desc.textContent = 'Remote control is enabled but no link is available yet. Make sure the workspace is a GitHub repository, then try again.';
     body.appendChild(desc);
+
+    const retryBtn = document.createElement('button');
+    retryBtn.className = 'remote-overlay-copy';
+    retryBtn.textContent = 'Launch workspace agent';
+    retryBtn.addEventListener('click', () => { void bootstrapAppRemote(); });
+    body.appendChild(retryBtn);
   }
 
   const disableBtn = document.createElement('button');
@@ -913,46 +926,69 @@ async function showAppRemoteOverlay(): Promise<void> {
   appRemoteOverlayEl = overlay;
 }
 
-remoteBtn.addEventListener('click', async () => {
-  const isActive = remoteBtn.classList.contains('active');
-  if (isActive) {
-    showAppRemoteOverlay();
-  } else {
-    // Show overlay immediately with loading state
-    showAppRemoteOverlay();
-    try {
-      const result = await whimAPI.setAppRemote(true);
-      console.log('[remote] setAppRemote result:', JSON.stringify(result));
-      if ('agents' in result) {
-        const urlAgent = result.agents.find((a: { url?: string }) => a.url);
-        if (urlAgent?.url) {
-          appRemoteUrl = urlAgent.url;
-          // Refresh overlay with the QR code
-          showAppRemoteOverlay();
-        }
-        // If still no URL, the onAppRemoteChanged or onAgentRemoteChanged
-        // events will update appRemoteUrl and we refresh then
-      } else if ('error' in result) {
-        console.error('[remote] setAppRemote error:', result.error);
+/**
+ * Bootstrap remote control: launch a workspace agent (if needed) and enable
+ * remote on it.  Idempotent — safe to call when remote is already enabled.
+ */
+async function bootstrapAppRemote(): Promise<void> {
+  if (appRemoteLoading) return;
+  appRemoteLoading = true;
+  // Refresh the overlay so the user sees the loading state.
+  if (appRemoteOverlayEl) await showAppRemoteOverlay();
+  try {
+    const result = await whimAPI.setAppRemote(true);
+    console.log('[remote] setAppRemote result:', JSON.stringify(result));
+    if ('agents' in result) {
+      const urlAgent = result.agents.find((a: { url?: string }) => a.url);
+      if (urlAgent?.url) {
+        appRemoteUrl = urlAgent.url;
+        appRemoteAgentId = urlAgent.agentId;
       }
-    } catch (err) {
-      console.error('[remote] setAppRemote threw:', err);
+      // If still no URL, the onAppRemoteChanged or onAgentRemoteChanged
+      // events will update appRemoteUrl and we refresh the overlay then.
+    } else if ('error' in result) {
+      console.error('[remote] setAppRemote error:', result.error);
     }
+  } catch (err) {
+    console.error('[remote] setAppRemote threw:', err);
+  } finally {
+    appRemoteLoading = false;
+    if (appRemoteOverlayEl) await showAppRemoteOverlay();
+  }
+}
+
+remoteBtn.addEventListener('click', async () => {
+  // Always show the overlay immediately so the user gets feedback.
+  await showAppRemoteOverlay();
+  // If we don't have a URL yet, bootstrap (launches a workspace supervisor
+  // if needed and enables remote on it).  The backend coalesces concurrent
+  // calls so multiple rapid clicks are safe.
+  if (!appRemoteUrl && !appRemoteLoading) {
+    await bootstrapAppRemote();
   }
 });
 
 whimAPI.onAppRemoteChanged((data: { enabled: boolean; agents: Array<{ agentId: string; url?: string }> }) => {
   remoteBtn.classList.toggle('active', data.enabled);
-  remoteBtn.title = data.enabled ? 'Remote control ON — click to view link' : 'Enable remote control';
+  const urlAgent = data.enabled ? data.agents.find(a => a.url) : undefined;
   if (data.enabled) {
-    const urlAgent = data.agents.find(a => a.url);
     if (urlAgent?.url) {
       appRemoteUrl = urlAgent.url;
-      // Refresh overlay if it's open and was showing no-link state
-      if (appRemoteOverlayEl) showAppRemoteOverlay();
+      appRemoteAgentId = urlAgent.agentId;
+    } else {
+      // Enabled but no URL yet — clear any stale state so the next click
+      // can bootstrap a fresh worker.
+      appRemoteUrl = null;
+      appRemoteAgentId = null;
     }
+    remoteBtn.title = appRemoteUrl
+      ? 'Remote control ON — click to view link'
+      : 'Remote control ON — click to launch a worker';
+    if (appRemoteOverlayEl) showAppRemoteOverlay();
   } else {
     appRemoteUrl = null;
+    appRemoteAgentId = null;
+    remoteBtn.title = 'Enable remote control';
     hideAppRemoteOverlay();
   }
 });
@@ -962,10 +998,17 @@ async function loadRemoteState(): Promise<void> {
     const status = await whimAPI.getAppRemoteStatus();
     if ('enabled' in status) {
       remoteBtn.classList.toggle('active', status.enabled);
-      remoteBtn.title = status.enabled ? 'Remote control ON — click to view link' : 'Enable remote control';
       if (status.enabled) {
         const urlAgent = status.agents.find(a => a.url);
-        if (urlAgent?.url) appRemoteUrl = urlAgent.url;
+        if (urlAgent?.url) {
+          appRemoteUrl = urlAgent.url;
+          appRemoteAgentId = urlAgent.agentId;
+        }
+        remoteBtn.title = appRemoteUrl
+          ? 'Remote control ON — click to view link'
+          : 'Remote control ON — click to launch a worker';
+      } else {
+        remoteBtn.title = 'Enable remote control';
       }
     }
   } catch { /* not critical */ }
@@ -3266,14 +3309,28 @@ whimAPI.onSkillsChanged(() => {
 // ── Skill Schedule Helpers ──────────────────────────────
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const DAY_NAMES_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+function formatTime12Hour(time: string | null): string {
+  const [hStr, mStr] = (time || '09:00').split(':');
+  let h = parseInt(hStr, 10);
+  if (isNaN(h)) h = 9;
+  const m = (mStr || '00').padStart(2, '0');
+  const period = h >= 12 ? 'PM' : 'AM';
+  h = h % 12;
+  if (h === 0) h = 12;
+  return m === '00' ? `${h} ${period}` : `${h}:${m} ${period}`;
+}
 
 function formatScheduleLabel(frequency: string, time: string | null, day: number | null): string {
-  const timePart = time || '09:00';
+  const timePart = formatTime12Hour(time);
+  const dayIdx = day ?? 1;
+  const dayFull = DAY_NAMES_FULL[dayIdx] ?? DAY_NAMES_FULL[1];
   switch (frequency) {
     case 'daily': return `Daily at ${timePart}`;
     case 'weekdays': return `Weekdays at ${timePart}`;
-    case 'weekly': return `${DAY_NAMES[day ?? 1]}s at ${timePart}`;
-    case 'biweekly': return `Every 2 wks, ${DAY_NAMES[day ?? 1]} at ${timePart}`;
+    case 'weekly': return `${dayFull}s at ${timePart}`;
+    case 'biweekly': return `Every 2 weeks on ${dayFull} at ${timePart}`;
     case 'monthly': return `Monthly at ${timePart}`;
     default: return frequency;
   }
@@ -4767,6 +4824,9 @@ const canvasView = document.getElementById('canvas-view') as HTMLDivElement;
 const canvasBack = document.getElementById('canvas-back') as HTMLButtonElement;
 const canvasTitle = document.getElementById('canvas-title') as HTMLHeadingElement;
 const canvasTitleAI = document.getElementById('canvas-title-ai') as HTMLButtonElement;
+const canvasScheduleIndicator = document.getElementById('canvas-schedule-indicator') as HTMLButtonElement;
+const canvasScheduleIndicatorLabel = document.getElementById('canvas-schedule-indicator-label') as HTMLSpanElement;
+const canvasSkillLaunchBtn = document.getElementById('canvas-skill-launch') as HTMLButtonElement;
 const canvasSaveStatus = document.getElementById('canvas-save-status') as HTMLSpanElement;
 const canvasLaunchBtn = document.getElementById('canvas-launch') as HTMLButtonElement;
 const canvasSaveBtn = document.getElementById('canvas-save') as HTMLButtonElement;
@@ -4907,11 +4967,29 @@ function updateCanvasMenuContext(isSkill: boolean): void {
   });
   canvasLaunchLabel.textContent = isSkill ? 'Launch as Space' : 'Start Session';
 
+  // Skill-only header chrome: schedule indicator + launch button
+  const skill = isSkill && canvasSkillId ? cachedSkills.find(s => s.id === canvasSkillId) : null;
+
   // Update the schedule menu label based on whether this skill already has one
-  if (isSkill && canvasSkillId) {
-    const skill = cachedSkills.find(s => s.id === canvasSkillId);
-    canvasScheduleLabel.textContent = skill?.schedule ? 'Edit Schedule…' : 'Set Schedule…';
+  if (isSkill && skill) {
+    canvasScheduleLabel.textContent = skill.schedule ? 'Edit Schedule…' : 'Set Schedule…';
   }
+
+  // Inline schedule indicator (visible at-a-glance when skill is scheduled)
+  if (skill && skill.schedule) {
+    const label = formatScheduleLabel(skill.schedule, skill.schedule_time, skill.schedule_day);
+    canvasScheduleIndicatorLabel.textContent = label;
+    const tooltipParts: string[] = [`Scheduled: ${label}`];
+    if (skill.next_run_at) tooltipParts.push(`Next: ${formatRelativeDate(skill.next_run_at)}`);
+    if (skill.last_run_at) tooltipParts.push(`Last run: ${formatRelativeDate(skill.last_run_at)}`);
+    canvasScheduleIndicator.title = tooltipParts.join('\n');
+    canvasScheduleIndicator.classList.remove('hidden');
+  } else {
+    canvasScheduleIndicator.classList.add('hidden');
+  }
+
+  // Launch-as-space button (only meaningful for skills)
+  canvasSkillLaunchBtn.classList.toggle('hidden', !isSkill);
 }
 
 canvasMarkComplete.addEventListener('click', async () => {
@@ -4929,6 +5007,18 @@ canvasScheduleBtn.addEventListener('click', () => {
   closeCanvasMenu();
   if (!canvasSkillId) return;
   openSchedulePicker(canvasSkillId);
+});
+
+canvasScheduleIndicator.addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (!canvasSkillId) return;
+  openSchedulePicker(canvasSkillId);
+});
+
+canvasSkillLaunchBtn.addEventListener('click', async (e) => {
+  e.stopPropagation();
+  if (!canvasSkillId) return;
+  await createSpaceFromSkill(canvasSkillId);
 });
 
 canvasSaveAsSkill.addEventListener('click', async () => {
@@ -6062,6 +6152,17 @@ whimAPI.onAgentStatusChanged((data: any) => {
     updateWorkersBadge();
   }
 
+  // If the agent serving the app-level remote URL completed or failed, clear
+  // stale state so the next click on the remote button reconciles.
+  if (
+    (data.status === 'completed' || data.status === 'failed') &&
+    appRemoteAgentId === data.agentId
+  ) {
+    appRemoteUrl = null;
+    appRemoteAgentId = null;
+    if (appRemoteOverlayEl) showAppRemoteOverlay();
+  }
+
   // Update agent activity decorations on canvas (skip comment-thread agents — presence handles those)
   if (canvasSpaceId && !commentThreadAgents.has(data.agentId)) {
     if (data.status === 'completed' || data.status === 'failed') {
@@ -6120,7 +6221,14 @@ whimAPI.onAgentRemoteChanged((data: { agentId: string; enabled: boolean; remoteS
   // Track the latest remote URL for the app-level overlay
   if (data.enabled && data.url && !appRemoteUrl) {
     appRemoteUrl = data.url;
+    appRemoteAgentId = data.agentId;
     // Refresh the app-level overlay if it's open and was showing the no-link state
+    if (appRemoteOverlayEl) showAppRemoteOverlay();
+  } else if (appRemoteAgentId === data.agentId && (!data.enabled || !data.url)) {
+    // The agent backing the app-level URL lost remote — clear stale state so
+    // the next click can bootstrap a fresh worker.
+    appRemoteUrl = null;
+    appRemoteAgentId = null;
     if (appRemoteOverlayEl) showAppRemoteOverlay();
   }
   // Update the remote button if visible

@@ -71,6 +71,14 @@ export interface AgentRecord {
   remote?: { enabled: boolean; remoteSteerable: boolean; url?: string };
   /** When true, this agent is ephemeral — no DB persistence, in-memory session FS. */
   ephemeral?: boolean;
+  /**
+   * When true, this agent is the dedicated supervisor session launched by the
+   * app-level remote-control flow (`setAppRemote(true)`).  Used to distinguish
+   * the supervisor from other workspace-level (spaceId='__workspace__') agents
+   * so we can safely reuse it across repeated toggles instead of launching a
+   * new one each time.  Lives only in memory — not persisted.
+   */
+  appRemoteSupervisor?: boolean;
 }
 
 export class AgentRegistry {
@@ -105,6 +113,11 @@ export class AgentRegistry {
 
   entries(): IterableIterator<[string, AgentRecord]> {
     return this.agents.entries();
+  }
+
+  /** Remove all agents from the registry.  Intended for unit tests. */
+  clear(): void {
+    this.agents.clear();
   }
 }
 

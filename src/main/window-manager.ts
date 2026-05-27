@@ -611,7 +611,7 @@ function createCanvasWindow(preloadPath: string): BrowserWindow {
     show: false,
     alwaysOnTop: getConfigValue('pinned'),
     titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 16, y: 16 },
+    trafficLightPosition: { x: 16, y: 20 },
     vibrancy: 'under-window',
     visualEffectState: 'active',
     webPreferences: {
@@ -651,7 +651,7 @@ function createSettingsWindow(preloadPath: string): BrowserWindow {
     title: 'Settings',
     // macOS: hidden inset title bar; Windows/Linux: frameless
     ...(isMac
-      ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 16, y: 16 } }
+      ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 16, y: 20 } }
       : { frame: false }),
     autoHideMenuBar: true,
     vibrancy: 'under-window',
