@@ -10,6 +10,9 @@ const KNOWN_FIELDS: { key: string; label: string; placeholder: string }[] = [
   { key: 'description', label: 'Description', placeholder: 'Brief description' },
 ];
 
+/** Fields managed by other UI — hidden from the generic extra-keys display. */
+const MANAGED_FIELDS = new Set(['name', 'description', 'skills']);
+
 export const FrontmatterEditor: React.FC<FrontmatterEditorProps> = ({ frontmatter, onChange }) => {
   const [expanded, setExpanded] = useState(false);
 
@@ -18,7 +21,7 @@ export const FrontmatterEditor: React.FC<FrontmatterEditorProps> = ({ frontmatte
   }, [frontmatter, onChange]);
 
   const extraKeys = Object.keys(frontmatter).filter(
-    k => !KNOWN_FIELDS.some(f => f.key === k) && frontmatter[k] !== undefined && frontmatter[k] !== null,
+    k => !MANAGED_FIELDS.has(k) && frontmatter[k] !== undefined && frontmatter[k] !== null,
   );
 
   const name = String(frontmatter.name ?? '');

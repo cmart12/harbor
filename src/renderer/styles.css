@@ -3634,6 +3634,200 @@ body.dark .canvas-menu-separator {
   background: rgba(255, 255, 255, 0.08);
 }
 
+/* ── Skill Chips (linked skills bar) ─────────────────── */
+
+.canvas-skill-chips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  background: rgba(0, 0, 0, 0.015);
+  flex-wrap: wrap;
+}
+
+.canvas-skill-chips.hidden {
+  display: none;
+}
+
+.skill-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.03);
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.7);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+  white-space: nowrap;
+}
+
+.skill-chip:hover {
+  background: rgba(0, 0, 0, 0.07);
+  border-color: rgba(0, 0, 0, 0.2);
+}
+
+.skill-chip-emoji {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.skill-chip-name {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+body.dark .canvas-skill-chips {
+  border-bottom-color: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.015);
+}
+
+body.dark .skill-chip {
+  border-color: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.7);
+}
+
+body.dark .skill-chip:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+/* ── Skill Picker Panel ──────────────────────────────── */
+
+.canvas-skill-picker {
+  padding: 8px 16px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.canvas-skill-picker.hidden {
+  display: none;
+}
+
+.skill-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.skill-picker-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.skill-picker-close {
+  border: none;
+  background: none;
+  font-size: 14px;
+  cursor: pointer;
+  color: rgba(0, 0, 0, 0.4);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.skill-picker-close:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: rgba(0, 0, 0, 0.7);
+}
+
+.skill-picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.skill-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+
+.skill-picker-item:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.skill-picker-checkbox {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  accent-color: #0969da;
+}
+
+.skill-picker-emoji {
+  font-size: 15px;
+  flex-shrink: 0;
+}
+
+.skill-picker-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.skill-picker-name {
+  font-size: 13px;
+  color: rgba(0, 0, 0, 0.85);
+}
+
+.skill-picker-desc {
+  font-size: 11px;
+  color: rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skill-picker-empty {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.4);
+  text-align: center;
+  padding: 12px;
+}
+
+body.dark .canvas-skill-picker {
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+body.dark .skill-picker-title {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+body.dark .skill-picker-close {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+body.dark .skill-picker-close:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.7);
+}
+
+body.dark .skill-picker-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+body.dark .skill-picker-name {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+body.dark .skill-picker-desc {
+  color: rgba(255, 255, 255, 0.4);
+}
+
 /* ── Raw Markdown Editor ─────────────────────────────── */
 
 .canvas-raw-editor {

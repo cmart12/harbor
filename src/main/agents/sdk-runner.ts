@@ -18,8 +18,9 @@ import { getCustomTools, type CustomToolsContext } from '../tools';
 import { appendSpaceActivity } from '../space-eventlog';
 import { buildSandboxLaunchSetup } from './sandbox-launch';
 import { SANDBOX_WORKSPACE_SYSTEM_PROMPT } from './sandbox-policies';
-import { listSpaces, updateCanvasContent } from '../database';
+import { listSpaces, updateCanvasContent, listSkills } from '../database';
 import { getWorkspaceRepo } from '../cloud-agent';
+import { parseFrontmatter } from '../frontmatter';
 
 /**
  * Resolve cloud session options from the workspace. Attempts to detect the
@@ -105,6 +106,30 @@ export function buildCliToolsPrompt(): string {
   if (tools.length === 0) return '';
   const lines = tools.map((t: { name: string; description: string }) => `- \`${t.name}\`: ${t.description}`);
   return `\n\nThe following CLI tools may be available in the environment (verify before use):\n${lines.join('\n')}`;
+}
+
+/**
+ * Resolve skill config for a canvas-based session.
+ * Reads the canvas frontmatter `skills` array and computes the
+ * `skillDirectories` + `disabledSkills` config for createSession.
+ * Returns undefined if no skills are linked (avoids auto-loading).
+ */
+function resolveLinkedSkillConfig(
+  canvasContent: string,
+  workspaceRoot: string,
+): { skillDirectories: string[]; disabledSkills: string[] } | undefined {
+  const { frontmatter } = parseFrontmatter(canvasContent);
+  const linkedIds: string[] = Array.isArray(frontmatter.skills) ? frontmatter.skills : [];
+  if (linkedIds.length === 0) return undefined;
+
+  const skillsDir = path.join(workspaceRoot, '.agents', 'skills');
+  const allSkills = listSkills();
+  const linkedSet = new Set(linkedIds);
+  const disabledSkills = allSkills
+    .filter(s => !linkedSet.has(s.id))
+    .map(s => s.name);
+
+  return { skillDirectories: [skillsDir], disabledSkills };
 }
 
 export async function launchAgent(
@@ -197,13 +222,6 @@ export async function launchAgent(
 
     // Set up event listeners
     setupAgentEventListeners(session, record);
-
-    // Auto-enable remote if app-level remote is on
-    if (getConfigValue('remoteEnabled')) {
-      enableRemoteControl(agentId).catch((err: any) => {
-        console.error(`[sdk-runner] Auto-enable remote failed for agent=${agentId}:`, err);
-      });
-    }
 
     // Log to per-space activity log
     logIntentActivity(record, 'agent.launched', {
@@ -369,12 +387,6 @@ export async function launchQuickAgent(
 
     setupAgentEventListeners(session, record);
 
-    // Auto-enable remote if app-level remote is on (workspace-level agents only)
-    if (getConfigValue('remoteEnabled')) {
-      enableRemoteControl(agentId).catch((err: any) => {
-        console.error(`[sdk-runner] Auto-enable remote failed for agent=${agentId}:`, err);
-      });
-    }
     // before events start flowing. Errors are handled by the session.error listener.
     session.send({ prompt }).catch((err: any) => {
       record.status = 'failed';
@@ -486,13 +498,6 @@ export async function launchDocumentAgent(
     });
 
     setupAgentEventListeners(session, record);
-
-    // Auto-enable remote if app-level remote is on
-    if (getConfigValue('remoteEnabled')) {
-      enableRemoteControl(agentId).catch((err: any) => {
-        console.error(`[sdk-runner] Auto-enable remote failed for agent=${agentId}:`, err);
-      });
-    }
 
     // Log to per-space activity log
     logIntentActivity(record, 'document.executed', {

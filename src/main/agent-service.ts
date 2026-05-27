@@ -41,27 +41,67 @@ export { buildCliToolsPrompt, launchAgent, launchQuickAgent, launchDocumentAgent
  * Persists the setting and fires app:remote-changed.
  */
 export async function setAppRemote(enabled: boolean): Promise<{ enabled: boolean; agents: Array<{ agentId: string; url?: string }> } | { error: string }> {
-  const { setConfigValue } = await import('./config');
+  const { setConfigValue, getConfigValue } = await import('./config');
   setConfigValue('remoteEnabled', enabled);
 
-  const { enableRemoteControl, disableRemoteControl } = await import('./agents/sdk-runner');
+  const { enableRemoteControl, disableRemoteControl, launchQuickAgent } = await import('./agents/sdk-runner');
   const agents: Array<{ agentId: string; url?: string }> = [];
 
-  for (const record of registry.values()) {
-    // Only manage SDK agents (not CLI or CCA)
-    if (record.status !== 'running' && record.status !== 'waiting-approval') continue;
+  if (enabled) {
+    // Check if there are any running agents to attach remote to
+    let hasRunning = false;
+    for (const record of registry.values()) {
+      if (record.status === 'running' || record.status === 'waiting-approval') {
+        hasRunning = true;
+        break;
+      }
+    }
 
-    try {
-      if (enabled) {
+    // Auto-launch a workspace-level agent if none are running
+    if (!hasRunning) {
+      const workspace = getConfigValue('workspace');
+      if (workspace) {
+        const result = await launchQuickAgent(
+          'You are the remote management assistant for this workspace. Help the user manage their spaces and workers. Start by listing the current spaces and any active workers.',
+          workspace,
+        );
+        if ('agentId' in result) {
+          // Explicitly enable remote on the newly launched agent
+          try {
+            const remoteResult = await enableRemoteControl(result.agentId);
+            if ('url' in remoteResult) {
+              agents.push({ agentId: result.agentId, url: remoteResult.url });
+            } else {
+              agents.push({ agentId: result.agentId });
+            }
+          } catch {
+            agents.push({ agentId: result.agentId });
+          }
+        }
+      }
+    }
+
+    // Enable remote on any other running agents
+    for (const record of registry.values()) {
+      if (record.status !== 'running' && record.status !== 'waiting-approval') continue;
+      if (agents.some(a => a.agentId === record.agentId)) continue; // already handled
+      try {
         const result = await enableRemoteControl(record.agentId);
         if ('url' in result) {
           agents.push({ agentId: record.agentId, url: result.url });
         }
-      } else {
-        await disableRemoteControl(record.agentId);
+      } catch (err: any) {
+        console.error(`[agent-service] Failed to enable remote for agent=${record.agentId}:`, err);
       }
-    } catch (err: any) {
-      console.error(`[agent-service] Failed to ${enabled ? 'enable' : 'disable'} remote for agent=${record.agentId}:`, err);
+    }
+  } else {
+    for (const record of registry.values()) {
+      if (record.status !== 'running' && record.status !== 'waiting-approval') continue;
+      try {
+        await disableRemoteControl(record.agentId);
+      } catch (err: any) {
+        console.error(`[agent-service] Failed to disable remote for agent=${record.agentId}:`, err);
+      }
     }
   }
 

@@ -884,11 +884,18 @@ remoteBtn.addEventListener('click', async () => {
   if (isActive) {
     showAppRemoteOverlay();
   } else {
+    // Show overlay immediately with loading state
+    showAppRemoteOverlay();
     const result = await whimAPI.setAppRemote(true);
     if ('agents' in result) {
       const urlAgent = result.agents.find((a: { url?: string }) => a.url);
-      if (urlAgent?.url) appRemoteUrl = urlAgent.url;
-      showAppRemoteOverlay();
+      if (urlAgent?.url) {
+        appRemoteUrl = urlAgent.url;
+        // Refresh overlay with the QR code
+        showAppRemoteOverlay();
+      }
+      // If still no URL, the onAppRemoteChanged or onAgentRemoteChanged
+      // events will update appRemoteUrl and we refresh then
     }
   }
 });
@@ -898,9 +905,14 @@ whimAPI.onAppRemoteChanged((data: { enabled: boolean; agents: Array<{ agentId: s
   remoteBtn.title = data.enabled ? 'Remote control ON — click to view link' : 'Enable remote control';
   if (data.enabled) {
     const urlAgent = data.agents.find(a => a.url);
-    if (urlAgent?.url) appRemoteUrl = urlAgent.url;
+    if (urlAgent?.url) {
+      appRemoteUrl = urlAgent.url;
+      // Refresh overlay if it's open and was showing no-link state
+      if (appRemoteOverlayEl) showAppRemoteOverlay();
+    }
   } else {
     appRemoteUrl = null;
+    hideAppRemoteOverlay();
   }
 });
 
@@ -4917,6 +4929,9 @@ const canvasMenuBtn = document.getElementById('canvas-menu-btn') as HTMLButtonEl
 const canvasMenuDropdown = document.getElementById('canvas-menu-dropdown') as HTMLDivElement;
 const canvasMarkComplete = document.getElementById('canvas-mark-complete') as HTMLButtonElement;
 const canvasSaveAsSkill = document.getElementById('canvas-save-as-skill') as HTMLButtonElement;
+const canvasManageSkills = document.getElementById('canvas-manage-skills') as HTMLButtonElement;
+const canvasSkillChips = document.getElementById('canvas-skill-chips') as HTMLDivElement;
+const canvasSkillPicker = document.getElementById('canvas-skill-picker') as HTMLDivElement;
 const canvasPinLabel = document.getElementById('canvas-pin-label') as HTMLSpanElement;
 const canvasLaunchLabel = document.getElementById('canvas-launch-label') as HTMLSpanElement;
 let canvasSpaceId: string | null = null;
@@ -4929,6 +4944,7 @@ let canvasIsNewIntent = false;
 let canvasChatPaneOpen = false;
 let canvasMountGen = 0;
 let titleBeforeEdit = '';
+let canvasLinkedSkillIds: string[] = [];
 
 function startEditingTitle(): void {
   titleBeforeEdit = canvasTitle.textContent || '';
@@ -5074,6 +5090,193 @@ canvasSaveAsSkill.addEventListener('click', async () => {
   setTimeout(hideStatus, 2000);
 });
 
+// ── Canvas Skill Linking ────────────────────────────────
+
+/** Parse the `skills` array from canvas frontmatter (YAML). */
+function parseLinkedSkillIds(content: string): string[] {
+  const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
+  if (!fmMatch) return [];
+  try {
+    // Look for skills: [...] in the YAML block
+    const yamlBlock = fmMatch[1];
+    const skillsMatch = yamlBlock.match(/^skills:\s*$/m);
+    if (skillsMatch) {
+      // Multi-line array form: skills:\n  - id1\n  - id2
+      const lines = yamlBlock.split('\n');
+      const idx = lines.findIndex(l => /^skills:\s*$/.test(l));
+      const ids: string[] = [];
+      for (let i = idx + 1; i < lines.length; i++) {
+        const m = lines[i].match(/^\s+-\s+(.+)$/);
+        if (m) ids.push(m[1].replace(/^['"]|['"]$/g, ''));
+        else break;
+      }
+      return ids;
+    }
+    // Inline form: skills: [id1, id2] or skills: ['id1', 'id2']
+    const inlineMatch = yamlBlock.match(/^skills:\s*\[([^\]]*)\]/m);
+    if (inlineMatch) {
+      return inlineMatch[1].split(',')
+        .map(s => s.trim().replace(/^['"]|['"]$/g, ''))
+        .filter(Boolean);
+    }
+  } catch { /* ignore parse errors */ }
+  return [];
+}
+
+/** Update the `skills` frontmatter in canvas content and save. */
+async function updateCanvasLinkedSkills(skillIds: string[]): Promise<void> {
+  if (!canvasSpaceId) return;
+
+  const content = getCanvasContent();
+  const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
+  let yamlBlock = '';
+  let body = content;
+
+  if (fmMatch) {
+    yamlBlock = fmMatch[1];
+    body = fmMatch[2];
+  }
+
+  // Remove existing skills field from YAML
+  const lines = yamlBlock.split('\n').filter(l => l.trim().length > 0);
+  const cleaned: string[] = [];
+  let skipItems = false;
+  for (const line of lines) {
+    if (/^skills:/.test(line)) {
+      skipItems = true;
+      continue;
+    }
+    if (skipItems && /^\s+-/.test(line)) continue;
+    skipItems = false;
+    cleaned.push(line);
+  }
+
+  // Add the updated skills field
+  if (skillIds.length > 0) {
+    cleaned.push(`skills:`);
+    for (const id of skillIds) {
+      cleaned.push(`  - ${id}`);
+    }
+  }
+
+  // Rebuild content
+  let newContent: string;
+  if (cleaned.length > 0) {
+    newContent = `---\n${cleaned.join('\n')}\n---\n${body}`;
+  } else {
+    newContent = body;
+  }
+
+  // Update the editor content and save
+  replaceCanvasContent(newContent);
+  canvasLinkedSkillIds = skillIds;
+  renderSkillChips();
+}
+
+/** Render clickable chips for linked skills. */
+function renderSkillChips(): void {
+  if (canvasLinkedSkillIds.length === 0) {
+    canvasSkillChips.classList.add('hidden');
+    canvasSkillChips.innerHTML = '';
+    return;
+  }
+
+  const chips = canvasLinkedSkillIds.map(id => {
+    const skill = cachedSkills.find(s => s.id === id);
+    const emoji = skill?.emoji || '🧩';
+    const name = skill?.name || id;
+    return `<button class="skill-chip" data-skill-id="${escapeHtml(id)}" title="Open ${escapeHtml(name)} skill">
+      <span class="skill-chip-emoji">${emoji}</span>
+      <span class="skill-chip-name">${escapeHtml(name)}</span>
+    </button>`;
+  }).join('');
+
+  canvasSkillChips.innerHTML = chips;
+  canvasSkillChips.classList.remove('hidden');
+
+  // Click handlers to open skill as canvas
+  canvasSkillChips.querySelectorAll('.skill-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const skillId = (chip as HTMLElement).dataset.skillId!;
+      const skill = cachedSkills.find(s => s.id === skillId);
+      whimAPI.openCanvasWindow({ kind: 'skill', id: skillId, title: skill?.name || skillId });
+    });
+  });
+}
+
+/** Show/hide the skill picker panel. */
+function toggleSkillPicker(): void {
+  const isHidden = canvasSkillPicker.classList.contains('hidden');
+  if (isHidden) {
+    renderSkillPicker();
+    canvasSkillPicker.classList.remove('hidden');
+  } else {
+    canvasSkillPicker.classList.add('hidden');
+  }
+}
+
+/** Render the skill picker with checkboxes. */
+async function renderSkillPicker(): Promise<void> {
+  const skills = await loadSkills();
+
+  if (skills.length === 0) {
+    canvasSkillPicker.innerHTML = `
+      <div class="skill-picker-header">
+        <span class="skill-picker-title">Link Skills</span>
+        <button class="skill-picker-close" onclick="this.closest('.canvas-skill-picker').classList.add('hidden')">✕</button>
+      </div>
+      <div class="skill-picker-empty">No skills available. Create a skill first.</div>
+    `;
+    return;
+  }
+
+  const items = skills.map(skill => {
+    const checked = canvasLinkedSkillIds.includes(skill.id) ? 'checked' : '';
+    const desc = skill.description.length > 60 ? skill.description.slice(0, 57) + '...' : skill.description;
+    return `<label class="skill-picker-item">
+      <input type="checkbox" class="skill-picker-checkbox" data-skill-id="${escapeHtml(skill.id)}" ${checked}>
+      <span class="skill-picker-emoji">${skill.emoji || '🧩'}</span>
+      <div class="skill-picker-info">
+        <div class="skill-picker-name">${escapeHtml(skill.name)}</div>
+        ${desc ? `<div class="skill-picker-desc">${escapeHtml(desc)}</div>` : ''}
+      </div>
+    </label>`;
+  }).join('');
+
+  canvasSkillPicker.innerHTML = `
+    <div class="skill-picker-header">
+      <span class="skill-picker-title">Link Skills</span>
+      <button class="skill-picker-close">✕</button>
+    </div>
+    <div class="skill-picker-list">${items}</div>
+  `;
+
+  // Close button
+  canvasSkillPicker.querySelector('.skill-picker-close')!.addEventListener('click', () => {
+    canvasSkillPicker.classList.add('hidden');
+  });
+
+  // Checkbox change handlers
+  canvasSkillPicker.querySelectorAll('.skill-picker-checkbox').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const checkbox = cb as HTMLInputElement;
+      const skillId = checkbox.dataset.skillId!;
+      let updated: string[];
+      if (checkbox.checked) {
+        updated = [...canvasLinkedSkillIds, skillId];
+      } else {
+        updated = canvasLinkedSkillIds.filter(id => id !== skillId);
+      }
+      updateCanvasLinkedSkills(updated);
+    });
+  });
+}
+
+canvasManageSkills.addEventListener('click', () => {
+  closeCanvasMenu();
+  toggleSkillPicker();
+});
+
 // Create a new blank space and immediately open it in the full canvas editor
 async function createAndOpenCanvas(): Promise<void> {
   const space = await whimAPI.create({ body: '' }) as any;
@@ -5109,6 +5312,9 @@ async function openCanvas(spaceId: string, expanded = false): Promise<void> {
   canvasSkillId = null;
   canvasPageSpaceId = null;
   canvasPageName = null;
+  canvasLinkedSkillIds = [];
+  canvasSkillChips.classList.add('hidden');
+  canvasSkillPicker.classList.add('hidden');
   canvasTitle.textContent = space.description;
   canvasTitle.contentEditable = 'false';
   canvasTitle.classList.remove('editing');
@@ -5131,6 +5337,7 @@ async function openCanvas(spaceId: string, expanded = false): Promise<void> {
     whimAPI.readCanvas(spaceId),
     Promise.resolve('dark' as const),
     whimAPI.listPersonas().then(p => p || []),
+    loadSkills(),
   ]);
 
   // Abort if user already switched to another space
@@ -5139,6 +5346,10 @@ async function openCanvas(spaceId: string, expanded = false): Promise<void> {
   if (result.error === 'no_workspace') {
     return;
   }
+
+  // Parse linked skills from canvas frontmatter and render chips
+  canvasLinkedSkillIds = parseLinkedSkillIds(result.content || '');
+  renderSkillChips();
 
   // Mount Documint editor
   mountCanvas(canvasRoot, {
@@ -5299,6 +5510,9 @@ async function closeCanvas(): Promise<void> {
   canvasPageSpaceId = null;
   canvasPageName = null;
   canvasIsNewIntent = false;
+  canvasLinkedSkillIds = [];
+  canvasSkillChips.classList.add('hidden');
+  canvasSkillPicker.classList.add('hidden');
   canvasClosing = true;
 
   // Get content BEFORE unmounting — use saved content if we were previewing
