@@ -73,8 +73,10 @@ async function createCloudSession(
   connection.sendRequest = async (method: string, params: any) => {
     if (method === 'session.create' && params && params.cloud) {
       const { sessionId: _drop, ...rest } = params;
+      console.log(`[cloud-session] sending session.create (no sessionId), cloud=${JSON.stringify(params.cloud)}`);
       const response = await originalSendRequest(method, rest);
       runtimeSessionId = response?.sessionId;
+      console.log(`[cloud-session] runtime returned sessionId=${runtimeSessionId}`);
       return response;
     }
     return originalSendRequest(method, params);
@@ -98,6 +100,9 @@ async function createCloudSession(
     // The lazily-built rpc client captured the old sessionId — clear so the
     // next access rebuilds against the runtime sessionId.
     (session as any)._rpc = null;
+    console.log(`[cloud-session] rebound local session ${sdkAssignedId} → ${runtimeSessionId}`);
+  } else {
+    console.warn(`[cloud-session] no rebind: runtimeSessionId=${runtimeSessionId} sessionId=${session.sessionId}`);
   }
 
   return session;
@@ -480,15 +485,21 @@ export async function launchQuickAgent(
     }
 
     // before events start flowing. Errors are handled by the session.error listener.
-    session.send({ prompt }).catch((err: any) => {
-      record.status = 'failed';
-      record.summary = `Error: ${err.message || 'Unknown'}`;
-      if (!record.ephemeral) persistence.updateStatus(record);
-      notifier.notifyRenderer(`chat:event:${agentId}`, {
-        type: 'session.error',
-        message: err.message || 'Failed to process message',
+    if (isCloudSandbox) console.log(`[cloud-session] agent=${agentId} sessionId=${sessionId} calling session.send with prompt length=${prompt.length}`);
+    session.send({ prompt })
+      .then(() => {
+        if (isCloudSandbox) console.log(`[cloud-session] agent=${agentId} session.send acknowledged by runtime`);
+      })
+      .catch((err: any) => {
+        if (isCloudSandbox) console.error(`[cloud-session] agent=${agentId} session.send FAILED:`, err);
+        record.status = 'failed';
+        record.summary = `Error: ${err.message || 'Unknown'}`;
+        if (!record.ephemeral) persistence.updateStatus(record);
+        notifier.notifyRenderer(`chat:event:${agentId}`, {
+          type: 'session.error',
+          message: err.message || 'Failed to process message',
+        });
       });
-    });
 
     return { agentId, sessionId };
   } catch (err: any) {
