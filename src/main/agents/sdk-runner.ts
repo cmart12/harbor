@@ -1250,7 +1250,9 @@ export async function enableRemoteControl(agentId: string): Promise<{ enabled: b
 
   try {
     const result = await record.session.rpc.remote.enable({});
-    console.log(`[sdk-runner] remote.enable result for agent=${agentId}:`, JSON.stringify(result));
+    if (!result.url) {
+      console.warn(`[sdk-runner] remote.enable returned no URL for agent=${agentId}. Result:`, JSON.stringify(result));
+    }
     record.remote = {
       enabled: true,
       remoteSteerable: result.remoteSteerable,
