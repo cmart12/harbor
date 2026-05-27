@@ -215,15 +215,7 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
         return result.relativePath!;
       },
       openFile(url: string) {
-        if (url.startsWith('whim://page/')) {
-          const raw = url.replace('whim://page/', '');
-          const slashIdx = raw.indexOf('/');
-          if (slashIdx > 0) {
-            const targetSpaceId = decodeURIComponent(raw.slice(0, slashIdx));
-            const pageName = decodeURIComponent(raw.slice(slashIdx + 1));
-            whimAPI.openPageWindow({ kind: 'page', spaceId: targetSpaceId, page: pageName, title: pageName });
-          }
-        } else if (url.startsWith('whim://space/')) {
+        if (url.startsWith('whim://space/')) {
           const targetId = url.replace('whim://space/', '');
           whimAPI.openCanvasWindow({ kind: 'space', id: targetId, title: '' });
         } else {

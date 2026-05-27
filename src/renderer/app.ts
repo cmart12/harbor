@@ -5469,8 +5469,7 @@ async function openCanvas(spaceId: string, expanded = false): Promise<void> {
         whimAPI.createPage(sid, name).then(async (result) => {
           if (result.error) return;
           await whimAPI.writePage(sid, result.page, selectedText);
-          const pageUrl = `whim://page/${encodeURIComponent(sid)}/${encodeURIComponent(result.page)}`;
-          replaceCanvasText(selectedText, `[${name}](${pageUrl})`);
+          replaceCanvasText(selectedText, `[${name}](${result.page}.md)`);
           whimAPI.openPageWindow({ kind: 'page', spaceId: sid, page: result.page, title: name });
         });
       });
@@ -5897,8 +5896,7 @@ async function exitPreview(): Promise<void> {
         whimAPI.createPage(sid, name).then(async (result) => {
           if (result.error) return;
           await whimAPI.writePage(sid, result.page, selectedText);
-          const pageUrl = `whim://page/${encodeURIComponent(sid)}/${encodeURIComponent(result.page)}`;
-          replaceCanvasText(selectedText, `[${name}](${pageUrl})`);
+          replaceCanvasText(selectedText, `[${name}](${result.page}.md)`);
           whimAPI.openPageWindow({ kind: 'page', spaceId: sid, page: result.page, title: name });
         });
       });
@@ -6818,8 +6816,7 @@ if (isCanvasMode) {
       showCanvasInputDialog('New page name', (name) => {
         whimAPI.createPage(spaceId, name).then(result => {
           if (result.error) return;
-          const pageUrl = `whim://page/${encodeURIComponent(spaceId)}/${encodeURIComponent(result.page)}`;
-          appendCanvasLink(name, pageUrl);
+          appendCanvasLink(name, `${result.page}.md`);
           whimAPI.openPageWindow({ kind: 'page', spaceId, page: result.page, title: name });
         });
       });
