@@ -2752,7 +2752,6 @@ function render(): void {
         <div class="recall-hint hidden" data-recall-for="${space.id}"></div>
       </div>
       ${space.status !== 'done' ? `<button class="space-focus ${isFocused ? 'is-focused' : ''}" onclick="event.stopPropagation(); setFocus('${space.id}')" title="${isFocused ? 'Unfocus' : 'Focus'}">🎯</button>` : ''}
-      <button class="space-launch ${space.session_id ? 'has-session' : ''} ${isRunning ? 'is-running' : ''}" onclick="event.stopPropagation(); launchSession('${space.id}')" title="${isRunning ? 'Switch to session' : space.session_id ? 'Resume session' : 'Start session'}">▶</button>
       <button class="space-delete" onclick="event.stopPropagation(); deleteSpace('${space.id}')">✕</button>
     </div>
   `;
@@ -6529,6 +6528,7 @@ if (isCanvasMode) {
   window.addEventListener('keydown', (e) => {
     if (!(e.metaKey || e.ctrlKey) || !e.shiftKey) return;
     const key = e.key.toUpperCase();
+    console.log('[canvas-shortcut] key=%s canvasSpaceId=%s', key, canvasSpaceId);
 
     if (key === 'T') {
       e.preventDefault();
@@ -6537,13 +6537,17 @@ if (isCanvasMode) {
       return;
     }
 
-    if (key === 'N' && canvasSpaceId) {
+    if (key === 'N') {
+      console.log('[canvas-shortcut] Cmd+Shift+N fired, canvasSpaceId=%s', canvasSpaceId);
+      if (!canvasSpaceId) return;
       e.preventDefault();
       e.stopPropagation();
       const spaceId = canvasSpaceId;
       const name = prompt('New page name:');
+      console.log('[canvas-shortcut] prompt returned: %s', name);
       if (!name) return;
       whimAPI.createPage(spaceId, name).then(result => {
+        console.log('[canvas-shortcut] createPage result:', result);
         if (result.error) {
           alert(result.error);
           return;
