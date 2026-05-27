@@ -36,6 +36,73 @@ async function resolveCloudSessionOptions(workspaceRoot: string): Promise<{ repo
   return {};
 }
 
+/**
+ * Workaround for the SDK/runtime cloud-session contract bug:
+ *
+ * - `client.createSession({ cloud: {...} })` always sends `sessionId` in the
+ *   wire payload (SDK auto-generates one).
+ * - The runtime rejects `session.create` with `Cannot specify sessionId when
+ *   creating a remote session in the cloud.` when both `sessionId` and `cloud`
+ *   are present.
+ * - Even if the rejection were removed, the SDK ignores the runtime's response
+ *   `sessionId`, so events routed by session ID would never reach the local
+ *   `CopilotSession`.
+ *
+ * This helper monkey-patches `connection.sendRequest` for the duration of the
+ * createSession call:
+ *   1. strips `sessionId` from the cloud `session.create` wire payload
+ *   2. captures the runtime-assigned sessionId from the response
+ *   3. after the SDK returns, rebinds the local session and the client's
+ *      session map to the runtime sessionId so event routing works.
+ *
+ * Remove this helper once @github/copilot-sdk handles cloud session creation
+ * natively (the public createSession should be the only path).
+ */
+async function createCloudSession(
+  client: NonNullable<ReturnType<typeof getCopilotClient>>,
+  config: Parameters<NonNullable<ReturnType<typeof getCopilotClient>>['createSession']>[0],
+): Promise<CopilotSession> {
+  const connection = (client as any).connection;
+  if (!connection || typeof connection.sendRequest !== 'function') {
+    throw new Error('Copilot client connection is not available for cloud session creation');
+  }
+
+  let runtimeSessionId: string | undefined;
+  const originalSendRequest = connection.sendRequest.bind(connection);
+
+  connection.sendRequest = async (method: string, params: any) => {
+    if (method === 'session.create' && params && params.cloud) {
+      const { sessionId: _drop, ...rest } = params;
+      const response = await originalSendRequest(method, rest);
+      runtimeSessionId = response?.sessionId;
+      return response;
+    }
+    return originalSendRequest(method, params);
+  };
+
+  let session: CopilotSession;
+  try {
+    session = await client.createSession(config);
+  } finally {
+    connection.sendRequest = originalSendRequest;
+  }
+
+  if (runtimeSessionId && runtimeSessionId !== session.sessionId) {
+    const sdkAssignedId = session.sessionId;
+    const sessions = (client as any).sessions as Map<string, CopilotSession> | undefined;
+    if (sessions && sessions.get(sdkAssignedId) === session) {
+      sessions.delete(sdkAssignedId);
+      sessions.set(runtimeSessionId, session);
+    }
+    (session as any).sessionId = runtimeSessionId;
+    // The lazily-built rpc client captured the old sessionId — clear so the
+    // next access rebuilds against the runtime sessionId.
+    (session as any)._rpc = null;
+  }
+
+  return session;
+}
+
 /** Shared dependencies injected from agent-service at init time. */
 let registry: AgentRegistry;
 let notifier: AgentNotifier;
@@ -328,7 +395,7 @@ export async function launchQuickAgent(
     // Resolve cloud session options for cloud personas
     const cloudOpts = isCloudSandbox ? await resolveCloudSessionOptions(workspaceRoot) : undefined;
 
-    const session = await client.createSession({
+    const sessionConfig = {
       workingDirectory: workspaceRoot,
       ...(sandboxConfigs ? { configDir: sandboxConfigs.onDir } : {}),
       mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
@@ -350,7 +417,13 @@ export async function launchQuickAgent(
           : broker.createPermissionHandler(findRecord),
       onUserInputRequest: broker.createUserInputHandler(findRecord),
       onElicitationRequest: broker.createElicitationHandler(findRecord),
-    });
+    };
+
+    // Cloud sessions need the RPC-level workaround that strips sessionId and
+    // adopts the runtime-assigned one; everything else uses the public API.
+    const session = isCloudSandbox
+      ? await createCloudSession(client, sessionConfig)
+      : await client.createSession(sessionConfig);
 
     const sessionId = (session as any).sessionId || agentId;
     const now = new Date().toISOString();
