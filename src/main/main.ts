@@ -9,7 +9,7 @@ import { migrateOldDatabase } from './migration';
 import { registerIpcHandlers } from './ipc';
 import { preloadModel } from './voice';
 import { initCopilot, shutdownCopilot } from './ai';
-import { startCliExitMonitor, stopCliExitMonitor } from './agent-service';
+import { startCliExitMonitor, stopCliExitMonitor, reconcileStaleAgents } from './agent-service';
 import { createMainWindow, toggleWindow, setupSnapOnDrop, registerWindowIpcHandlers } from './window-manager';
 import { createTray, destroyTray } from './tray';
 import { initAutoUpdater, cleanupAutoUpdater } from './update-service';
@@ -145,6 +145,7 @@ app.whenReady().then(async () => {
   preloadModel();
   initCopilot();
   startCliExitMonitor();
+  reconcileStaleAgents();
   initAutoUpdater();
 
   // Auto-show window on first launch so new users see the welcome screen

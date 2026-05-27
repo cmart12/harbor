@@ -1,9 +1,10 @@
-import { AgentAnchor, AgentSession } from '../shared/types';
+import { AgentAnchor, AgentSession, CanvasAgent } from '../shared/types';
 import { SubagentTracker } from './subagent-service';
 import { AgentRegistry } from './agents/agent-registry';
 import { AgentNotifier } from './agents/agent-notifier';
 import { AgentPersistence } from './agents/agent-persistence';
 import { InteractionBroker } from './agents/interaction-broker';
+import { listAllRunningAgents, updateCanvasAgentStatus } from './database';
 
 // Import runner modules
 import { initSdkRunner, setupAgentEventListeners } from './agents/sdk-runner';
@@ -216,4 +217,46 @@ export function listAllAgents(): Array<{ agentId: string; sessionId: string; sta
   }
 
   return result;
+}
+
+/**
+ * Mark any DB agent sessions still in "running" or "waiting-approval" state
+ * as "failed" when no corresponding live process exists.  This handles the
+ * case where the app quit while agents were active — the in-memory registry
+ * is lost on restart so these entries would otherwise stay stale forever.
+ *
+ * Call once after DB + agent-service initialization.
+ */
+export function reconcileStaleAgents(): void {
+  const STALE_STATUSES = new Set(['running', 'waiting-approval']);
+
+  // ── agent_sessions table ──────────────────────────────
+  let persisted: AgentSession[] = [];
+  try {
+    persisted = persistence.listSessions();
+  } catch { return; /* DB not ready */ }
+
+  for (const row of persisted) {
+    if (STALE_STATUSES.has(row.status) && !registry.has(row.id)) {
+      try {
+        persistence.updateSessionStatus(row.id, 'failed', 'Session lost — app restarted');
+        console.log(`[agent-service] Reconciled stale agent session ${row.id}: ${row.status} → failed`);
+      } catch { /* non-fatal */ }
+    }
+  }
+
+  // ── canvas_agents table ───────────────────────────────
+  let runningCanvas: CanvasAgent[] = [];
+  try {
+    runningCanvas = listAllRunningAgents();
+  } catch { return; }
+
+  for (const row of runningCanvas) {
+    if (!registry.has(row.id)) {
+      try {
+        updateCanvasAgentStatus(row.id, 'failed');
+        console.log(`[agent-service] Reconciled stale canvas agent ${row.id}: running → failed`);
+      } catch { /* non-fatal */ }
+    }
+  }
 }
