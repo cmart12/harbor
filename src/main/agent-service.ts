@@ -51,8 +51,8 @@ export async function setAppRemote(enabled: boolean): Promise<{ enabled: boolean
     // Always launch a workspace-level management agent for remote control.
     // This agent gets the whim management tools (list spaces, list workers, approve, yolo, etc.)
     // so the remote user has a dedicated "supervisor" session.
-    const workspace = getConfigValue('workspace');
-    if (workspace) {
+    const workspace = getConfigValue('workspace') || process.cwd();
+    {
       console.log(`[agent-service] Launching workspace management agent in: ${workspace}`);
       const result = await launchQuickAgent(
         'You are the remote management assistant for this workspace. Help the user manage their spaces and workers. Start by listing the current spaces and any active workers.',
