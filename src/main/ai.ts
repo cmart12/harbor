@@ -1,6 +1,6 @@
 import * as path from 'path';
 import * as fs from 'fs';
-import { CopilotClient, CopilotSession } from '@github/copilot-sdk';
+import { CopilotClient, CopilotSession, RuntimeConnection } from '@github/copilot-sdk';
 import { getConfigValue } from './config';
 import { resolveCopilotCliPath } from './session';
 import { RecurrenceResult, RecallMatch, Space } from '../shared/types';
@@ -221,16 +221,22 @@ async function getRecallSession(): Promise<CopilotSession | null> {
 export async function initCopilot(): Promise<void> {
   try {
     const cliPath = resolveCopilotCliPath();
-    // enableRemoteSessions allows per-session remote access to be toggled
-    // on demand via session.rpc.remote.enable(). It does NOT auto-enable
-    // remote on every session — that's controlled separately.
-    const opts: Record<string, unknown> = { useStdio: false, enableRemoteSessions: true };
+    const connection = cliPath
+      ? RuntimeConnection.forStdio({ path: cliPath })
+      : undefined; // falls back to bundled CLI
     if (cliPath) {
-      opts.cliPath = cliPath;
       console.log(`[copilot-sdk] Using local CLI: ${cliPath}`);
     } else {
       console.warn('[copilot-sdk] Local CLI not found, using bundled CLI (sessions may not be resumable from terminal)');
     }
+
+    // enableRemoteSessions allows per-session remote access to be toggled
+    // on demand via session.rpc.remote.enable(). It does NOT auto-enable
+    // remote on every session — that's controlled separately.
+    const opts: Record<string, unknown> = {
+      ...(connection ? { connection } : {}),
+      enableRemoteSessions: true,
+    };
     client = new CopilotClient(opts as any);
     await client.start();
     // Eagerly init the parse session (most commonly used)
