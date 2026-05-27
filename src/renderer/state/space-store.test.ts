@@ -38,6 +38,9 @@ describe('SpaceStore', () => {
     spaceStore.setFocusedSpace(null);
     spaceStore.setCanvasSpace(null);
     spaceStore.setSelectedIndex(-1);
+    for (const id of spaceStore.getState().recallHints.keys()) {
+      spaceStore.setRecallHint(id, null);
+    }
   });
 
   // -- Initial state ----------------------------------------------------------
@@ -52,6 +55,7 @@ describe('SpaceStore', () => {
     expect(state.focusedSpaceId).toBeNull();
     expect(state.canvasSpaceId).toBeNull();
     expect(state.selectedIndex).toBe(-1);
+    expect(state.recallHints.size).toBe(0);
   });
 
   // -- Setters ----------------------------------------------------------------
@@ -237,5 +241,19 @@ describe('SpaceStore', () => {
 
     expect(spaceStore.isCurrentRequest(fresh)).toBe(true);
     expect(spaceStore.isCurrentRequest(stale)).toBe(false);
+  });
+
+  // -- Recall hints -----------------------------------------------------------
+
+  it('setRecallHint(spaceId, match) stores the hint', () => {
+    const match = { space_id: 's1', description: 'Old similar', completed_at: null, confidence: 0.8 };
+    spaceStore.setRecallHint('s1', match);
+    expect(spaceStore.getState().recallHints.get('s1')).toEqual(match);
+  });
+
+  it('setRecallHint(spaceId, null) removes the hint', () => {
+    spaceStore.setRecallHint('s1', { space_id: 's1', description: 'd', completed_at: null, confidence: 1 });
+    spaceStore.setRecallHint('s1', null);
+    expect(spaceStore.getState().recallHints.has('s1')).toBe(false);
   });
 });

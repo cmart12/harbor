@@ -6,6 +6,7 @@ import { useStore } from './useStore';
 import { formatDueDate, timeAgo } from './list-utils';
 import type { Space } from '../../shared/types';
 import type { AgentListAllItem } from '../../shared/ipc-contract';
+import type { RecallMatch } from '../../shared/types';
 
 export interface SpacesListActions {
   onSpaceClick: (spaceId: string) => void;
@@ -77,6 +78,7 @@ const SpaceRow = React.memo(function SpaceRow({
   isFocused,
   spaceAgents,
   sourceSkill,
+  recallHint,
   actions,
 }: {
   space: Space;
@@ -85,6 +87,7 @@ const SpaceRow = React.memo(function SpaceRow({
   isFocused: boolean;
   spaceAgents: AgentListAllItem[];
   sourceSkill: { name: string; emoji: string } | null;
+  recallHint: RecallMatch | undefined;
   actions: SpacesListActions;
 }) {
   const isRecurring = !!space.recurrence;
@@ -158,7 +161,11 @@ const SpaceRow = React.memo(function SpaceRow({
             ))}
           </div>
         ) : null}
-        <div className="recall-hint hidden" data-recall-for={space.id} />
+        <div className={`recall-hint${recallHint ? '' : ' hidden'}`} data-recall-for={space.id}>
+          {recallHint ? (
+            <>💡 Similar: &quot;{recallHint.description}&quot;{recallHint.completed_at ? ` (done ${timeAgo(recallHint.completed_at)})` : ''}</>
+          ) : null}
+        </div>
       </div>
       {space.status !== 'done' ? (
         <button
@@ -187,7 +194,7 @@ export interface SpacesListProps extends SpacesListActions {
 }
 
 export function SpacesList(props: SpacesListProps): React.ReactElement {
-  const { spaces, focusedSpaceId } = useStore(spaceStore);
+  const { spaces, focusedSpaceId, recallHints } = useStore(spaceStore);
   const agentState = useStore(agentStore);
   const { skills } = useStore(skillStore);
 
@@ -228,6 +235,7 @@ export function SpacesList(props: SpacesListProps): React.ReactElement {
           isFocused={space.id === focusedSpaceId}
           spaceAgents={agentsBySpace.get(space.id) || []}
           sourceSkill={space.source_skill_id ? skillByid.get(space.source_skill_id) || null : null}
+          recallHint={recallHints.get(space.id)}
           actions={props}
         />
       ))}

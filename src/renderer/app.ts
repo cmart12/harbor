@@ -286,6 +286,29 @@ import { mountUpdateBanner } from './views/UpdateBanner.tsx';
 const updateBannerRoot = document.getElementById('update-banner-root');
 if (updateBannerRoot) mountUpdateBanner(updateBannerRoot);
 
+// ── React migration: stores + IPC bridge + mount for the four main lists ──
+// These run alongside the legacy imperative DOM code during the migration.
+// The stores are the React source of truth; legacy module vars stay in
+// sync via dual-writes at every mutation site (see Phase 6 in MIGRATION.md).
+import { spaceStore } from './state/space-store';
+import { agentStore } from './state/agent-store';
+import { skillStore } from './state/skill-store';
+import { historyStore } from './state/history-store';
+import { personaStore } from './state/persona-store';
+import {
+  installIpcBridge,
+  loadSpacesSnapshot,
+  loadHistorySnapshot,
+} from './state/ipc-bridge';
+import { mountLists } from './views/mount.tsx';
+import type { WhimAPI as PreloadWhimAPI } from '../main/preload';
+import type { Skill as SharedSkill } from '../shared/types';
+
+// The local `interface WhimAPI` declared near the top of this file shadows the
+// preload's structural type; the IPC bridge accepts the preload version. Cast
+// once via `bridgeApi` to avoid noisy `as unknown as ...` at every call site.
+const bridgeApi = whimAPI as unknown as PreloadWhimAPI;
+
 const modelSelect = document.getElementById('model-select') as HTMLSelectElement;
 const recordingIndicator = document.getElementById('recording-indicator') as HTMLDivElement;
 const waveformCanvas = document.getElementById('waveform-canvas') as HTMLCanvasElement;
@@ -613,6 +636,11 @@ function updatePromptHint(): void {
 function setFilter(filter: typeof currentFilter): void {
   if (filter === currentFilter) return;
   currentFilter = filter;
+  spaceStore.setFilter(filter);
+  // History view fetches its events lazily when first activated.
+  if (filter === 'closed') {
+    void loadHistorySnapshot(bridgeApi);
+  }
   filterBar.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
   const btn = filterBar.querySelector(`[data-filter="${filter}"]`) as HTMLElement;
   if (btn) btn.classList.add('active');
@@ -1032,6 +1060,7 @@ async function loadPersonas(): Promise<void> {
   personas = await whimAPI.listPersonas() || [];
   try { personaModels = await whimAPI.listModels(); } catch { personaModels = []; }
   ensureDefaultAgent();
+  personaStore.setPersonas(personas);
   renderAgentsSidebar();
   // Auto-select @agent if nothing selected
   if (!selectedAgentId) {
@@ -1469,6 +1498,7 @@ function renderAgentEditor(persona: AgentPersona): void {
     );
 
     await whimAPI.savePersonas(personas);
+    personaStore.setPersonas(personas);
     renderAgentsSidebar();
     // Show animated save confirmation
     errorEl.textContent = '✓ Saved';
@@ -1488,6 +1518,7 @@ function renderAgentEditor(persona: AgentPersona): void {
     if (isDefault) return;
     personas = personas.filter(p => p.id !== persona.id);
     await whimAPI.savePersonas(personas);
+    personaStore.setPersonas(personas);
     selectedAgentId = null;
     renderAgentsSidebar();
     // Select @agent after deletion
@@ -1571,6 +1602,7 @@ personaAddBtn.addEventListener('click', () => {
     runLocation: 'local',
   };
   personas.push(newPersona);
+  personaStore.setPersonas(personas);
   renderAgentsSidebar();
   selectAgent(newId);
 });
@@ -2403,6 +2435,7 @@ async function maybeRefreshPersonas(): Promise<void> {
       || fresh.some((p, i) => p.handle !== personas[i]?.handle);
     if (changed) {
       personas = fresh;
+      personaStore.setPersonas(personas);
       // Re-render only if the dropdown is open or if the input still starts with @
       if (descInput.value.startsWith('@')) refreshMentionDropdown();
     }
@@ -2491,6 +2524,7 @@ descInput.addEventListener('input', () => {
   if (!searchMode) {
     if (searchResults !== null) {
       searchResults = null;
+      spaceStore.setSearchResults(null);
       selectedIndex = -1;
       render();
     }
@@ -2499,9 +2533,11 @@ descInput.addEventListener('input', () => {
 
   const query = descInput.value.trim();
   activeSearchQuery = query;
+  spaceStore.setActiveSearchQuery(query);
 
   if (!query) {
     searchResults = null;
+    spaceStore.setSearchResults(null);
     selectedIndex = -1;
     if (currentFilter === 'agents') renderAgentsList();
     else if (currentFilter === 'skills') renderSkillsList();
@@ -2516,6 +2552,7 @@ descInput.addEventListener('input', () => {
       renderSkillsList(query);
     } else {
       searchResults = await whimAPI.searchSpaces(query);
+      spaceStore.setSearchResults(searchResults);
       selectedIndex = -1;
       render();
     }
@@ -2524,12 +2561,15 @@ descInput.addEventListener('input', () => {
 
 function enterSearchMode(): void {
   searchMode = true;
+  spaceStore.setSearchMode(true);
   descInput.classList.add('search-mode');
   descInput.placeholder = getSearchPlaceholderForFilter(currentFilter);
   descInput.value = '';
   descInput.style.height = 'auto';
   searchResults = null;
+  spaceStore.setSearchResults(null);
   activeSearchQuery = '';
+  spaceStore.setActiveSearchQuery('');
   selectedIndex = -1;
   inputHints.classList.add('hidden');
   updatePromptHint();
@@ -2539,12 +2579,15 @@ function enterSearchMode(): void {
 
 function exitSearchMode(): void {
   searchMode = false;
+  spaceStore.setSearchMode(false);
   descInput.classList.remove('search-mode');
   descInput.placeholder = getPlaceholderForFilter(currentFilter);
   descInput.value = '';
   descInput.style.height = 'auto';
   searchResults = null;
+  spaceStore.setSearchResults(null);
   activeSearchQuery = '';
+  spaceStore.setActiveSearchQuery('');
   selectedIndex = -1;
   inputHints.classList.remove('hidden');
   updatePromptHint();
@@ -2781,33 +2824,21 @@ let loadSpacesRequestId = 0;
 
 async function loadSpaces(): Promise<void> {
   const requestId = ++loadSpacesRequestId;
-  spaces = await whimAPI.list();
-  activeSessionSpaces = new Set(await whimAPI.getActiveSessions());
 
-  // Build agents-per-space map for Spaces view
-  try {
-    const allAgents = await whimAPI.listAllAgents();
-    // Bail if a newer loadSpaces() was triggered while we were fetching
-    if (requestId !== loadSpacesRequestId) return;
-    const map = new Map<string, Array<{ agentId: string; status: string; summary: string; selectedText: string; quotedText?: string; source?: string }>>();
-    for (const agent of allAgents) {
-      if (!agent.spaceId || agent.spaceId === '__workspace__') continue;
-      if (!map.has(agent.spaceId)) map.set(agent.spaceId, []);
-      map.get(agent.spaceId)!.push({
-        agentId: agent.agentId,
-        status: agent.status,
-        summary: agent.summary,
-        selectedText: agent.selectedText,
-        quotedText: agent.quotedText,
-        source: agent.source,
-      });
-    }
-    agentsBySpace = map;
-  } catch { /* skip */ }
+  // Atomic snapshot via the React migration's IPC bridge: fetches list +
+  // getActiveSessions + listAllAgents in parallel and applies them to the
+  // stores atomically (per-store stale-fetch guards drop late results).
+  await loadSpacesSnapshot(bridgeApi);
 
+  // Mirror store state into the legacy module vars so cross-file readers
+  // (capture form, settings, canvas, chat) continue to work during the
+  // migration. Phase 7 collapses these away.
   if (requestId !== loadSpacesRequestId) return;
+  spaces = [...spaceStore.getState().spaces];
+  activeSessionSpaces = new Set(agentStore.getState().activeSessionSpaces);
+  agentsBySpace = agentStore.getAgentsBySpace();
+
   updateFocusBanner();
-  render();
 }
 
 // ── Debounced refresh for agent status events ──────────
@@ -2860,105 +2891,11 @@ function render(): void {
 
   countEl.textContent = String(spaces.filter(i => i.status !== 'done').length);
 
-  if (displayList.length === 0) {
-    const emptyMsg = searchResults !== null ? 'No matching spaces.' :
-                     currentFilter === 'open' ? 'No spaces yet. Type or speak one above.' :
-                     'Nothing here.';
-    listEl.innerHTML = `
-      <div class="empty-state">
-        <span class="icon">🎯</span>
-        <span>${emptyMsg}</span>
-      </div>
-    `;
-    return;
-  }
-
-  listEl.innerHTML = displayList.map(space => {
-    const isProcessing = processingSpaces.has(space.id);
-    const isRecurring = !!space.recurrence;
-    const isRunning = activeSessionSpaces.has(space.id);
-    const dueInfo = formatDueDate(space.due_at_utc, space.due_at);
-    const hasDue = dueInfo.text !== '';
-    const isFocused = space.id === focusedSpaceId;
-
-    // Agent data for this space
-    const spaceAgents = agentsBySpace.get(space.id) || [];
-    const hasRunningAgents = spaceAgents.some(a => a.status === 'running');
-    const hasWaitingAgents = spaceAgents.some(a => a.status === 'waiting-approval');
-    const hasFailedAgents = spaceAgents.some(a => a.status === 'failed');
-
-    // Build agent mini-cards
-    let agentsHtml = '';
-    if (spaceAgents.length > 0) {
-      const agentCards = spaceAgents.map(agent => {
-        const isCca = agent.source === 'cca';
-        const aIcon = isCca ? '🔀' :
-                      agent.status === 'running' ? '⚡' :
-                      agent.status === 'waiting-approval' ? '⏳' :
-                      agent.status === 'completed' ? '✓' :
-                      '✗';
-        const aClass = agent.status === 'running' ? (isCca ? 'mini-agent-cloud' : 'mini-agent-running') :
-                       agent.status === 'waiting-approval' ? 'mini-agent-waiting' :
-                       agent.status === 'completed' ? 'mini-agent-completed' :
-                       'mini-agent-failed';
-        const aLabel = agent.selectedText.length > 50 ? agent.selectedText.slice(0, 47) + '...' : agent.selectedText;
-        const aTooltip = agent.quotedText
-          ? `${agent.selectedText}\n\nOn: "${agent.quotedText}"`
-          : agent.selectedText;
-        return `<div class="mini-agent ${aClass}" data-agent-id="${agent.agentId}" title="${escapeHtml(aTooltip)}">`
-          + `<span class="mini-agent-icon">${aIcon}</span>`
-          + `<span class="mini-agent-label">${escapeHtml(aLabel || agent.summary || 'Agent')}</span>`
-          + `</div>`;
-      }).join('');
-      agentsHtml = `<div class="space-agents">${agentCards}</div>`;
-    }
-
-    // Source skill lookup for scheduled spaces
-    const sourceSkill = space.source_skill_id ? cachedSkills.find(s => s.id === space.source_skill_id) : null;
-
-    return `
-    <div class="space-item ${space.status === 'done' ? 'done' : ''} ${isProcessing ? 'processing' : ''} ${isFocused ? 'focused' : ''} ${hasRunningAgents ? 'has-running-agents' : ''} ${hasWaitingAgents ? 'has-waiting-agents' : ''}" data-id="${space.id}" onclick="openCanvas('${space.id}', true)">
-      <div class="space-check ${space.status === 'done' ? 'checked' : ''}"
-           onclick="event.stopPropagation(); toggleStatus('${space.id}')">${space.status === 'done' ? '✓' : ''}</div>
-      <div class="space-content">
-        <div class="space-desc ${hasRunningAgents ? 'agent-active' : ''}">${escapeHtml(space.description)}</div>
-        <div class="space-meta">
-          ${sourceSkill ? `<span class="source-skill-badge" title="From skill: ${escapeHtml(sourceSkill.name)}">${sourceSkill.emoji || '🧩'} ${escapeHtml(sourceSkill.name)}</span>` : ''}
-          ${space.client ? `<span>👤 ${escapeHtml(space.client)}</span>` : ''}
-          ${hasDue ? `<span class="due-badge ${dueInfo.overdue ? 'overdue' : ''}">📅 ${escapeHtml(dueInfo.text)}</span>` : ''}
-          ${isRecurring ? '<span class="recurring-badge">↻</span>' : ''}
-          ${isRunning ? '<span class="session-badge running">● running</span>' : space.session_id ? '<span class="session-badge">○ session</span>' : ''}
-          ${hasRunningAgents ? `<span class="session-badge running">⚡ ${spaceAgents.filter(a => a.status === 'running').length} working</span>` : ''}
-          ${hasWaitingAgents ? '<span class="session-badge agent-attention">⏳ needs attention</span>' : ''}
-          ${hasFailedAgents ? '<span class="session-badge agent-failed-badge">✗ failed</span>' : ''}
-          ${isProcessing ? '<span class="processing-badge">refining...</span>' : ''}
-          <span>${timeAgo(space.updated_at)}</span>
-        </div>
-        ${agentsHtml}
-        <div class="recall-hint hidden" data-recall-for="${space.id}"></div>
-      </div>
-      ${space.status !== 'done' ? `<button class="space-focus ${isFocused ? 'is-focused' : ''}" onclick="event.stopPropagation(); setFocus('${space.id}')" title="${isFocused ? 'Unfocus' : 'Focus'}">🎯</button>` : ''}
-      <button class="space-delete" onclick="event.stopPropagation(); deleteSpace('${space.id}')">✕</button>
-    </div>
-  `;
-  }).join('');
-
-  // Wire mini-agent click handlers to open chat directly
-  listEl.querySelectorAll('.mini-agent[data-agent-id]').forEach(el => {
-    el.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const agentId = (el as HTMLElement).dataset.agentId!;
-      // Find the agent data
-      for (const [spaceId, agents] of agentsBySpace.entries()) {
-        const agent = agents.find(a => a.agentId === agentId);
-        if (agent) {
-          openAgentChat(agentId, agent.selectedText, agent.status, agent.source as any, spaceId);
-          return;
-        }
-      }
-    });
-  });
-
+  // DOM rendering is now owned by React (mounted on #space-list by the
+  // views/mount.tsx module). The store mutations earlier in this call chain
+  // (or in loadSpaces()) cause the React tree to re-render. Keep
+  // displayedSpaces and countEl in sync for the legacy keyboard nav and the
+  // filter-bar badge.
   if (selectedIndex >= displayedSpaces.length) {
     selectedIndex = -1;
   }
@@ -2970,233 +2907,22 @@ async function renderHistoryView(): Promise<void> {
   displayedSpaces = [];
   countEl.textContent = String(spaces.filter(i => i.status !== 'done').length);
 
-  const closedSpaces = spaces.filter(i => i.status === 'done');
-
-  // Load timeline events
-  let events: any[] = [];
+  // React owns the History view DOM (HistoryView component reads spaces from
+  // spaceStore and events from historyStore). We still fetch events here so
+  // the store is populated for the React tree.
   try {
-    events = await whimAPI.listEvents(200);
-  } catch { /* skip */ }
-
-  if (gen !== renderGeneration) return;
-
-  // Build a map of events per space
-  const eventsBySpace = new Map<string, any[]>();
-  for (const event of events) {
-    const id = event.space_id;
-    if (!id) continue;
-    if (!eventsBySpace.has(id)) eventsBySpace.set(id, []);
-    eventsBySpace.get(id)!.push(event);
+    const events = await whimAPI.listEvents(200);
+    if (gen !== renderGeneration) return;
+    historyStore.setEvents(events);
+  } catch {
+    /* leave existing events in place */
   }
-
-  // Also gather orphan events (no matching closed space)
-  const closedIds = new Set(closedSpaces.map(i => i.id));
-
-  if (closedSpaces.length === 0 && events.length === 0) {
-    listEl.innerHTML = `
-      <div class="empty-state">
-        <span class="icon">✨</span>
-        <span>Complete your first space to see activity here.</span>
-      </div>
-    `;
-    return;
-  }
-
-  // Sort closed spaces newest first by completed_at or updated_at
-  const sorted = [...closedSpaces].sort((a, b) =>
-    (b.completed_at || b.updated_at).localeCompare(a.completed_at || a.updated_at)
-  );
-
-  // ── Summary stats ────────────────────────────────────
-  const now = new Date();
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const weekStart = todayStart - (now.getDay() * 86400000);
-  let completedToday = 0;
-  let completedThisWeek = 0;
-  for (const s of sorted) {
-    const t = new Date(s.completed_at || s.updated_at).getTime();
-    if (t >= todayStart) completedToday++;
-    if (t >= weekStart) completedThisWeek++;
-  }
-
-  let html = `<div class="activity-summary">`;
-  html += `<div class="activity-summary-stat"><span class="stat-value">${completedToday}</span> today</div>`;
-  html += `<div class="activity-summary-sep"></div>`;
-  html += `<div class="activity-summary-stat"><span class="stat-value">${completedThisWeek}</span> this week</div>`;
-  html += `<div class="activity-summary-sep"></div>`;
-  html += `<div class="activity-summary-stat"><span class="stat-value">${sorted.length}</span> total</div>`;
-  html += `</div>`;
-
-  // ── Group by date ────────────────────────────────────
-  const dateGroups = new Map<string, typeof sorted>();
-  for (const space of sorted) {
-    const dt = new Date(space.completed_at || space.updated_at);
-    const dayStart = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate()).getTime();
-    let label: string;
-    if (dayStart === todayStart) {
-      label = 'Today';
-    } else if (dayStart === todayStart - 86400000) {
-      label = 'Yesterday';
-    } else {
-      label = dt.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-    }
-    if (!dateGroups.has(label)) dateGroups.set(label, []);
-    dateGroups.get(label)!.push(space);
-  }
-
-  for (const [dateLabel, groupSpaces] of dateGroups) {
-    html += `<div class="history-date-label">${dateLabel}</div>`;
-
-    for (const space of groupSpaces) {
-      const intentEvents = eventsBySpace.get(space.id) || [];
-      intentEvents.sort((a: any, b: any) => a.created_at.localeCompare(b.created_at));
-
-      const hasSession = !!space.session_id;
-      const isRecurring = !!space.recurrence;
-      const completedAgo = space.completed_at ? timeAgo(space.completed_at) : timeAgo(space.updated_at);
-
-      // Agent count for this space
-      const spaceAgents = agentsBySpace.get(space.id) || [];
-      const agentCount = spaceAgents.length;
-
-      // Determine card variant (check agents too — session_id alone misses agent work)
-      const hasDismissed = intentEvents.some((e: any) => e.event_type === 'recurrence_dismissed');
-      const hadAgentWork = hasSession || agentCount > 0;
-      const cardVariant = hasDismissed ? 'dismissed' :
-                          hadAgentWork ? 'session' :
-                          isRecurring ? 'recurring' : 'completed';
-      const statusIcon = hadAgentWork ? '▶' : isRecurring ? '↻' : '✓';
-
-      // Compute active duration
-      let durationStr = '';
-      if (space.completed_at && space.created_at) {
-        const diffMs = new Date(space.completed_at).getTime() - new Date(space.created_at).getTime();
-        if (diffMs > 0) {
-          const diffMins = Math.floor(diffMs / 60000);
-          if (diffMins < 60) durationStr = `${diffMins}m`;
-          else {
-            const diffHrs = Math.floor(diffMins / 60);
-            if (diffHrs < 24) durationStr = `${diffHrs}h`;
-            else durationStr = `${Math.floor(diffHrs / 24)}d`;
-          }
-        }
-      }
-
-      // Build meta badges
-      const metaParts: string[] = [];
-      if (space.client) metaParts.push(`<span>👤 ${escapeHtml(space.client)}</span>`);
-      if (agentCount > 0) metaParts.push(`<span class="history-meta-badge history-meta-badge--agents">⚡ ${agentCount}</span>`);
-      if (hasSession) metaParts.push(`<span class="history-meta-badge history-meta-badge--session">● session</span>`);
-      if (durationStr) metaParts.push(`<span class="history-meta-badge history-meta-badge--duration">⏱ ${durationStr}</span>`);
-      metaParts.push(`<span>${completedAgo}</span>`);
-      const metaHtml = metaParts.join('<span class="meta-sep">·</span>');
-
-      // Only show steps box for genuinely interesting event histories (e.g. recycled, dismissed)
-      // Filter out noise like "completed" and "unarchived" which don't add value
-      let stepsHtml = '';
-      const interestingEvents = intentEvents.filter((e: any) =>
-        e.event_type === 'recycled' || e.event_type === 'recurrence_dismissed'
-      );
-      if (interestingEvents.length > 0) {
-        const steps = interestingEvents.slice(-4).map((ev: any) => {
-          const evIcon = ev.event_type === 'recycled' ? '↻' :
-                         ev.event_type === 'recurrence_dismissed' ? '✕' : '•';
-          const evLabel = ev.event_type === 'recycled' ? 'Rescheduled' :
-                          ev.event_type === 'recurrence_dismissed' ? 'Dismissed' :
-                          ev.event_type;
-          return `<div class="history-card-step"><span class="history-step-icon">${evIcon}</span><span>${evLabel}</span></div>`;
-        });
-        stepsHtml = `<div class="history-card-steps">${steps.join('<div class="history-step-connector"></div>')}</div>`;
-      }
-
-      html += `
-        <div class="history-card history-card--${cardVariant}" data-id="${space.id}" tabindex="0" onclick="openCanvas('${space.id}', true)">
-          <span class="history-card-icon">${statusIcon}</span>
-          <div class="history-card-body">
-            <div class="history-card-title">${escapeHtml(space.description)}</div>
-            ${stepsHtml}
-            <div class="history-card-meta">${metaHtml}</div>
-          </div>
-          <button class="history-card-restore" onclick="event.stopPropagation(); unarchiveIntent('${space.id}')" title="Restore to Spaces">↺</button>
-        </div>
-      `;
-    }
-  }
-
-  // Add orphan timeline events not tied to a closed space
-  const orphanEvents = events.filter(e => e.space_id && !closedIds.has(e.space_id));
-  if (orphanEvents.length > 0) {
-    const groups = new Map<string, typeof orphanEvents>();
-    for (const event of orphanEvents) {
-      const date = new Date(event.created_at).toLocaleDateString('en-US', {
-        weekday: 'short', month: 'short', day: 'numeric'
-      });
-      if (!groups.has(date)) groups.set(date, []);
-      groups.get(date)!.push(event);
-    }
-
-    for (const [date, dateEvents] of groups) {
-      html += `<div class="history-date-label">${date}</div>`;
-      for (const event of dateEvents) {
-        const icon = event.event_type === 'completed' ? '✅' :
-                     event.event_type === 'recycled' ? '↻' : '•';
-        const desc = event.space_description ? escapeHtml(event.space_description) : 'Unknown';
-        const time = new Date(event.created_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-        const variant = event.event_type === 'completed' ? 'completed' : 'dismissed';
-        html += `
-          <div class="history-card history-card-mini history-card--${variant}">
-            <span class="history-card-icon">${icon}</span>
-            <div class="history-card-body">
-              <div class="history-card-title">${desc}</div>
-              <div class="history-card-meta"><span>${time}</span></div>
-            </div>
-          </div>
-        `;
-      }
-    }
-  }
-
-  listEl.innerHTML = html;
 }
 
-function renderAgentSummary(agents: Array<{ status: string; createdAt?: string }>): void {
-  const running = agents.filter(a => a.status === 'running' || a.status === 'waiting-approval').length;
-  const completed = agents.filter(a => a.status === 'completed').length;
-  const failed = agents.filter(a => a.status !== 'running' && a.status !== 'waiting-approval' && a.status !== 'completed').length;
-  const openTasks = spaces.filter(i => i.status !== 'done').length;
-  const scheduled = spaces.filter(i => i.due_at_utc || i.due_at).length;
-  const recurring = spaces.filter(i => i.recurrence).length;
-
-  const lines: string[] = [];
-
-  // Agent activity line
-  if (agents.length === 0) {
-    lines.push('No agents are active right now.');
-  } else {
-    const parts: string[] = [];
-    if (running > 0) parts.push(`${running} ${running === 1 ? 'agent is' : 'agents are'} currently working`);
-    if (completed > 0) parts.push(`${completed} recently completed`);
-    if (failed > 0) parts.push(`${failed} need${failed === 1 ? 's' : ''} attention`);
-    lines.push(parts.join(', and ') + '.');
-  }
-
-  // Tasks context line
-  const taskParts: string[] = [];
-  if (openTasks > 0) taskParts.push(`${openTasks} open ${openTasks === 1 ? 'task' : 'tasks'}`);
-  if (scheduled > 0) taskParts.push(`${scheduled} scheduled ${scheduled === 1 ? 'item' : 'items'} coming up`);
-  if (recurring > 0) taskParts.push(`${recurring} recurring`);
-
-  if (taskParts.length > 0) {
-    lines.push('You have ' + taskParts.join(', and there\'s ') + '.');
-  }
-
-  agentSummaryEl.innerHTML = `
-    <div class="agent-summary-header">
-      <span class="summary-icon">✦</span>
-      Summary
-    </div>
-    <div class="agent-summary-body">${lines.join('<br>')}</div>
-  `;
+function renderAgentSummary(_agents: Array<{ status: string; createdAt?: string }>): void {
+  // React owns the agent summary card (rendered by AgentSummary component
+  // from spaceStore + agentStore). Legacy callers are no-ops during the
+  // migration.
 }
 
 // ── Agent step & approval tracking ────────────────────────
@@ -3249,18 +2975,21 @@ function subscribeAgentChat(agentId: string): void {
   const unsub = whimAPI.onChatEvent(agentId, (event: any) => {
     if (event.type === 'tool.start') {
       const steps = agentSteps.get(agentId) || [];
-      steps.push({
+      const step = {
         toolCallId: event.toolCallId,
         label: humanizeToolName(event.toolName || 'Working', event.args),
-        status: 'running',
-      });
+        status: 'running' as const,
+      };
+      steps.push(step);
       agentSteps.set(agentId, steps);
+      agentStore.addStep(agentId, step);
       updateAgentCardSteps(agentId);
     } else if (event.type === 'tool.progress') {
       const steps = agentSteps.get(agentId);
       if (steps) {
         const step = steps.find(s => s.toolCallId === event.toolCallId);
         if (step && event.message) step.label = event.message;
+        agentStore.setSteps(agentId, [...steps]);
         updateAgentCardSteps(agentId);
       }
     } else if (event.type === 'tool.complete') {
@@ -3268,10 +2997,18 @@ function subscribeAgentChat(agentId: string): void {
       if (steps) {
         const step = steps.find(s => s.toolCallId === event.toolCallId);
         if (step) step.status = event.success ? 'done' : 'failed';
+        agentStore.setSteps(agentId, [...steps]);
         updateAgentCardSteps(agentId);
       }
     } else if (event.type === 'approval.needed') {
       agentApprovals.set(agentId, { requestId: event.requestId, permissionKind: event.permissionKind, intention: event.intention, path: event.path });
+      agentStore.setApproval(agentId, {
+        agentId,
+        requestId: event.requestId,
+        permissionKind: event.permissionKind,
+        intention: event.intention,
+        path: event.path,
+      });
       updateAgentCardApproval(agentId);
     }
   });
@@ -3283,19 +3020,10 @@ function unsubscribeAllAgentChats(): void {
   agentChatUnsubs.clear();
 }
 
-function updateAgentCardSteps(agentId: string): void {
-  const stepsEl = document.querySelector(`.agent-card[data-agent-id="${agentId}"] .agent-card-steps`);
-  if (!stepsEl) return;
-  const steps = agentSteps.get(agentId) || [];
-  // Show last 6 steps max
-  const visible = steps.slice(-6);
-  stepsEl.innerHTML = visible.map((step, i) => {
-    const icon = step.status === 'done' ? '<span class="step-icon step-done">✓</span>' :
-                 step.status === 'failed' ? '<span class="step-icon step-failed">✗</span>' :
-                 '<span class="step-icon step-running"></span>';
-    const connector = i < visible.length - 1 ? '<div class="step-connector"></div>' : '';
-    return `<div class="step-item">${icon}<span class="step-label">${escapeHtml(step.label)}</span></div>${connector}`;
-  }).join('');
+function updateAgentCardSteps(_agentId: string): void {
+  // React owns the agent step list (rendered by AgentsList from
+  // agentStore.steps). Legacy callers are no-ops during the migration —
+  // the store mutations in subscribeAgentChat drive the React re-render.
 }
 
 function describeApproval(approval: { permissionKind: string; intention?: string; path?: string }): { label: string; detail: string } {
@@ -3322,47 +3050,11 @@ function describeApproval(approval: { permissionKind: string; intention?: string
   return { label, detail };
 }
 
-function updateAgentCardApproval(agentId: string): void {
-  const card = document.querySelector(`.agent-card[data-agent-id="${agentId}"]`);
-  if (!card) return;
-  let approvalEl = card.querySelector('.agent-card-approval');
-  const approval = agentApprovals.get(agentId);
-  if (!approval) {
-    if (approvalEl) approvalEl.remove();
-    return;
-  }
-  if (!approvalEl) {
-    approvalEl = document.createElement('div');
-    approvalEl.className = 'agent-card-approval';
-    card.appendChild(approvalEl);
-  }
-  const { label, detail } = describeApproval(approval);
-  approvalEl.innerHTML = `
-    <div class="approval-header">
-      <span class="approval-icon">⚠️</span>
-      <div class="approval-info">
-        <span class="approval-label">Permission requested</span>
-        <span class="approval-kind">${escapeHtml(label)}</span>
-        ${detail ? `<span class="approval-detail">${escapeHtml(detail)}</span>` : ''}
-      </div>
-    </div>
-    <div class="approval-actions">
-      <button class="approval-btn approve" data-agent-id="${agentId}" data-request-id="${approval.requestId}">Approve</button>
-      <button class="approval-btn deny" data-agent-id="${agentId}" data-request-id="${approval.requestId}">Deny</button>
-    </div>
-  `;
-  approvalEl.querySelectorAll('.approval-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const el = e.currentTarget as HTMLElement;
-      const aid = el.dataset.agentId!;
-      const rid = el.dataset.requestId!;
-      const approved = el.classList.contains('approve');
-      whimAPI.approveAgent(aid, rid, approved);
-      agentApprovals.delete(aid);
-      updateAgentCardApproval(aid);
-    });
-  });
+function updateAgentCardApproval(_agentId: string): void {
+  // React owns the agent card approval panel (rendered by AgentsList from
+  // agentStore.approvals). Legacy callers are no-ops during the migration —
+  // the store mutations in subscribeAgentChat / the IPC bridge drive the
+  // React re-render.
 }
 
 // ── Skills rendering ────────────────────────────────────
@@ -3388,6 +3080,7 @@ let cachedSkills: SkillData[] = [];
 async function loadSkills(): Promise<SkillData[]> {
   try {
     cachedSkills = await whimAPI.listSkills();
+    skillStore.setSkills(cachedSkills as unknown as SharedSkill[]);
     return cachedSkills;
   } catch {
     return cachedSkills;
@@ -3399,76 +3092,14 @@ async function renderSkillsList(filterQuery?: string): Promise<void> {
   displayedSpaces = [];
   countEl.textContent = String(spaces.filter(i => i.status !== 'done').length);
 
-  let skills = await loadSkills();
-
+  // React owns the skills list DOM (SkillsList component reads from
+  // skillStore). loadSkills() populates the store; client-side filtering
+  // happens inside the component using filterQuery from spaceStore.
+  await loadSkills();
   if (gen !== renderGeneration) return;
-
-  // Client-side filtering when in search mode
-  if (filterQuery) {
-    const q = filterQuery.toLowerCase();
-    skills = skills.filter(s =>
-      s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q)
-    );
-  }
-
-  if (skills.length === 0) {
-    listEl.innerHTML = `
-      <div class="empty-state">
-        <span class="icon">🧩</span>
-        <span>${filterQuery ? 'No matching skills.' : 'No skills yet. Describe a skill above to create one.'}</span>
-      </div>
-    `;
-    return;
-  }
-
-  listEl.innerHTML = skills.map((skill, i) => {
-    const scheduleLabel = skill.schedule ? formatScheduleLabel(skill.schedule, skill.schedule_time, skill.schedule_day) : '';
-    const tooltipParts: string[] = [];
-    if (skill.schedule) tooltipParts.push(`Scheduled: ${scheduleLabel}`);
-    if (skill.next_run_at) tooltipParts.push(`Next: ${formatRelativeDate(skill.next_run_at)}`);
-    if (skill.last_run_at) tooltipParts.push(`Last run: ${formatRelativeDate(skill.last_run_at)}`);
-    const scheduleBadge = skill.schedule
-      ? `<span class="schedule-badge" title="${escapeHtml(tooltipParts.join('\n'))}">🔄 ${scheduleLabel}</span>`
-      : '';
-    return `
-    <div class="space-item skill-card" data-skill-id="${skill.id}" tabindex="0" data-skill-index="${i}">
-      <div class="skill-icon">${skill.emoji || '🧩'}</div>
-      <div class="space-content">
-        <div class="space-desc">${escapeHtml(skill.name)}</div>
-        <div class="space-meta">
-          <span>${escapeHtml(skill.description.length > 100 ? skill.description.slice(0, 97) + '...' : skill.description)}</span>
-          ${scheduleBadge}
-        </div>
-      </div>
-      <button class="space-launch" onclick="event.stopPropagation(); openSchedulePicker('${skill.id}')" title="${skill.schedule ? 'Edit schedule' : 'Set schedule'}">🕐</button>
-      <button class="space-launch" onclick="event.stopPropagation(); createSpaceFromSkill('${skill.id}')" title="Launch as new space">▶</button>
-      <button class="space-launch" onclick="event.stopPropagation(); openSkillFolder('${skill.id}')" title="Open folder">📁</button>
-      <button class="space-delete" onclick="event.stopPropagation(); deleteSkill('${skill.id}')">✕</button>
-    </div>`;
-  }).join('');
-
-  // Click + keyboard handler for skill cards
-  listEl.querySelectorAll('.skill-card[data-skill-id]').forEach(el => {
-    el.addEventListener('click', () => {
-      const skillId = (el as HTMLElement).dataset.skillId!;
-      openSkillEditor(skillId);
-    });
-    el.addEventListener('keydown', (e) => {
-      const idx = parseInt((el as HTMLElement).dataset.skillIndex || '0', 10);
-      const items = listEl.querySelectorAll('.skill-card');
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        if (idx < items.length - 1) (items[idx + 1] as HTMLElement).focus();
-      } else if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        if (idx === 0) descInput.focus();
-        else (items[idx - 1] as HTMLElement).focus();
-      } else if (e.key === 'Enter') {
-        e.preventDefault();
-        openSkillEditor((el as HTMLElement).dataset.skillId!);
-      }
-    });
-  });
+  // filterQuery is mirrored to spaceStore.activeSearchQuery by the search
+  // handlers below; SkillsList reads it from there.
+  void filterQuery;
 }
 
 async function createNewSkill(): Promise<void> {
@@ -3776,8 +3407,12 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
   displayedSpaces = [];
   countEl.textContent = String(spaces.filter(i => i.status !== 'done').length);
 
-  // Gather all agents (including workspace-level ones)
-  let allAgents: Array<{ agentId: string; sessionId: string; status: string; summary: string; selectedText: string; quotedText?: string; spaceId: string; createdAt?: string; pendingApprovalId?: string | null; pendingPermissionKind?: string | null; source?: 'sdk' | 'cli' | 'cca'; personaHandle?: string | null; sandboxed?: boolean }> = [];
+  // React owns the agents list DOM (AgentsList component reads from
+  // agentStore + spaceStore + personaStore). We still need to fetch the
+  // agents into the store and keep legacy module-level state
+  // (renderedAgents, agentApprovals, agentYoloState) in sync for the
+  // remaining non-list callers in this file.
+  let allAgents: Array<{ agentId: string; sessionId: string; status: string; summary: string; selectedText: string; quotedText?: string; spaceId: string; createdAt?: string; pendingApprovalId?: string | null; pendingPermissionKind?: string | null; source?: 'sdk' | 'cli' | 'cca'; personaHandle?: string | null; sandboxed?: boolean; yoloMode?: boolean }> = [];
 
   try {
     allAgents = await whimAPI.listAllAgents();
@@ -3793,282 +3428,48 @@ async function renderAgentsList(filterQuery?: string): Promise<void> {
     }
   }
 
-  // Bail if user switched away from agents while loading
+  // Bail if user switched away from agents while loading.
   if (gen !== renderGeneration) return;
 
-  // Client-side filtering when in search mode
+  // Push the snapshot to agentStore so React re-renders.
+  agentStore.setAgents(allAgents as unknown as Parameters<typeof agentStore.setAgents>[0]);
+
+  // Client-side filtering when in search mode (legacy renderedAgents).
+  let filteredAgents = allAgents;
   if (filterQuery) {
     const q = filterQuery.toLowerCase();
-    allAgents = allAgents.filter(a =>
+    filteredAgents = allAgents.filter(a =>
       (a.selectedText || '').toLowerCase().includes(q) ||
       (a.summary || '').toLowerCase().includes(q)
     );
   }
-
-  // Store for keyboard nav
-  renderedAgents = allAgents;
+  renderedAgents = filteredAgents;
   selectedIndex = -1;
 
-  // Render the summary card (only when not filtering)
-  if (!filterQuery) renderAgentSummary(allAgents);
-
-  if (allAgents.length === 0) {
-    listEl.innerHTML = `
-      <div class="empty-state">
-        <span class="icon">⚡</span>
-        <span>${filterQuery ? 'No matching agents.' : 'No agents yet. Describe a task above to launch one.'}</span>
-      </div>
-    `;
-    return;
-  }
-
-  // Sort newest first (DB returns this order, but be explicit)
-  allAgents.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
-
-  // Build space description map for display
-  const intentMap = new Map(spaces.map(i => [i.id, i.description]));
-
-  // Populate approvals from API data
+  // Populate approvals + yolo state maps from the API payload.
   for (const agent of allAgents) {
     if (agent.status === 'waiting-approval' && agent.pendingApprovalId) {
-      agentApprovals.set(agent.agentId, {
+      const approval = {
         requestId: agent.pendingApprovalId,
         permissionKind: agent.pendingPermissionKind || 'permission',
         intention: (agent as any).pendingIntention || undefined,
         path: (agent as any).pendingPath || undefined,
-      });
+      };
+      agentApprovals.set(agent.agentId, approval);
+      agentStore.setApproval(agent.agentId, { agentId: agent.agentId, ...approval });
     }
     if ((agent as any).yoloMode) {
       agentYoloState.set(agent.agentId, true);
+      agentStore.setYoloMode(agent.agentId, true);
     }
   }
 
-  listEl.innerHTML = allAgents.map(agent => {
-    const statusClass = agent.status === 'running' ? 'agent-running' :
-                        agent.status === 'waiting-approval' ? 'agent-waiting' :
-                        agent.status === 'completed' ? 'agent-completed' :
-                        'agent-failed';
-
-    // Status icon always reflects agent state (not source)
-    const statusIcon = agent.status === 'running' ? '<svg class="agent-icon-svg agent-icon-running" width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="8" stroke="#a855f7" stroke-width="2" stroke-dasharray="12 38" stroke-linecap="round"><animateTransform attributeName="transform" type="rotate" from="0 9 9" to="360 9 9" dur="0.8s" repeatCount="indefinite"/></circle><circle cx="9" cy="9" r="4" fill="#a855f7" opacity="0.3"/></svg>' :
-                       agent.status === 'waiting-approval' ? '<svg class="agent-icon-svg" width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="8" fill="#f59e0b" opacity="0.15" stroke="#f59e0b" stroke-width="1.5"/><circle cx="9" cy="9" r="3.5" stroke="#f59e0b" stroke-width="1.5" fill="none"/><path d="M9 7V9.5L10.5 10.5" stroke="#f59e0b" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>' :
-                       agent.status === 'completed' ? '<svg class="agent-icon-svg" width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="9" fill="#22c55e"/><path d="M5.5 9.5L7.8 11.8L12.5 6.5" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' :
-                       '<svg class="agent-icon-svg" width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="9" fill="#ef4444"/><path d="M6 6L12 12M12 6L6 12" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>';
-
-    // Source label (cloud/cli/local)
-    const sourceLabel = agent.source === 'cca' ? '<span class="agent-card-source">🔀 PR</span>'
-      : agent.source === 'cli' ? '<span class="agent-card-source">🖥 CLI</span>'
-      : '';
-
-    const intentLabel = agent.source === 'cli'
-      ? 'CLI Session'
-      : agent.source === 'cca'
-        ? 'PR Agent'
-        : agent.spaceId === '__workspace__'
-          ? 'Workspace'
-          : escapeHtml(intentMap.get(agent.spaceId) || agent.spaceId);
-
-    const title = agent.selectedText.length > 80
-      ? agent.selectedText.slice(0, 77) + '...'
-      : agent.selectedText;
-
-    // Look up persona emoji
-    const personaEmoji = agent.personaHandle
-      ? (personas.find(p => p.handle === agent.personaHandle)?.emoji || '')
-      : '';
-
-    // Build steps HTML (live steps if available, else just summary)
-    const steps = agentSteps.get(agent.agentId) || [];
-    const visible = steps.slice(-6);
-    const stepsHtml = visible.length > 0 ? visible.map((step, i) => {
-      const icon = step.status === 'done' ? '<span class="step-icon step-done"><svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 5.5L4.2 7.5L8 3" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>' :
-                   step.status === 'failed' ? '<span class="step-icon step-failed"><svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2.5 2.5L7.5 7.5M7.5 2.5L2.5 7.5" stroke="white" stroke-width="1.8" stroke-linecap="round"/></svg></span>' :
-                   '<span class="step-icon step-running"></span>';
-      const connector = i < visible.length - 1 ? '<div class="step-connector"></div>' : '';
-      return `<div class="step-item">${icon}<span class="step-label">${escapeHtml(step.label)}</span></div>${connector}`;
-    }).join('') : (agent.status === 'running' ? `<div class="step-item"><span class="step-icon step-running"></span><span class="step-label">${escapeHtml(agent.summary)}</span></div>` : '');
-
-    // Build approval HTML
-    const approval = agentApprovals.get(agent.agentId);
-    let approvalHtml = '';
-    if (approval) {
-      const { label, detail } = describeApproval(approval);
-      approvalHtml = `
-      <div class="agent-card-approval">
-        <div class="approval-header">
-          <span class="approval-icon">⚠️</span>
-          <div class="approval-info">
-            <span class="approval-label">Permission requested</span>
-            <span class="approval-kind">${escapeHtml(label)}</span>
-            ${detail ? `<span class="approval-detail">${escapeHtml(detail)}</span>` : ''}
-          </div>
-        </div>
-        <div class="approval-actions">
-          <button class="approval-btn approve" data-agent-id="${agent.agentId}" data-request-id="${approval.requestId}">Approve</button>
-          <button class="approval-btn deny" data-agent-id="${agent.agentId}" data-request-id="${approval.requestId}">Deny</button>
-        </div>
-      </div>
-    `;
-    }
-
-    const canvasBtn = agent.spaceId && agent.spaceId !== '__workspace__' && agent.source !== 'cli'
-      ? `<button class="agent-card-canvas-btn" data-space-id="${agent.spaceId}" title="Open canvas">📄</button>`
-      : '';
-
-    const isYolo = agentYoloState.get(agent.agentId) || false;
-    const yoloBtn = (agent.status === 'running' || agent.status === 'waiting-approval')
-      ? `<button class="agent-card-yolo-btn${isYolo ? ' active' : ''}" data-agent-id="${agent.agentId}" title="${isYolo ? 'Yolo mode ON — click to disable' : 'Enable yolo mode (auto-approve all)'}">🔥</button>`
-      : '';
-
-    const remoteInfo = agentRemoteState.get(agent.agentId);
-    const isRemote = remoteInfo?.enabled || false;
-    const remoteBtn = agent.source === 'sdk' && (agent.status === 'running' || agent.status === 'waiting-approval')
-      ? `<button class="agent-card-remote-btn${isRemote ? ' active' : ''}" data-agent-id="${agent.agentId}" title="${isRemote ? 'Remote control ON — click to view link' : 'Enable remote control'}">📱</button>`
-      : '';
-
-    const sandboxBtn = agent.sandboxed && (agent.status === 'running' || agent.status === 'waiting-approval')
-      ? `<button class="agent-card-sandbox-btn active" data-agent-id="${agent.agentId}" title="Sandbox active — click to disable for this session">🔒</button>`
-      : '';
-
-    // Only show summary when it adds information beyond the status
-    const trivialSummaries = ['Completed', 'Failed', 'Starting...', ''];
-    const showSummary = (agent.status === 'completed' || agent.status === 'failed') && agent.summary && !trivialSummaries.includes(agent.summary);
-
-    const cardTitle = agent.source === 'cca' ? 'Click to open in browser' : 'Click to open chat';
-
-    return `
-      <div class="agent-card ${statusClass}" data-agent-id="${agent.agentId}" title="${cardTitle}">
-        <div class="agent-card-header">
-          <span class="agent-card-icon">${statusIcon}</span>
-          <span class="agent-card-name">${intentLabel}</span>
-          ${sourceLabel}
-          <div class="agent-card-actions">
-            ${sandboxBtn}
-            ${yoloBtn}
-            ${remoteBtn}
-            ${canvasBtn}
-            <button class="agent-card-delete-btn" data-agent-id="${agent.agentId}" title="Delete session">✕</button>
-          </div>
-        </div>
-        <div class="agent-card-title">${personaEmoji ? `<span class="agent-card-persona-emoji">${personaEmoji}</span> ` : ''}${escapeHtml(title)}</div>
-        ${agent.quotedText ? `<div class="agent-card-snippet" title="${escapeHtml(agent.quotedText)}">${escapeHtml(agent.quotedText)}</div>` : ''}
-        ${stepsHtml ? `<div class="agent-card-steps">${stepsHtml}</div>` : ''}
-        ${showSummary ? `<div class="agent-card-summary">${escapeHtml(agent.summary)}</div>` : ''}
-        ${approvalHtml}
-      </div>
-    `;
-  }).join('');
-
-  // Attach click handlers to open chat view (or browser for cloud agents)
-  listEl.querySelectorAll('.agent-card[data-agent-id]').forEach(el => {
-    el.addEventListener('click', async () => {
-      const agentId = (el as HTMLElement).dataset.agentId;
-      if (!agentId) return;
-      const agent = allAgents.find(a => a.agentId === agentId);
-      if (!agent) return;
-
-      if (agent.source === 'cca') {
-        // Open CCA (PR agent) session in the browser
-        const status = await whimAPI.getCloudJobStatus(agentId);
-        const url = (status as any)?.url || `https://github.com`;
-        whimAPI.openExternal(url);
-        return;
-      }
-
-      openAgentChat(agentId, agent.selectedText, agent.status, agent.source as any, agent.spaceId);
-    });
-  });
-
-  // Wire up approval button handlers
-  listEl.querySelectorAll('.approval-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const el = e.currentTarget as HTMLElement;
-      const aid = el.dataset.agentId!;
-      const rid = el.dataset.requestId!;
-      const approved = el.classList.contains('approve');
-      whimAPI.approveAgent(aid, rid, approved);
-      agentApprovals.delete(aid);
-      updateAgentCardApproval(aid);
-    });
-  });
-
-  // Wire up delete session handlers
-  listEl.querySelectorAll('.agent-card-delete-btn').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const aid = (e.currentTarget as HTMLElement).dataset.agentId!;
-      await whimAPI.deleteAgentSession(aid);
-      renderAgentsList();
-    });
-  });
-
-  // Wire up canvas button handlers
-  listEl.querySelectorAll('.agent-card-canvas-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const spaceId = (e.currentTarget as HTMLElement).dataset.spaceId!;
-      openCanvas(spaceId, true);
-    });
-  });
-
-  // Wire up yolo toggle handlers
-  listEl.querySelectorAll('.agent-card-yolo-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const aid = (e.currentTarget as HTMLElement).dataset.agentId!;
-      const current = agentYoloState.get(aid) || false;
-      whimAPI.setAgentYolo(aid, !current);
-    });
-  });
-
-  // Wire up sandbox disable handlers
-  listEl.querySelectorAll('.agent-card-sandbox-btn').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const aid = (e.currentTarget as HTMLElement).dataset.agentId!;
-      const el = e.currentTarget as HTMLElement;
-      el.textContent = '⏳';
-      el.style.pointerEvents = 'none';
-      const result = await whimAPI.disableSandbox(aid);
-      if (result?.error) {
-        el.textContent = '🔒';
-        el.style.pointerEvents = '';
-      } else {
-        renderAgentsList();
-      }
-    });
-  });
-
-  // Wire up remote control toggle handlers
-  listEl.querySelectorAll('.agent-card-remote-btn').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const aid = (e.currentTarget as HTMLElement).dataset.agentId!;
-      const current = agentRemoteState.get(aid);
-      if (current?.enabled) {
-        if (current.url) {
-          // Already enabled with URL — open the chat with remote overlay
-          const agent = (allAgents as any[]).find((a: any) => a.agentId === aid);
-          if (agent) {
-            openAgentChat(aid, agent.selectedText, agent.status, agent.source as any, agent.spaceId);
-          }
-        } else {
-          await whimAPI.disableRemote(aid);
-        }
-      } else {
-        await whimAPI.enableRemote(aid);
-      }
-    });
-  });
-
-  // Subscribe to chat events for live agents
+  // Subscribe to chat events for live agents so steps + approvals flow.
   for (const agent of allAgents) {
     if (agent.status === 'running' || agent.status === 'waiting-approval') {
       subscribeAgentChat(agent.agentId);
     }
   }
-
 }
 
 let renderedAgents: Array<{ agentId: string; sessionId: string; status: string; summary: string; selectedText: string; spaceId: string; createdAt?: string; source?: 'sdk' | 'cli' | 'cca' }> = [];
@@ -4230,6 +3631,7 @@ form.addEventListener('submit', async (e) => {
   descInput.style.height = 'auto';
   descInput.focus();
   searchResults = null;
+  spaceStore.setSearchResults(null);
 
   // Create as space with body
   queryResult.classList.add('hidden');
@@ -4246,12 +3648,14 @@ form.addEventListener('submit', async (e) => {
         return;
       }
       processingSpaces.add(retryIntent.id);
+      agentStore.addProcessingIntent(retryIntent.id);
     } else {
       hideStatus();
       return;
     }
   } else {
     processingSpaces.add(space.id);
+    agentStore.addProcessingIntent(space.id);
   }
   hideStatus();
   await loadSpaces();
@@ -4260,6 +3664,7 @@ form.addEventListener('submit', async (e) => {
 // Listen for background LLM processing completion
 whimAPI.onSpaceProcessed(async (id: string) => {
   processingSpaces.delete(id);
+  agentStore.removeProcessingIntent(id);
   await animateRefinement(id);
 });
 
@@ -4281,20 +3686,11 @@ whimAPI.onRecurrenceApplied(async (_intentId: string) => {
 
 // Listen for recall hints
 whimAPI.onRecallHint((spaceId: string, match: RecallMatch) => {
-  const hintEl = listEl.querySelector(`[data-recall-for="${spaceId}"]`) as HTMLElement | null;
-  if (!hintEl) return;
-
-  const ago = match.completed_at ? timeAgo(match.completed_at) : '';
-  hintEl.innerHTML = `💡 Similar: "${escapeHtml(match.description)}"${ago ? ` (done ${ago})` : ''}`;
-  hintEl.classList.remove('hidden');
-
-  // Auto-dismiss after 5 seconds unless hovered
-  let dismissed = false;
-  hintEl.addEventListener('mouseenter', () => { dismissed = true; });
+  // Push the hint to spaceStore; the React SpaceRow reads it and renders.
+  spaceStore.setRecallHint(spaceId, match);
+  // Auto-dismiss after 5 seconds (React will hide once the hint is null).
   setTimeout(() => {
-    if (!dismissed) {
-      hintEl.classList.add('hidden');
-    }
+    spaceStore.setRecallHint(spaceId, null);
   }, 5000);
 });
 
@@ -5208,6 +4604,7 @@ async function setFocus(spaceId: string): Promise<void> {
     return;
   }
   focusedSpaceId = spaceId;
+  spaceStore.setFocusedSpace(spaceId);
   await whimAPI.setSetting('focused_intent', spaceId);
   updateFocusBanner();
   render();
@@ -5215,29 +4612,22 @@ async function setFocus(spaceId: string): Promise<void> {
 
 function clearFocus(): void {
   focusedSpaceId = null;
+  spaceStore.setFocusedSpace(null);
   whimAPI.setSetting('focused_intent', '');
   focusBanner.classList.add('hidden');
   render();
 }
 
 function updateFocusBanner(): void {
-  if (!focusedSpaceId) {
-    focusBanner.classList.add('hidden');
-    return;
-  }
+  // React owns the focus banner (FocusBanner component reads
+  // spaceStore.focusedSpaceId + spaces). Legacy callers no-op during the
+  // migration, except for the "drop focus if space is missing or done"
+  // guard which still applies to legacy state.
+  if (!focusedSpaceId) return;
   const space = spaces.find(i => i.id === focusedSpaceId);
   if (!space || space.status === 'done') {
     clearFocus();
-    return;
   }
-
-  const dueInfo = formatDueDate(space.due_at_utc, space.due_at);
-  focusDesc.textContent = space.description;
-  let meta = '';
-  if (space.client) meta += `👤 ${space.client}  `;
-  if (dueInfo.text) meta += `📅 ${dueInfo.text}`;
-  focusMeta.textContent = meta;
-  focusBanner.classList.remove('hidden');
 }
 
 focusDone.addEventListener('click', async () => {
@@ -5253,6 +4643,7 @@ async function loadFocusState(): Promise<void> {
   const saved = await whimAPI.getSetting('focused_intent');
   if (saved) {
     focusedSpaceId = saved;
+    spaceStore.setFocusedSpace(saved);
     updateFocusBanner();
   }
 }
@@ -6089,6 +5480,7 @@ async function closeCanvas(): Promise<void> {
     if (wasNewIntent && finalContent.trim()) {
       await whimAPI.update(spaceId, { body: finalContent.trim() });
       processingSpaces.add(spaceId);
+      agentStore.addProcessingIntent(spaceId);
     } else if (wasNewIntent && !finalContent.trim()) {
       // Empty canvas — delete the blank space
       await whimAPI.delete(spaceId);
@@ -7003,6 +6395,7 @@ whimAPI.onWindowShown((data) => {
 
   selectedIndex = -1;
   searchResults = null;
+  spaceStore.setSearchResults(null);
   if (searchMode) exitSearchMode();
   // Always land on Spaces tab with focus in capture field
   setFilter('open');
@@ -7200,11 +6593,125 @@ welcomeStartBtn.addEventListener('click', async () => {
 
 // ── Init ────────────────────────────────────────────────
 // Check if workspace is set — show welcome or main view
-whimAPI.getSetting('workspace_root').then(ws => {
+
+/**
+ * Mount the React tree for the four main lists, the agent summary card,
+ * and the focus banner. Action callbacks delegate to the legacy window.*
+ * globals defined elsewhere in this file. The mount is gated on
+ * !isCanvasMode && !isSettingsMode because canvas/settings windows reuse
+ * the same renderer bundle but render entirely different UIs.
+ */
+function mountReactLists(): void {
+  if (isCanvasMode || isSettingsMode) return;
+  const spaceListHost = document.getElementById('space-list') as HTMLElement | null;
+  const agentSummaryHost = document.getElementById('agent-summary') as HTMLElement | null;
+  const focusBannerHost = document.getElementById('focus-banner') as HTMLElement | null;
+  if (!spaceListHost || !agentSummaryHost || !focusBannerHost) return;
+
+  // Clear any pre-existing legacy children so React's createRoot starts clean.
+  spaceListHost.innerHTML = '';
+  agentSummaryHost.innerHTML = '';
+  focusBannerHost.innerHTML = '';
+
+  mountLists({
+    spaceListHost,
+    agentSummaryHost,
+    focusBannerHost,
+    mainList: {
+      spacesActions: {
+        onSpaceClick: (id) => (window as any).openCanvas?.(id, true),
+        onToggleStatus: (id) => (window as any).toggleStatus?.(id),
+        onDelete: (id) => (window as any).deleteSpace?.(id),
+        onFocus: (id) => (window as any).setFocus?.(id),
+        onAgentClick: (agentId, selectedText, status, source, spaceId) =>
+          (window as any).openAgentChat?.(agentId, selectedText, status, source, spaceId),
+      },
+      agentsActions: {
+        onAgentClick: async (agent) => {
+          if (agent.source === 'cca') {
+            try {
+              const apiStatus = await whimAPI.getCloudJobStatus(agent.agentId);
+              const url = (apiStatus as any)?.url || 'https://github.com';
+              whimAPI.openExternal(url);
+            } catch { /* ignore */ }
+            return;
+          }
+          (window as any).openAgentChat?.(agent.agentId, agent.selectedText, agent.status, agent.source, agent.spaceId);
+        },
+        onApprove: (agentId, requestId) => {
+          whimAPI.approveAgent(agentId, requestId, true);
+          agentApprovals.delete(agentId);
+          agentStore.clearApproval(agentId);
+          updateWorkersBadge();
+        },
+        onDeny: (agentId, requestId) => {
+          whimAPI.approveAgent(agentId, requestId, false);
+          agentApprovals.delete(agentId);
+          agentStore.clearApproval(agentId);
+          updateWorkersBadge();
+        },
+        onDelete: async (agentId) => {
+          await whimAPI.deleteAgentSession(agentId);
+          renderAgentsList();
+        },
+        onCanvas: (spaceId) => (window as any).openCanvas?.(spaceId, true),
+        onToggleYolo: (agentId, currentlyEnabled) => {
+          whimAPI.setAgentYolo(agentId, !currentlyEnabled);
+        },
+        onToggleSandbox: async (agentId) => {
+          await whimAPI.disableSandbox(agentId);
+          renderAgentsList();
+        },
+        onToggleRemote: async (agentId, current, agent) => {
+          if (current?.enabled) {
+            if (current.url) {
+              (window as any).openAgentChat?.(agentId, agent.selectedText, agent.status, agent.source, agent.spaceId);
+            } else {
+              await whimAPI.disableRemote(agentId);
+            }
+          } else {
+            await whimAPI.enableRemote(agentId);
+          }
+        },
+      },
+      skillsActions: {
+        onSkillClick: (id) => (window as any).openCanvas?.(id, true),
+        onSchedule: (id) => (window as any).openSchedulePicker?.(id),
+        onCreateSpace: (id) => (window as any).createSpaceFromSkill?.(id),
+        onOpenFolder: (id) => (window as any).openSkillFolder?.(id),
+        onDelete: (id) => (window as any).deleteSkill?.(id),
+      },
+      historyActions: {
+        onCardClick: (id) => (window as any).openCanvas?.(id, true),
+        onUnarchive: (id) => (window as any).unarchiveIntent?.(id),
+      },
+    },
+    focusBanner: {
+      onComplete: async (id) => {
+        await whimAPI.update(id, { status: 'done' });
+        clearFocus();
+        await loadSpaces();
+      },
+      onClear: clearFocus,
+    },
+  });
+}
+
+whimAPI.getSetting('workspace_root').then(async ws => {
+  // Install the IPC -> store bridge once at boot. The bridge runs alongside
+  // the legacy IPC handlers during the migration (Phase 6).
+  installIpcBridge(bridgeApi);
+
   if (!ws && !isCanvasMode && !isSettingsMode) {
     showWelcomeView();
+    // Still mount React so the lists are ready when a workspace is selected;
+    // they render empty states while no workspace is configured.
+    mountReactLists();
   } else if (!isSettingsMode) {
-    loadSpaces();
+    // Mount AFTER the first snapshot lands so React's first paint sees real
+    // data instead of an empty-state flash for workspaces with content.
+    await loadSpaces();
+    mountReactLists();
     refreshGitSync();
   }
 });
@@ -7244,6 +6751,9 @@ whimAPI.onWorkspaceChanged((path: string | null) => {
     // Workspace cleared — show welcome view
     spaces = [];
     cachedSkills = [];
+    spaceStore.setSpaces([]);
+    skillStore.setSkills([]);
+    personaStore.setPersonas([]);
     render();
     showWelcomeView();
     gitSyncBar.classList.add('hidden');

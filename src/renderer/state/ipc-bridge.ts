@@ -152,8 +152,9 @@ export function installIpcBridge(api: WhimAPI): void {
 
 /**
  * Atomic loader: fetches spaces, active sessions, and all agents in parallel,
- * then applies the combined snapshot to the relevant stores. If a newer
- * snapshot request was issued while we awaited, this one is dropped.
+ * then applies the combined snapshot to the relevant stores. Each result is
+ * gated by its OWN store's request id so a concurrent agents-only refresh
+ * can't invalidate a still-fresh spaces result, and vice versa.
  *
  * Replaces the sequential `await api.list(); await api.getActiveSessions();
  * await api.listAllAgents()` chain in the legacy `loadSpaces()` body.
@@ -168,18 +169,18 @@ export async function loadSpacesSnapshot(api: WhimAPI): Promise<void> {
     api.listAllAgents(),
   ]);
 
-  // Drop stale snapshots.
-  if (!spaceStore.isCurrentRequest(spaceReq)) return;
-  if (!agentStore.isCurrentRequest(agentReq)) return;
-
-  if (spacesResult.status === 'fulfilled') {
+  // Apply each result independently. A racing agents-only refresh that bumps
+  // agentStore's request id must NOT prevent fresh space results from landing.
+  if (spacesResult.status === 'fulfilled' && spaceStore.isCurrentRequest(spaceReq)) {
     spaceStore.setSpaces(spacesResult.value);
   }
-  if (activeResult.status === 'fulfilled') {
-    agentStore.setActiveSessionIntents(new Set(activeResult.value));
-  }
-  if (agentsResult.status === 'fulfilled') {
-    agentStore.setAgents(agentsResult.value);
+  if (agentStore.isCurrentRequest(agentReq)) {
+    if (activeResult.status === 'fulfilled') {
+      agentStore.setActiveSessionIntents(new Set(activeResult.value));
+    }
+    if (agentsResult.status === 'fulfilled') {
+      agentStore.setAgents(agentsResult.value);
+    }
   }
 }
 

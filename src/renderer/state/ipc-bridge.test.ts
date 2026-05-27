@@ -348,7 +348,7 @@ describe('snapshot loaders', () => {
     expect(agentStore.getState().agents).toEqual([agent]);
   });
 
-  it('loadSpacesSnapshot drops stale results when a newer request is reserved', async () => {
+  it('loadSpacesSnapshot drops stale space results when spaceStore is bumped', async () => {
     let resolveList!: (v: unknown[]) => void;
     const slowList = new Promise<unknown[]>(r => { resolveList = r; });
 
@@ -357,15 +357,36 @@ describe('snapshot loaders', () => {
 
     const first = loadSpacesSnapshot(m.api);
 
-    // Newer reservation invalidates the in-flight first
+    // Newer spaces reservation invalidates the in-flight first
     spaceStore.nextRequestId();
-    agentStore.nextRequestId();
 
     resolveList([{ id: 'STALE' } as unknown]);
     await first;
 
-    // Stale result must not be applied
+    // Stale spaces result must not be applied
     expect(spaceStore.getState().spaces).toEqual([]);
+  });
+
+  it('loadSpacesSnapshot still applies space results when only agentStore is bumped (cross-invalidation guard)', async () => {
+    const space = { id: 's1', description: '', body: null, raw_text: null, client: null, due_at: null, due_at_utc: null, recurrence: null, completed_at: null, folder: null, session_id: null, source_skill_id: null, attachments: [], status: 'captured' as const, created_at: '', updated_at: '' };
+
+    let resolveAgents!: (v: unknown[]) => void;
+    const slowAgents = new Promise<unknown[]>(r => { resolveAgents = r; });
+
+    const m = makeMock({ list: [space], getActiveSessions: ['s1'] });
+    m.calls.listAllAgents.mockReturnValueOnce(slowAgents);
+
+    const inflight = loadSpacesSnapshot(m.api);
+
+    // A racing agents-only refresh bumps agentStore but NOT spaceStore.
+    agentStore.nextRequestId();
+
+    resolveAgents([{ STALE: true } as unknown]);
+    await inflight;
+
+    // Spaces are fresh; they must land even though agent results are dropped.
+    expect(spaceStore.getState().spaces).toEqual([space]);
+    expect(agentStore.getState().agents).toEqual([]);
   });
 
   it('loadSpacesSnapshot tolerates partial failures (Promise.allSettled)', async () => {

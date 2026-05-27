@@ -1,4 +1,5 @@
 import type { Space } from '../../shared/types';
+import type { RecallMatch } from '../../shared/types';
 
 export type SpaceFilter = 'open' | 'agents' | 'skills' | 'closed';
 
@@ -12,6 +13,8 @@ export interface SpaceState {
   canvasSpaceId: string | null;
   /** Index of the keyboard-selected row in the currently displayed list (-1 = none). */
   selectedIndex: number;
+  /** Transient "similar previous space" hints, keyed by space id. */
+  recallHints: Map<string, RecallMatch>;
 }
 
 type Listener = () => void;
@@ -26,6 +29,7 @@ class SpaceStore {
     focusedSpaceId: null,
     canvasSpaceId: null,
     selectedIndex: -1,
+    recallHints: new Map(),
   };
   private listeners: Set<Listener> = new Set();
   /** Monotonic counter for stale-fetch detection (replaces app.ts:renderGeneration). */
@@ -73,6 +77,16 @@ class SpaceStore {
 
   setSelectedIndex(index: number): void {
     this.state = { ...this.state, selectedIndex: index };
+    this.notify();
+  }
+
+  // -- Recall hints -----------------------------------------------------------
+
+  setRecallHint(spaceId: string, match: RecallMatch | null): void {
+    const next = new Map(this.state.recallHints);
+    if (match) next.set(spaceId, match);
+    else next.delete(spaceId);
+    this.state = { ...this.state, recallHints: next };
     this.notify();
   }
 
