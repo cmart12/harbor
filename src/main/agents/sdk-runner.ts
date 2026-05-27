@@ -105,6 +105,35 @@ async function createCloudSession(
     console.warn(`[cloud-session] no rebind: runtimeSessionId=${runtimeSessionId} sessionId=${session.sessionId}`);
   }
 
+  // Diagnostic: tap _dispatchEvent on the session so we can see which events
+  // are actually reaching the local session after the rebind. If nothing
+  // logs here while the runtime is producing events, routing is broken.
+  const originalDispatchEvent = (session as any)._dispatchEvent.bind(session);
+  (session as any)._dispatchEvent = (event: any) => {
+    try {
+      console.log(`[cloud-session-event] session=${session.sessionId} type=${event?.type ?? '?'}`);
+    } catch { /* never let logging break dispatch */ }
+    return originalDispatchEvent(event);
+  };
+
+  // Diagnostic: tap the SDK's session-event notification handler on the
+  // client so we can see ALL incoming session.event notifications, including
+  // ones whose sessionId doesn't match any session in the client's map.
+  if (typeof (client as any).handleSessionEventNotification === 'function'
+      && !(client as any).__whimEventTapped) {
+    (client as any).__whimEventTapped = true;
+    const origHandler = (client as any).handleSessionEventNotification.bind(client);
+    (client as any).handleSessionEventNotification = (notification: any) => {
+      try {
+        const sid = notification?.sessionId ?? '?';
+        const t = notification?.event?.type ?? '?';
+        const mapHasIt = ((client as any).sessions as Map<string, any>)?.has(sid);
+        console.log(`[cloud-session-notify] sessionId=${sid} type=${t} routedToSession=${mapHasIt}`);
+      } catch { /* ignore */ }
+      return origHandler(notification);
+    };
+  }
+
   return session;
 }
 
