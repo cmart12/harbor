@@ -167,6 +167,7 @@ export async function launchAgent(
 
     const session = await client.createSession({
       workingDirectory: workingDir,
+      streaming: true,
       mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
       tools: getCustomTools(createCustomToolsContext(agentId)),
       onPermissionRequest: broker.createPermissionHandler(findRecord),
@@ -334,6 +335,7 @@ export async function launchQuickAgent(
 
     const sessionConfig = {
       workingDirectory: workspaceRoot,
+      streaming: true,
       ...(sandboxConfigs ? { configDir: sandboxConfigs.onDir } : {}),
       mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
       tools: customTools,
@@ -506,6 +508,7 @@ export async function launchDocumentAgent(
 
     const session = await client.createSession({
       workingDirectory: workingDir,
+      streaming: true,
       mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
       tools: getCustomTools(createCustomToolsContext(agentId)),
       onPermissionRequest: broker.createPermissionHandler(findRecord),
@@ -830,6 +833,7 @@ async function restartExpiredSession(
 
     const session = await client.createSession({
       workingDirectory: workingDir,
+      streaming: true,
       mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
       tools: getCustomTools(customToolsContext),
       onPermissionRequest: broker.createPermissionHandler(findRecord),
