@@ -1192,6 +1192,31 @@ export function setupAgentEventListeners(session: CopilotSession, record: AgentR
       url: record.remote?.url,
     });
   });
+
+  // Capture remote URL emitted by the runtime as session.info{infoType:"remote"}.
+  // Cloud sessions emit this automatically once the remote worker connects
+  // (URL like https://github.com/copilot/tasks/{id}). Local sessions only emit
+  // it when the user enables remote control explicitly. Either way, record
+  // the URL so the renderer can surface a shareable link without the user
+  // having to call enableRemoteControl first.
+  session.on('session.info' as any, (event: any) => {
+    const d = event.data ?? event;
+    if (d?.infoType !== 'remote' || !d?.url) return;
+    const url: string = d.url;
+    const prev = record.remote;
+    record.remote = {
+      enabled: true,
+      remoteSteerable: prev?.remoteSteerable ?? true,
+      url,
+    };
+    if (prev?.url === url && prev?.enabled === true) return;
+    notifier.notifyRenderer('agent:remote-changed', {
+      agentId,
+      enabled: true,
+      remoteSteerable: record.remote.remoteSteerable,
+      url,
+    });
+  });
 }
 
 /**
