@@ -440,15 +440,21 @@ export async function launchQuickAgent(
     }
 
     // before events start flowing. Errors are handled by the session.error listener.
-    session.send({ prompt }).catch((err: any) => {
-      record.status = 'failed';
-      record.summary = `Error: ${err.message || 'Unknown'}`;
-      if (!record.ephemeral) persistence.updateStatus(record);
-      notifier.notifyRenderer(`chat:event:${agentId}`, {
-        type: 'session.error',
-        message: err.message || 'Failed to process message',
+    console.log(`[sdk-send] agent=${agentId.slice(0, 8)} calling session.send promptLen=${prompt.length}`);
+    session.send({ prompt })
+      .then((messageId: any) => {
+        console.log(`[sdk-send] agent=${agentId.slice(0, 8)} session.send resolved messageId=${messageId ?? '<undefined>'}`);
+      })
+      .catch((err: any) => {
+        console.error(`[sdk-send] agent=${agentId.slice(0, 8)} session.send REJECTED:`, err?.message ?? err);
+        record.status = 'failed';
+        record.summary = `Error: ${err.message || 'Unknown'}`;
+        if (!record.ephemeral) persistence.updateStatus(record);
+        notifier.notifyRenderer(`chat:event:${agentId}`, {
+          type: 'session.error',
+          message: err.message || 'Failed to process message',
+        });
       });
-    });
 
     return { agentId, sessionId };
   } catch (err: any) {
