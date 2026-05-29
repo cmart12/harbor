@@ -36,6 +36,40 @@ async function resolveCloudSessionOptions(workspaceRoot: string): Promise<{ repo
   return {};
 }
 
+/**
+ * Wait for a cloud session's remote worker to report `session.start` before
+ * sending prompts. Until `hasSessionStarted` flips inside the runtime, calls
+ * to `session.send` are silently swallowed (the runtime logs an error but
+ * `sendForSchema` still resolves with a fresh messageId). See
+ * copilot-agent-runtime: src/core/remote/remoteSession.ts:assertRemoteSessionStarted
+ * and src/core/session.ts:sendForSchema (RemoteSession override).
+ */
+async function waitForCloudSessionStart(
+  session: CopilotSession,
+  agentId: string,
+  timeoutMs = 60_000,
+): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      try { (off as any)?.(); } catch { /* ignore */ }
+      reject(new Error(`Cloud session did not emit session.start within ${timeoutMs}ms`));
+    }, timeoutMs);
+    const off = (session as any).on('session.start', (event: any) => {
+      const data = event?.data ?? event;
+      // For cloud sessions, the runtime emits session.start ONLY when the
+      // remote copilot-agent worker has connected (producer: "copilot-agent",
+      // remoteSteerable: true). Local placeholder events don't fire this.
+      console.log(
+        `[sdk-send] agent=${agentId.slice(0, 8)} cloud session.start received ` +
+        `(producer=${data?.producer ?? '?'}, remoteSteerable=${data?.remoteSteerable ?? '?'})`,
+      );
+      clearTimeout(timer);
+      try { (off as any)?.(); } catch { /* ignore */ }
+      resolve();
+    });
+  });
+}
+
 /** Shared dependencies injected from agent-service at init time. */
 let registry: AgentRegistry;
 let notifier: AgentNotifier;
@@ -446,8 +480,15 @@ export async function launchQuickAgent(
     }
 
     // before events start flowing. Errors are handled by the session.error listener.
-    console.log(`[sdk-send] agent=${agentId.slice(0, 8)} calling session.send promptLen=${prompt.length}`);
-    session.send({ prompt })
+    // Cloud sessions: wait for the remote worker's session.start event before
+    // sending — otherwise the runtime swallows the prompt silently (see
+    // waitForCloudSessionStart helper for details).
+    console.log(`[sdk-send] agent=${agentId.slice(0, 8)} calling session.send promptLen=${prompt.length}${isCloudSandbox ? ' (after cloud start)' : ''}`);
+    const readyPromise = isCloudSandbox
+      ? waitForCloudSessionStart(session, agentId)
+      : Promise.resolve();
+    readyPromise
+      .then(() => session.send({ prompt }))
       .then((messageId: any) => {
         console.log(`[sdk-send] agent=${agentId.slice(0, 8)} session.send resolved messageId=${messageId ?? '<undefined>'}`);
       })
