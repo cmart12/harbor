@@ -244,10 +244,14 @@ export async function launchAgent(
 
     // Fire-and-forget: return agentId immediately so the renderer can subscribe
     // before events start flowing. Errors are handled by the session.error listener.
+    console.log(`[sdk-send] launchAgent agent=${agentId.slice(0, 8)} calling session.send`);
     session.send({
       prompt: selectedText,
       attachments: [{ type: 'file' as const, path: path.join(workingDir, 'canvas.md'), displayName: 'canvas.md' }],
-    }).catch((err: any) => {
+    })
+      .then((mid: any) => { console.log(`[sdk-send] launchAgent agent=${agentId.slice(0, 8)} resolved messageId=${mid ?? '<undefined>'}`); })
+      .catch((err: any) => {
+      console.error(`[sdk-send] launchAgent agent=${agentId.slice(0, 8)} REJECTED:`, err?.message ?? err);
       record.status = 'failed';
       record.summary = `Error: ${err.message || 'Unknown'}`;
       persistence.updateStatus(record);
@@ -942,7 +946,17 @@ export function setupAgentEventListeners(session: CopilotSession, record: AgentR
   // sessions are confirmed working with the new SDK.
   session.on((event: any) => {
     try {
-      console.log(`[sdk-event] agent=${agentId.slice(0, 8)} type=${event?.type ?? '?'}`);
+      const t = event?.type ?? '?';
+      // For warning/error/info events, also dump the payload so we can see
+      // what the runtime is complaining about (e.g. 'no model available').
+      if (t === 'session.warning' || t === 'session.error' || t === 'session.info' || t === 'session.start') {
+        let data: string;
+        try { data = JSON.stringify(event?.data ?? event, null, 0).slice(0, 500); }
+        catch { data = String(event?.data ?? event); }
+        console.log(`[sdk-event] agent=${agentId.slice(0, 8)} type=${t} data=${data}`);
+      } else {
+        console.log(`[sdk-event] agent=${agentId.slice(0, 8)} type=${t}`);
+      }
     } catch { /* never let logging break dispatch */ }
   });
 
