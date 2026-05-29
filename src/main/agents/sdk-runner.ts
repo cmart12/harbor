@@ -931,6 +931,15 @@ export function setupAgentEventListeners(session: CopilotSession, record: AgentR
   const agentId = record.agentId;
   const chatChannel = `chat:event:${agentId}`;
 
+  // TEMP DIAGNOSTIC: log every event received by this session so we can
+  // diagnose silent agents after the SDK link. Remove once cloud + local
+  // sessions are confirmed working with the new SDK.
+  session.on((event: any) => {
+    try {
+      console.log(`[sdk-event] agent=${agentId.slice(0, 8)} type=${event?.type ?? '?'}`);
+    } catch { /* never let logging break dispatch */ }
+  });
+
   // SDK events wrap payloads in event.data; fall back to top-level for compat
   session.on('assistant.message_delta', (event: any) => {
     const d = event.data ?? event;
