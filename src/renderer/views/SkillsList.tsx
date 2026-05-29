@@ -58,9 +58,44 @@ const SkillRow = React.memo(function SkillRow({
       tabIndex={0}
       onClick={() => onSkillClick(skill.id)}
       onKeyDown={(e) => {
+        const target = e.target as HTMLElement;
+        // Don't intercept keystrokes on focused descendant buttons (their
+        // own Enter/Space handlers should run instead of opening the card).
+        if (target !== e.currentTarget && target.closest('button')) return;
+
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
+          e.stopPropagation();
           onSkillClick(skill.id);
+          return;
+        }
+
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          e.preventDefault();
+          // Stop propagation so the legacy global ArrowUp/Down handler in
+          // app.ts (selectedIndex-based, scoped to Spaces) does not also fire.
+          e.stopPropagation();
+
+          const row = e.currentTarget as HTMLElement;
+          const container = row.parentElement;
+          if (!container) return;
+          const items = Array.from(
+            container.querySelectorAll<HTMLElement>('.space-item.skill-card'),
+          );
+          const idx = items.indexOf(row);
+          if (idx === -1) return;
+
+          if (e.key === 'ArrowDown') {
+            const next = items[idx + 1];
+            if (next) next.focus();
+          } else {
+            if (idx === 0) {
+              const input = document.getElementById('description-input');
+              if (input) (input as HTMLElement).focus();
+            } else {
+              items[idx - 1].focus();
+            }
+          }
         }
       }}
     >
@@ -76,7 +111,7 @@ const SkillRow = React.memo(function SkillRow({
           {lastRun ? <span>last: {lastRun}</span> : null}
         </div>
       </div>
-      <div className="space-actions-row">
+      <div className="skill-actions">
         <button
           type="button"
           className="skill-action"

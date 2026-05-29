@@ -2528,18 +2528,6 @@ body.dark .workers-badge {
 
 /* ── Space action row (add link, edit body) ─────────── */
 
-.space-actions-row {
-  display: flex;
-  gap: 4px;
-  margin-top: 2px;
-  opacity: 0;
-  transition: opacity 0.15s ease;
-}
-
-.space-item:hover .space-actions-row {
-  opacity: 1;
-}
-
 .space-add-link,
 .space-edit-body {
   background: none;
@@ -2652,22 +2640,123 @@ body.dark .space-launch:hover {
   background: rgba(255, 255, 255, 0.08);
 }
 
-/* ── Skill card overrides ────────────────────────────── */
+/* ── Skill card styling ──────────────────────────────── */
 
 .skill-card {
-  align-items: center;
+  align-items: flex-start;
 }
 
-.skill-icon {
-  font-size: 20px;
+.skill-card .space-meta {
+  flex-wrap: wrap;
+  row-gap: 3px;
+}
+
+.skill-emoji {
+  display: inline-block;
+  width: 1.4em;
+  text-align: center;
+  font-size: 18px;
   line-height: 1;
+  vertical-align: -2px;
+  margin-right: 4px;
   flex-shrink: 0;
 }
 
-.skill-card .space-launch,
-.skill-card .space-delete {
+.skill-description {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.55);
+  margin-top: 3px;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+body.dark .skill-description {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.skill-schedule,
+.skill-next-run {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+
+.skill-schedule {
+  color: #2563eb;
+  background: rgba(37, 99, 235, 0.08);
+}
+
+.skill-next-run {
+  color: #7c3aed;
+  background: rgba(124, 58, 237, 0.08);
+}
+
+body.dark .skill-schedule {
+  color: #93c5fd;
+  background: rgba(96, 165, 250, 0.12);
+}
+
+body.dark .skill-next-run {
+  color: #c4b5fd;
+  background: rgba(167, 139, 250, 0.12);
+}
+
+.skill-actions {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.skill-action {
+  opacity: 0;
+  background: none;
+  border: none;
+  color: rgba(0, 0, 0, 0.4);
+  cursor: pointer;
   font-size: 13px;
-  padding: 2px 4px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
+  flex-shrink: 0;
+}
+
+.space-item:hover .skill-action,
+.space-item:focus-within .skill-action,
+.space-item:hover .skill-actions .space-delete,
+.space-item:focus-within .skill-actions .space-delete {
+  opacity: 1;
+}
+
+.skill-action:hover {
+  color: rgba(0, 0, 0, 0.85);
+  background: rgba(0, 0, 0, 0.05);
+}
+
+body.dark .skill-action {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+body.dark .skill-action:hover {
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.skill-actions .space-delete {
+  font-size: 13px;
+  padding: 2px 6px;
   line-height: 1;
   display: inline-flex;
   align-items: center;

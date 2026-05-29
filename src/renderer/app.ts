@@ -6870,7 +6870,7 @@ function mountReactLists(): void {
         },
       },
       skillsActions: {
-        onSkillClick: (id) => (window as any).openCanvas?.(id, true),
+        onSkillClick: (id) => { void openSkillEditor(id); },
         onSchedule: (id) => (window as any).openSchedulePicker?.(id),
         onCreateSpace: (id) => (window as any).createSpaceFromSkill?.(id),
         onOpenFolder: (id) => (window as any).openSkillFolder?.(id),
