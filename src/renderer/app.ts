@@ -6120,6 +6120,29 @@ function agentColor(handle: string): string {
   return AGENT_PRESENCE_COLORS[Math.abs(hash) % AGENT_PRESENCE_COLORS.length];
 }
 
+/** Map a raw agent status to a short label shown next to the presence cursor. */
+function presenceStatusLabel(status: string): string {
+  switch (status) {
+    case 'running':          return 'Running…';
+    case 'idle':             return 'Idle';
+    case 'waiting-approval': return 'Needs approval';
+    case 'completed':        return 'Done';
+    case 'failed':           return 'Failed';
+    case 'cancelled':        return 'Cancelled';
+    default:                 return status;
+  }
+}
+
+/** Patch the status field on an active agent's presence and resync. */
+function updateAgentPresenceStatus(agentId: string, status: string): void {
+  const entry = canvasAgentPresence.get(agentId);
+  if (!entry) return;
+  const label = presenceStatusLabel(status);
+  if (entry.status === label) return;
+  canvasAgentPresence.set(agentId, { ...entry, status: label });
+  syncCanvasPresence();
+}
+
 function syncCanvasPresence(): void {
   updateCanvasPresence(Array.from(canvasAgentPresence.values()));
   updateCanvasAgentUsers(Array.from(canvasAgentUserMap.values()));
@@ -6135,6 +6158,7 @@ whimAPI.onAgentPresenceStarted((data) => {
     userId: data.agentId,
     color: agentColor(data.persona.handle),
     cursor,
+    status: presenceStatusLabel('running'),
   });
   canvasAgentUserMap.set(data.agentId, {
     id: data.agentId,
@@ -6267,6 +6291,10 @@ whimAPI.onAgentStatusChanged((data: any) => {
     updateWorkersBadge();
   }
 
+  // Update presence status badge so collaborators see live agent state next
+  // to the cursor in the document.
+  updateAgentPresenceStatus(data.agentId, data.status);
+
   // If the agent serving the app-level remote URL completed or failed, clear
   // stale state so the next click on the remote button reconciles.
   if (
@@ -6309,6 +6337,11 @@ whimAPI.onAgentApprovalNeeded((data: any) => {
     updateAgentCardApproval(data.agentId);
   }
   updateWorkersBadge();
+
+  // Approval transitions don't always emit `agent:status-changed`, so update
+  // the presence badge directly so the "Needs approval" label appears next to
+  // the cursor in the canvas.
+  updateAgentPresenceStatus(data.agentId, 'waiting-approval');
 
   // Update decoration to waiting-approval color (skip comment-thread agents)
   if (canvasSpaceId && !commentThreadAgents.has(data.agentId)) {

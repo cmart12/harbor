@@ -74,11 +74,17 @@ export function registerWorkspaceHandlers(): void {
     }
 
     try {
-      const result = await dialog.showOpenDialog({
+      const dialogOpts = {
         title: 'Select Workspace Directory',
-        properties: ['openDirectory'],
+        properties: ['openDirectory'] as Array<'openDirectory'>,
         defaultPath: getConfigValue('workspace') || undefined,
-      });
+      };
+      // Pass the parent window so the picker is attached to it
+      // (sheet on macOS, modal on Windows/Linux) and can't end up
+      // hidden behind the settings window.
+      const result = win
+        ? await dialog.showOpenDialog(win, dialogOpts)
+        : await dialog.showOpenDialog(dialogOpts);
 
       if (!result.canceled && result.filePaths.length > 0) {
         const dir = result.filePaths[0];

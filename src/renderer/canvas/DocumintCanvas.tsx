@@ -17,6 +17,8 @@ import {
   type UserMentionEvent,
   type DocumintActions,
   type DocumintDecoration,
+  type DocumentResourceReference,
+  type ResourceProtocolRecord,
 } from 'documint';
 import { GitFork, FileOutput } from 'lucide-react';
 import { FrontmatterEditor } from './FrontmatterEditor';
@@ -42,6 +44,31 @@ declare const whimAPI: {
   openExternal(url: string): Promise<{ ok: true }>;
   openLink(spaceId: string, url: string): Promise<{ action: string; error?: string }>;
 };
+
+// Single source of truth: the `whim://` URL scheme is a first-class Documint
+// resource protocol. Documint will render matching markdown links as inline
+// resource pills with this icon/label, and route clicks through
+// `onResourceOpened` instead of `storage.openFile`.
+const WHIM_PROTOCOLS: ResourceProtocolRecord = new Map([
+  ['whim', { label: 'Whim', icon: '🌿' }],
+]);
+
+/** Route a whim:// resource click to the matching window opener. */
+function openWhimResource(url: string): void {
+  if (url.startsWith('whim://space/')) {
+    const id = url.slice('whim://space/'.length);
+    if (id) whimAPI.openCanvasWindow({ kind: 'space', id, title: '' });
+    return;
+  }
+  if (url.startsWith('whim://page/')) {
+    const parts = decodeURIComponent(url.slice('whim://page/'.length)).split('/');
+    if (parts.length >= 2) {
+      const [spaceId, ...rest] = parts;
+      const page = rest.join('/');
+      whimAPI.openPageWindow({ kind: 'page', spaceId, page, title: page });
+    }
+  }
+}
 
 export interface AgentPersona {
   id: string;
@@ -175,6 +202,10 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
     const [decorations, setDecorations] = useState<readonly DocumintDecoration[]>(initialDecorations || []);
     const [agentUsers, setAgentUsers] = useState<DocumentUser[]>([]);
     const [showLinkPicker, setShowLinkPicker] = useState(false);
+    // Set of whim:// URLs currently discovered in the document. Documint marks
+    // these as "active" resources (live pills). We always mark every requested
+    // resource as active because whim:// URLs are valid by construction.
+    const [activeResources, setActiveResources] = useState<ReadonlySet<string>>(() => new Set());
 
     contentRef.current = content;
     frontmatterRef.current = frontmatter;
@@ -216,16 +247,39 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
         return result.relativePath!;
       },
       openFile(url: string) {
-        if (url.startsWith('whim://space/')) {
-          const targetId = url.replace('whim://space/', '');
-          whimAPI.openCanvasWindow({ kind: 'space', id: targetId, title: '' });
-        } else {
-          // Delegate to main process: opens .md files under workspace in canvas,
-          // opens http(s) URLs in browser, opens other files with OS default
-          whimAPI.openLink(spaceId, url);
+        // Defensive fallback — when the whim:// protocol is registered with
+        // Documint, links to whim://... should route through onResourceOpened
+        // rather than here, but we keep this path for safety (e.g., the URL
+        // wasn't yet in the active resources set when clicked).
+        if (url.startsWith('whim://space/') || url.startsWith('whim://page/')) {
+          openWhimResource(url);
+          return;
         }
+        // Delegate to main process: opens .md files under workspace in canvas,
+        // opens http(s) URLs in browser, opens other files with OS default
+        whimAPI.openLink(spaceId, url);
       },
     }), [spaceId]);
+
+    const handleResourcesRequested = useCallback((refs: readonly DocumentResourceReference[]) => {
+      setActiveResources(prev => {
+        const next = new Set(refs.map(r => r.url));
+        if (prev.size === next.size) {
+          let same = true;
+          for (const u of prev) {
+            if (!next.has(u)) { same = false; break; }
+          }
+          if (same) return prev;
+        }
+        return next;
+      });
+    }, []);
+
+    const handleResourceOpened = useCallback((resource: DocumentResourceReference) => {
+      if (resource.protocol === 'whim') {
+        openWhimResource(resource.url);
+      }
+    }, []);
 
     const doSave = useCallback(async () => {
       if (savingRef.current) return;
@@ -747,9 +801,13 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
                 storage={storage}
                 actions={actions}
                 decorations={decorations}
+                protocols={WHIM_PROTOCOLS}
+                resources={activeResources}
                 onContentChanged={handleContentChange}
                 onCommentChanged={handleCommentChanged}
                 onUserMentioned={handleUserMentioned}
+                onResourceOpened={handleResourceOpened}
+                onResourcesRequested={handleResourcesRequested}
                 presence={presence}
                 theme={documintTheme}
               />
