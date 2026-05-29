@@ -36,107 +36,6 @@ async function resolveCloudSessionOptions(workspaceRoot: string): Promise<{ repo
   return {};
 }
 
-/**
- * Workaround for the SDK/runtime cloud-session contract bug:
- *
- * - `client.createSession({ cloud: {...} })` always sends `sessionId` in the
- *   wire payload (SDK auto-generates one).
- * - The runtime rejects `session.create` with `Cannot specify sessionId when
- *   creating a remote session in the cloud.` when both `sessionId` and `cloud`
- *   are present.
- * - Even if the rejection were removed, the SDK ignores the runtime's response
- *   `sessionId`, so events routed by session ID would never reach the local
- *   `CopilotSession`.
- *
- * This helper monkey-patches `connection.sendRequest` for the duration of the
- * createSession call:
- *   1. strips `sessionId` from the cloud `session.create` wire payload
- *   2. captures the runtime-assigned sessionId from the response
- *   3. after the SDK returns, rebinds the local session and the client's
- *      session map to the runtime sessionId so event routing works.
- *
- * Remove this helper once @github/copilot-sdk handles cloud session creation
- * natively (the public createSession should be the only path).
- */
-async function createCloudSession(
-  client: NonNullable<ReturnType<typeof getCopilotClient>>,
-  config: Parameters<NonNullable<ReturnType<typeof getCopilotClient>>['createSession']>[0],
-): Promise<CopilotSession> {
-  const connection = (client as any).connection;
-  if (!connection || typeof connection.sendRequest !== 'function') {
-    throw new Error('Copilot client connection is not available for cloud session creation');
-  }
-
-  let runtimeSessionId: string | undefined;
-  const originalSendRequest = connection.sendRequest.bind(connection);
-
-  connection.sendRequest = async (method: string, params: any) => {
-    if (method === 'session.create' && params && params.cloud) {
-      const { sessionId: _drop, ...rest } = params;
-      console.log(`[cloud-session] sending session.create (no sessionId), cloud=${JSON.stringify(params.cloud)}`);
-      const response = await originalSendRequest(method, rest);
-      runtimeSessionId = response?.sessionId;
-      console.log(`[cloud-session] runtime returned sessionId=${runtimeSessionId}`);
-      return response;
-    }
-    return originalSendRequest(method, params);
-  };
-
-  let session: CopilotSession;
-  try {
-    session = await client.createSession(config);
-  } finally {
-    connection.sendRequest = originalSendRequest;
-  }
-
-  if (runtimeSessionId && runtimeSessionId !== session.sessionId) {
-    const sdkAssignedId = session.sessionId;
-    const sessions = (client as any).sessions as Map<string, CopilotSession> | undefined;
-    if (sessions && sessions.get(sdkAssignedId) === session) {
-      sessions.delete(sdkAssignedId);
-      sessions.set(runtimeSessionId, session);
-    }
-    (session as any).sessionId = runtimeSessionId;
-    // The lazily-built rpc client captured the old sessionId — clear so the
-    // next access rebuilds against the runtime sessionId.
-    (session as any)._rpc = null;
-    console.log(`[cloud-session] rebound local session ${sdkAssignedId} → ${runtimeSessionId}`);
-  } else {
-    console.warn(`[cloud-session] no rebind: runtimeSessionId=${runtimeSessionId} sessionId=${session.sessionId}`);
-  }
-
-  // Diagnostic: tap _dispatchEvent on the session so we can see which events
-  // are actually reaching the local session after the rebind. If nothing
-  // logs here while the runtime is producing events, routing is broken.
-  const originalDispatchEvent = (session as any)._dispatchEvent.bind(session);
-  (session as any)._dispatchEvent = (event: any) => {
-    try {
-      console.log(`[cloud-session-event] session=${session.sessionId} type=${event?.type ?? '?'}`);
-    } catch { /* never let logging break dispatch */ }
-    return originalDispatchEvent(event);
-  };
-
-  // Diagnostic: tap the SDK's session-event notification handler on the
-  // client so we can see ALL incoming session.event notifications, including
-  // ones whose sessionId doesn't match any session in the client's map.
-  if (typeof (client as any).handleSessionEventNotification === 'function'
-      && !(client as any).__whimEventTapped) {
-    (client as any).__whimEventTapped = true;
-    const origHandler = (client as any).handleSessionEventNotification.bind(client);
-    (client as any).handleSessionEventNotification = (notification: any) => {
-      try {
-        const sid = notification?.sessionId ?? '?';
-        const t = notification?.event?.type ?? '?';
-        const mapHasIt = ((client as any).sessions as Map<string, any>)?.has(sid);
-        console.log(`[cloud-session-notify] sessionId=${sid} type=${t} routedToSession=${mapHasIt}`);
-      } catch { /* ignore */ }
-      return origHandler(notification);
-    };
-  }
-
-  return session;
-}
-
 /** Shared dependencies injected from agent-service at init time. */
 let registry: AgentRegistry;
 let notifier: AgentNotifier;
@@ -453,11 +352,7 @@ export async function launchQuickAgent(
       onElicitationRequest: broker.createElicitationHandler(findRecord),
     };
 
-    // Cloud sessions need the RPC-level workaround that strips sessionId and
-    // adopts the runtime-assigned one; everything else uses the public API.
-    const session = isCloudSandbox
-      ? await createCloudSession(client, sessionConfig)
-      : await client.createSession(sessionConfig);
+    const session = await client.createSession(sessionConfig);
 
     // The runtime does NOT auto-load sandbox enforcement from configDir. We
     // must explicitly push the sandboxConfig via options.update so MXC
@@ -545,21 +440,15 @@ export async function launchQuickAgent(
     }
 
     // before events start flowing. Errors are handled by the session.error listener.
-    if (isCloudSandbox) console.log(`[cloud-session] agent=${agentId} sessionId=${sessionId} calling session.send with prompt length=${prompt.length}`);
-    session.send({ prompt })
-      .then(() => {
-        if (isCloudSandbox) console.log(`[cloud-session] agent=${agentId} session.send acknowledged by runtime`);
-      })
-      .catch((err: any) => {
-        if (isCloudSandbox) console.error(`[cloud-session] agent=${agentId} session.send FAILED:`, err);
-        record.status = 'failed';
-        record.summary = `Error: ${err.message || 'Unknown'}`;
-        if (!record.ephemeral) persistence.updateStatus(record);
-        notifier.notifyRenderer(`chat:event:${agentId}`, {
-          type: 'session.error',
-          message: err.message || 'Failed to process message',
-        });
+    session.send({ prompt }).catch((err: any) => {
+      record.status = 'failed';
+      record.summary = `Error: ${err.message || 'Unknown'}`;
+      if (!record.ephemeral) persistence.updateStatus(record);
+      notifier.notifyRenderer(`chat:event:${agentId}`, {
+        type: 'session.error',
+        message: err.message || 'Failed to process message',
       });
+    });
 
     return { agentId, sessionId };
   } catch (err: any) {
