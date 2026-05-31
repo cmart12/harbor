@@ -614,7 +614,7 @@ function handleWindowMoved(): void {
       isSnapping = false;
       return;
     }
-    mainWindow.setPosition(x, y, false);
+    mainWindow.setBounds({ x, y, width: bounds.width, height: bounds.height }, false);
     setConfigValue('snapPosition', slot);
 
     // Clear guard after animation
