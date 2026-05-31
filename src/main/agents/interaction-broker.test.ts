@@ -11,6 +11,9 @@ function makeNotifier(): AgentNotifier {
   return {
     notifyRenderer: vi.fn(),
     showApprovalNotification: vi.fn(),
+    showSandboxBlockNotification: vi.fn(),
+    showUserInputNotification: vi.fn(),
+    showElicitationNotification: vi.fn(),
   } as unknown as AgentNotifier;
 }
 

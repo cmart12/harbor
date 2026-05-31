@@ -17,6 +17,12 @@ import { initAutoUpdater, cleanupAutoUpdater } from './update-service';
 
 let currentToggleAccelerator: string | null = null;
 
+// Windows toast notifications require an AppUserModelId to be properly
+// associated with the app in the notification center.
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.copilot.tokens');
+}
+
 // Suppress EPIPE errors that bubble up from vscode-jsonrpc when the Copilot
 // CLI subprocess exits before the SDK finishes writing to its stdin. These are
 // expected during SDK init failures and are already handled by initCopilot's

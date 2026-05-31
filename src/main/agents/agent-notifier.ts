@@ -10,6 +10,64 @@ export interface ApprovalNotificationOptions {
   onDeny?: () => void;
 }
 
+export interface SandboxBlockNotificationOptions {
+  agentId: string;
+  requestId: string;
+  kind: string;
+  target: string;
+  intention?: string;
+  onAllowOnce?: () => void;
+}
+
+export interface UserInputNotificationOptions {
+  agentId: string;
+  requestId: string;
+  question?: string;
+}
+
+export interface ElicitationNotificationOptions {
+  agentId: string;
+  requestId: string;
+  message?: string;
+}
+
+/** Escape XML special characters for use in Windows toast XML. */
+function escapeXml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+/**
+ * Build Windows Toast XML with optional action buttons.
+ * On Windows, Electron's Notification `actions` property is ignored —
+ * `toastXml` is the only way to show interactive buttons.
+ */
+export function buildToastXml(
+  title: string,
+  body: string,
+  actions?: { label: string; argument: string }[],
+): string {
+  const actionsXml = actions?.length
+    ? `<actions>${actions.map(a =>
+        `<action content="${escapeXml(a.label)}" arguments="${escapeXml(a.argument)}" activationType="foreground"/>`
+      ).join('')}</actions>`
+    : '';
+
+  return `<toast launch="click" activationType="foreground">
+  <visual>
+    <binding template="ToastGeneric">
+      <text>${escapeXml(title)}</text>
+      <text>${escapeXml(body)}</text>
+    </binding>
+  </visual>
+  ${actionsXml}
+</toast>`;
+}
+
 export class AgentNotifier {
   /** Send an event to all renderer windows */
   notifyRenderer(channel: string, ...args: any[]): void {
@@ -18,7 +76,17 @@ export class AgentNotifier {
     }
   }
 
-  /** Show native OS notification for approval when window is unfocused */
+  /** Bring the first window to front and notify it of the click. */
+  private bringWindowToFront(agentId: string): void {
+    const win = BrowserWindow.getAllWindows()[0];
+    if (win) {
+      win.show();
+      win.focus();
+      win.webContents.send('notification:approval-clicked', { agentId });
+    }
+  }
+
+  /** Show native OS notification for permission approval when window is unfocused */
   showApprovalNotification(options: ApprovalNotificationOptions): void {
     const wins = BrowserWindow.getAllWindows();
     const anyFocused = wins.some(w => w.isFocused());
@@ -34,14 +102,29 @@ export class AgentNotifier {
     if (intention) bodyParts.push(intention);
     if (path) bodyParts.push(path);
 
+    const title = 'Approval Needed';
+    const body = bodyParts.join('\n');
+
+    const isWindows = process.platform === 'win32';
+
     const notification = new Notification({
-      title: 'Approval needed',
-      body: bodyParts.join('\n'),
+      title,
+      body,
       silent: false,
-      actions: [
-        { type: 'button', text: 'Approve' },
-        { type: 'button', text: 'Deny' },
-      ],
+      // macOS-only: action buttons via the actions property
+      ...(!isWindows ? {
+        actions: [
+          { type: 'button' as const, text: 'Approve' },
+          { type: 'button' as const, text: 'Deny' },
+        ],
+      } : {}),
+      // Windows-only: use toast XML for action buttons
+      ...(isWindows ? {
+        toastXml: buildToastXml(title, body, [
+          { label: 'Approve', argument: 'approve' },
+          { label: 'Deny', argument: 'deny' },
+        ]),
+      } : {}),
     });
 
     notification.on('action', (_event, index) => {
@@ -53,12 +136,137 @@ export class AgentNotifier {
     });
 
     notification.on('click', () => {
-      const win = wins[0];
-      if (win) {
-        win.show();
-        win.focus();
-        win.webContents.send('notification:approval-clicked', { agentId });
+      this.bringWindowToFront(agentId);
+    });
+
+    notification.show();
+  }
+
+  /** Show native OS notification for a sandbox block event. */
+  showSandboxBlockNotification(options: SandboxBlockNotificationOptions): void {
+    const wins = BrowserWindow.getAllWindows();
+    const anyFocused = wins.some(w => w.isFocused());
+    if (anyFocused) return;
+
+    const { agentId, kind, target, intention, onAllowOnce } = options;
+
+    const bodyParts: string[] = [`Blocked: ${kind}`];
+    if (intention) bodyParts.push(intention);
+    if (target) bodyParts.push(target);
+
+    const title = 'Sandbox Blocked';
+    const body = bodyParts.join('\n');
+
+    const isWindows = process.platform === 'win32';
+
+    const notification = new Notification({
+      title,
+      body,
+      silent: false,
+      ...(!isWindows ? {
+        actions: [
+          { type: 'button' as const, text: 'Allow Once' },
+          { type: 'button' as const, text: 'Open' },
+        ],
+      } : {}),
+      ...(isWindows ? {
+        toastXml: buildToastXml(title, body, [
+          { label: 'Allow Once', argument: 'allow-once' },
+          { label: 'Open', argument: 'open' },
+        ]),
+      } : {}),
+    });
+
+    notification.on('action', (_event, index) => {
+      if (index === 0) {
+        onAllowOnce?.();
+      } else {
+        this.bringWindowToFront(agentId);
       }
+    });
+
+    notification.on('click', () => {
+      this.bringWindowToFront(agentId);
+    });
+
+    notification.show();
+  }
+
+  /** Show native OS notification when an agent asks the user a question. */
+  showUserInputNotification(options: UserInputNotificationOptions): void {
+    const wins = BrowserWindow.getAllWindows();
+    const anyFocused = wins.some(w => w.isFocused());
+    if (anyFocused) return;
+
+    const { agentId, question } = options;
+
+    const title = 'Question from Agent';
+    const body = question || 'An agent needs your input to continue.';
+
+    const isWindows = process.platform === 'win32';
+
+    const notification = new Notification({
+      title,
+      body,
+      silent: false,
+      ...(!isWindows ? {
+        actions: [
+          { type: 'button' as const, text: 'Open' },
+        ],
+      } : {}),
+      ...(isWindows ? {
+        toastXml: buildToastXml(title, body, [
+          { label: 'Open', argument: 'open' },
+        ]),
+      } : {}),
+    });
+
+    notification.on('action', () => {
+      this.bringWindowToFront(agentId);
+    });
+
+    notification.on('click', () => {
+      this.bringWindowToFront(agentId);
+    });
+
+    notification.show();
+  }
+
+  /** Show native OS notification when an agent needs elicitation input. */
+  showElicitationNotification(options: ElicitationNotificationOptions): void {
+    const wins = BrowserWindow.getAllWindows();
+    const anyFocused = wins.some(w => w.isFocused());
+    if (anyFocused) return;
+
+    const { agentId, message } = options;
+
+    const title = 'Input Needed';
+    const body = message || 'An agent needs additional information to continue.';
+
+    const isWindows = process.platform === 'win32';
+
+    const notification = new Notification({
+      title,
+      body,
+      silent: false,
+      ...(!isWindows ? {
+        actions: [
+          { type: 'button' as const, text: 'Open' },
+        ],
+      } : {}),
+      ...(isWindows ? {
+        toastXml: buildToastXml(title, body, [
+          { label: 'Open', argument: 'open' },
+        ]),
+      } : {}),
+    });
+
+    notification.on('action', () => {
+      this.bringWindowToFront(agentId);
+    });
+
+    notification.on('click', () => {
+      this.bringWindowToFront(agentId);
     });
 
     notification.show();

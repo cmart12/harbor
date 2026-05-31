@@ -50,7 +50,7 @@ import type { AgentNotifier } from './agent-notifier';
 import type { AgentPersistence } from './agent-persistence';
 
 function makeNotifier(): AgentNotifier {
-  return { notifyRenderer: vi.fn(), showApprovalNotification: vi.fn() } as unknown as AgentNotifier;
+  return { notifyRenderer: vi.fn(), showApprovalNotification: vi.fn(), showSandboxBlockNotification: vi.fn(), showUserInputNotification: vi.fn(), showElicitationNotification: vi.fn() } as unknown as AgentNotifier;
 }
 function makePersistence(): AgentPersistence {
   return { updateStatus: vi.fn() } as unknown as AgentPersistence;
@@ -197,7 +197,7 @@ describe('buildSandboxLaunchSetup', () => {
     // also fires a retry prompt via `disableSandboxForSession`.
     // Regression for: "when i allow once shouldnt it have allowed".
     const notifyRenderer = vi.fn();
-    const localNotifier = { notifyRenderer, showApprovalNotification: vi.fn() } as unknown as AgentNotifier;
+    const localNotifier = { notifyRenderer, showApprovalNotification: vi.fn(), showSandboxBlockNotification: vi.fn(), showUserInputNotification: vi.fn(), showElicitationNotification: vi.fn() } as unknown as AgentNotifier;
     const localBroker = new InteractionBroker(localNotifier, makePersistence());
     const localRegistry = new AgentRegistry();
     // Use the production AgentRecord shape via the registry's helper.

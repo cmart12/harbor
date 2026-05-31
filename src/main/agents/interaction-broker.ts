@@ -101,12 +101,13 @@ export class InteractionBroker {
       type: 'sandbox.blocked',
       ...payload,
     });
-    this.notifier.showApprovalNotification({
+    this.notifier.showSandboxBlockNotification({
       agentId: record.agentId,
       requestId,
-      permissionKind: `sandbox: ${req.kind}`,
+      kind: req.kind,
+      target: req.target,
       intention: req.intention,
-      path: req.target,
+      onAllowOnce: () => this.resolveSandboxBlock(record.agentId, requestId, 'allow-once'),
     });
 
     return new Promise<SandboxResolution>((resolve) => {
@@ -516,10 +517,10 @@ export class InteractionBroker {
       allowFreeform: request.allowFreeform,
     });
 
-    this.notifier.showApprovalNotification({
+    this.notifier.showUserInputNotification({
       agentId,
       requestId,
-      permissionKind: 'question',
+      question: request.question,
     });
 
     return new Promise<UserInputResponse>((resolve) => {
@@ -544,10 +545,10 @@ export class InteractionBroker {
         elicitationSource: context.elicitationSource,
       });
 
-      this.notifier.showApprovalNotification({
+      this.notifier.showElicitationNotification({
         agentId: record.agentId,
         requestId,
-        permissionKind: 'input needed',
+        message: context.message,
       });
 
       return new Promise<ElicitationResult>((resolve) => {
