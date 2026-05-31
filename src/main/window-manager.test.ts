@@ -28,6 +28,8 @@ const mockWindow = {
   setPosition: vi.fn(),
   setAlwaysOnTop: vi.fn(),
   setResizable: vi.fn(),
+  isResizable: vi.fn(() => true),
+  setSize: vi.fn(),
   show: vi.fn(),
   hide: vi.fn(),
   focus: vi.fn(),

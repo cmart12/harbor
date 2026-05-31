@@ -25,6 +25,14 @@ let settingsWindow: BrowserWindow | null = null;
 let settingsWindowAllowClose = false;
 let isExpanded = false;
 let isSnapping = false;
+// True while we are programmatically changing the main window bounds. Used to
+// distinguish our own setBounds() calls from genuine user drag-resize/move so
+// that the resize-persist and snap-on-move handlers ignore the former. Without
+// this, transparent+resizable+frameless windows on Windows creep a few px on
+// every setBounds, and the move/resize listeners feed that back into another
+// setBounds — an endless slow-growth loop.
+let programmaticBounds = false;
+let clearProgrammaticBoundsTimer: ReturnType<typeof setTimeout> | null = null;
 let showTimestamp = 0;
 let unpinTimestamp = 0;
 let blurHideTimer: ReturnType<typeof setTimeout> | null = null;
@@ -59,6 +67,53 @@ function applyStackingPolicy(): void {
 
 function cancelBlurTimer(): void {
   if (blurHideTimer) { clearTimeout(blurHideTimer); blurHideTimer = null; }
+}
+
+/**
+ * Apply bounds to the main window without triggering the Windows
+ * transparent-window growth bug or the snap/resize-persist feedback loops.
+ *
+ * On Windows a frameless + transparent + resizable BrowserWindow grows a few
+ * pixels on every setBounds() because Chromium miscalculates the non-client
+ * (DWM) area. To neutralise it we temporarily make the window non-resizable
+ * around the setBounds, then force the exact pixel size with setSize, then
+ * restore resizability so the user can still drag-resize.
+ *
+ * While this runs, `programmaticBounds` is set so the `move` (snap) and
+ * `resize` (persist) listeners ignore the change and don't feed it back into
+ * another setBounds.
+ */
+function setMainBounds(
+  win: BrowserWindow,
+  bounds: { x: number; y: number; width: number; height: number },
+  animate: boolean,
+): void {
+  if (win.isDestroyed()) return;
+  programmaticBounds = true;
+
+  if (process.platform === 'win32') {
+    // Windows-only: neutralise the transparent-window growth bug. Make the
+    // window non-resizable around the change, force the exact pixel size, then
+    // restore resizability so the user can still drag-resize.
+    const wasResizable = win.isResizable();
+    if (wasResizable) win.setResizable(false);
+    win.setBounds(bounds, animate);
+    win.setSize(bounds.width, bounds.height, animate);
+    if (wasResizable) win.setResizable(true);
+  } else {
+    // Other platforms don't exhibit the growth bug; a plain setBounds avoids
+    // stacking a second (setSize) animation on top of the setBounds animation.
+    win.setBounds(bounds, animate);
+  }
+
+  // Release the guard after the move/resize events emitted by this change have
+  // been delivered (they can fire slightly asynchronously). Until then the
+  // snap/persist listeners treat the change as ours and ignore it.
+  if (clearProgrammaticBoundsTimer) clearTimeout(clearProgrammaticBoundsTimer);
+  clearProgrammaticBoundsTimer = setTimeout(() => {
+    programmaticBounds = false;
+    clearProgrammaticBoundsTimer = null;
+  }, 200);
 }
 
 // ── Public API ───────────────────────────────────────────
@@ -136,7 +191,7 @@ export function toggleWindow(): void {
       const winY = y + SNAP_MARGIN;
       const winHeight = height - SNAP_MARGIN * 2;
 
-      mainWindow.setBounds({ x: winX, y: winY, width: winWidth, height: winHeight }, false);
+      setMainBounds(mainWindow, { x: winX, y: winY, width: winWidth, height: winHeight }, false);
       mainWindow.show();
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
@@ -162,7 +217,7 @@ export function toggleWindow(): void {
 
     showTimestamp = Date.now();
     cancelBlurTimer();
-    mainWindow.setBounds({ x: winX, y: winY, width: winWidth, height: winHeight }, false);
+    setMainBounds(mainWindow, { x: winX, y: winY, width: winWidth, height: winHeight }, false);
     mainWindow.show();
     mainWindow.focus();
     mainWindow.webContents.send('window:shown', { side: isLeft ? 'left' : 'right', expanded: false });
@@ -175,6 +230,9 @@ export function setupSnapOnDrop(): void {
 
   let snapDebounce: ReturnType<typeof setTimeout> | null = null;
   mainWindow.on('move', () => {
+    // Ignore moves we caused via setMainBounds — otherwise our own snap/show
+    // repositioning would schedule another snap, feeding the growth loop.
+    if (programmaticBounds) return;
     if (snapDebounce) clearTimeout(snapDebounce);
     snapDebounce = setTimeout(handleWindowMoved, 500);
   });
@@ -202,7 +260,7 @@ export function registerWindowIpcHandlers(preloadPath: string): void {
 
     mainWindow.setAlwaysOnTop(false);  // expanded windows are never alwaysOnTop
     mainWindow.setResizable(true);
-    mainWindow.setBounds({ x: newX, y: newY, width: EXPANDED_WIDTH, height: EXPANDED_HEIGHT }, true);
+    setMainBounds(mainWindow, { x: newX, y: newY, width: EXPANDED_WIDTH, height: EXPANDED_HEIGHT }, true);
   });
 
   ipcMain.on('window:collapse', () => {
@@ -223,7 +281,7 @@ export function registerWindowIpcHandlers(preloadPath: string): void {
     const winY = y + SNAP_MARGIN;
     const winHeight = height - SNAP_MARGIN * 2;
 
-    mainWindow.setBounds({ x: winX, y: winY, width: winWidth, height: winHeight }, true);
+    setMainBounds(mainWindow, { x: winX, y: winY, width: winWidth, height: winHeight }, true);
     setTimeout(() => { isSnapping = false; }, 300);
   });
 
@@ -257,7 +315,7 @@ export function registerWindowIpcHandlers(preloadPath: string): void {
         const winHeight = area.height - SNAP_MARGIN * 2;
 
         setConfigValue('snapPosition', snap);
-        mainWindow.setBounds({ x: winX, y: winY, width: winWidth, height: winHeight }, false);
+        setMainBounds(mainWindow, { x: winX, y: winY, width: winWidth, height: winHeight }, false);
         setTimeout(() => { isSnapping = false; }, 500);
       }
     }
@@ -484,7 +542,7 @@ export function openFileInNewWindow(filePath: string): void {
 function attachResizePersist(win: BrowserWindow): void {
   let resizeDebounce: ReturnType<typeof setTimeout> | null = null;
   win.on('resize', () => {
-    if (isExpanded || isSnapping) return;
+    if (isExpanded || isSnapping || programmaticBounds) return;
     if (resizeDebounce) clearTimeout(resizeDebounce);
     resizeDebounce = setTimeout(() => {
       if (!win.isDestroyed()) {
@@ -596,7 +654,7 @@ function detectSnapSlot(winX: number, winY: number, winWidth: number, winHeight:
 
 /** Snap the window to the nearest edge after a user drag. Only operates in collapsed mode. */
 function handleWindowMoved(): void {
-  if (!mainWindow || mainWindow.isDestroyed() || isExpanded || isSnapping) return;
+  if (!mainWindow || mainWindow.isDestroyed() || isExpanded || isSnapping || programmaticBounds) return;
   // Don't snap when pinned — allow free positioning
   if (getConfigValue('pinned')) return;
 
@@ -614,7 +672,7 @@ function handleWindowMoved(): void {
       isSnapping = false;
       return;
     }
-    mainWindow.setBounds({ x, y, width: bounds.width, height: bounds.height }, false);
+    setMainBounds(mainWindow, { x, y, width: bounds.width, height: bounds.height }, false);
     setConfigValue('snapPosition', slot);
 
     // Clear guard after animation
