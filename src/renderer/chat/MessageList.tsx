@@ -66,6 +66,12 @@ export function MessageList({ messages, onApprovalRespond, onUserInputRespond, o
           case 'assistant':
             return <AssistantMessage key={msg.id} content={msg.content} isStreaming={msg.isStreaming} />;
           case 'tool_call': {
+            // ask_user has a dedicated interactive UserInputTile (rendered from
+            // the user_input.requested event), so suppress the redundant generic
+            // tool tile that would otherwise show the raw choices/question args.
+            if (msg.toolName === 'ask_user') {
+              return null;
+            }
             if (msg.toolName === '__subagent__') {
               return (
                 <SubagentTile
