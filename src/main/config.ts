@@ -97,7 +97,7 @@ export const HOTKEY_CATEGORIES: Record<string, (keyof HotkeyConfig)[]> = {
 
 export interface AppConfig {
   workspace: string | null;
-  theme: 'light' | 'dark';
+  theme: 'light' | 'dark' | 'system';
   model: string | null;
   cliPath: string | null;          // user override for Copilot CLI path; null = auto-detect
   sessions: Record<string, string>; // spaceId → copilot CLI sessionId
@@ -270,7 +270,7 @@ This persona is for demonstrating MXC enforcement, not for general-purpose safe 
 
 const DEFAULT_CONFIG: AppConfig = {
   workspace: null,
-  theme: 'dark',
+  theme: 'system',
   model: null,
   cliPath: null,
   sessions: {},

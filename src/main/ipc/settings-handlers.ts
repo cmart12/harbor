@@ -30,7 +30,7 @@ export function registerSettingsHandlers(): void {
 
   ipcMain.handle('settings:set', async (_event, key: string, value: string) => {
     if (key === 'theme') {
-      setConfigValue('theme', value as 'light' | 'dark');
+      setConfigValue('theme', value as 'light' | 'dark' | 'system');
     } else if (key === 'model') {
       setConfigValue('model', value);
       await setAIModel(value);

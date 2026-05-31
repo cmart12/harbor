@@ -27,7 +27,7 @@ describe('config', () => {
   describe('loadConfig', () => {
     it('returns defaults when no config file exists', () => {
       const config = loadConfig();
-      expect(config.theme).toBe('dark');
+      expect(config.theme).toBe('system');
       expect(config.model).toBeNull();
       expect(config.workspace).toBeNull();
       expect(config.personas).toEqual([]);
@@ -61,7 +61,7 @@ describe('config', () => {
     it('handles malformed JSON gracefully', () => {
       fs.writeFileSync(CONFIG_PATH, 'not json');
       const config = loadConfig();
-      expect(config.theme).toBe('dark');      expect(config.cliTools).toEqual([]);
+      expect(config.theme).toBe('system');      expect(config.cliTools).toEqual([]);
     });
   });
 

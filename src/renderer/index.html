@@ -154,7 +154,14 @@
           <div class="settings-tab-panel active" data-tab="general">
             <div class="settings-group">
               <div class="settings-group-title">Appearance</div>
-              <!-- Theme toggle removed — dark mode only for now -->
+              <div class="settings-row">
+                <div id="theme-toggle" class="theme-toggle" role="radiogroup" aria-label="Theme">
+                  <button type="button" class="theme-btn" data-theme="light" role="radio" aria-checked="false">Light</button>
+                  <button type="button" class="theme-btn" data-theme="dark" role="radio" aria-checked="false">Dark</button>
+                  <button type="button" class="theme-btn" data-theme="system" role="radio" aria-checked="false">System</button>
+                </div>
+              </div>
+              <div class="settings-hint">System follows your operating system's light/dark setting.</div>
             </div>
 
             <div class="settings-group">

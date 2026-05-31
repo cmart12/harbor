@@ -287,6 +287,7 @@ const mainView = document.getElementById('main-view') as HTMLDivElement;
 
 // ── Update banner ───────────────────────────────────────
 import { mountUpdateBanner } from './views/UpdateBanner.tsx';
+import { applyTheme, getResolvedTheme, normalizeChoice, type ThemeChoice } from './theme';
 const updateBannerRoot = document.getElementById('update-banner-root');
 if (updateBannerRoot) mountUpdateBanner(updateBannerRoot);
 
@@ -1132,20 +1133,44 @@ async function loadModels(): Promise<void> {
 }
 
 async function loadSettings(): Promise<void> {
-  // Always apply dark theme
-  applyTheme('dark');
+  await loadThemeSetting();
 }
 
 // ── Theme ───────────────────────────────────────────────
-function applyTheme(_theme?: string): void {
-  document.body.classList.add('dark');
-}
+// Theme resolve/apply/persist + OS-change handling lives in ./theme.
+// app.ts only loads the stored choice and wires the Settings control.
 
 async function loadThemeSetting(): Promise<void> {
-  applyTheme();
+  const stored = normalizeChoice(await whimAPI.getSetting('theme'));
+  applyTheme(stored);
+  syncThemeControl(stored);
 }
 
-// Theme toggle removed — dark mode only
+// ── Theme toggle (Settings → Appearance) ────────────────
+const themeToggle = document.getElementById('theme-toggle') as HTMLDivElement | null;
+const themeToggleBtns = themeToggle
+  ? Array.from(themeToggle.querySelectorAll<HTMLButtonElement>('.theme-btn'))
+  : [];
+
+/** Reflect the active choice in the segmented control's button states. */
+function syncThemeControl(choice: ThemeChoice): void {
+  for (const btn of themeToggleBtns) {
+    const active = btn.dataset.theme === choice;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-checked', String(active));
+  }
+}
+
+for (const btn of themeToggleBtns) {
+  btn.addEventListener('click', async () => {
+    const choice = normalizeChoice(btn.dataset.theme);
+    applyTheme(choice);
+    syncThemeControl(choice);
+    await whimAPI.setSetting('theme', choice);
+    // Broadcast so any open canvas / settings popout windows update live.
+    whimAPI.notifyCanvasThemeChanged(choice);
+  });
+}
 
 async function loadWorkspaceSetting(): Promise<void> {
   const ws = await whimAPI.getSetting('workspace_root');
@@ -3276,7 +3301,7 @@ async function openSkillEditor(skillId: string): Promise<void> {
   canvasView.classList.remove('hidden');
 
   const myGen = ++canvasMountGen;
-  const currentTheme = 'dark' as const;
+  const currentTheme = getResolvedTheme();
 
   if (canvasMountGen !== myGen) return;
 
@@ -5481,7 +5506,7 @@ async function openCanvas(spaceId: string, expanded = false): Promise<void> {
   // Load all data in parallel
   const [result, currentTheme, canvasPersonas] = await Promise.all([
     whimAPI.readCanvas(spaceId),
-    Promise.resolve('dark' as const),
+    Promise.resolve(getResolvedTheme()),
     whimAPI.listPersonas().then(p => p || []),
     loadSkills(),
   ]);
@@ -5588,7 +5613,7 @@ async function openPage(spaceId: string, pageName: string): Promise<void> {
   mountCanvas(canvasRoot, {
     spaceId: `__page__${spaceId}/${pageName}`,
     content: result.content || '',
-    theme: 'dark' as const,
+    theme: getResolvedTheme(),
     personas: [],
     onDirtyChange: (dirty: boolean) => {
       canvasDirty = dirty;
@@ -5627,7 +5652,7 @@ async function openWorkspaceFile(filePath: string, title: string): Promise<void>
   mountCanvas(canvasRoot, {
     spaceId: fileSpaceId,
     content: result.content || '',
-    theme: 'dark' as const,
+    theme: getResolvedTheme(),
     personas: [],
     onDirtyChange: (dirty: boolean) => {
       canvasDirty = dirty;
@@ -5896,7 +5921,7 @@ async function enterPreview(commit: FolderCommit): Promise<void> {
 
   const spaceId = canvasSpaceId!;
   await unmountCanvas();
-  const currentTheme = 'dark' as const;
+  const currentTheme = getResolvedTheme();
   mountCanvas(canvasRoot, {
     spaceId,
     content: result.content,
@@ -5923,7 +5948,7 @@ async function exitPreview(): Promise<void> {
   // Remount with the original content
   const spaceId = canvasSpaceId!;
   await unmountCanvas();
-  const currentTheme = 'dark' as const;
+  const currentTheme = getResolvedTheme();
   const canvasPersonas = await whimAPI.listPersonas().then(p => p || []);
   mountCanvas(canvasRoot, {
     spaceId,
@@ -6937,10 +6962,12 @@ whimAPI.onCanvasWindowClosed(() => {
   if (!isCanvasMode) loadSpaces();
 });
 
-// Listen for theme changes from other windows — always dark
+// Listen for theme changes broadcast from other windows
 if (!isCanvasMode && !isSettingsMode) {
-  whimAPI.onCanvasThemeChanged((_theme: string) => {
-    applyTheme('dark');
+  whimAPI.onCanvasThemeChanged((theme: string) => {
+    const choice = normalizeChoice(theme);
+    applyTheme(choice);
+    syncThemeControl(choice);
   });
 }
 
@@ -7033,12 +7060,11 @@ if (isCanvasMode) {
     canvasPinLabel.textContent = pinned ? 'Unpin from Top' : 'Pin to Top';
   });
 
-  // Apply dark theme
-  document.body.classList.add('dark');
+  // Apply the stored theme and follow live changes from the main window
+  whimAPI.getSetting('theme').then(v => applyTheme(normalizeChoice(v)));
 
-  // Listen for theme changes from main window (no-op, always dark)
-  whimAPI.onCanvasThemeChanged((_theme: string) => {
-    document.body.classList.add('dark');
+  whimAPI.onCanvasThemeChanged((theme: string) => {
+    applyTheme(normalizeChoice(theme));
   });
   async function saveAndUnmountCurrent(): Promise<void> {
     const finalContent = getCanvasContent();
@@ -7116,12 +7142,10 @@ if (isSettingsMode) {
   settingsOverlay.classList.add('settings-fullpage');
   settingsModalOpen = true;
 
-  // Apply dark theme
-  document.body.classList.add('dark');
-
-  // Listen for theme changes from main window (no-op, always dark)
-  whimAPI.onCanvasThemeChanged((_theme: string) => {
-    document.body.classList.add('dark');
+  // Apply the stored theme and follow live changes from the main window.
+  // (settings popout also runs loadThemeSetting() below, which sets the control.)
+  whimAPI.onCanvasThemeChanged((theme: string) => {
+    applyTheme(normalizeChoice(theme));
   });
 
   // Fire all settings data loads in parallel so the slow ones (listModels
