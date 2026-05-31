@@ -21,6 +21,7 @@ export function registerSettingsHandlers(): void {
       auto_hide_side_pane: 'autoHideSidePane',
       auto_download_updates: 'autoDownloadUpdates',
       remoteAutoEnable: 'remoteAutoEnable',
+      comment_trigger: 'commentTrigger',
     };
     const configKey = configKeyMap[key];
     if (configKey) return getConfigValue(configKey);
@@ -55,6 +56,10 @@ export function registerSettingsHandlers(): void {
       setAutoDownload(enabled);
     } else if (key === 'remoteAutoEnable') {
       setConfigValue('remoteAutoEnable', value === 'true');
+    } else if (key === 'comment_trigger') {
+      const next = value === 'hover-or-caret' ? 'hover-or-caret' : 'caret';
+      setConfigValue('commentTrigger', next);
+      return next;
     }
   });
 

@@ -1,7 +1,7 @@
 import React from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { DocumintCanvas, type DocumintCanvasHandle, type DocumintCanvasProps, type AgentPersona, type MentionEvent } from './DocumintCanvas';
-import type { DocumentPresence, DocumentUser, DocumintDecoration } from 'documint';
+import type { DocumentPresence, DocumentUser, DocumintDecoration } from '@patniko/documint';
 
 let root: Root | null = null;
 let canvasRef: React.RefObject<DocumintCanvasHandle | null> = React.createRef();

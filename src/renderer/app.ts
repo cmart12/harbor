@@ -4053,6 +4053,21 @@ if (autoRemoteCb) {
   });
 }
 
+// ── Comment trigger setting ──────────────────────────────
+const commentHoverCb = document.getElementById('comment-hover-cb') as HTMLInputElement | null;
+
+async function loadCommentTriggerSetting(): Promise<void> {
+  if (!commentHoverCb) return;
+  const val = await whimAPI.getSetting('comment_trigger');
+  commentHoverCb.checked = val === 'hover-or-caret';
+}
+
+if (commentHoverCb) {
+  commentHoverCb.addEventListener('change', () => {
+    whimAPI.setSetting('comment_trigger', commentHoverCb.checked ? 'hover-or-caret' : 'caret');
+  });
+}
+
 // ── Settings tabs ───────────────────────────────────────
 const SETTINGS_TAB_KEY = 'whim.settingsTab';
 function initSettingsTabs(): void {
@@ -4924,7 +4939,7 @@ async function unarchiveIntent(id: string): Promise<void> {
 // ── Canvas view ─────────────────────────────────────────
 import { mountCanvas, unmountCanvas, getCanvasContent, saveCanvas as saveCanvasEditor, updateCanvasPresence, updateCanvasDecorations, updateCanvasAgentUsers, addCanvasCommentReply, toggleCanvasMode, getCanvasEditorMode, replaceCanvasContent, appendCanvasLink, replaceCanvasText, getCanvasSelectedText } from './canvas/mount.tsx';
 import { mountCanvasWorkerPanel, unmountCanvasWorkerPanel, isCanvasChatPaneOpen, closeCanvasChatPane } from './canvas/worker-panel-mount.tsx';
-import type { DocumentPresence, DocumentUser, DocumintDecoration } from 'documint';
+import type { DocumentPresence, DocumentUser, DocumintDecoration } from '@patniko/documint';
 
 const canvasView = document.getElementById('canvas-view') as HTMLDivElement;
 const canvasBack = document.getElementById('canvas-back') as HTMLButtonElement;
@@ -7122,6 +7137,7 @@ if (isSettingsMode) {
     loadThemeSetting(),
     loadAutoHideSetting(),
     loadAutoRemoteSetting(),
+    loadCommentTriggerSetting(),
     loadPersonas(),
     loadRuntimes(),
     loadCliPathInputSync(),

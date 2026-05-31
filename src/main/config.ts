@@ -117,6 +117,7 @@ export interface AppConfig {
   remoteEnabled: boolean;           // app-level remote: enable Mission Control on all workspace-level agents
   remoteAutoEnable: boolean;        // auto-enable remote on every new worker session
   hotkeys: Partial<HotkeyConfig>;   // user hotkey overrides (missing keys fall back to DEFAULT_HOTKEYS)
+  commentTrigger: 'hover-or-caret' | 'caret'; // how Documint surfaces comment threads
 }
 
 const CONFIG_PATH = path.join(app.getPath('userData'), 'config.json');
@@ -289,6 +290,7 @@ const DEFAULT_CONFIG: AppConfig = {
   remoteEnabled: false,
   remoteAutoEnable: false,
   hotkeys: {},
+  commentTrigger: 'caret',
 };
 
 let config: AppConfig = { ...DEFAULT_CONFIG };

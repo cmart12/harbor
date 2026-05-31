@@ -19,7 +19,8 @@ import {
   type DocumintDecoration,
   type DocumentResourceReference,
   type ResourceProtocolRecord,
-} from 'documint';
+  type CommentTrigger,
+} from '@patniko/documint';
 import { GitFork, FileOutput } from 'lucide-react';
 import { FrontmatterEditor } from './FrontmatterEditor';
 import { VoiceRecorderButton, type VoiceRecordingResult } from './VoiceRecorderButton';
@@ -206,6 +207,20 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
     // these as "active" resources (live pills). We always mark every requested
     // resource as active because whim:// URLs are valid by construction.
     const [activeResources, setActiveResources] = useState<ReadonlySet<string>>(() => new Set());
+    const [commentTrigger, setCommentTrigger] = useState<CommentTrigger>('caret');
+
+    useEffect(() => {
+      let cancelled = false;
+      (async () => {
+        try {
+          const val = await whimAPI.getSetting('comment_trigger');
+          if (!cancelled) {
+            setCommentTrigger(val === 'hover-or-caret' ? 'hover-or-caret' : 'caret');
+          }
+        } catch { /* keep default */ }
+      })();
+      return () => { cancelled = true; };
+    }, []);
 
     contentRef.current = content;
     frontmatterRef.current = frontmatter;
@@ -810,6 +825,7 @@ export const DocumintCanvas = forwardRef<DocumintCanvasHandle, DocumintCanvasPro
                 onResourcesRequested={handleResourcesRequested}
                 presence={presence}
                 theme={documintTheme}
+                commentTrigger={commentTrigger}
               />
               {isTranscribing && (
                 <div className="canvas-voice-transcribing-bar">
