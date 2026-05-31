@@ -97,6 +97,7 @@ export interface WhimAPI {
 
   // ── Canvas ───────────────────────────────────────────────
   readCanvas(spaceId: string): Promise<IpcCommandResult<'canvas:read'>>;
+  canvasHasContent(spaceId: string): Promise<IpcCommandResult<'canvas:has-content'>>;
   writeCanvas(spaceId: string, content: string): Promise<IpcCommandResult<'canvas:write'>>;
   closeCanvas(spaceId: string, content: string): Promise<IpcCommandResult<'canvas:close'>>;
   canvasHistory(spaceId: string): Promise<IpcCommandResult<'canvas:history'>>;
@@ -316,6 +317,7 @@ const api: WhimAPI = {
 
   // ── Canvas ───────────────────────────────────────────────
   readCanvas: (spaceId) => ipcRenderer.invoke('canvas:read', spaceId),
+  canvasHasContent: (spaceId) => ipcRenderer.invoke('canvas:has-content', spaceId),
   writeCanvas: (spaceId, content) => ipcRenderer.invoke('canvas:write', spaceId, content),
   closeCanvas: (spaceId, content) => ipcRenderer.invoke('canvas:close', spaceId, content),
   canvasHistory: (spaceId) => ipcRenderer.invoke('canvas:history', spaceId),

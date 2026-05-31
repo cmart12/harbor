@@ -287,6 +287,7 @@ export interface IpcCommands {
 
   // ── Canvas ───────────────────────────────────────────────
   'canvas:read': { args: [spaceId: string]; result: { content: string; error?: string } };
+  'canvas:has-content': { args: [spaceId: string]; result: { hasContent: boolean } };
   'canvas:write': { args: [spaceId: string, content: string]; result: { success?: boolean; error?: string } };
   'canvas:close': { args: [spaceId: string, content: string]; result: void };
   'canvas:paste-file': { args: [spaceId: string, filename: string, dataArray: number[]]; result: { path: string } | { error: string } };

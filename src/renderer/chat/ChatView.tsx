@@ -393,6 +393,34 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
   const [remoteError, setRemoteError] = useState<string | null>(null);
   const remoteErrorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const modelDropdownRef = useRef<HTMLDivElement>(null);
+  const [hasCanvas, setHasCanvas] = useState(false);
+
+  // Probe whether this space has a canvas with content. Re-check on canvas updates.
+  useEffect(() => {
+    if (!spaceId || !onOpenCanvas) {
+      setHasCanvas(false);
+      return;
+    }
+    let cancelled = false;
+    const check = async () => {
+      try {
+        const res = await whimAPI.canvasHasContent(spaceId);
+        if (!cancelled) setHasCanvas(!!res?.hasContent);
+      } catch {
+        if (!cancelled) setHasCanvas(false);
+      }
+    };
+    check();
+    const off = whimAPI.onCanvasContentUpdated?.((data: { spaceId: string; content: string }) => {
+      if (data.spaceId === spaceId) {
+        setHasCanvas(data.content.trim().length > 0);
+      }
+    });
+    return () => {
+      cancelled = true;
+      if (typeof off === 'function') off();
+    };
+  }, [spaceId, onOpenCanvas]);
 
   // Track the current streaming assistant message ID
   const currentAssistantId = useRef<string | null>(null);
@@ -1198,7 +1226,7 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
               ◼ Stop
             </button>
           )}
-          {spaceId && onOpenCanvas && (
+          {spaceId && onOpenCanvas && hasCanvas && (
             <button className="header-icon-btn" onClick={() => onOpenCanvas(spaceId)} title="Open canvas">
               📄
             </button>

@@ -20,6 +20,38 @@ const CANVAS_FILE = 'canvas.md';
 const lastEditorContent = new Map<string, string>();
 
 export function registerCanvasHandlers(): void {
+  // Lightweight probe: does this space have a non-empty canvas.md on disk?
+  // No side effects (does not create folders, does not start watchers).
+  ipcMain.handle('canvas:has-content', (_event, spaceId: string) => {
+    const workspace = getConfigValue('workspace');
+    if (!workspace || !isInitialized()) return { hasContent: false };
+
+    // Workspace .md file pseudo-spaces map to a real file on disk.
+    if (spaceId.startsWith('__file__')) {
+      const filePath = decodeURIComponent(spaceId.slice('__file__'.length));
+      try {
+        return { hasContent: fs.existsSync(filePath) && fs.readFileSync(filePath, 'utf-8').trim().length > 0 };
+      } catch {
+        return { hasContent: false };
+      }
+    }
+
+    if (spaceId.startsWith('__page__') || spaceId.startsWith('__skill__')) {
+      return { hasContent: false };
+    }
+
+    const space = getSpace(spaceId);
+    if (!space || !space.folder) return { hasContent: false };
+
+    try {
+      const canvasPath = path.join(resolveSpaceFolder(workspace, space.folder), CANVAS_FILE);
+      if (!fs.existsSync(canvasPath)) return { hasContent: false };
+      return { hasContent: fs.readFileSync(canvasPath, 'utf-8').trim().length > 0 };
+    } catch {
+      return { hasContent: false };
+    }
+  });
+
   ipcMain.handle('canvas:read', (_event, spaceId: string) => {
     const workspace = getConfigValue('workspace');
     if (!workspace || !isInitialized()) return { content: '', error: 'no_workspace' };

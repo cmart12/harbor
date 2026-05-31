@@ -143,6 +143,20 @@ export async function openAgentCli(agentId: string): Promise<{ error?: string }>
   }
 
   try {
+    // Release Whim's in-use lock on this session before handing it to the
+    // terminal CLI. Without this, the CLI sees Whim's lock (still alive in
+    // this process) and warns "This session may already be in use by another
+    // CLI or application." The in-memory CopilotSession is unaffected — the
+    // lock is re-acquired on the next session.* RPC.
+    try {
+      const { getCopilotClient } = await import('../ai');
+      const client = getCopilotClient();
+      await client?.rpc.sessions.releaseLock({ sessionId });
+    } catch (err) {
+      // Non-fatal: worst case the user sees the in-use warning in the CLI.
+      console.warn(`[cli-runner] Failed to release session lock for ${sessionId}:`, err);
+    }
+
     await launchSessionInTerminal(sessionId, cwd);
     return {};
   } catch (err: any) {
