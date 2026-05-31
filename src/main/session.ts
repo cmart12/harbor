@@ -78,6 +78,9 @@ export function getCopilotCliVersion(): string | null {
       timeout: 10_000,
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'ignore'],
+      // ELECTRON_RUN_AS_NODE makes electron.exe behave as plain Node.js,
+      // preventing crashes when the CLI is run under Electron on Windows.
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
     }).toString().trim();
     resolvedCliVersion = parseCliVersion(output);
     if (resolvedCliVersion) {

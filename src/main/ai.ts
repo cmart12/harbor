@@ -243,6 +243,11 @@ async function getRecallSession(): Promise<CopilotSession | null> {
 }
 
 export async function initCopilot(): Promise<void> {
+  // Ensure CLI subprocesses spawned by the SDK run as plain Node.js.
+  // Without this, the SDK calls `electron.exe <cli.js>` which starts a full
+  // Electron GUI process that crashes or exits immediately on Windows.
+  process.env.ELECTRON_RUN_AS_NODE = '1';
+
   try {
     const cliPath = resolveCopilotCliPath();
     const connection = cliPath
