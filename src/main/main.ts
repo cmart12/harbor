@@ -17,6 +17,29 @@ import { initAutoUpdater, cleanupAutoUpdater } from './update-service';
 
 let currentToggleAccelerator: string | null = null;
 
+// Suppress EPIPE errors that bubble up from vscode-jsonrpc when the Copilot
+// CLI subprocess exits before the SDK finishes writing to its stdin. These are
+// expected during SDK init failures and are already handled by initCopilot's
+// catch block — the unhandled rejection / uncaught exception is just the
+// async write draining after the process is gone.
+process.on('uncaughtException', (err) => {
+  if (err && (err as NodeJS.ErrnoException).code === 'EPIPE') {
+    console.warn('[main] Suppressed EPIPE error (CLI subprocess likely exited):', err.message);
+    return;
+  }
+  // Re-throw non-EPIPE errors so Electron's default handler shows the dialog
+  throw err;
+});
+
+process.on('unhandledRejection', (reason) => {
+  if (reason instanceof Error && (reason as NodeJS.ErrnoException).code === 'EPIPE') {
+    console.warn('[main] Suppressed unhandled EPIPE rejection (CLI subprocess likely exited):', reason.message);
+    return;
+  }
+  // Log but don't crash for other unhandled rejections
+  console.error('[main] Unhandled promise rejection:', reason);
+});
+
 /**
  * Register (or re-register) the global toggle-window shortcut.
  * Only unregisters the previous toggle shortcut (not all global shortcuts).

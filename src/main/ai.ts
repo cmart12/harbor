@@ -266,12 +266,26 @@ export async function initCopilot(): Promise<void> {
     // Eagerly init the parse session (most commonly used)
     await getParseSession();
     console.log('[copilot-sdk] Client started, parse session created');
+  } catch (err) {
+    console.error('[copilot-sdk] Failed to initialize primary client:', err);
+    client = null;
+    // If the primary client failed (e.g. CLI exited), don't attempt the
+    // ephemeral client — it shares the same CLI and will fail identically.
+    ephemeralClient = null;
+    return;
+  }
 
+  try {
     // Start a separate client for ephemeral sessions. When sessionFs is
     // enabled the SDK requires *every* createSession call to provide a
     // createSessionFsHandler, so this must be a dedicated client.
+    const cliPath = resolveCopilotCliPath();
+    const connection = cliPath
+      ? RuntimeConnection.forStdio({ path: cliPath })
+      : undefined;
     const ephemeralOpts: Record<string, unknown> = {
-      ...opts,
+      ...(connection ? { connection } : {}),
+      enableRemoteSessions: true,
       sessionFs: {
         initialCwd: '/',
         sessionStatePath: '/.session-state',
@@ -282,8 +296,7 @@ export async function initCopilot(): Promise<void> {
     await ephemeralClient.start();
     console.log('[copilot-sdk] Ephemeral client started');
   } catch (err) {
-    console.error('[copilot-sdk] Failed to initialize:', err);
-    client = null;
+    console.error('[copilot-sdk] Failed to initialize ephemeral client:', err);
     ephemeralClient = null;
   }
 }
