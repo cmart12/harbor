@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import { CopilotClient, CopilotSession, RuntimeConnection } from '@github/copilot-sdk';
 import { getConfigValue } from './config';
 import { resolveCopilotCliPath } from './session';
+import { getCliShimPath } from './cli-electron-shim';
 import { RecurrenceResult, RecallMatch, Space } from '../shared/types';
 import type { SandboxPolicy } from '../shared/ipc-contract';
 
@@ -243,18 +244,27 @@ async function getRecallSession(): Promise<CopilotSession | null> {
 }
 
 export async function initCopilot(): Promise<void> {
-  // Ensure CLI subprocesses spawned by the SDK run as plain Node.js.
-  // Without this, the SDK calls `electron.exe <cli.js>` which starts a full
-  // Electron GUI process that crashes or exits immediately on Windows.
-  process.env.ELECTRON_RUN_AS_NODE = '1';
+  // Build a custom env for CLI subprocesses: ELECTRON_RUN_AS_NODE makes
+  // electron.exe behave as plain Node.js so the CLI doesn't launch a full
+  // Chromium GUI. We pass this via the SDK's `env` option rather than
+  // setting process.env — otherwise Electron's own GPU/renderer child
+  // processes inherit the flag and crash with "bad option" errors.
+  const cliEnv = { ...process.env, ELECTRON_RUN_AS_NODE: '1' };
 
   try {
     const cliPath = resolveCopilotCliPath();
-    const connection = cliPath
-      ? RuntimeConnection.forStdio({ path: cliPath })
+    // On Windows we must spawn through a shim that strips Electron runtime
+    // markers — otherwise the CLI mis-parses argv and exits with
+    // "too many arguments. Expected 0 arguments but got 1."
+    const effectivePath = cliPath ? (getCliShimPath(cliPath) ?? cliPath) : null;
+    const connection = effectivePath
+      ? RuntimeConnection.forStdio({ path: effectivePath })
       : undefined; // falls back to bundled CLI
     if (cliPath) {
       console.log(`[copilot-sdk] Using local CLI: ${cliPath}`);
+      if (effectivePath !== cliPath) {
+        console.log(`[copilot-sdk] Spawning via Electron shim: ${effectivePath}`);
+      }
     } else {
       console.warn('[copilot-sdk] Local CLI not found, using bundled CLI (sessions may not be resumable from terminal)');
     }
@@ -265,6 +275,7 @@ export async function initCopilot(): Promise<void> {
     const opts: Record<string, unknown> = {
       ...(connection ? { connection } : {}),
       enableRemoteSessions: true,
+      env: cliEnv,
     };
     client = new CopilotClient(opts as any);
     await client.start();
@@ -285,12 +296,14 @@ export async function initCopilot(): Promise<void> {
     // enabled the SDK requires *every* createSession call to provide a
     // createSessionFsHandler, so this must be a dedicated client.
     const cliPath = resolveCopilotCliPath();
-    const connection = cliPath
-      ? RuntimeConnection.forStdio({ path: cliPath })
+    const effectivePath = cliPath ? (getCliShimPath(cliPath) ?? cliPath) : null;
+    const connection = effectivePath
+      ? RuntimeConnection.forStdio({ path: effectivePath })
       : undefined;
     const ephemeralOpts: Record<string, unknown> = {
       ...(connection ? { connection } : {}),
       enableRemoteSessions: true,
+      env: cliEnv,
       sessionFs: {
         initialCwd: '/',
         sessionStatePath: '/.session-state',
