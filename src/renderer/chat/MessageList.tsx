@@ -8,17 +8,24 @@ import { ReasoningTile } from './tiles/ReasoningTile';
 import { ApprovalTile } from './tiles/ApprovalTile';
 import { UserInputTile } from './tiles/UserInputTile';
 import { ElicitationTile } from './tiles/ElicitationTile';
+import { SandboxBlockTile } from './tiles/SandboxBlockTile';
 
 interface MessageListProps {
   messages: ChatMessage[];
   onApprovalRespond: (requestId: string, approved: boolean) => void;
   onUserInputRespond: (requestId: string, answer: string, wasFreeform: boolean) => void;
   onElicitationRespond: (requestId: string, action: 'accept' | 'decline' | 'cancel', content?: Record<string, unknown>) => void;
+  onSandboxResolve: (
+    agentId: string,
+    requestId: string,
+    decision: 'allow-once' | 'allow-for-session' | 'disable',
+  ) => void;
+  onEditSandboxConfig?: (personaHandle: string) => void;
   parentAgentId?: string;
   onOpenSubagentDetail?: (agentId: string) => void;
 }
 
-export function MessageList({ messages, onApprovalRespond, onUserInputRespond, onElicitationRespond, parentAgentId, onOpenSubagentDetail }: MessageListProps) {
+export function MessageList({ messages, onApprovalRespond, onUserInputRespond, onElicitationRespond, onSandboxResolve, onEditSandboxConfig, parentAgentId, onOpenSubagentDetail }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const userScrolledUp = useRef(false);
@@ -142,6 +149,26 @@ export function MessageList({ messages, onApprovalRespond, onUserInputRespond, o
                 action={msg.action}
                 content={msg.content}
                 onRespond={onElicitationRespond}
+              />
+            );
+          case 'sandbox_block':
+            return (
+              <SandboxBlockTile
+                key={msg.id}
+                requestId={msg.requestId}
+                agentId={msg.agentId}
+                source={msg.source}
+                kind={msg.kind}
+                toolName={msg.toolName}
+                target={msg.target}
+                intention={msg.intention}
+                allowedDecisions={msg.allowedDecisions}
+                layer={msg.layer}
+                personaHandle={msg.personaHandle}
+                responded={msg.responded}
+                decision={msg.decision}
+                onResolve={onSandboxResolve}
+                onEditSandboxConfig={onEditSandboxConfig}
               />
             );
           default:

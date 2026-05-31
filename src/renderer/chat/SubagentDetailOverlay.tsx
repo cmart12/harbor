@@ -189,7 +189,11 @@ export function SubagentDetailOverlay({ parentAgentId, agentId, onClose }: Subag
   };
 
   const messages = agent ? agentToMessages(agent) : [];
-  const noopApproval = () => {};
+  // The subagent overlay is read-only: subagents can't currently surface
+  // approvals/user-input/elicitation/sandbox-blocks back to the parent UI
+  // (parent agent does that). Provide no-op handlers so MessageList renders
+  // tiles but interactions are inert.
+  const noop = () => {};
 
   return (
     <>
@@ -244,7 +248,13 @@ export function SubagentDetailOverlay({ parentAgentId, agentId, onClose }: Subag
 
           {/* Conversation body */}
           <div className="chat-subagent-overlay-body" ref={scrollRef}>
-            <MessageList messages={messages} onApprovalRespond={noopApproval} />
+            <MessageList
+              messages={messages}
+              onApprovalRespond={noop}
+              onUserInputRespond={noop}
+              onElicitationRespond={noop}
+              onSandboxResolve={noop}
+            />
           </div>
 
           {/* Error banner */}

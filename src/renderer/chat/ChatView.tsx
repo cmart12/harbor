@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import type { ChatMessage, ChatEvent, ChatAttachment, AssistantMessage as AssistantMsgType, ToolCallMessage, ReasoningMessage, ApprovalMessage, UserInputMessage, ElicitationMessage, SessionEventMessage } from '../../shared/chat-types';
+import type { ChatMessage, ChatEvent, ChatAttachment, AssistantMessage as AssistantMsgType, ToolCallMessage, ReasoningMessage, ApprovalMessage, UserInputMessage, ElicitationMessage, SessionEventMessage, SandboxBlockMessage } from '../../shared/chat-types';
 import { MessageList } from './MessageList';
 import { PromptBar } from './PromptBar';
 import { SubagentDetailOverlay } from './SubagentDetailOverlay';
@@ -23,6 +23,12 @@ declare const whimAPI: {
   onWorkspaceChanged: (callback: (path: string | null) => void) => void;
   setAgentYolo: (agentId: string, enabled: boolean) => Promise<{ ok?: boolean; error?: string }>;
   disableSandbox: (agentId: string) => Promise<{ ok?: boolean; error?: string }>;
+  resolveSandboxBlock: (
+    agentId: string,
+    requestId: string,
+    decision: 'allow-once' | 'allow-for-session' | 'disable',
+  ) => Promise<{ ok?: boolean; error?: string }>;
+  openPersonaSandboxEditor: (personaHandle: string) => void;
   onAgentYoloChanged: (callback: (data: { agentId: string; enabled: boolean }) => void) => void;
   enableRemote: (agentId: string) => Promise<{ enabled?: boolean; remoteSteerable?: boolean; url?: string; error?: string }>;
   disableRemote: (agentId: string) => Promise<{ ok?: boolean; error?: string }>;
@@ -203,6 +209,12 @@ function applyCompletionEvent(msgs: ChatMessage[], event: ChatEvent): ChatMessag
           ? { ...m, responded: true, action: event.action, content: event.content }
           : m
       );
+    case 'sandbox.resolved':
+      return msgs.map(m =>
+        m.type === 'sandbox_block' && m.requestId === event.requestId
+          ? { ...m, responded: true, decision: event.decision }
+          : m
+      );
     default:
       return msgs;
   }
@@ -221,12 +233,14 @@ function replayBufferedEvents(msgs: ChatMessage[], events: ChatEvent[]): ChatMes
   const existingApprovalIds = new Set<string>();
   const existingUserInputIds = new Set<string>();
   const existingElicitationIds = new Set<string>();
+  const existingSandboxBlockIds = new Set<string>();
 
   for (const m of result) {
     if (m.type === 'tool_call') existingToolCallIds.add((m as ToolCallMessage).toolCallId);
     else if (m.type === 'approval') existingApprovalIds.add((m as ApprovalMessage).requestId);
     else if (m.type === 'user_input') existingUserInputIds.add((m as UserInputMessage).requestId);
     else if (m.type === 'elicitation') existingElicitationIds.add((m as ElicitationMessage).requestId);
+    else if (m.type === 'sandbox_block') existingSandboxBlockIds.add((m as SandboxBlockMessage).requestId);
   }
 
   for (const event of events) {
@@ -236,6 +250,7 @@ function replayBufferedEvents(msgs: ChatMessage[], events: ChatEvent[]): ChatMes
       case 'approval.resolved':
       case 'user_input.resolved':
       case 'elicitation.resolved':
+      case 'sandbox.resolved':
         result = applyCompletionEvent(result, event);
         break;
 
@@ -289,6 +304,23 @@ function replayBufferedEvents(msgs: ChatMessage[], events: ChatEvent[]): ChatMes
             timestamp: new Date().toISOString(),
           } as ElicitationMessage);
           existingElicitationIds.add(event.requestId);
+        }
+        break;
+
+      case 'sandbox.blocked':
+        if (!existingSandboxBlockIds.has(event.requestId)) {
+          result.push({
+            id: genId(), type: 'sandbox_block',
+            requestId: event.requestId, agentId: event.agentId,
+            source: event.source, kind: event.kind,
+            toolName: event.toolName, target: event.target,
+            intention: event.intention,
+            allowedDecisions: event.allowedDecisions,
+            layer: event.layer, personaHandle: event.personaHandle,
+            responded: false,
+            timestamp: new Date().toISOString(),
+          } as SandboxBlockMessage);
+          existingSandboxBlockIds.add(event.requestId);
         }
         break;
 
@@ -799,6 +831,14 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
 
         case 'sandbox.disabled': {
           setSandboxActive(false);
+          // Mark any pending sandbox block messages as resolved with 'disable'
+          // so the user sees consistent state in the chat thread when the
+          // disable came from outside this window (Workers tab, OS toast).
+          setMessages(prev => prev.map(m =>
+            m.type === 'sandbox_block' && !m.responded
+              ? { ...m, responded: true, decision: 'disable' as const }
+              : m
+          ));
           setMessages(prev => [...prev, {
             id: genId(),
             type: 'session_event',
@@ -806,6 +846,48 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
             message: 'Sandbox disabled for this session.',
             timestamp: new Date().toISOString(),
           } as SessionEventMessage]);
+          break;
+        }
+
+        case 'sandbox.blocked': {
+          // Surface the block inline so the user can resolve it without
+          // switching to the Workers tab. The broker also fires the global
+          // `agent:sandbox-blocked` event (handled in app.ts) which keeps the
+          // agentStore in sync — both paths render so cross-window dismissal
+          // continues to work via `sandbox.resolved`.
+          setIsWaitingForInput(true);
+          setMessages(prev => {
+            // Guard against duplicate emission (e.g. replay race).
+            if (prev.some(m => m.type === 'sandbox_block' && m.requestId === event.requestId)) {
+              return prev;
+            }
+            return [...prev, {
+              id: genId(),
+              type: 'sandbox_block',
+              requestId: event.requestId,
+              agentId: event.agentId,
+              source: event.source,
+              kind: event.kind,
+              toolName: event.toolName,
+              target: event.target,
+              intention: event.intention,
+              allowedDecisions: event.allowedDecisions,
+              layer: event.layer,
+              personaHandle: event.personaHandle,
+              responded: false,
+              timestamp: new Date().toISOString(),
+            } as SandboxBlockMessage];
+          });
+          break;
+        }
+
+        case 'sandbox.resolved': {
+          setIsWaitingForInput(false);
+          setMessages(prev => prev.map(m =>
+            m.type === 'sandbox_block' && m.requestId === event.requestId
+              ? { ...m, responded: true, decision: event.decision }
+              : m
+          ));
           break;
         }
 
@@ -1048,12 +1130,38 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
   const handleElicitationRespond = useCallback((requestId: string, action: 'accept' | 'decline' | 'cancel', content?: Record<string, unknown>) => {
     if (!currentAgentId) return;
     whimAPI.respondToElicitation(currentAgentId, requestId, action, content);
-    setMessages(prev => prev.map(m =>
+    setMessages(prev => prev.map((m): ChatMessage =>
       m.type === 'elicitation' && m.requestId === requestId
-        ? { ...m, responded: true, action, content }
+        ? { ...m, responded: true, action, content: content as ElicitationMessage['content'] }
         : m
     ));
   }, [currentAgentId]);
+
+  const handleSandboxResolve = useCallback((
+    agentId: string,
+    requestId: string,
+    decision: 'allow-once' | 'allow-for-session' | 'disable',
+  ) => {
+    // Optimistically mark resolved so the UI doesn't double-fire if the user
+    // clicks twice; the broker also broadcasts `sandbox.resolved` which is
+    // idempotent against this state.
+    setMessages(prev => prev.map(m =>
+      m.type === 'sandbox_block' && m.requestId === requestId
+        ? { ...m, responded: true, decision }
+        : m
+    ));
+    whimAPI.resolveSandboxBlock(agentId, requestId, decision).catch(err => {
+      console.error('[ChatView] resolveSandboxBlock failed:', err);
+    });
+  }, []);
+
+  const handleEditSandboxConfig = useCallback((personaHandle: string) => {
+    try {
+      whimAPI.openPersonaSandboxEditor(personaHandle);
+    } catch (err) {
+      console.error('[ChatView] openPersonaSandboxEditor failed:', err);
+    }
+  }, []);
 
   const handleModelSwitch = useCallback(async (modelId: string) => {
     setSelectedModel(modelId);
@@ -1405,6 +1513,8 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
         onApprovalRespond={handleApprovalRespond}
         onUserInputRespond={handleUserInputRespond}
         onElicitationRespond={handleElicitationRespond}
+        onSandboxResolve={handleSandboxResolve}
+        onEditSandboxConfig={handleEditSandboxConfig}
         parentAgentId={currentAgentId || ''}
         onOpenSubagentDetail={setOverlayAgentId}
       />

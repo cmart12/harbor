@@ -7165,6 +7165,26 @@ body.dark .chat-approval-label { color: #fbbf24; }
 body.dark .chat-approval-kind { color: #e0e0e0; }
 body.dark .chat-approval-detail { color: #9ca3af; }
 
+/* ── Sandbox-block tile in chat thread ─────────────────────
+ * Reuses the shared `.agent-card-sandbox-block` sub-element
+ * styling (sandbox-block-header/body/actions/btn). The
+ * `.chat-sandbox-block` wrapper exists so we can tighten the
+ * spacing for the chat-bubble flow and flag the responded
+ * state. */
+.chat-sandbox-block {
+  margin: 4px 0;
+}
+
+.chat-sandbox-block.responded {
+  opacity: 0.7;
+}
+
+.chat-sandbox-block .sandbox-block-resolved {
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  opacity: 0.85;
+}
+
 /* ── User Input Tile ─────────────────────────────────────── */
 /* User input – question preview in header */
 .chat-user-input-question-preview {

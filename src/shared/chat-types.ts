@@ -9,6 +9,7 @@ export type ChatMessage =
   | ApprovalMessage
   | UserInputMessage
   | ElicitationMessage
+  | SandboxBlockMessage
   | SessionEventMessage;
 
 export interface UserMessage {
@@ -104,6 +105,34 @@ export interface ElicitationMessage {
   timestamp: string;
 }
 
+/**
+ * Sandbox enforcement block surfaced inline in the chat thread.  Mirrors the
+ * Workers-tab AgentsList panel so the user can see and resolve a block
+ * (allow-once / allow-for-session / disable) without leaving the chat view.
+ *
+ * The fields match the broker's `SandboxBlockRequest` payload (see
+ * `src/main/agents/interaction-broker.ts`). When the broker emits a
+ * `'sandbox.resolved'` event with the matching `requestId`, the tile flips to
+ * its resolved state showing the user's decision.
+ */
+export interface SandboxBlockMessage {
+  id: string;
+  type: 'sandbox_block';
+  requestId: string;
+  agentId: string;
+  source: 'permission' | 'pre-tool' | 'post-tool-shell';
+  kind: 'read' | 'write' | 'shell' | 'mcp' | 'url' | 'web-fetch';
+  toolName?: string;
+  target: string;
+  intention?: string;
+  allowedDecisions?: Array<'allow-once' | 'allow-for-session' | 'disable'>;
+  layer?: string;
+  personaHandle?: string;
+  responded: boolean;
+  decision?: 'allow-once' | 'allow-for-session' | 'disable';
+  timestamp: string;
+}
+
 export interface ChatAttachment {
   type: 'file';
   name: string;
@@ -130,4 +159,30 @@ export type ChatEvent =
   | { type: 'elicitation.resolved'; requestId: string; action: 'accept' | 'decline' | 'cancel'; content?: Record<string, ElicitationFieldValue> }
   | { type: 'subagent.started'; toolCallId: string; name: string; displayName: string; description: string; agentId?: string }
   | { type: 'subagent.completed'; toolCallId: string; name: string; agentId?: string; durationMs?: number; model?: string; totalTokens?: number; totalToolCalls?: number }
-  | { type: 'subagent.failed'; toolCallId: string; name: string; error: string; agentId?: string };
+  | { type: 'subagent.failed'; toolCallId: string; name: string; error: string; agentId?: string }
+  | {
+      type: 'sandbox.blocked';
+      requestId: string;
+      agentId: string;
+      source: 'permission' | 'pre-tool' | 'post-tool-shell';
+      kind: 'read' | 'write' | 'shell' | 'mcp' | 'url' | 'web-fetch';
+      toolName?: string;
+      target: string;
+      intention?: string;
+      allowedDecisions?: Array<'allow-once' | 'allow-for-session' | 'disable'>;
+      layer?: string;
+      personaHandle?: string;
+    }
+  | {
+      type: 'sandbox.resolved';
+      requestId: string;
+      decision: 'allow-once' | 'allow-for-session' | 'disable';
+    }
+  | {
+      type: 'sandbox.disabled';
+      message?: string;
+    }
+  | {
+      type: 'session.restarted';
+      message?: string;
+    };
