@@ -1,6 +1,6 @@
 {
   "name": "whim",
-  "version": "0.0.9",
+  "version": "0.0.11",
   "description": "Quick capture from system tray",
   "productName": "Copilot Whim",
   "main": "dist/main/main.js",
