@@ -53,7 +53,7 @@ describe('session', () => {
   describe('resolveCopilotCliPath', () => {
     it('returns configured cliPath if it exists on disk', () => {
       mockGetConfigValue.mockReturnValue('/custom/bin/copilot');
-      mockExistsSync.mockReturnValue(true);
+      mockExistsSync.mockImplementation((p: unknown) => p === '/custom/bin/copilot');
 
       const result = resolveCopilotCliPath();
       expect(result).toBe('/custom/bin/copilot');
@@ -85,7 +85,7 @@ describe('session', () => {
 
     it('caches result after first call', () => {
       mockGetConfigValue.mockReturnValue('/cached/copilot');
-      mockExistsSync.mockReturnValue(true);
+      mockExistsSync.mockImplementation((p: unknown) => p === '/cached/copilot');
 
       const first = resolveCopilotCliPath();
       expect(first).toBe('/cached/copilot');
@@ -99,7 +99,7 @@ describe('session', () => {
 
     it('re-resolves after invalidateCliPath()', () => {
       mockGetConfigValue.mockReturnValue('/first/copilot');
-      mockExistsSync.mockReturnValue(true);
+      mockExistsSync.mockImplementation((p: unknown) => p === '/first/copilot' || p === '/second/copilot');
 
       expect(resolveCopilotCliPath()).toBe('/first/copilot');
 
@@ -152,10 +152,26 @@ describe('session', () => {
       expect(result).toBe('C:\\ProgramData\\npm\\copilot.cmd');
     });
 
-    it('returns original path for non-.cmd files', () => {
-      const result = resolveCmdToJs('/usr/local/bin/copilot');
-      expect(result).toBe('/usr/local/bin/copilot');
+    it('returns original path for non-.cmd non-shim files (e.g. .exe)', () => {
+      const result = resolveCmdToJs('C:\\ProgramData\\npm\\copilot.exe');
+      expect(result).toBe('C:\\ProgramData\\npm\\copilot.exe');
       expect(mockExistsSync).not.toHaveBeenCalled();
+    });
+
+    it('resolves extensionless npm shim to index.js when .cmd sibling exists', () => {
+      mockExistsSync.mockImplementation((p: unknown) => {
+        return p === 'C:\\Users\\test\\AppData\\Roaming\\npm\\copilot.cmd'
+            || p === 'C:\\Users\\test\\AppData\\Roaming\\npm\\node_modules\\@github\\copilot\\index.js';
+      });
+
+      const result = resolveCmdToJs('C:\\Users\\test\\AppData\\Roaming\\npm\\copilot');
+      expect(result).toBe('C:\\Users\\test\\AppData\\Roaming\\npm\\node_modules\\@github\\copilot\\index.js');
+    });
+
+    it('returns original extensionless path when no .cmd sibling exists', () => {
+      mockExistsSync.mockReturnValue(false);
+      const result = resolveCmdToJs('C:\\some\\path\\copilot');
+      expect(result).toBe('C:\\some\\path\\copilot');
     });
 
     it('returns original path on non-win32 platforms', () => {
@@ -180,7 +196,7 @@ describe('session', () => {
   describe('checkCopilotCli', () => {
     it('returns same value as resolveCopilotCliPath', async () => {
       mockGetConfigValue.mockReturnValue('/cli/copilot');
-      mockExistsSync.mockReturnValue(true);
+      mockExistsSync.mockImplementation((p: unknown) => p === '/cli/copilot');
 
       const sync = resolveCopilotCliPath();
       invalidateCliPath();
@@ -286,7 +302,7 @@ describe('session', () => {
   describe('getCopilotCliVersion', () => {
     it('returns parsed version when CLI responds', () => {
       mockGetConfigValue.mockReturnValue('/usr/bin/copilot');
-      mockExistsSync.mockReturnValue(true);
+      mockExistsSync.mockImplementation((p: unknown) => p === '/usr/bin/copilot');
       mockExecSync.mockReturnValue(Buffer.from('GitHub Copilot CLI 1.0.36.\n'));
 
       const version = getCopilotCliVersion();
@@ -295,7 +311,7 @@ describe('session', () => {
 
     it('uses process.execPath for .js CLI paths', () => {
       mockGetConfigValue.mockReturnValue('/project/node_modules/@github/copilot/dist/index.js');
-      mockExistsSync.mockReturnValue(true);
+      mockExistsSync.mockImplementation((p: unknown) => p === '/project/node_modules/@github/copilot/dist/index.js');
       mockExecSync.mockReturnValue(Buffer.from('GitHub Copilot CLI 1.0.36.\n'));
 
       getCopilotCliVersion();
@@ -316,7 +332,7 @@ describe('session', () => {
 
     it('returns null when version output is unparseable', () => {
       mockGetConfigValue.mockReturnValue('/usr/bin/copilot');
-      mockExistsSync.mockReturnValue(true);
+      mockExistsSync.mockImplementation((p: unknown) => p === '/usr/bin/copilot');
       mockExecSync.mockReturnValue(Buffer.from('some unexpected output'));
 
       const version = getCopilotCliVersion();
@@ -325,7 +341,7 @@ describe('session', () => {
 
     it('caches result after first call', () => {
       mockGetConfigValue.mockReturnValue('/usr/bin/copilot');
-      mockExistsSync.mockReturnValue(true);
+      mockExistsSync.mockImplementation((p: unknown) => p === '/usr/bin/copilot');
       mockExecSync.mockReturnValue(Buffer.from('GitHub Copilot CLI 1.0.36.\n'));
 
       const first = getCopilotCliVersion();
@@ -339,7 +355,7 @@ describe('session', () => {
 
     it('re-resolves after invalidateCliPath()', () => {
       mockGetConfigValue.mockReturnValue('/usr/bin/copilot');
-      mockExistsSync.mockReturnValue(true);
+      mockExistsSync.mockImplementation((p: unknown) => p === '/usr/bin/copilot');
       mockExecSync.mockReturnValue(Buffer.from('GitHub Copilot CLI 1.0.36.\n'));
 
       expect(getCopilotCliVersion()).toBe('1.0.36');
@@ -355,7 +371,7 @@ describe('session', () => {
   describe('checkCliCompatibility', () => {
     it('returns compatible for version >= minimum', () => {
       mockGetConfigValue.mockReturnValue('/usr/bin/copilot');
-      mockExistsSync.mockReturnValue(true);
+      mockExistsSync.mockImplementation((p: unknown) => p === '/usr/bin/copilot');
       mockExecSync.mockReturnValue(Buffer.from('GitHub Copilot CLI 1.0.36.\n'));
 
       const info = checkCliCompatibility();
@@ -367,7 +383,7 @@ describe('session', () => {
 
     it('returns compatible for version > minimum', () => {
       mockGetConfigValue.mockReturnValue('/usr/bin/copilot');
-      mockExistsSync.mockReturnValue(true);
+      mockExistsSync.mockImplementation((p: unknown) => p === '/usr/bin/copilot');
       mockExecSync.mockReturnValue(Buffer.from('GitHub Copilot CLI 2.0.0.\n'));
 
       const info = checkCliCompatibility();
@@ -376,7 +392,7 @@ describe('session', () => {
 
     it('returns incompatible for version < minimum', () => {
       mockGetConfigValue.mockReturnValue('/usr/bin/copilot');
-      mockExistsSync.mockReturnValue(true);
+      mockExistsSync.mockImplementation((p: unknown) => p === '/usr/bin/copilot');
       mockExecSync.mockReturnValue(Buffer.from('GitHub Copilot CLI 1.0.35.\n'));
 
       const info = checkCliCompatibility();
@@ -398,7 +414,7 @@ describe('session', () => {
 
     it('returns incompatible when version cannot be parsed', () => {
       mockGetConfigValue.mockReturnValue('/usr/bin/copilot');
-      mockExistsSync.mockReturnValue(true);
+      mockExistsSync.mockImplementation((p: unknown) => p === '/usr/bin/copilot');
       mockExecSync.mockReturnValue(Buffer.from('unexpected output'));
 
       const info = checkCliCompatibility();
@@ -409,7 +425,7 @@ describe('session', () => {
 
     it('returns compatible for dev version 0.0.1', () => {
       mockGetConfigValue.mockReturnValue('/usr/bin/copilot');
-      mockExistsSync.mockReturnValue(true);
+      mockExistsSync.mockImplementation((p: unknown) => p === '/usr/bin/copilot');
       mockExecSync.mockReturnValue(Buffer.from('GitHub Copilot CLI 0.0.1.\n'));
 
       const info = checkCliCompatibility();

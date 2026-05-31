@@ -23,18 +23,22 @@ let currentToggleAccelerator: string | null = null;
 // catch block — the unhandled rejection / uncaught exception is just the
 // async write draining after the process is gone.
 process.on('uncaughtException', (err) => {
-  if (err && (err as NodeJS.ErrnoException).code === 'EPIPE') {
-    console.warn('[main] Suppressed EPIPE error (CLI subprocess likely exited):', err.message);
+  const code = (err as NodeJS.ErrnoException).code;
+  if (code === 'EPIPE' || code === 'ERR_STREAM_DESTROYED') {
+    console.warn('[main] Suppressed stream error (CLI subprocess likely exited):', err.message);
     return;
   }
-  // Re-throw non-EPIPE errors so Electron's default handler shows the dialog
+  // Re-throw non-stream errors so Electron's default handler shows the dialog
   throw err;
 });
 
 process.on('unhandledRejection', (reason) => {
-  if (reason instanceof Error && (reason as NodeJS.ErrnoException).code === 'EPIPE') {
-    console.warn('[main] Suppressed unhandled EPIPE rejection (CLI subprocess likely exited):', reason.message);
-    return;
+  if (reason instanceof Error) {
+    const code = (reason as NodeJS.ErrnoException).code;
+    if (code === 'EPIPE' || code === 'ERR_STREAM_DESTROYED') {
+      console.warn('[main] Suppressed unhandled stream rejection (CLI subprocess likely exited):', reason.message);
+      return;
+    }
   }
   // Log but don't crash for other unhandled rejections
   console.error('[main] Unhandled promise rejection:', reason);

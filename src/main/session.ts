@@ -214,7 +214,19 @@ export function resolveCommandOnPath(command: string): string | null {
  * both of which fail under Electron's runtime.
  */
 export function resolveCmdToJs(cmdPath: string): string {
-  if (process.platform !== 'win32' || !/\.cmd$/i.test(cmdPath)) return cmdPath;
+  if (process.platform !== 'win32') return cmdPath;
+
+  const ext = path.win32.extname(cmdPath).toLowerCase();
+
+  // Handle .cmd wrappers and extensionless npm shim scripts (Unix shell
+  // scripts that npm places alongside the .cmd). Both need to be mapped to
+  // the underlying @github/copilot/index.js because Node's spawn() cannot
+  // execute them directly.
+  // For extensionless files, only resolve if a .cmd sibling exists — this
+  // confirms it's an npm-generated shim rather than a standalone binary.
+  if (ext !== '.cmd') {
+    if (ext !== '' || !fs.existsSync(cmdPath + '.cmd')) return cmdPath;
+  }
 
   // Use path.win32 explicitly: on non-Windows hosts (e.g. CI/tests), the
   // generic `path` module follows posix rules and won't recognize `\` as a
