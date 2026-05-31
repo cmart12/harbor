@@ -45,6 +45,24 @@ class SpaceStore {
     this.notify();
   }
 
+  /**
+   * Insert a space at the top of the list, or replace it in place if a space
+   * with the same id already exists. Used for optimistic insertion right after
+   * creation so the new row renders without a full list reload.
+   */
+  upsertSpace(space: Space): void {
+    const existingIdx = this.state.spaces.findIndex(s => s.id === space.id);
+    let spaces: Space[];
+    if (existingIdx >= 0) {
+      spaces = this.state.spaces.slice();
+      spaces[existingIdx] = space;
+    } else {
+      spaces = [space, ...this.state.spaces];
+    }
+    this.state = { ...this.state, spaces };
+    this.notify();
+  }
+
   setFilter(filter: SpaceFilter): void {
     this.state = { ...this.state, filter };
     this.notify();

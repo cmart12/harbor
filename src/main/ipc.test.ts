@@ -28,6 +28,7 @@ vi.mock('./database', () => ({
   createSpace: vi.fn((input: any) => ({
     id: 'space-1',
     ...input,
+    folder: 'test-folder',
     status: 'captured',
     created_at: '2024-01-01',
     updated_at: '2024-01-01',
@@ -116,6 +117,8 @@ vi.mock('./workspace', () => ({
   getDbPath: vi.fn((dir: string) => `${dir}/.whim/spaces.db`),
   getLogPath: vi.fn((dir: string) => `${dir}/.whim/events.jsonl`),
   initSpaceCanvas: vi.fn(() => 'test-folder'),
+  materializeSpaceCanvas: vi.fn(async () => {}),
+  ensureSpaceCanvas: vi.fn(),
   readCanvas: vi.fn(() => 'canvas content'),
   writeCanvas: vi.fn(),
   resolveSpaceFolder: vi.fn((workspace: string, folder: string) => `${workspace}/${folder}`),
@@ -214,7 +217,7 @@ vi.mock('uuid', () => ({
 import { registerIpcHandlers } from './ipc';
 import { isInitialized, createSpace, listSpaces, updateSpace, deleteSpace, getSpace, getSkill, searchSpaces, logSpaceEvent, listSpaceEvents, assignSpaceFolder, updateCanvasContent } from './database';
 import { classifyInput, setAIModel, evaluateRecurrence } from './ai';
-import { initSpaceCanvas, readCanvas, writeCanvas, scheduleAutoCommit, commitNow, archiveSpaceFolder, deleteSpaceFolder } from './workspace';
+import { initSpaceCanvas, materializeSpaceCanvas, readCanvas, writeCanvas, scheduleAutoCommit, commitNow, archiveSpaceFolder, deleteSpaceFolder } from './workspace';
 import { getConfigValue, setConfigValue } from './config';
 import { listDiscoveredMcpServers } from './mcp';
 import { validateMcpServers, validateCliTools } from './validators';
@@ -248,8 +251,9 @@ describe('IPC handlers', () => {
         body: 'Build a new feature',
         description: 'new feature',
       });
-      expect(initSpaceCanvas).toHaveBeenCalled();
-      expect(assignSpaceFolder).toHaveBeenCalledWith('space-1', 'test-folder');
+      // Folder/canvas are materialized off the critical path using the folder
+      // already recorded by createSpace (no separate assignSpaceFolder call).
+      expect(materializeSpaceCanvas).toHaveBeenCalledWith('/mock/workspace', 'test-folder', 'Build a new feature');
     });
 
     it('returns error when DB not initialized', async () => {

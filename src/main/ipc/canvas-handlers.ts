@@ -1,7 +1,7 @@
 import { ipcMain, shell, BrowserWindow } from 'electron';
 import { isInitialized, getSpace, getSkill, assignSpaceFolder, updateCanvasContent } from '../database';
 import { getConfigValue } from '../config';
-import { initSpaceCanvas, readCanvas, writeCanvas, scheduleAutoCommit, saveAttachment, resolveAttachmentPath, getMimeType, readSpaceFile, getSpaceHistory, restoreSpaceVersion, getSpaceVersionContent, resolveSpaceFolder, createPage, readPage, writePage, listPages } from '../workspace';
+import { initSpaceCanvas, ensureSpaceCanvas, readCanvas, writeCanvas, scheduleAutoCommit, saveAttachment, resolveAttachmentPath, getMimeType, readSpaceFile, getSpaceHistory, restoreSpaceVersion, getSpaceVersionContent, resolveSpaceFolder, createPage, readPage, writePage, listPages } from '../workspace';
 import { parseFrontmatter, serializeFrontmatter } from '../frontmatter';
 import { fetchLinkPreview } from '../services/link-preview';
 import { startWatching, stopWatching, markSelfWrite } from '../canvas-watcher';
@@ -45,7 +45,12 @@ export function registerCanvasHandlers(): void {
 
     try {
       const canvasPath = path.join(resolveSpaceFolder(workspace, space.folder), CANVAS_FILE);
-      if (!fs.existsSync(canvasPath)) return { hasContent: false };
+      if (!fs.existsSync(canvasPath)) {
+        // Canvas file may not be materialized yet (deferred off the create
+        // critical path). Fall back to the in-DB body so the content indicator
+        // is accurate during that brief window.
+        return { hasContent: !!(space.body && space.body.trim().length > 0) };
+      }
       return { hasContent: fs.readFileSync(canvasPath, 'utf-8').trim().length > 0 };
     } catch {
       return { hasContent: false };
@@ -96,6 +101,11 @@ export function registerCanvasHandlers(): void {
     if (!folder) {
       folder = initSpaceCanvas(workspace, spaceId, space.description, space.body);
       assignSpaceFolder(spaceId, folder);
+    } else {
+      // Folder name is recorded at creation, but the on-disk folder/canvas may
+      // still be pending (materialized off the create critical path). Ensure it
+      // exists before reading so an immediate open never sees an empty canvas.
+      ensureSpaceCanvas(workspace, folder, space.body);
     }
 
     const content = readCanvas(workspace, folder);

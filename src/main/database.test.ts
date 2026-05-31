@@ -17,6 +17,10 @@ vi.mock('./eventlog', () => ({
 // Mock workspace — readCanvas returns configurable content
 vi.mock('./workspace', () => ({
   readCanvas: vi.fn(() => ''),
+  slugify: vi.fn((text: string, spaceId: string) => {
+    const slug = text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60) || 'space';
+    return `${slug}-${spaceId.replace(/-/g, '').slice(0, 4)}`;
+  }),
 }));
 
 import {
@@ -357,7 +361,9 @@ describe('database', () => {
     });
 
     it('skips spaces without folders', () => {
-      makeIntent(); // no folder
+      const space = makeIntent();
+      // Simulate a legacy space that never had a folder assigned.
+      getDatabase().prepare('UPDATE spaces SET folder = NULL WHERE id = ?').run(space.id);
       syncCanvasContent('/fake/workspace');
       expect(readCanvas).not.toHaveBeenCalled();
     });

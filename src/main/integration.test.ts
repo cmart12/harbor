@@ -11,6 +11,10 @@ vi.mock('electron', () => ({
 // Mock workspace — readCanvas is called by syncCanvasContent during rebuild
 vi.mock('./workspace', () => ({
   readCanvas: vi.fn(() => ''),
+  slugify: vi.fn((text: string, spaceId: string) => {
+    const slug = text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60) || 'space';
+    return `${slug}-${spaceId.replace(/-/g, '').slice(0, 4)}`;
+  }),
 }));
 
 // Do NOT mock eventlog or database — the whole point is testing them together
@@ -282,7 +286,8 @@ describe('Event log ↔ Database integration', () => {
   describe('folder assignment survives rebuild', () => {
     it('assigned folder is set after rebuild', () => {
       const space = createSpace({ body: 'Folder test' });
-      expect(getSpace(space.id)!.folder).toBeNull();
+      // createSpace now records a deterministic folder slug up front.
+      expect(getSpace(space.id)!.folder).not.toBeNull();
 
       assignSpaceFolder(space.id, 'my-project-folder');
 

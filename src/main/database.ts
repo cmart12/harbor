@@ -3,7 +3,7 @@ import Database from 'better-sqlite3';
 import { v4 as uuidv4 } from 'uuid';
 import { Space, Attachment, CanvasAgent, AgentSession, CreateSpaceInput, Skill, SkillFrontmatter } from '../shared/types';
 import { appendEvent, replayLog } from './eventlog';
-import { readCanvas } from './workspace';
+import { readCanvas, slugify } from './workspace';
 
 let db: Database.Database;
 let logPath: string;
@@ -185,12 +185,16 @@ function parseAttachments(raw: string | null | undefined): Attachment[] {
 
 export function createSpace(input: CreateSpaceInput, sourceSkillId?: string): Space {
   const now = new Date().toISOString();
+  const id = uuidv4();
   // Placeholder title: first line or first ~80 chars of body
   const firstLine = input.body.split('\n')[0].trim();
   const placeholder = firstLine.length > 80 ? firstLine.slice(0, 77) + '…' : firstLine;
+  // Folder slug is deterministic from id + description, so we can record it in
+  // the create event up front and defer the actual on-disk folder creation.
+  const folder = slugify(placeholder, id);
 
   const space: Space = {
-    id: uuidv4(),
+    id,
     description: placeholder,
     body: input.body,
     raw_text: input.body,
@@ -199,7 +203,7 @@ export function createSpace(input: CreateSpaceInput, sourceSkillId?: string): Sp
     due_at_utc: null,
     recurrence: null,
     completed_at: null,
-    folder: null,
+    folder,
     session_id: null,
     source_skill_id: sourceSkillId ?? null,
     attachments: [],

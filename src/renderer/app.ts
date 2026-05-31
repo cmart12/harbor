@@ -2970,6 +2970,17 @@ async function animateRefinement(spaceId: string): Promise<void> {
 // ── Space CRUD ─────────────────────────────────────────
 let loadSpacesRequestId = 0;
 
+/**
+ * Optimistically add a freshly-created space to the store so its row renders
+ * immediately, without the full three-call loadSpaces() reload. Background AI
+ * refinement (space:processed → animateRefinement) reconciles the row in place.
+ */
+function insertSpaceOptimistically(space: Space): void {
+  spaceStore.upsertSpace(space);
+  spaces = [...spaceStore.getState().spaces];
+  updateFocusBanner();
+}
+
 async function loadSpaces(): Promise<void> {
   const requestId = ++loadSpacesRequestId;
 
@@ -3809,6 +3820,7 @@ form.addEventListener('submit', async (e) => {
       }
       processingSpaces.add(retryIntent.id);
       agentStore.addProcessingIntent(retryIntent.id);
+      insertSpaceOptimistically(retryIntent);
     } else {
       hideStatus();
       return;
@@ -3816,9 +3828,9 @@ form.addEventListener('submit', async (e) => {
   } else {
     processingSpaces.add(space.id);
     agentStore.addProcessingIntent(space.id);
+    insertSpaceOptimistically(space);
   }
   hideStatus();
-  await loadSpaces();
 });
 
 // Listen for background LLM processing completion

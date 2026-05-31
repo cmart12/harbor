@@ -1,24 +1,27 @@
 import { ipcMain } from 'electron';
-import { isInitialized, createSpace, listSpaces, updateSpace, deleteSpace, getSpace, logSpaceEvent, listSpaceEvents, assignSpaceFolder, searchSpaces } from '../database';
+import { isInitialized, createSpace, listSpaces, updateSpace, deleteSpace, getSpace, logSpaceEvent, listSpaceEvents, searchSpaces } from '../database';
 import { parseSpaceWithAI, resolveDateWithAI, classifyInput } from '../ai';
 import { CreateSpaceInput, Space } from '../../shared/types';
 import { getConfigValue } from '../config';
-import { initSpaceCanvas, scheduleAutoCommit, commitNow, archiveSpaceFolder, unarchiveSpaceFolder, deleteSpaceFolder } from '../workspace';
+import { materializeSpaceCanvas, scheduleAutoCommit, commitNow, archiveSpaceFolder, unarchiveSpaceFolder, deleteSpaceFolder } from '../workspace';
 import { handleRecurrence, dismissRecurrence, cancelPendingRecurrence } from '../services/recurrence';
 import { processSpaceInBackground } from '../services/space-processing';
 
 export function registerSpaceHandlers(): void {
   ipcMain.handle('space:create', (_event, input: CreateSpaceInput) => {
     if (!isInitialized()) return { error: 'no_workspace' };
+    // createSpace records the (deterministic) folder name in the single create
+    // event, so the IPC can return immediately after the DB write.
     const space = createSpace(input);
 
-    // Eagerly create folder + canvas seeded with body
+    // Materialize the folder + seed the canvas off the critical path. The folder
+    // name is already known/persisted; the on-disk write does not block the reply.
     const workspace = getConfigValue('workspace');
-    if (workspace) {
-      const folder = initSpaceCanvas(workspace, space.id, space.description, space.body);
-      assignSpaceFolder(space.id, folder);
-      space.folder = folder;
-      scheduleAutoCommit(workspace);
+    if (workspace && space.folder) {
+      const folder = space.folder;
+      void materializeSpaceCanvas(workspace, folder, space.body)
+        .then(() => scheduleAutoCommit(workspace))
+        .catch((err) => console.error('[space:create] Canvas materialization failed:', err));
     }
 
     processSpaceInBackground(space.id, space.body || space.description, space.updated_at);

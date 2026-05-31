@@ -187,6 +187,44 @@ export function initSpaceCanvas(workspaceRoot: string, spaceId: string, descript
   return folder;
 }
 
+/**
+ * Async variant of {@link initSpaceCanvas} for a folder whose name is already
+ * known (slug is deterministic). Creates the folder and seeds the canvas using
+ * non-blocking fs.promises so it can run off the create critical path.
+ */
+export async function materializeSpaceCanvas(workspaceRoot: string, folder: string, body: string | null): Promise<void> {
+  const folderPath = path.join(workspaceRoot, folder);
+  await fs.promises.mkdir(folderPath, { recursive: true });
+
+  const canvasPath = getCanvasPath(workspaceRoot, folder);
+  try {
+    // wx fails if the file already exists, so we never clobber an existing canvas.
+    const content = body && body.trim() ? body.trim() + '\n' : '';
+    await fs.promises.writeFile(canvasPath, content, { encoding: 'utf-8', flag: 'wx' });
+  } catch (err: any) {
+    if (err?.code !== 'EEXIST') throw err;
+  }
+}
+
+/**
+ * Synchronously ensure a space's folder + canvas exist on disk for a folder
+ * whose name is already known. Safety net for readers that may run before the
+ * deferred {@link materializeSpaceCanvas} write has landed. Never clobbers an
+ * existing canvas and does not recompute the folder from the description (which
+ * may have changed after AI refinement).
+ */
+export function ensureSpaceCanvas(workspaceRoot: string, folder: string, body: string | null): void {
+  const folderPath = path.join(workspaceRoot, folder);
+  if (!fs.existsSync(folderPath)) {
+    fs.mkdirSync(folderPath, { recursive: true });
+  }
+  const canvasPath = getCanvasPath(workspaceRoot, folder);
+  if (!fs.existsSync(canvasPath)) {
+    const content = body && body.trim() ? body.trim() + '\n' : '';
+    fs.writeFileSync(canvasPath, content, 'utf-8');
+  }
+}
+
 const ARCHIVE_DIR = 'archive';
 
 /** Move a space folder into .whim/archive/ for safekeeping. */
