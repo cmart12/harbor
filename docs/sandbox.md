@@ -404,7 +404,7 @@ Decision results: `approved`, `approved-for-session`, `approved-for-location`, `
 
 | # | Gap | Impact | Repos affected |
 |---|-----|--------|----------------|
-| 1 | **Shell denial detection is heuristic** | The runtime has no structured `sandboxDenied` signal. The `onPostToolUse` matcher uses string patterns (`"Access is denied."`, `0xC0000022`, `wxc-exec`) which may mis-classify normal failures as sandbox denials or miss real ones. | Runtime, Whim |
+| 1 | **Shell denial detection is heuristic** | The runtime has no structured `sandboxDenied` signal. The `onPostToolUse` matcher uses string patterns (`"Access is denied."`, `0xC0000022`, `wxc-exec`, `"Failed to start <shell> process"`) which may mis-classify normal failures as sandbox denials or miss real ones. Tool-name gating lives in `isShellToolName()` (covers bash/shell/powershell/pwsh/local_shell + read_/write_/stop_/list_ variants). | Runtime, Whim |
 | 2 | **Cross-platform support: Windows only** | Sandbox is gated on `IS_WINDOWS`. macOS, Linux, and WSL have no containment. Agents on non-Windows platforms run unsandboxed regardless of persona settings. | All |
 | 3 | **`allowedHosts` not wired** | MXC supports per-host network allow lists, but the runtime's schema doesn't include `allowedHosts`. Whim drops it from the v1 policy. Users cannot selectively allow specific hosts while blocking general outbound. | Runtime, Whim |
 | 4 | **Path-bearing SDK tools unrestricted in `mxc-only` mode** | Since MXC only sandboxes shells, tools like `view`/`edit`/`create` bypass containment in `mxc-only` mode. This is by design for testing but could confuse users who enable it without understanding the limitation. | Whim (docs) |

@@ -333,9 +333,59 @@ describe('sandbox-policies', () => {
     });
 
     it('blocks shell write commands via the read-only classifier', async () => {
-      const hook = makeHook();
+      const blocks: any[] = [];
+      const hook = makeHook({
+        onBlock: async (info) => { blocks.push(info); return { permissionDecision: 'deny' as const }; },
+      });
       const r = await hook({ toolName: 'bash', toolArgs: { command: 'rm -rf foo' } });
       expect((r as any).permissionDecision).toBe('deny');
+      // Bubble-up is now invoked for shell classifier denials so the user
+      // can pick allow-once/disable instead of seeing a silent failure.
+      expect(blocks).toHaveLength(1);
+      expect(blocks[0]).toMatchObject({
+        toolName: 'bash',
+        kind: 'shell',
+        target: 'rm -rf foo',
+        layer: 'host:readonly-classifier',
+      });
+    });
+
+    it('blocks powershell write commands via the read-only classifier', async () => {
+      // Regression: pre-fix, the classifier only matched 'bash'/'shell', so
+      // `Set-Content` on Windows fell straight through to MXC and surfaced as
+      // a bare "Failed to start powershell process" with no dialog.
+      const blocks: any[] = [];
+      const hook = makeHook({
+        onBlock: async (info) => { blocks.push(info); return { permissionDecision: 'deny' as const }; },
+      });
+      const r = await hook({
+        toolName: 'powershell',
+        toolArgs: { command: 'Set-Content -Path "$env:USERPROFILE\\Desktop\\hello.txt" -Value "hi"' },
+      });
+      expect((r as any).permissionDecision).toBe('deny');
+      expect(blocks).toHaveLength(1);
+      expect(blocks[0]).toMatchObject({
+        toolName: 'powershell',
+        kind: 'shell',
+        layer: 'host:readonly-classifier',
+      });
+    });
+
+    it('allows common PowerShell read-only commands', async () => {
+      // After teaching the classifier about powershell, common read-only
+      // PS cmdlets must NOT be misclassified as non-read-only.
+      const hook = makeHook();
+      for (const command of [
+        'Get-ChildItem',
+        'gci -Recurse',
+        'Get-Content foo.txt',
+        'Test-Path C:\\Windows',
+        'Select-String -Path *.ts -Pattern test',
+        'Get-Location',
+      ]) {
+        const r = await hook({ toolName: 'powershell', toolArgs: { command } });
+        expect(r, `command=${command}`).toEqual({});
+      }
     });
 
     it('allows web_fetch when allowWebFetch is true', async () => {
@@ -374,15 +424,20 @@ describe('sandbox-policies', () => {
     });
 
     describe('layer tagging', () => {
-      it('tags read-only-classifier denials with host:readonly-classifier', async () => {
+      it('tags read-only-classifier denials with host:readonly-classifier and bubbles up', async () => {
+        // Updated: shell-classifier denials now invoke onBlock (host:readonly-classifier
+        // bubble-up) so the user can resolve via the standard dialog. The
+        // returned decision (deny/allow) drives the SDK; the call signature
+        // mirrors path-policy denials.
         const blocks: any[] = [];
-        const hook = makeHook({ onBlock: async (info) => { blocks.push(info); return {}; } });
-        // Read-only classifier denies inline; onBlock is NOT invoked for shell
-        // denials by the classifier path (it returns deny directly). So we
-        // assert the log line and the deny return instead.
+        const hook = makeHook({
+          onBlock: async (info) => { blocks.push(info); return { permissionDecision: 'deny' as const }; },
+        });
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
         const r = await hook({ toolName: 'bash', toolArgs: { command: 'rm -rf foo' } });
         expect((r as any).permissionDecision).toBe('deny');
+        expect(blocks).toHaveLength(1);
+        expect(blocks[0].layer).toBe('host:readonly-classifier');
         const calls = warn.mock.calls.map(c => c.join(' '));
         expect(calls.some(c => c.includes('[sandbox][host:readonly-classifier]'))).toBe(true);
         warn.mockRestore();

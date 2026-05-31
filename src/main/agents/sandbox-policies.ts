@@ -34,17 +34,25 @@ export function logSandboxLayerDenial(
   console.warn(parts.join(' '));
 }
 
-// Read-only command patterns (safe to run in sandbox)
+// Read-only command patterns (safe to run in sandbox).
+//
+// The set includes both POSIX shells (bash/sh) AND PowerShell forms (verb-noun
+// cmdlets and common aliases) because `createSandboxPreToolHook` now matches
+// every shell tool the SDK exposes via `isShellToolName()` — without
+// PowerShell-friendly read patterns, common reads like `Get-ChildItem` or
+// `Test-Path` would be misclassified as non-read-only and pre-emptively
+// denied on Windows.
 const READ_ONLY_PATTERNS = [
-  /^(ls|dir|find|tree)\b/,
-  /^(cat|head|tail|less|more|type|Get-Content)\b/,
-  /^(grep|rg|ag|ack|findstr|Select-String)\b/,
-  /^(wc|sort|uniq|diff|comm)\b/,
-  /^(echo|printf|pwd|whoami|hostname|date|uname)\b/,
+  /^(ls|dir|find|tree|ll|la|gci|Get-ChildItem)\b/,
+  /^(cat|head|tail|less|more|type|gc|Get-Content)\b/,
+  /^(grep|rg|ag|ack|findstr|sls|Select-String)\b/,
+  /^(wc|sort|uniq|diff|comm|Compare-Object|Measure-Object|Sort-Object)\b/,
+  /^(echo|printf|pwd|whoami|hostname|date|uname|gl|Get-Location|Get-Date|Get-Host|Write-Output|Out-Host|Resolve-Path|Test-Path|Get-Item)\b/,
   /^(git\s+(log|status|diff|show|blame|branch|tag))\b/,
-  /^(file|stat|du|df)\b/,
-  /^(which|where|command\s+-v)\b/,
-  /^(env|printenv|set)\b/,
+  /^(file|stat|du|df|Get-ChildItem.*-Recurse|Get-Process|gps|ps|Get-Service|gsv)\b/,
+  /^(which|where|command\s+-v|Get-Command|gcm)\b/,
+  /^(env|printenv|set|Get-Variable|gv|Get-ChildItem\s+env:|ConvertTo-Json|ConvertFrom-Json)\b/,
+  /^(Where-Object|\?|Select-Object|select|Format-Table|ft|Format-List|fl|ForEach-Object|%)\b/,
 ];
 
 /**
@@ -59,10 +67,17 @@ export function isReadOnlyCommand(command: string): boolean {
 /**
  * Creates a pre-tool-use hook that denies non-read-only shell commands.
  * Passes through all non-shell tools unchanged.
+ *
+ * Recognises every shell tool the SDK exposes (`bash`, `powershell`, `pwsh`,
+ * `local_shell`, plus the `read_/write_/stop_/list_` variants) via
+ * `isShellToolName()`. Without this, a PowerShell `Set-Content` on Windows
+ * would fall straight past the classifier into MXC, which can only express
+ * the failure as a post-hoc "Failed to start powershell process" rather
+ * than a clean pre-tool block.
  */
 export function createSandboxPreToolHook() {
   return async (input: { toolName: string; toolArgs: unknown }, _invocation?: { sessionId: string }) => {
-    if (input.toolName === 'bash' || input.toolName === 'shell') {
+    if (isShellToolName(input.toolName)) {
       const args = input.toolArgs as Record<string, unknown> | undefined;
       const command = args?.command;
       if (typeof command === 'string' && !isReadOnlyCommand(command)) {
@@ -338,17 +353,30 @@ export interface PathPolicyHookResult {
     const { toolName } = input;
     const toolArgs = (input.toolArgs ?? {}) as Record<string, unknown>;
 
-    // 1. Defense-in-depth shell classifier
-    if (!args.skipReadOnlyClassifier && (toolName === 'bash' || toolName === 'shell')) {
+    // 1. Defense-in-depth shell classifier.
+    //
+    // Recognise the SDK's full shell-tool family (bash/powershell/pwsh/
+    // local_shell + read_/write_/stop_/list_ variants) via isShellToolName().
+    // When a non-read-only command is detected, surface a bubble-up dialog
+    // (allow-once / disable) instead of a silent deny so the user can
+    // choose to proceed or turn the sandbox off — same UX as the path-policy
+    // and post-tool-shell denial paths.
+    if (!args.skipReadOnlyClassifier && isShellToolName(toolName)) {
       const r = await readOnlyHook(input, invocation);
       if (r && r.permissionDecision === 'deny') {
-        const a = (toolArgs.command as string | undefined) ?? '';
+        const cmd = (toolArgs.command as string | undefined) ?? '';
         logSandboxLayerDenial('host:readonly-classifier', {
           toolName,
-          target: a,
+          target: cmd,
           reason: 'non-read-only shell command in sandbox',
         });
-        return r as PathPolicyHookResult;
+        return args.onBlock({
+          toolName,
+          kind: 'shell',
+          target: cmd,
+          requiresWrite: true,
+          layer: 'host:readonly-classifier',
+        });
       }
     }
 
