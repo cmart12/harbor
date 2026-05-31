@@ -596,21 +596,33 @@ function detectSnapSlot(winX: number, winY: number, winWidth: number, winHeight:
 
 /** Snap the window to the nearest edge after a user drag. Only operates in collapsed mode. */
 function handleWindowMoved(): void {
-  if (!mainWindow || isExpanded || isSnapping) return;
+  if (!mainWindow || mainWindow.isDestroyed() || isExpanded || isSnapping) return;
   // Don't snap when pinned — allow free positioning
   if (getConfigValue('pinned')) return;
 
-  const bounds = mainWindow.getBounds();
-  const slot = detectSnapSlot(bounds.x, bounds.y, bounds.width, bounds.height);
-  if (!slot) return;
+  try {
+    const bounds = mainWindow.getBounds();
+    const slot = detectSnapSlot(bounds.x, bounds.y, bounds.width, bounds.height);
+    if (!slot) return;
 
-  isSnapping = true;
-  const coords = getSnapCoords(slot, bounds.width, bounds.height);
-  mainWindow.setPosition(coords.x, coords.y, false);
-  setConfigValue('snapPosition', slot);
+    isSnapping = true;
+    const coords = getSnapCoords(slot, bounds.width, bounds.height);
+    const x = Math.round(coords.x);
+    const y = Math.round(coords.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      console.warn('[window-manager] Invalid snap coordinates, skipping:', { x, y });
+      isSnapping = false;
+      return;
+    }
+    mainWindow.setPosition(x, y, false);
+    setConfigValue('snapPosition', slot);
 
-  // Clear guard after animation
-  setTimeout(() => { isSnapping = false; }, 300);
+    // Clear guard after animation
+    setTimeout(() => { isSnapping = false; }, 300);
+  } catch (err) {
+    isSnapping = false;
+    console.warn('[window-manager] handleWindowMoved error:', err);
+  }
 }
 
 function createCanvasWindow(preloadPath: string): BrowserWindow {
