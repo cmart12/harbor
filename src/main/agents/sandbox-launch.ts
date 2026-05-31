@@ -19,6 +19,7 @@ import {
   resolvePathPolicy,
   createSandboxPathPolicyHook,
   createSandboxShellDenialHook,
+  createSandboxShellDenialFailureHook,
   normalizePath,
   type SandboxLayer,
 } from './sandbox-policies';
@@ -166,10 +167,17 @@ export function buildSandboxLaunchSetup(opts: {
 
   // The post-tool MXC-denial detector stays wired in BOTH modes — it's how the
   // user finds out that MXC actually blocked something at the OS level.
-  const postTool = createSandboxShellDenialHook({
+  //
+  // BOTH success- and failure-side hooks are wired: the SDK splits post-tool
+  // dispatch by result type and only fires `onPostToolUse` for successful
+  // results. Sandbox denials (e.g. MXC AppContainer refusing to spawn
+  // powershell.exe → "Failed to start powershell process") surface as
+  // *failures*, so without `onPostToolUseFailure` the detector would
+  // silently skip the exact case we need it to handle.
+  const postToolHookArgs = {
     isDisabled: () => registry.get(agentId)?.sandbox?.state === 'off',
     allowOutbound: () => registry.get(agentId)?.sandbox?.allowOutbound ?? false,
-    onBlock: async (info) => {
+    onBlock: async (info: { toolName: string; target: string; matchedPattern: string; kind: 'high' | 'medium' | 'network'; layer: SandboxLayer }) => {
       const livingRecord = registry.get(agentId);
       if (!livingRecord) return;
       await broker.emitSandboxBlock(livingRecord, {
@@ -192,14 +200,16 @@ export function buildSandboxLaunchSetup(opts: {
         layer: info.layer,
       });
     },
-  });
+  };
+  const postTool = createSandboxShellDenialHook(postToolHookArgs);
+  const postToolFailure = createSandboxShellDenialFailureHook(postToolHookArgs);
 
   // In mxc-only mode, suppress the host-side pre-tool hook entirely so the
   // read-only shell classifier and path-policy hook don't intercept calls
   // before MXC sees them.  MCP/web_fetch filtering still applies (those
   // happen above by stripping tools from `customTools`/`mcpServers`).
   const hooks: Record<string, unknown> | undefined = enforcementMode === 'mxc-only'
-    ? { onPostToolUse: postTool }
+    ? { onPostToolUse: postTool, onPostToolUseFailure: postToolFailure }
     : {
         onPreToolUse: createSandboxPathPolicyHook({
           policy: sandboxState.policy,
@@ -209,6 +219,7 @@ export function buildSandboxLaunchSetup(opts: {
           onBlock,
         }),
         onPostToolUse: postTool,
+        onPostToolUseFailure: postToolFailure,
       };
 
   return {

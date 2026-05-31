@@ -15,6 +15,7 @@ import {
   samePath,
   createSandboxPathPolicyHook,
   createSandboxShellDenialHook,
+  createSandboxShellDenialFailureHook,
   detectShellSandboxDenial,
   logSandboxLayerDenial,
   SANDBOX_DENIAL_SCAN_BYTES,
@@ -740,6 +741,90 @@ describe('sandbox-policies', () => {
         toolResult: { error: 'Failed to start powershell process' },
       });
       expect(r3?.kind).toBe('high');
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // createSandboxShellDenialFailureHook (post-tool-failure hook)
+  //
+  // The SDK only fires onPostToolUse for SUCCESSFUL tool results; failed
+  // results go to onPostToolUseFailure with a different input shape (no
+  // ToolResultObject, just `error: string`). Sandbox denials almost always
+  // surface as failures (e.g. MXC AppContainer refusing to spawn
+  // powershell.exe → SDK throws "Failed to start powershell process"), so
+  // this hook is what actually catches them in production.
+  // ─────────────────────────────────────────────────────────────────────────
+  describe('createSandboxShellDenialFailureHook', () => {
+    it('detects "Failed to start powershell process" and emits onBlock', async () => {
+      const blocks: any[] = [];
+      const hook = createSandboxShellDenialFailureHook({
+        isDisabled: () => false,
+        allowOutbound: () => false,
+        onBlock: async (info) => { blocks.push(info); },
+      });
+      const result = await hook({
+        toolName: 'powershell',
+        toolArgs: { command: 'Set-Content -Path C:\\Users\\x\\Desktop\\hello.txt -Value hi' },
+        error: 'Failed to start powershell process',
+      });
+      expect(blocks).toHaveLength(1);
+      expect(blocks[0]).toMatchObject({
+        toolName: 'powershell',
+        kind: 'high',
+        layer: 'mxc:shell-denial-high',
+      });
+      // Failure-hook output: additionalContext (no modifiedResult).
+      expect(result).toBeDefined();
+      expect((result as any).additionalContext).toContain('sandbox is active');
+      expect((result as any).modifiedResult).toBeUndefined();
+    });
+
+    it('skips when sandbox is disabled', async () => {
+      const blocks: any[] = [];
+      const hook = createSandboxShellDenialFailureHook({
+        isDisabled: () => true,
+        allowOutbound: () => false,
+        onBlock: async (info) => { blocks.push(info); },
+      });
+      const r = await hook({
+        toolName: 'powershell',
+        toolArgs: { command: 'x' },
+        error: 'Failed to start powershell process',
+      });
+      expect(blocks).toHaveLength(0);
+      expect(r).toBeUndefined();
+    });
+
+    it('returns undefined when no fingerprint matches', async () => {
+      const blocks: any[] = [];
+      const hook = createSandboxShellDenialFailureHook({
+        isDisabled: () => false,
+        allowOutbound: () => false,
+        onBlock: async (info) => { blocks.push(info); },
+      });
+      const r = await hook({
+        toolName: 'bash',
+        toolArgs: { command: 'true' },
+        error: 'some unrelated error',
+      });
+      expect(blocks).toHaveLength(0);
+      expect(r).toBeUndefined();
+    });
+
+    it('handles missing error string gracefully', async () => {
+      const blocks: any[] = [];
+      const hook = createSandboxShellDenialFailureHook({
+        isDisabled: () => false,
+        allowOutbound: () => false,
+        onBlock: async (info) => { blocks.push(info); },
+      });
+      // Defensive: error might be undefined/empty if the SDK surface
+      // changes; the hook must not throw.
+      await expect(hook({
+        toolName: 'powershell',
+        toolArgs: { command: 'x' },
+        error: undefined as unknown as string,
+      })).resolves.toBeUndefined();
     });
   });
 });

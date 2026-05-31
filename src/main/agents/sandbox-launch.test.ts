@@ -86,7 +86,7 @@ describe('buildSandboxLaunchSetup', () => {
     };
   }
 
-  it('installs both onPreToolUse + onPostToolUse in enforcementMode=both', () => {
+  it('installs both onPreToolUse + onPostToolUse + onPostToolUseFailure in enforcementMode=both', () => {
     const setup = buildSandboxLaunchSetup({
       agentId: 'a1',
       workingDir: path.join(os.tmpdir(), 'a1-work'),
@@ -99,9 +99,13 @@ describe('buildSandboxLaunchSetup', () => {
     expect(setup.hooks).toBeDefined();
     expect(setup.hooks).toHaveProperty('onPreToolUse');
     expect(setup.hooks).toHaveProperty('onPostToolUse');
+    // onPostToolUseFailure is REQUIRED — sandbox denials (e.g. MXC refusing
+    // to spawn powershell.exe) surface as failed tool results, which the SDK
+    // routes to onPostToolUseFailure, not onPostToolUse.
+    expect(setup.hooks).toHaveProperty('onPostToolUseFailure');
   });
 
-  it('skips onPreToolUse but keeps onPostToolUse in enforcementMode=mxc-only', () => {
+  it('skips onPreToolUse but keeps onPostToolUse + onPostToolUseFailure in enforcementMode=mxc-only', () => {
     const setup = buildSandboxLaunchSetup({
       agentId: 'a2',
       workingDir: path.join(os.tmpdir(), 'a2-work'),
@@ -114,6 +118,7 @@ describe('buildSandboxLaunchSetup', () => {
     expect(setup.hooks).toBeDefined();
     expect(setup.hooks).not.toHaveProperty('onPreToolUse');
     expect(setup.hooks).toHaveProperty('onPostToolUse');
+    expect(setup.hooks).toHaveProperty('onPostToolUseFailure');
   });
 
   it('still pre-materializes config dirs in mxc-only so sandbox stays enabled', () => {

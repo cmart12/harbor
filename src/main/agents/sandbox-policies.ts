@@ -644,11 +644,61 @@ export function createSandboxShellDenialHook(args: {
   return async (input: { toolName: string; toolArgs: unknown; toolResult: unknown }, _invocation?: { sessionId: string }) => {
     if (args.isDisabled()) return undefined;
 
+    // Unconditional entry log for shell-family tools so we can tell, when
+    // a sandbox-block dialog fails to fire, whether the SDK invoked the
+    // post-tool hook at all (vs. the SDK swallowing startup errors without
+    // calling hooks). Kept lightweight — only fires for shell tools so the
+    // normal edit/view/grep call stream stays quiet.
+    if (isShellToolName(input.toolName)) {
+      console.log(`[sandbox][post-tool] enter toolName=${input.toolName}`);
+    }
+
     const hint = detectShellSandboxDenial({
       ...input,
       allowOutbound: args.allowOutbound(),
     });
-    if (!hint) return undefined;
+    if (!hint) {
+      // Diagnostic miss-log: this fires only when the detector returned null
+      // AND the tool name looks like a shell tool. We can't tell from the
+      // outside whether MXC fingerprints we don't yet recognize are slipping
+      // through. The log captures the tool name, top-level keys of the
+      // result object, and the tail of the text so users can paste it into
+      // an issue when the sandbox-block dialog fails to fire. Cheap when
+      // nothing matches (only fires for actual shell tools).
+      if (isShellToolName(input.toolName)) {
+        const r = input.toolResult;
+        const keys = r && typeof r === 'object' ? Object.keys(r as Record<string, unknown>).slice(0, 10) : [];
+        let tail = '';
+        if (typeof r === 'string') {
+          tail = r.slice(-400);
+        } else if (r && typeof r === 'object') {
+          // Try every plausible field, including ones the detector doesn't
+          // currently scan, so the log surfaces "did we forget a field?".
+          const candidates = [
+            (r as any).textResultForLlm,
+            (r as any).content,
+            (r as any).detailedContent,
+            (r as any).text,
+            (r as any).error,
+            (r as any).errorMessage,
+            (r as any).message,
+            (r as any).stderr,
+            (r as any).stdout,
+            (r as any).output,
+            (r as any).result,
+          ].filter((v) => typeof v === 'string');
+          tail = candidates.join(' | ').slice(-400);
+          if (!tail) {
+            try { tail = JSON.stringify(r).slice(-400); } catch { /* ignore */ }
+          }
+        }
+        console.warn(
+          `[sandbox][post-tool] miss toolName=${input.toolName} ` +
+          `resultType=${typeof r} keys=${JSON.stringify(keys)} tail=${JSON.stringify(tail)}`,
+        );
+      }
+      return undefined;
+    }
 
     const toolArgs = (input.toolArgs ?? {}) as Record<string, unknown>;
     const command = typeof toolArgs.command === 'string' ? toolArgs.command : '';
@@ -684,5 +734,92 @@ export function createSandboxShellDenialHook(args: {
     }
     // Legacy string result — return additionalContext as fallback.
     return { additionalContext: footer };
+  };
+}
+
+/**
+ * Failure-side companion to `createSandboxShellDenialHook`.
+ *
+ * The SDK splits post-tool dispatch into two callbacks
+ * (`@github/copilot-sdk/dist/types.d.ts`):
+ *   - `onPostToolUse`        — fires only for SUCCESS results
+ *   - `onPostToolUseFailure` — fires only for FAILURE results
+ *
+ * Sandbox shell denials almost always surface as *failures* (e.g. MXC's
+ * AppContainer refusing to spawn `powershell.exe` → the SDK throws
+ * `"Failed to start powershell process"` and emits a `failure` tool
+ * result), so wiring only `onPostToolUse` means the detector never runs
+ * for the exact case we care about and the bubble-up dialog never fires.
+ *
+ * The failure hook input differs from the success hook (no full
+ * `ToolResultObject`, just `error: string`) and the output only honors
+ * `additionalContext`. We adapt by wrapping `error` so it flows through
+ * the same `detectShellSandboxDenial` text-scanning logic.
+ */
+export function createSandboxShellDenialFailureHook(args: {
+  isDisabled: () => boolean;
+  allowOutbound: () => boolean;
+  onBlock: (info: {
+    toolName: string;
+    target: string;
+    matchedPattern: string;
+    kind: SandboxDenialKind;
+    layer: SandboxLayer;
+  }) => Promise<unknown>;
+}) {
+  return async (
+    input: { toolName: string; toolArgs: unknown; error: string },
+    _invocation?: { sessionId: string },
+  ) => {
+    if (args.isDisabled()) return undefined;
+
+    if (isShellToolName(input.toolName)) {
+      console.log(
+        `[sandbox][post-tool-failure] enter toolName=${input.toolName} ` +
+        `error=${JSON.stringify((input.error ?? '').slice(0, 200))}`,
+      );
+    }
+
+    // Reuse the same text-scanning detector. We wrap `error` so it lands
+    // in the same code path as a string toolResult.
+    const hint = detectShellSandboxDenial({
+      toolName: input.toolName,
+      toolArgs: input.toolArgs,
+      toolResult: input.error ?? '',
+      allowOutbound: args.allowOutbound(),
+    });
+    if (!hint) {
+      if (isShellToolName(input.toolName)) {
+        console.warn(
+          `[sandbox][post-tool-failure] miss toolName=${input.toolName} ` +
+          `error=${JSON.stringify((input.error ?? '').slice(-400))}`,
+        );
+      }
+      return undefined;
+    }
+
+    const toolArgs = (input.toolArgs ?? {}) as Record<string, unknown>;
+    const command = typeof toolArgs.command === 'string' ? toolArgs.command : '';
+    const layer = denialKindToLayer(hint.kind);
+
+    logSandboxLayerDenial(layer, {
+      toolName: input.toolName,
+      target: command,
+      reason: `[${hint.kind}] (failure-hook) matched "${hint.matched}"`,
+    });
+
+    // Bubble-up to user (fire-and-forget) — same broker call as the
+    // success-side hook so the existing chat tile + Workers panel render.
+    void args.onBlock({
+      toolName: input.toolName,
+      target: command,
+      matchedPattern: hint.matched,
+      kind: hint.kind,
+      layer,
+    });
+
+    // Failure hook output only honors additionalContext (modifiedResult is
+    // not consumed for failure hooks per the SDK doc).
+    return { additionalContext: formatSandboxDenialFooter(hint) };
   };
 }
