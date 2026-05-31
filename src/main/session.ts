@@ -153,6 +153,14 @@ export function isCliMxcCapable(): boolean {
     } catch { /* fall through to node_modules probe */ }
   }
 
+  // Self-updated CLI bundles ship MXC in a `mxc-bin` directory alongside
+  // index.js rather than in node_modules.
+  const mxcBinDir = path.join(path.dirname(cliPath), 'mxc-bin');
+  if (fs.existsSync(mxcBinDir)) {
+    resolvedMxcCapable = true;
+    return true;
+  }
+
   const MAX_DEPTH = 8;
   const searched: string[] = [];
   let dir = path.dirname(cliPath);
@@ -180,6 +188,40 @@ export interface LaunchResult {
 }
 
 // ── CLI discovery ───────────────────────────────────────
+
+/**
+ * On Windows the Copilot CLI self-updates into
+ * `%LOCALAPPDATA%\copilot\pkg\universal\<version>\index.js`.
+ * Scan that directory for the newest version and return its index.js path.
+ * The self-updated CLI is a complete standalone package (includes MXC,
+ * copilot-sdk, etc.) and works under Electron with ELECTRON_RUN_AS_NODE.
+ */
+export function findLatestSelfUpdatedCli(): string | null {
+  if (process.platform !== 'win32') return null;
+  const base = path.join(process.env.LOCALAPPDATA || '', 'copilot', 'pkg', 'universal');
+  if (!base || !fs.existsSync(base)) return null;
+
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(base).filter(name => {
+      const full = path.join(base, name);
+      return fs.statSync(full).isDirectory() && fs.existsSync(path.join(full, 'index.js'));
+    });
+  } catch {
+    return null;
+  }
+  if (entries.length === 0) return null;
+
+  // Sort by semver (highest last). Strips pre-release tags for numeric comparison,
+  // then falls back to lexicographic to break ties (e.g. 1.0.57-2 < 1.0.57-3).
+  entries.sort((a, b) => {
+    const result = compareVersions(a.replace(/-.*$/, ''), b.replace(/-.*$/, ''));
+    return result !== 0 ? result : a.localeCompare(b);
+  });
+
+  const latest = entries[entries.length - 1];
+  return path.join(base, latest, 'index.js');
+}
 
 /**
  * Resolve a bare command name (e.g. "copilot", "copilot-dev") to its full
@@ -241,7 +283,13 @@ export function resolveCmdToJs(cmdPath: string): string {
     // Case 1: Global npm prefix (e.g. C:\ProgramData\npm\copilot.cmd)
     // Package is at <prefix>\node_modules\@github\copilot\index.js
     const globalJs = w.join(dir, 'node_modules', '@github', 'copilot', 'index.js');
-    if (fs.existsSync(globalJs)) return globalJs;
+    if (fs.existsSync(globalJs)) {
+      // Prefer self-updated CLI over the npm-installed version — it's
+      // typically newer and bundles MXC support.
+      const selfUpdated = findLatestSelfUpdatedCli();
+      if (selfUpdated) return selfUpdated;
+      return globalJs;
+    }
 
     // Case 2: Local node_modules\.bin\copilot.cmd
     // Package is at <project>\node_modules\@github\copilot\index.js
@@ -257,6 +305,14 @@ export function resolveCmdToJs(cmdPath: string): string {
 }
 
 function autoDetectCopilotCli(): string | null {
+  // On Windows, prefer the self-updated CLI — it's typically newer and
+  // includes MXC support. Falls through to npm-installed paths if not found.
+  const selfUpdated = findLatestSelfUpdatedCli();
+  if (selfUpdated) {
+    console.log(`[session] Found self-updated CLI: ${selfUpdated}`);
+    return selfUpdated;
+  }
+
   if (process.platform === 'win32') {
     const candidates = [
       path.join(process.env.APPDATA || '', 'npm', 'copilot.cmd'),

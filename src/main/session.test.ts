@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { mockExistsSync, mockStatSync, mockMkdirSync, mockExecSync } = vi.hoisted(() => ({
+const { mockExistsSync, mockStatSync, mockMkdirSync, mockExecSync, mockReaddirSync } = vi.hoisted(() => ({
   mockExistsSync: vi.fn<(p: unknown) => boolean>(),
   mockStatSync: vi.fn(),
   mockMkdirSync: vi.fn(),
   mockExecSync: vi.fn(),
+  mockReaddirSync: vi.fn<(p: unknown) => string[]>(),
 }));
 
 vi.mock('electron', () => ({
@@ -13,7 +14,7 @@ vi.mock('electron', () => ({
 
 vi.mock('fs', async () => {
   const actual = await vi.importActual<typeof import('fs')>('fs');
-  return { ...actual, existsSync: mockExistsSync, statSync: mockStatSync, mkdirSync: mockMkdirSync };
+  return { ...actual, existsSync: mockExistsSync, statSync: mockStatSync, mkdirSync: mockMkdirSync, readdirSync: mockReaddirSync };
 });
 
 vi.mock('child_process', async () => {
@@ -37,7 +38,7 @@ vi.mock('./workspace', () => ({
   createSpaceFolder: vi.fn(),
 }));
 
-import { resolveCopilotCliPath, invalidateCliPath, checkCopilotCli, launchSession, parseCliVersion, compareVersions, getCopilotCliVersion, checkCliCompatibility, resolveCmdToJs, isCliMxcCapable, invalidateMxcCapability, MIN_CLI_VERSION } from './session';
+import { resolveCopilotCliPath, invalidateCliPath, checkCopilotCli, launchSession, parseCliVersion, compareVersions, getCopilotCliVersion, checkCliCompatibility, resolveCmdToJs, isCliMxcCapable, invalidateMxcCapability, findLatestSelfUpdatedCli, MIN_CLI_VERSION } from './session';
 import { getConfigValue } from './config';
 
 const mockGetConfigValue = vi.mocked(getConfigValue);
@@ -120,6 +121,98 @@ describe('session', () => {
 
       const result = resolveCopilotCliPath();
       expect(result).toBe('/home/user/.npm-global/bin/copilot');
+    });
+  });
+
+  // ── findLatestSelfUpdatedCli ──────────────────────────
+
+  describe('findLatestSelfUpdatedCli', () => {
+    const originalPlatform = process.platform;
+    const originalEnv = { ...process.env };
+
+    beforeEach(() => {
+      Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+      process.env.LOCALAPPDATA = 'C:\\Users\\test\\AppData\\Local';
+    });
+
+    afterEach(() => {
+      Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+      process.env = { ...originalEnv };
+    });
+
+    it('returns null on non-win32 platforms', () => {
+      Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+      expect(findLatestSelfUpdatedCli()).toBeNull();
+    });
+
+    it('returns null when LOCALAPPDATA is not set', () => {
+      delete process.env.LOCALAPPDATA;
+      expect(findLatestSelfUpdatedCli()).toBeNull();
+    });
+
+    it('returns null when universal directory does not exist', () => {
+      mockExistsSync.mockReturnValue(false);
+      expect(findLatestSelfUpdatedCli()).toBeNull();
+    });
+
+    it('returns the latest version index.js when multiple versions exist', () => {
+      const base = 'C:\\Users\\test\\AppData\\Local\\copilot\\pkg\\universal';
+      mockExistsSync.mockImplementation((p: unknown) => {
+        const s = String(p);
+        if (s === base) return true;
+        // All version dirs have index.js
+        if (s.endsWith('index.js')) return true;
+        return false;
+      });
+      mockReaddirSync.mockReturnValue(['1.0.44', '1.0.57-3', '1.0.44-2']);
+      mockStatSync.mockReturnValue({ isDirectory: () => true });
+
+      const result = findLatestSelfUpdatedCli();
+      expect(result).toBe(`${base}\\1.0.57-3\\index.js`);
+    });
+
+    it('picks higher pre-release tag when base versions match', () => {
+      const base = 'C:\\Users\\test\\AppData\\Local\\copilot\\pkg\\universal';
+      mockExistsSync.mockImplementation((p: unknown) => {
+        const s = String(p);
+        if (s === base) return true;
+        if (s.endsWith('index.js')) return true;
+        return false;
+      });
+      mockReaddirSync.mockReturnValue(['1.0.44', '1.0.44-3', '1.0.44-2']);
+      mockStatSync.mockReturnValue({ isDirectory: () => true });
+
+      const result = findLatestSelfUpdatedCli();
+      expect(result).toBe(`${base}\\1.0.44-3\\index.js`);
+    });
+
+    it('skips entries without index.js', () => {
+      const base = 'C:\\Users\\test\\AppData\\Local\\copilot\\pkg\\universal';
+      mockExistsSync.mockImplementation((p: unknown) => {
+        const s = String(p);
+        if (s === base) return true;
+        // Only 1.0.44 has index.js
+        if (s === `${base}\\1.0.44\\index.js`) return true;
+        return false;
+      });
+      mockReaddirSync.mockReturnValue(['1.0.57-3', '1.0.44']);
+      mockStatSync.mockReturnValue({ isDirectory: () => true });
+
+      const result = findLatestSelfUpdatedCli();
+      expect(result).toBe(`${base}\\1.0.44\\index.js`);
+    });
+
+    it('returns null when no version directories contain index.js', () => {
+      const base = 'C:\\Users\\test\\AppData\\Local\\copilot\\pkg\\universal';
+      mockExistsSync.mockImplementation((p: unknown) => {
+        const s = String(p);
+        if (s === base) return true;
+        return false;
+      });
+      mockReaddirSync.mockReturnValue(['1.0.44']);
+      mockStatSync.mockReturnValue({ isDirectory: () => true });
+
+      expect(findLatestSelfUpdatedCli()).toBeNull();
     });
   });
 
@@ -552,6 +645,19 @@ describe('session', () => {
 
       expect(isCliMxcCapable()).toBe(false);
       warnSpy.mockRestore();
+    });
+
+    it('detects mxc-bin directory in self-updated CLI layout', () => {
+      const selfUpdatedCli = isWin
+        ? 'C:\\Users\\test\\AppData\\Local\\copilot\\pkg\\universal\\1.0.57-3\\index.js'
+        : '/home/test/.local/copilot/pkg/universal/1.0.57-3/index.js';
+      const mxcBin = isWin
+        ? 'C:\\Users\\test\\AppData\\Local\\copilot\\pkg\\universal\\1.0.57-3\\mxc-bin'
+        : '/home/test/.local/copilot/pkg/universal/1.0.57-3/mxc-bin';
+      mockGetConfigValue.mockReturnValue(selfUpdatedCli);
+      setupFs([selfUpdatedCli, mxcBin]);
+
+      expect(isCliMxcCapable()).toBe(true);
     });
   });
 });
