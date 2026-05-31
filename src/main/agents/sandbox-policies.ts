@@ -427,6 +427,15 @@ const HIGH_CONFIDENCE_PATTERNS: ReadonlyArray<RegExp> = [
   /lxc[-_]exec/i,
   // Windows NTSTATUS for STATUS_ACCESS_DENIED (MXC AppContainer).
   /0x[cC]0000022/,
+  // SDK-emitted shell startup failure. The Copilot SDK throws
+  // `new Error(\`Failed to start ${shellType} process\`)` when its shell
+  // wrapper (bash / powershell / pwsh / zsh / sh) can't be spawned. Inside
+  // an active sandbox session this overwhelmingly means MXC's AppContainer
+  // blocked the shell binary from launching at all. Outside a sandbox we'd
+  // never see this hook fire (createSandboxShellDenialHook is only wired
+  // when persona.sandboxed === true, and bypasses via isDisabled()), so a
+  // false positive is structurally not possible here.
+  /failed to start (?:bash|powershell|pwsh|zsh|sh|cmd|local[_-]shell) process/i,
 ];
 
 const MEDIUM_CONFIDENCE_PATTERNS: ReadonlyArray<RegExp> = [
@@ -451,6 +460,28 @@ const NETWORK_PATTERNS: ReadonlyArray<RegExp> = [
   // PowerShell / .NET HttpRequestException flavours.
   /the remote name could not be resolved/i,
 ];
+
+/**
+ * The set of tool names the Copilot SDK uses to execute shell commands.
+ * Matched case-insensitively in `detectShellSandboxDenial`. The SDK exposes
+ * both single-shot (`bash`, `powershell`, `shell`, `local_shell`) and
+ * managed-shell (`write_bash`, `write_powershell`, etc.) variants — both
+ * surface failures through the post-tool hook and both need to fingerprint
+ * sandbox denials.
+ *
+ * Source: `@github/copilot/sdk/index.js` shell tool registry — the
+ * shellToolName + read/write/stop/list variants. See `node_modules/@github
+ * /copilot/sdk/index.js` `t("bash", ...)` and `t("powershell", ...)` calls.
+ */
+const SHELL_TOOL_NAME_REGEX = /^(?:bash|shell|powershell|pwsh|local[_-]shell|(?:read|write|stop|list)_(?:bash|shell|powershell|pwsh))$/i;
+
+/**
+ * Returns true when `toolName` is one of the SDK's shell-execution tools.
+ * Exported for the tests.
+ */
+export function isShellToolName(toolName: string): boolean {
+  return SHELL_TOOL_NAME_REGEX.test(toolName);
+}
 
 function firstMatch(text: string, patterns: ReadonlyArray<RegExp>): string | undefined {
   for (const pattern of patterns) {
@@ -487,7 +518,7 @@ export function detectShellSandboxDenial(input: {
    *  patterns are skipped (they wouldn't be sandbox-caused). */
   allowOutbound?: boolean;
 }): SandboxDenialHint | null {
-  if (input.toolName !== 'bash' && input.toolName !== 'shell') return null;
+  if (!isShellToolName(input.toolName)) return null;
 
   let text = '';
   if (typeof input.toolResult === 'string') {

@@ -616,5 +616,75 @@ describe('sandbox-policies', () => {
       });
       expect(r).toBeNull();
     });
+
+    // ── Tool-name handling ──────────────────────────────────
+    //
+    // Regression: prior to this fix the detector only checked
+    // `toolName === 'bash' || toolName === 'shell'`, so PowerShell tool
+    // calls on Windows (which the SDK names `powershell`,
+    // `write_powershell`, etc.) bypassed denial detection entirely. That
+    // meant a sandbox-blocked PowerShell spawn surfaced as a bare
+    // "Failed to start powershell process" tool error with no bubble-up
+    // dialog anywhere (chat, Workers tab, canvas, OS toast).
+
+    it('detects denial fingerprints for powershell tool name', () => {
+      const r = detectShellSandboxDenial({
+        toolName: 'powershell',
+        toolArgs: { command: 'ls' },
+        toolResult: '<exited with error: Failed to start powershell process>',
+      });
+      expect(r).not.toBeNull();
+      expect(r?.kind).toBe('high');
+      expect(r?.matched.toLowerCase()).toContain('failed to start powershell process');
+    });
+
+    it('detects denial fingerprints for write_powershell / read_bash / etc.', () => {
+      for (const toolName of ['write_powershell', 'read_powershell', 'write_bash', 'read_bash', 'local_shell', 'local-shell']) {
+        const r = detectShellSandboxDenial({
+          toolName,
+          toolArgs: { command: 'ls' },
+          toolResult: '<exited with error: Failed to start powershell process>',
+        });
+        expect(r, `toolName=${toolName}`).not.toBeNull();
+        expect(r?.kind, `toolName=${toolName}`).toBe('high');
+      }
+    });
+
+    it('still returns null for non-shell tools (sanity)', () => {
+      expect(detectShellSandboxDenial({
+        toolName: 'view',
+        toolArgs: { path: '/x' },
+        toolResult: 'Failed to start powershell process',
+      })).toBeNull();
+      expect(detectShellSandboxDenial({
+        toolName: 'edit',
+        toolArgs: { path: '/x' },
+        toolResult: 'Failed to start powershell process',
+      })).toBeNull();
+    });
+
+    it('detects "Failed to start ... process" as high regardless of exit code', () => {
+      // No exit code: still fires (high-confidence).
+      const r1 = detectShellSandboxDenial({
+        toolName: 'powershell',
+        toolArgs: { command: 'echo hi' },
+        toolResult: '<exited with error: Failed to start powershell process>',
+      });
+      expect(r1?.kind).toBe('high');
+      // Exit code 0 (unusual but possible): still fires.
+      const r2 = detectShellSandboxDenial({
+        toolName: 'bash',
+        toolArgs: { command: 'echo hi' },
+        toolResult: 'Failed to start bash process\n<exited with exit code 0>',
+      });
+      expect(r2?.kind).toBe('high');
+      // Common SDK shape: error reported via the .error field of the tool result object.
+      const r3 = detectShellSandboxDenial({
+        toolName: 'powershell',
+        toolArgs: { command: 'Get-Content C:\\x\\hello.txt' },
+        toolResult: { error: 'Failed to start powershell process' },
+      });
+      expect(r3?.kind).toBe('high');
+    });
   });
 });
