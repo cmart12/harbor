@@ -1403,7 +1403,13 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
     <div className="chat-container">
       <header className="chat-header">
         <button className="header-icon-btn" onClick={onClose} title="Back (Esc)">←</button>
-        <div className="chat-header-info" />
+        <div className="chat-header-info">
+          {agentPrompt && (
+            <span className="chat-header-title" title={agentPrompt}>
+              {agentPrompt.length > 80 ? agentPrompt.slice(0, 77) + '…' : agentPrompt}
+            </span>
+          )}
+        </div>
         <div className="header-actions">
           {spaceId && onOpenCanvas && hasCanvas && (
             <button className="header-icon-btn" onClick={() => onOpenCanvas(spaceId)} title="Open canvas">

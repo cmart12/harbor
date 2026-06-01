@@ -5993,6 +5993,23 @@ body.dark .chat-loading-history {
   gap: 8px;
 }
 
+/* Truncated first-prompt label rendered as the chat title in the header.
+   Keep `-webkit-app-region: no-drag` so the user can hover for the tooltip
+   without dragging the window, but the surrounding .chat-header-info still
+   acts as the drag handle. */
+.chat-header-title {
+  font-size: var(--fs-label);
+  font-weight: 500;
+  color: rgba(0, 0, 0, 0.75);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1;
+  -webkit-app-region: no-drag;
+  cursor: default;
+}
+
 .chat-status-badge {
   font-size: var(--fs-caption);
   font-weight: 500;
@@ -7265,6 +7282,7 @@ body.dark .chat-working-indicator {
 /* ── Dark theme for chat ─────────────────────────────────── */
 
 body.dark .chat-header { border-bottom-color: rgba(255, 255, 255, 0.06); }
+body.dark .chat-header-title { color: rgba(255, 255, 255, 0.78); }
 body.dark .chat-view { background: rgba(28, 28, 32, 0.92); }
 
 body.dark .chat-empty-state { color: rgba(255, 255, 255, 0.4); }
