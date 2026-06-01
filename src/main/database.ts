@@ -6,11 +6,22 @@ import { Space, Attachment, CanvasAgent, AgentSession, CreateSpaceInput, Skill, 
 import { appendEvent, replayLog } from './eventlog';
 import { readCanvas, slugify } from './workspace';
 import { initContentStore, closeContentStore, storeContent, type ContentRef } from './subagent-content-store';
+import {
+  canSkipReplay,
+  computeFingerprint,
+  fingerprintPathFor,
+  readFingerprint,
+  writeFingerprint,
+} from './db-fingerprint';
 
 let db: Database.Database;
 /** Root of the rotated event-log tree (`<whim>/events/`). All appends and
  *  the startup replay flow through this root. */
 let logRoot: string;
+/** Path of the SQLite cache file; remembered so closeDatabase can refresh
+ *  the fingerprint sidecar to reflect any events appended during this
+ *  session. */
+let dbFilePath: string;
 
 export function isInitialized(): boolean {
   return db !== undefined;
@@ -18,9 +29,28 @@ export function isInitialized(): boolean {
 
 export function closeDatabase(): void {
   if (db) {
-    db.close();
-    db = undefined as any;
+    // Refresh the fingerprint sidecar with the current on-disk state of
+    // the log + DB so the next initDatabase can take the fast path.
+    // Without this step the sidecar would only reflect the state at the
+    // end of the previous init, missing every event we appended during
+    // the session.
+    if (dbFilePath && logRoot) {
+      try {
+        const sidecar = fingerprintPathFor(dbFilePath);
+        const previous = readFingerprint(sidecar);
+        db.close();
+        db = undefined as any;
+        const fp = computeFingerprint(logRoot, dbFilePath, previous);
+        writeFingerprint(sidecar, fp);
+      } catch (err) {
+        console.warn('[database] Failed to refresh fingerprint at close:', err);
+      }
+    } else {
+      db.close();
+      db = undefined as any;
+    }
     logRoot = '';
+    dbFilePath = '';
   }
   closeContentStore();
 }
@@ -30,22 +60,21 @@ export function getDatabase(): Database.Database {
 }
 
 /**
- * Initialize a fresh database at the given path (inside the workspace .whim/ dir).
- * Deletes any existing DB first — the log is the source of truth.
+ * Initialize the SQLite cache at `dbPath`, replaying the rotated event
+ * log under `eventLogRoot` to materialise it.
  *
- * `eventLogRoot` is the rotated-log root (`<workspace>/.whim/events/`).
- * The directory does not need to pre-exist; appendEvent + replay create
- * it on demand.
+ * Fast path: if a `db.fingerprint.json` sidecar shows the log files and
+ * the DB file haven't changed since the last successful build (and the
+ * schema version still matches), reuse the existing DB without
+ * touching the log at all. This is the common case on a hot restart.
+ *
+ * Slow path (changed log, missing fingerprint, schema bump, tampered DB
+ * file): drop the DB, recreate the schema, replay every event, and
+ * write a fresh fingerprint sidecar.
  */
 export function initDatabase(dbPath: string, eventLogRoot: string): void {
-  // Always start fresh — DB is a derived cache
-  for (const f of [dbPath, dbPath + '-journal', dbPath + '-wal', dbPath + '-shm']) {
-    if (fs.existsSync(f)) fs.unlinkSync(f);
-  }
-
-  db = new Database(dbPath);
-  db.pragma('journal_mode = DELETE');
   logRoot = eventLogRoot;
+  dbFilePath = dbPath;
 
   // Heavy sub-agent payloads (turn responses, large tool results) live in
   // <workspace>/.whim/subagent-content/ as side files instead of inline in
@@ -53,7 +82,51 @@ export function initDatabase(dbPath: string, eventLogRoot: string): void {
   // handler can read paths that pre-existing events reference.
   initContentStore(path.join(path.dirname(dbPath), 'subagent-content'));
 
-  db.exec(`
+  const sidecarPath = fingerprintPathFor(dbPath);
+  const previous = readFingerprint(sidecarPath);
+  const current = computeFingerprint(eventLogRoot, dbPath, previous);
+
+  if (fs.existsSync(dbPath) && canSkipReplay(previous, current)) {
+    // Hot restart — the cache is still in sync with the log. Open the
+    // existing DB and write a refreshed fingerprint: opening SQLite
+    // touches the file (journal_mode pragma), so the recorded mtime
+    // needs to track that or every subsequent startup would think the
+    // DB had been tampered with.
+    db = new Database(dbPath);
+    db.pragma('journal_mode = DELETE');
+    const refreshed = computeFingerprint(eventLogRoot, dbPath, previous);
+    writeFingerprint(sidecarPath, refreshed);
+    return;
+  }
+
+  // Cold rebuild path.
+  for (const f of [dbPath, dbPath + '-journal', dbPath + '-wal', dbPath + '-shm']) {
+    if (fs.existsSync(f)) fs.unlinkSync(f);
+  }
+
+  db = new Database(dbPath);
+  db.pragma('journal_mode = DELETE');
+
+  createSchema(db);
+
+  // Rebuild state from event log
+  replayLog(eventLogRoot, db);
+
+  // Close + reopen so the DB's mtime/size on disk match what we record in
+  // the fingerprint (SQLite buffers writes in journal/WAL space otherwise,
+  // and we want the fingerprint to reflect the final persisted state).
+  db.close();
+  db = new Database(dbPath);
+  db.pragma('journal_mode = DELETE');
+
+  // Re-stat the DB after close so the fingerprint records the post-replay state.
+  const fingerprint = computeFingerprint(eventLogRoot, dbPath, previous);
+  writeFingerprint(sidecarPath, fingerprint);
+}
+
+/** Idempotent schema creation, factored out so the fast path can skip it. */
+function createSchema(database: Database.Database): void {
+  database.exec(`
     CREATE TABLE spaces (
       id TEXT PRIMARY KEY,
       description TEXT NOT NULL,
@@ -75,7 +148,7 @@ export function initDatabase(dbPath: string, eventLogRoot: string): void {
     )
   `);
 
-  db.exec(`
+  database.exec(`
     CREATE TABLE canvas_agents (
       id TEXT PRIMARY KEY,
       space_id TEXT NOT NULL,
@@ -89,7 +162,7 @@ export function initDatabase(dbPath: string, eventLogRoot: string): void {
     )
   `);
 
-  db.exec(`
+  database.exec(`
     CREATE TABLE agent_sessions (
       id TEXT PRIMARY KEY,
       session_id TEXT NOT NULL,
@@ -106,7 +179,7 @@ export function initDatabase(dbPath: string, eventLogRoot: string): void {
     )
   `);
 
-  db.exec(`
+  database.exec(`
     CREATE TABLE space_events (
       id TEXT PRIMARY KEY,
       space_id TEXT NOT NULL,
@@ -120,7 +193,7 @@ export function initDatabase(dbPath: string, eventLogRoot: string): void {
     )
   `);
 
-  db.exec(`
+  database.exec(`
     CREATE TABLE IF NOT EXISTS skills (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -138,7 +211,7 @@ export function initDatabase(dbPath: string, eventLogRoot: string): void {
     )
   `);
 
-  db.exec(`
+  database.exec(`
     CREATE TABLE IF NOT EXISTS subagent_records (
       id TEXT PRIMARY KEY,
       parent_agent_id TEXT NOT NULL,
@@ -165,7 +238,7 @@ export function initDatabase(dbPath: string, eventLogRoot: string): void {
     )
   `);
 
-  db.exec(`
+  database.exec(`
     CREATE TABLE IF NOT EXISTS subagent_tool_calls (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       subagent_id TEXT NOT NULL,
@@ -183,9 +256,6 @@ export function initDatabase(dbPath: string, eventLogRoot: string): void {
       FOREIGN KEY (subagent_id) REFERENCES subagent_records(id)
     )
   `);
-
-  // Rebuild state from event log
-  replayLog(eventLogRoot, db);
 }
 
 /** Inject per-machine session IDs from local config into the DB after replay. */
