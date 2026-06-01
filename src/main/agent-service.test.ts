@@ -607,6 +607,74 @@ describe('launchCommentAgent', () => {
     // Persona instructions still applied.
     expect(sessionOpts.systemMessage.content).toContain('Be helpful');
   });
+
+  it('passes cloud option and persists run_location=cloud for cloud personas', async () => {
+    enableMockClient();
+    // The cloud session waits for `session.start` before sending — fire it
+    // on the next tick so the test doesn't time out.
+    let startCb: ((event: any) => void) | null = null;
+    mockSession.on.mockImplementation((evt: any, cb?: any) => {
+      if (typeof evt === 'string' && evt === 'session.start') startCb = cb;
+      return () => { /* unsubscribe noop */ };
+    });
+    setTimeout(() => { startCb?.({ data: { producer: 'copilot-agent', remoteSteerable: true } }); }, 0);
+
+    const cloudPersona = {
+      id: 'pc-cmt', handle: 'cloud', instructions: 'cloud bot',
+      model: 'gpt-4o', runLocation: 'cloud' as const,
+    };
+    await launchCommentAgent('space-1', 'add multi-line commenting', 'q', {}, cloudPersona, null, '/ws', 'folder');
+
+    const sessionOpts = mockClient.createSession.mock.calls[0][0];
+    expect(sessionOpts).toHaveProperty('cloud');
+
+    expect(createAgentSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        persona_handle: 'cloud',
+        source: 'sdk',
+        run_location: 'cloud',
+      }),
+    );
+  });
+
+  it('delays session.send for cloud comment until session.start fires', async () => {
+    enableMockClient();
+
+    // Capture the session.start callback so the test controls when it fires.
+    let startCb: ((event: any) => void) | null = null;
+    mockSession.on.mockImplementation((evt: any, cb?: any) => {
+      if (typeof evt === 'string' && evt === 'session.start') startCb = cb;
+      return () => { /* unsubscribe noop */ };
+    });
+
+    const cloudPersona = {
+      id: 'pc-cmt-wait', handle: 'cloud', instructions: 'cloud bot',
+      model: 'gpt-4o', runLocation: 'cloud' as const,
+    };
+
+    const sendCalled = vi.fn();
+    mockSession.send.mockImplementation((...args: any[]) => { sendCalled(...args); return Promise.resolve('msg-id'); });
+
+    const launchPromise = launchCommentAgent('space-1', 'hello', 'q', {}, cloudPersona, null, '/ws', 'folder');
+    // launchCommentAgent returns immediately after kicking off the
+    // fire-and-forget send; the send itself is gated behind session.start.
+    await launchPromise;
+
+    // Before session.start, session.send MUST NOT have been called yet —
+    // this is the bug we just fixed. Allow one microtask flush.
+    await Promise.resolve();
+    expect(sendCalled).not.toHaveBeenCalled();
+
+    // Now fire session.start; the queued send should run after the promise
+    // chain flushes.
+    startCb?.({ data: { producer: 'copilot-agent', remoteSteerable: true } });
+    // Two await-Promise.resolve() cycles to drain the readyPromise → then
+    // chain that launchCommentAgent wires up.
+    await new Promise(r => setTimeout(r, 0));
+    await new Promise(r => setTimeout(r, 0));
+
+    expect(sendCalled).toHaveBeenCalledWith(expect.objectContaining({ prompt: 'hello' }));
+  });
 });
 
 describe('approveAgent', () => {

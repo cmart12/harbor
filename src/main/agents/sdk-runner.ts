@@ -43,8 +43,13 @@ async function resolveCloudSessionOptions(workspaceRoot: string): Promise<{ repo
  * `sendForSchema` still resolves with a fresh messageId). See
  * copilot-agent-runtime: src/core/remote/remoteSession.ts:assertRemoteSessionStarted
  * and src/core/session.ts:sendForSchema (RemoteSession override).
+ *
+ * Exported so non-quick-launch entry points (e.g. canvas @mentions /
+ * comments via `launchCommentAgent`) gate their first `session.send` the
+ * same way the workers-tab path does — otherwise cloud comment agents
+ * appear to spawn but silently drop the prompt.
  */
-async function waitForCloudSessionStart(
+export async function waitForCloudSessionStart(
   session: CopilotSession,
   agentId: string,
   timeoutMs = 60_000,
