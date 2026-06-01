@@ -1,0 +1,14 @@
+{
+  "name": "whim-walkthrough",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Interactive web-based walkthrough slide deck for Copilot Whim",
+  "type": "module",
+  "scripts": {
+    "start": "node serve.js",
+    "serve": "node serve.js"
+  },
+  "dependencies": {
+    "reveal.js": "^5.1.0"
+  }
+}

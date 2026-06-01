@@ -1,0 +1,186 @@
+/* ============================================================
+   Whim Walkthrough — shared mockup components
+   Reusable "fake Whim UI" building blocks used by every widget.
+   Widget-specific styling is injected by each widget module via a
+   scoped <style> tag, so this file stays conflict-free.
+   ============================================================ */
+
+/* ── Fake app window ────────────────────────────────────── */
+.win {
+  background: var(--whim-surface);
+  border: 1px solid var(--whim-border);
+  border-radius: var(--whim-radius);
+  box-shadow: var(--whim-shadow);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  overflow: hidden;
+  font-size: 15px;
+  color: var(--whim-text);
+}
+
+.win-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid var(--whim-border);
+}
+.win-dots { display: flex; gap: 6px; }
+.win-dot { width: 11px; height: 11px; border-radius: 50%; background: #3a445e; }
+.win-dot.red { background: #ff5f57; }
+.win-dot.amber { background: #febc2e; }
+.win-dot.green { background: #28c840; }
+.win-title {
+  font-size: 12px;
+  color: var(--whim-text-dim);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.win-spacer { flex: 1; }
+.win-body { padding: 14px; }
+
+/* ── Tabs ───────────────────────────────────────────────── */
+.tabs {
+  display: flex;
+  gap: 4px;
+  padding: 6px 10px 0;
+  border-bottom: 1px solid var(--whim-border);
+}
+.tab {
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--whim-text-faint);
+  border-radius: 8px 8px 0 0;
+  cursor: pointer;
+  border: 1px solid transparent;
+  border-bottom: none;
+  user-select: none;
+}
+.tab.active {
+  color: var(--whim-text);
+  background: rgba(124, 140, 255, 0.12);
+  border-color: var(--whim-border);
+}
+
+/* ── Buttons ────────────────────────────────────────────── */
+.btn {
+  font-family: var(--whim-font);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: 9px;
+  border: 1px solid var(--whim-border-strong);
+  background: var(--whim-surface-2);
+  color: var(--whim-text);
+  cursor: pointer;
+  transition: transform 0.08s ease, filter 0.12s ease, background 0.12s ease;
+}
+.btn:hover { filter: brightness(1.12); }
+.btn:active { transform: translateY(1px); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn-primary {
+  background: var(--whim-accent-grad);
+  border-color: transparent;
+  color: #0b1020;
+}
+.btn-ghost { background: transparent; }
+.btn-sm { font-size: 11px; padding: 5px 10px; }
+.btn-green { background: rgba(74, 222, 128, 0.18); border-color: rgba(74,222,128,0.5); color: #b6f7cf; }
+.btn-red { background: rgba(248, 113, 113, 0.16); border-color: rgba(248,113,113,0.5); color: #ffd0d0; }
+
+/* ── Inputs ─────────────────────────────────────────────── */
+.field {
+  width: 100%;
+  font-family: var(--whim-font);
+  font-size: 14px;
+  padding: 11px 13px;
+  border-radius: 10px;
+  border: 1px solid var(--whim-border-strong);
+  background: rgba(0, 0, 0, 0.28);
+  color: var(--whim-text);
+  outline: none;
+  box-sizing: border-box;
+}
+.field:focus { border-color: var(--whim-accent); box-shadow: 0 0 0 3px rgba(124,140,255,0.22); }
+.field::placeholder { color: var(--whim-text-faint); }
+select.field { appearance: none; cursor: pointer; }
+.field-label { display: block; font-size: 11px; color: var(--whim-text-dim); margin: 0 0 5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+
+/* ── Badges / pills ─────────────────────────────────────── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--whim-surface-2);
+  border: 1px solid var(--whim-border);
+  color: var(--whim-text-dim);
+  white-space: nowrap;
+}
+.badge.running { color: #c9f6da; background: rgba(74,222,128,0.14); border-color: rgba(74,222,128,0.4); }
+.badge.waiting { color: #ffe9bf; background: rgba(251,191,36,0.14); border-color: rgba(251,191,36,0.4); }
+.badge.cloud { color: #cfe4ff; background: rgba(96,165,250,0.14); border-color: rgba(96,165,250,0.4); }
+.badge.done { color: var(--whim-text-dim); background: rgba(148,163,184,0.14); border-color: rgba(148,163,184,0.4); }
+.badge.failed { color: #ffd0d0; background: rgba(248,113,113,0.14); border-color: rgba(248,113,113,0.4); }
+
+.dot-pulse {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: currentColor;
+  animation: whim-pulse 1.2s ease-in-out infinite;
+}
+@keyframes whim-pulse { 0%,100% { opacity: 0.35; } 50% { opacity: 1; } }
+
+/* ── Cards ──────────────────────────────────────────────── */
+.card {
+  background: var(--whim-surface-2);
+  border: 1px solid var(--whim-border);
+  border-radius: var(--whim-radius-sm);
+  padding: 12px 14px;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+.card.selectable { cursor: pointer; }
+.card.selectable:hover { border-color: var(--whim-border-strong); transform: translateY(-1px); }
+.card.selected { border-color: var(--whim-accent); box-shadow: 0 0 0 2px rgba(124,140,255,0.3); }
+
+/* ── Generic entrance animation ─────────────────────────── */
+@keyframes whim-slide-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.slide-in { animation: whim-slide-in 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+
+@keyframes whim-fade-in { from { opacity: 0; } to { opacity: 1; } }
+.fade-in { animation: whim-fade-in 0.4s ease both; }
+
+/* ── Reset / replay control used by widgets ─────────────── */
+.mockup-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--whim-text-faint);
+}
+.mockup-toolbar .spacer { flex: 1; }
+
+/* ── Monospace preview blocks ───────────────────────────── */
+.code-preview {
+  font-family: var(--whim-mono);
+  font-size: 11.5px;
+  line-height: 1.55;
+  background: rgba(0, 0, 0, 0.34);
+  border: 1px solid var(--whim-border);
+  border-radius: var(--whim-radius-sm);
+  padding: 12px 14px;
+  color: #cdd6ff;
+  white-space: pre-wrap;
+  overflow: auto;
+}
+.code-preview .k { color: #b07cff; }
+.code-preview .s { color: #7cffb0; }
+.code-preview .c { color: var(--whim-text-faint); }

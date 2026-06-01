@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Copilot Whim — Interactive Walkthrough</title>
+
+  <link rel="stylesheet" href="node_modules/reveal.js/dist/reset.css" />
+  <link rel="stylesheet" href="node_modules/reveal.js/dist/reveal.css" />
+  <link rel="stylesheet" href="css/whim-theme.css" />
+  <link rel="stylesheet" href="css/mockups.css" />
+</head>
+<body>
+  <div class="reveal">
+    <div class="slides">
+
+      <!-- ───────────── 1. Welcome / Overview ───────────── -->
+      <section data-auto-animate>
+        <div class="title-hero">
+          <img src="assets/copilot.png" class="hero-logo" alt="Copilot Whim" />
+          <h1 class="grad-title">Copilot Whim</h1>
+          <p class="subtitle">An interactive walkthrough</p>
+        </div>
+        <aside class="notes">
+          Welcome. Whim is a Copilot-powered system-tray app: capture Spaces, deploy agents,
+          build and schedule skills. This deck is interactive — try the mockups on each slide.
+        </aside>
+      </section>
+      <section>
+        <h2>What is Whim?</h2>
+        <ul class="big-bullets">
+          <li><b>Spaces</b> — capture ideas, tasks &amp; goals from a global hotkey</li>
+          <li><b>Agents</b> — Copilot personas that work on your canvas or standalone</li>
+          <li><b>Skills</b> — reusable instructions you can run &amp; schedule</li>
+          <li><b>Activity log</b> — your Spaces double as a todo list with history</li>
+        </ul>
+        <p class="hint">▶ Use <kbd>→</kbd> / <kbd>Space</kbd> to advance · <kbd>?</kbd> for help · <kbd>S</kbd> for notes</p>
+      </section>
+
+      <!-- ───────────── 2. Setup process ───────────── -->
+      <section class="section-divider" data-background-color="#0b1020">
+        <h2 class="grad-title">1 · Setup</h2>
+        <p class="subtitle">Install, hotkey, and pick a workspace</p>
+      </section>
+      <section>
+        <h2>Getting set up</h2>
+        <div class="split">
+          <div class="split-copy">
+            <ol class="steps">
+              <li>Install the Copilot CLI: <code>npm i -g @github/copilot</code></li>
+              <li>Launch Whim — it lives in your system tray ⚡</li>
+              <li>Press <kbd>Ctrl/Cmd</kbd>+<kbd>Shift</kbd>+<kbd>Space</kbd> to summon it</li>
+              <li>Choose a <b>workspace</b> folder (ideally a git repo)</li>
+            </ol>
+          </div>
+          <div class="split-demo">
+            <div class="mockup" id="widget-setup" data-mockup="setup"></div>
+          </div>
+        </div>
+        <aside class="notes">
+          Prerequisites: Node 20+, a GitHub account with Copilot, and (for cloud agents) gh auth login.
+          The workspace stores Spaces, canvases, the event log, and a SQLite cache.
+        </aside>
+      </section>
+
+      <!-- ───────────── 3. Creating a Space ───────────── -->
+      <section class="section-divider" data-background-color="#0b1020">
+        <h2 class="grad-title">2 · Creating a Space</h2>
+        <p class="subtitle">Capture by typing or voice — AI refines it</p>
+      </section>
+      <section>
+        <h2>Capture a Space</h2>
+        <div class="split">
+          <div class="split-copy">
+            <ul class="big-bullets">
+              <li>Type a thought and press <kbd>Enter</kbd></li>
+              <li>Or press <kbd>Space</kbd> on an empty field to dictate (local Whisper)</li>
+              <li>AI <b>refines</b> it — clean title, client, due date</li>
+              <li>It appears as a card in the <b>Spaces</b> tab</li>
+            </ul>
+          </div>
+          <div class="split-demo">
+            <div class="mockup" id="widget-capture" data-mockup="capture"></div>
+          </div>
+        </div>
+        <aside class="notes">
+          Try it: type into the capture field and press Enter. Watch the raw text get refined into a
+          clean title with extracted client and due date, then slide into the Spaces list.
+        </aside>
+      </section>
+
+      <!-- ───────────── 4. Built-in agents ───────────── -->
+      <section class="section-divider" data-background-color="#0b1020">
+        <h2 class="grad-title">3 · Built-in agents</h2>
+        <p class="subtitle">Seeded personas for every kind of work</p>
+      </section>
+      <section>
+        <h2>Meet the personas</h2>
+        <p class="lead">Click a persona to see what it does and where it runs.</p>
+        <div class="mockup mockup-wide" id="widget-personas" data-mockup="personas"></div>
+        <aside class="notes">
+          Built-in personas: @agent (general local), @editor (edits canvas via comments),
+          @dev (code via git worktrees), @pr (cloud Copilot coding agent → PRs),
+          @cloud (ephemeral cloud sandbox), @secret-agent (zero-trace), @sandbox (sandboxed policy).
+          Run locations: Local 💻, Cloud ☁️, Copilot Coding Agent 🤖.
+        </aside>
+      </section>
+
+      <!-- ───────────── 5. Commenting to agents ───────────── -->
+      <section class="section-divider" data-background-color="#0b1020">
+        <h2 class="grad-title">4 · Commenting to agents</h2>
+        <p class="subtitle">Select text, @mention, and an agent gets to work</p>
+      </section>
+      <section>
+        <h2>Deploy from the canvas</h2>
+        <div class="split">
+          <div class="split-copy">
+            <ol class="steps">
+              <li>Open a Space's <b>canvas</b></li>
+              <li><b>Select</b> the text you want worked on</li>
+              <li>Add a <b>comment</b> and <b>@mention</b> a persona</li>
+              <li>The agent replies in-thread and edits the canvas</li>
+            </ol>
+          </div>
+          <div class="split-demo">
+            <div class="mockup" id="widget-canvas-comment" data-mockup="canvas-comment"></div>
+          </div>
+        </div>
+        <aside class="notes">
+          Select text in the fake canvas, type a comment, pick a persona from the @mention dropdown,
+          and submit. The agent shows a running badge, then replies with what it changed.
+        </aside>
+      </section>
+
+      <!-- ───────────── 6. Standalone agents ───────────── -->
+      <section class="section-divider" data-background-color="#0b1020">
+        <h2 class="grad-title">5 · Standalone agents</h2>
+        <p class="subtitle">Kick off an agent without a canvas</p>
+      </section>
+      <section>
+        <h2>The Workers tab</h2>
+        <div class="split">
+          <div class="split-copy">
+            <ul class="big-bullets">
+              <li>Hit <b>+ New Agent</b> — no canvas required</li>
+              <li>Give it a prompt and a persona</li>
+              <li>Watch <b>live steps</b> stream in the Workers tab</li>
+              <li><b>Approve / deny</b> permission requests inline</li>
+            </ul>
+          </div>
+          <div class="split-demo">
+            <div class="mockup" id="widget-standalone-agent" data-mockup="standalone-agent"></div>
+          </div>
+        </div>
+        <aside class="notes">
+          Click New Agent, enter a prompt, and watch the worker card stream tool steps, pause for an
+          approval, then complete. Every agent across every Space shows here.
+        </aside>
+      </section>
+
+      <!-- ───────────── 7. Creating skills ───────────── -->
+      <section class="section-divider" data-background-color="#0b1020">
+        <h2 class="grad-title">6 · Creating skills</h2>
+        <p class="subtitle">Reusable instructions as SKILL.md</p>
+      </section>
+      <section>
+        <h2>Build a skill</h2>
+        <div class="split">
+          <div class="split-copy">
+            <ul class="big-bullets">
+              <li>A skill is a <code>SKILL.md</code> in <code>.agents/skills/&lt;name&gt;/</code></li>
+              <li>Give it a <b>name</b>, <b>description</b>, and emoji</li>
+              <li>Create from the <b>Skills</b> tab</li>
+              <li>Run it on demand — or schedule it (next slide)</li>
+            </ul>
+          </div>
+          <div class="split-demo">
+            <div class="mockup" id="widget-skill-editor" data-mockup="skill-editor"></div>
+          </div>
+        </div>
+        <aside class="notes">
+          Fill in name and description; an emoji is auto-assigned. The SKILL.md preview (frontmatter
+          + body) updates live, mirroring how Whim stores skills on disk.
+        </aside>
+      </section>
+
+      <!-- ───────────── 8. Scheduling skills ───────────── -->
+      <section class="section-divider" data-background-color="#0b1020">
+        <h2 class="grad-title">7 · Scheduling skills</h2>
+        <p class="subtitle">Let skills run themselves</p>
+      </section>
+      <section>
+        <h2>Put skills on a schedule</h2>
+        <div class="split">
+          <div class="split-copy">
+            <ul class="big-bullets">
+              <li>Frequency: daily · weekdays · weekly · biweekly · monthly</li>
+              <li>Pick a <b>time</b> (and day of week)</li>
+              <li>See the <b>next run</b> — Whim checks every 60s</li>
+              <li>When due, it runs and <b>spawns a Space</b></li>
+            </ul>
+          </div>
+          <div class="split-demo">
+            <div class="mockup" id="widget-scheduler" data-mockup="scheduler"></div>
+          </div>
+        </div>
+        <aside class="notes">
+          Choose a frequency and time; the "next run" label recomputes live. Trigger it to watch the
+          scheduler create a Space automatically.
+        </aside>
+      </section>
+
+      <!-- ───────────── 9. Spaces as a todo list ───────────── -->
+      <section class="section-divider" data-background-color="#0b1020">
+        <h2 class="grad-title">8 · Spaces as a todo list</h2>
+        <p class="subtitle">With a logged activity history</p>
+      </section>
+      <section>
+        <h2>Track work &amp; history</h2>
+        <div class="split">
+          <div class="split-copy">
+            <ul class="big-bullets">
+              <li>Spaces flow: <b>captured → in&nbsp;progress → done</b></li>
+              <li>Toggle complete with a click</li>
+              <li>Every action is appended to an <b>activity log</b></li>
+              <li>Completed Spaces live in the <b>Past</b> tab</li>
+            </ul>
+          </div>
+          <div class="split-demo">
+            <div class="mockup" id="widget-spaces-board" data-mockup="spaces-board"></div>
+          </div>
+        </div>
+        <aside class="notes">
+          Toggle Spaces between states and watch the activity timeline append entries — the same
+          event log that powers recurrence and the Past view.
+        </aside>
+      </section>
+
+      <!-- ───────────── 10. Wrap-up ───────────── -->
+      <section>
+        <h2>You're ready 🎉</h2>
+        <div class="split">
+          <div class="split-copy">
+            <ul class="big-bullets">
+              <li>Capture Spaces from anywhere</li>
+              <li>Deploy agents on canvas or standalone</li>
+              <li>Build &amp; schedule skills</li>
+              <li>Let your activity log track it all</li>
+            </ul>
+          </div>
+          <div class="split-demo">
+            <table class="shortcuts">
+              <thead><tr><th>Shortcut</th><th>Action</th></tr></thead>
+              <tbody>
+                <tr><td><kbd>Ctrl/Cmd</kbd>+<kbd>Shift</kbd>+<kbd>Space</kbd></td><td>Toggle Whim</td></tr>
+                <tr><td><kbd>Enter</kbd></td><td>Save Space / open canvas</td></tr>
+                <tr><td><kbd>Space</kbd></td><td>Voice (empty field)</td></tr>
+                <tr><td><kbd>Shift</kbd>+<kbd>Tab</kbd></td><td>Search</td></tr>
+                <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>Switch tabs</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <aside class="notes">Recap and shortcut cheat-sheet. Thanks for taking the tour!</aside>
+      </section>
+
+    </div>
+  </div>
+
+  <script type="module" src="js/deck.js"></script>
+</body>
+</html>
