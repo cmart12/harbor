@@ -1,6 +1,7 @@
 node_modules/
 dist/
 *.db
+.DS_Store
 
 # Electron builder output
 build/
