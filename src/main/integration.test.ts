@@ -46,7 +46,7 @@ let eventLogPath: string;
 function setup() {
   testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'space-integration-'));
   dbPath = path.join(testDir, 'test.db');
-  eventLogPath = path.join(testDir, 'events.jsonl');
+  eventLogPath = path.join(testDir, 'events');
   initDatabase(dbPath, eventLogPath);
 }
 

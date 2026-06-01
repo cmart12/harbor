@@ -3,9 +3,9 @@ import * as fs from 'fs';
 import { execFile } from 'child_process';
 import { BrowserWindow } from 'electron';
 import type { GitSyncStatus } from '../shared/ipc-contract';
+import { getLogRoot as getLogRootForWhim, migrateLegacyEventLog } from './log-store';
 
 const WHIM_DIR = '.whim';
-const LOG_FILE = 'events.jsonl';
 const DB_FILE = 'spaces.db';
 
 const RESERVED_NAMES = new Set([
@@ -18,8 +18,15 @@ export function getWhimDir(workspaceRoot: string): string {
   return path.join(workspaceRoot, WHIM_DIR);
 }
 
-export function getLogPath(workspaceRoot: string): string {
-  return path.join(workspaceRoot, WHIM_DIR, LOG_FILE);
+/**
+ * Root of the rotated event-log tree (`<workspace>/.whim/events/`).
+ *
+ * Replaces the legacy single `events.jsonl` file. All write/read code goes
+ * through this root and lets `log-store.ts` decide which segment file to
+ * touch.
+ */
+export function getLogRoot(workspaceRoot: string): string {
+  return getLogRootForWhim(path.join(workspaceRoot, WHIM_DIR));
 }
 
 export function getDbPath(workspaceRoot: string): string {
@@ -51,6 +58,14 @@ export function initWorkspace(rootPath: string): void {
 
   if (!fs.existsSync(whimDir)) {
     fs.mkdirSync(whimDir, { recursive: true });
+  }
+
+  // Migrate the legacy single-file event log into the rotated tree. Safe
+  // to call every launch — idempotent if the file is already gone.
+  try {
+    migrateLegacyEventLog(whimDir);
+  } catch (err) {
+    console.warn('[workspace] migrateLegacyEventLog failed:', err);
   }
 
   // Ensure .agents/skills/ directory exists

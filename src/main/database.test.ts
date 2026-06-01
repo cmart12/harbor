@@ -61,8 +61,9 @@ let testDir: string;
 function freshDb() {
   testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'space-db-test-'));
   const dbPath = path.join(testDir, 'test.db');
-  const logPath = path.join(testDir, 'events.jsonl');
-  initDatabase(dbPath, logPath);
+  // Rotated event-log root, not a single file.
+  const logRoot = path.join(testDir, 'events');
+  initDatabase(dbPath, logRoot);
 }
 
 beforeEach(() => {

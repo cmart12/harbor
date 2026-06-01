@@ -8,7 +8,9 @@ import { readCanvas, slugify } from './workspace';
 import { initContentStore, closeContentStore, storeContent, type ContentRef } from './subagent-content-store';
 
 let db: Database.Database;
-let logPath: string;
+/** Root of the rotated event-log tree (`<whim>/events/`). All appends and
+ *  the startup replay flow through this root. */
+let logRoot: string;
 
 export function isInitialized(): boolean {
   return db !== undefined;
@@ -18,7 +20,7 @@ export function closeDatabase(): void {
   if (db) {
     db.close();
     db = undefined as any;
-    logPath = '';
+    logRoot = '';
   }
   closeContentStore();
 }
@@ -30,8 +32,12 @@ export function getDatabase(): Database.Database {
 /**
  * Initialize a fresh database at the given path (inside the workspace .whim/ dir).
  * Deletes any existing DB first — the log is the source of truth.
+ *
+ * `eventLogRoot` is the rotated-log root (`<workspace>/.whim/events/`).
+ * The directory does not need to pre-exist; appendEvent + replay create
+ * it on demand.
  */
-export function initDatabase(dbPath: string, eventLogPath: string): void {
+export function initDatabase(dbPath: string, eventLogRoot: string): void {
   // Always start fresh — DB is a derived cache
   for (const f of [dbPath, dbPath + '-journal', dbPath + '-wal', dbPath + '-shm']) {
     if (fs.existsSync(f)) fs.unlinkSync(f);
@@ -39,7 +45,7 @@ export function initDatabase(dbPath: string, eventLogPath: string): void {
 
   db = new Database(dbPath);
   db.pragma('journal_mode = DELETE');
-  logPath = eventLogPath;
+  logRoot = eventLogRoot;
 
   // Heavy sub-agent payloads (turn responses, large tool results) live in
   // <workspace>/.whim/subagent-content/ as side files instead of inline in
@@ -179,7 +185,7 @@ export function initDatabase(dbPath: string, eventLogPath: string): void {
   `);
 
   // Rebuild state from event log
-  replayLog(eventLogPath, db);
+  replayLog(eventLogRoot, db);
 }
 
 /** Inject per-machine session IDs from local config into the DB after replay. */
@@ -225,7 +231,7 @@ export function createSpace(input: CreateSpaceInput, sourceSkillId?: string): Sp
   };
 
   // Log first — the event log is authoritative
-  appendEvent(logPath, 'space.create', {
+  appendEvent(logRoot, 'space.create', {
     id: space.id,
     description: space.description,
     body: space.body,
@@ -289,7 +295,7 @@ export function updateSpace(id: string, updates: Partial<Pick<Space, 'descriptio
   if (updates.attachments !== undefined) fields.attachments = JSON.stringify(updates.attachments);
 
   // Log first
-  appendEvent(logPath, 'space.update', { id, fields });
+  appendEvent(logRoot, 'space.update', { id, fields });
 
   const sets = Object.keys(fields).map(k => `${k} = ?`);
   const values = [...Object.values(fields), id];
@@ -307,7 +313,7 @@ export function updateSpaceCAS(id: string, expectedVersion: string, updates: Par
 
 /** Assign a workspace folder to an space. Logged as a dedicated event. */
 export function assignSpaceFolder(spaceId: string, folder: string): void {
-  appendEvent(logPath, 'space.assign_folder', { id: spaceId, folder });
+  appendEvent(logRoot, 'space.assign_folder', { id: spaceId, folder });
   const now = new Date().toISOString();
   db.prepare('UPDATE spaces SET folder = ?, updated_at = ? WHERE id = ?')
     .run(folder, now, spaceId);
@@ -317,7 +323,7 @@ export function logSpaceEvent(spaceId: string, eventType: string, data: { due_at
   const now = new Date().toISOString();
   const eventId = uuidv4();
 
-  appendEvent(logPath, 'intent_event.log', {
+  appendEvent(logRoot, 'intent_event.log', {
     id: eventId,
     space_id: spaceId,
     event_type: eventType,
@@ -366,7 +372,7 @@ export function setSpaceSessionId(spaceId: string, sessionId: string): void {
 }
 
 export function deleteSpace(id: string): boolean {
-  appendEvent(logPath, 'space.delete', { id });
+  appendEvent(logRoot, 'space.delete', { id });
   const result = db.prepare('DELETE FROM spaces WHERE id = ?').run(id);
   return result.changes > 0;
 }
@@ -403,7 +409,7 @@ export function searchSpaces(query: string): Space[] {
 // ── Canvas Agents ─────────────────────────────────────────
 
 export function createCanvasAgent(agent: CanvasAgent): void {
-  appendEvent(logPath, 'canvas_agent.created', {
+  appendEvent(logRoot, 'canvas_agent.created', {
     id: agent.id,
     space_id: agent.space_id,
     selected_text: agent.selected_text,
@@ -422,7 +428,7 @@ export function createCanvasAgent(agent: CanvasAgent): void {
 
 export function updateCanvasAgentStatus(id: string, status: 'running' | 'waiting-approval' | 'completed' | 'failed', pid?: number | null): void {
   const now = new Date().toISOString();
-  appendEvent(logPath, 'canvas_agent.updated', { id, status, pid: pid ?? null, updated_at: now });
+  appendEvent(logRoot, 'canvas_agent.updated', { id, status, pid: pid ?? null, updated_at: now });
   const updates: any[] = [status, now];
   let sql = 'UPDATE canvas_agents SET status = ?, updated_at = ?';
   if (pid !== undefined) {
@@ -451,7 +457,7 @@ export function listAllRunningAgents(): CanvasAgent[] {
 // ── Agent Sessions (central registry) ─────────────────────
 
 export function createAgentSession(session: AgentSession): void {
-  appendEvent(logPath, 'agent_session.created', {
+  appendEvent(logRoot, 'agent_session.created', {
     id: session.id,
     session_id: session.session_id,
     space_id: session.space_id,
@@ -478,7 +484,7 @@ export function createAgentSession(session: AgentSession): void {
 
 export function updateAgentSessionStatus(id: string, status: string, summary?: string): void {
   const now = new Date().toISOString();
-  appendEvent(logPath, 'agent_session.updated', { id, status, summary: summary ?? null, updated_at: now });
+  appendEvent(logRoot, 'agent_session.updated', { id, status, summary: summary ?? null, updated_at: now });
 
   if (summary !== undefined) {
     db.prepare('UPDATE agent_sessions SET status = ?, summary = ?, updated_at = ? WHERE id = ?')
@@ -506,7 +512,7 @@ export function listAgentSessions(): AgentSession[] {
 /** Update the session_id for an agent across both tables (e.g. after session recreation). */
 export function updateAgentSessionId(id: string, newSessionId: string): void {
   const now = new Date().toISOString();
-  appendEvent(logPath, 'agent_session.updated', { id, session_id: newSessionId, updated_at: now });
+  appendEvent(logRoot, 'agent_session.updated', { id, session_id: newSessionId, updated_at: now });
   db.prepare('UPDATE agent_sessions SET session_id = ?, updated_at = ? WHERE id = ?')
     .run(newSessionId, now, id);
   // Also update canvas_agents if present (best-effort)
@@ -517,7 +523,7 @@ export function updateAgentSessionId(id: string, newSessionId: string): void {
 }
 
 export function deleteAgentSession(id: string): void {
-  appendEvent(logPath, 'agent_session.deleted', { id });
+  appendEvent(logRoot, 'agent_session.deleted', { id });
   db.prepare('DELETE FROM agent_sessions WHERE id = ?').run(id);
 }
 
@@ -790,7 +796,7 @@ function refDigest(ref: ContentRef): ContentRef['digest'] | null {
 export function createSubagentRecord(record: Omit<SubagentRecordRow, 'created_at' | 'updated_at' | 'streaming_content_path' | 'turns_path'>): void {
   const now = new Date().toISOString();
   const off = offloadSubagentContent(record.id, record.streaming_content, record.turns_json);
-  appendEvent(logPath, 'subagent.created', {
+  appendEvent(logRoot, 'subagent.created', {
     ...record,
     streaming_content: off.eventPayload.streaming_content,
     streaming_content_path: off.eventPayload.streaming_content_path,
@@ -845,7 +851,7 @@ export function updateSubagentRecord(
       eventPayload.turns_digest = off.eventPayload.turns_digest;
     }
   }
-  appendEvent(logPath, 'subagent.updated', eventPayload);
+  appendEvent(logRoot, 'subagent.updated', eventPayload);
 
   const sets: string[] = ['updated_at = ?'];
   const values: any[] = [now];
@@ -880,7 +886,7 @@ export function createSubagentToolCall(tc: Omit<SubagentToolCallRow, 'id' | 'cre
   const inlineResult = resultRef.inline ?? null;
   const resultPath = resultRef.path ?? null;
 
-  appendEvent(logPath, 'subagent_tool.created', {
+  appendEvent(logRoot, 'subagent_tool.created', {
     ...tc,
     result: inlineResult,
     result_path: resultPath,
@@ -929,7 +935,7 @@ export function updateSubagentToolCall(
     }
   }
   if (sets.length === 0) return;
-  appendEvent(logPath, 'subagent_tool.updated', {
+  appendEvent(logRoot, 'subagent_tool.updated', {
     subagent_id: subagentId,
     tool_call_id: toolCallId,
     ...updates,

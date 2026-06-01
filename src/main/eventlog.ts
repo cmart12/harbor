@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import Database from 'better-sqlite3';
+import { resolveActiveSegment, listLogFiles } from './log-store';
 
 export interface LogEvent {
   ts: string;
@@ -13,14 +14,22 @@ const ALLOWED_SPACE_FIELDS = new Set([
   'attachments', 'source_skill_id',
 ]);
 
-export function appendEvent(logPath: string, op: string, data: Record<string, any>): void {
+/**
+ * Append a single event to the active rotated segment under `logRoot`.
+ *
+ * The active segment is resolved per-call so callers don't need to know
+ * about month buckets or 25 MB rotation — they just pass the workspace
+ * log root and the LogStore picks the right file.
+ */
+export function appendEvent(logRoot: string, op: string, data: Record<string, any>): void {
   const event: LogEvent = {
     ts: new Date().toISOString(),
     op,
     data,
   };
   const line = JSON.stringify(event) + '\n';
-  const fd = fs.openSync(logPath, 'a');
+  const target = resolveActiveSegment(logRoot);
+  const fd = fs.openSync(target, 'a');
   try {
     fs.writeSync(fd, line);
     fs.fsyncSync(fd);
@@ -29,33 +38,49 @@ export function appendEvent(logPath: string, op: string, data: Record<string, an
   }
 }
 
-export function replayLog(logPath: string, db: Database.Database): void {
-  if (!fs.existsSync(logPath)) return;
-
-  const content = fs.readFileSync(logPath, 'utf-8');
-  const lines = content.split('\n');
+/**
+ * Replay every event under `logRoot` into `db`. Files are loaded in
+ * chronological order (snapshot first, then segments by date) so the
+ * resulting state matches what the live writers produced.
+ *
+ * Phase 3 will swap this for a streamed k-way merge with cached prepared
+ * statements; for now we keep the existing semantics (single transaction,
+ * one db.prepare per line) and just generalise across multiple files.
+ */
+export function replayLog(logRoot: string, db: Database.Database): void {
+  const files = listLogFiles(logRoot);
+  if (files.length === 0) return;
 
   const replay = db.transaction(() => {
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (!line) continue;
-
-      try {
-        const event: LogEvent = JSON.parse(line);
-        applyEvent(db, event);
-      } catch (err) {
-        // Only tolerate corruption on the final line (crash during append)
-        const remaining = lines.slice(i + 1).some(l => l.trim());
-        if (!remaining) {
-          console.warn(`[eventlog] Ignoring corrupt final line ${i + 1}`);
-        } else {
-          throw new Error(`Corrupt event log at line ${i + 1}: ${(err as Error).message}`);
-        }
-      }
+    for (const file of files) {
+      replayOneFile(file, db);
     }
   });
 
   replay();
+}
+
+function replayOneFile(filePath: string, db: Database.Database): void {
+  const content = fs.readFileSync(filePath, 'utf-8');
+  const lines = content.split('\n');
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+
+    try {
+      const event: LogEvent = JSON.parse(line);
+      applyEvent(db, event);
+    } catch (err) {
+      // Only tolerate corruption on the final line (crash during append)
+      const remaining = lines.slice(i + 1).some(l => l.trim());
+      if (!remaining) {
+        console.warn(`[eventlog] Ignoring corrupt final line ${i + 1} of ${filePath}`);
+      } else {
+        throw new Error(`Corrupt event log at ${filePath}:${i + 1}: ${(err as Error).message}`);
+      }
+    }
+  }
 }
 
 function applyEvent(db: Database.Database, event: LogEvent): void {

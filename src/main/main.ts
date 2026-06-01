@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { loadConfig, getConfigValue, setConfigValue, getResolvedHotkeys } from './config';
 import { initDatabase, mergeSessionIds, syncCanvasContent } from './database';
-import { initWorkspace, getDbPath, getLogPath } from './workspace';
+import { initWorkspace, getDbPath, getLogRoot } from './workspace';
 import { startSkillWatcher } from './skill-watcher';
 import { startScheduler, stopScheduler } from './services/scheduler';
 import { migrateOldDatabase } from './migration';
@@ -181,7 +181,7 @@ app.whenReady().then(async () => {
   if (workspace && fs.existsSync(workspace)) {
     initWorkspace(workspace);
     migrateOldDatabase(workspace);
-    initDatabase(getDbPath(workspace), getLogPath(workspace));
+    initDatabase(getDbPath(workspace), getLogRoot(workspace));
     mergeSessionIds(config.sessions);
     syncCanvasContent(workspace);
     startSkillWatcher(workspace);

@@ -28,7 +28,7 @@ let testDir: string;
 function freshDb() {
   testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'skill-db-test-'));
   const dbPath = path.join(testDir, 'test.db');
-  const logPath = path.join(testDir, 'events.jsonl');
+  const logPath = path.join(testDir, 'events');
   initDatabase(dbPath, logPath);
 }
 

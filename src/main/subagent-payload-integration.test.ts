@@ -27,6 +27,7 @@ import {
 } from './database';
 import { SubagentTracker } from './subagent-service';
 import { INLINE_THRESHOLD } from './subagent-content-store';
+import { listLogFiles } from './log-store';
 
 let testDir: string;
 let dbPath: string;
@@ -36,7 +37,7 @@ let contentDir: string;
 function setup() {
   testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'subagent-payload-int-'));
   dbPath = path.join(testDir, 'spaces.db');
-  eventLogPath = path.join(testDir, 'events.jsonl');
+  eventLogPath = path.join(testDir, 'events');
   contentDir = path.join(testDir, 'subagent-content');
   initDatabase(dbPath, eventLogPath);
 }
@@ -292,7 +293,10 @@ describe('subagent payload off-loading (DB ↔ event log ↔ side files)', () =>
       progress_json: '{}',
     });
 
-    const raw = fs.readFileSync(eventLogPath, 'utf8');
+    // Concatenate every segment in the rotated log tree.
+    const raw = listLogFiles(eventLogPath)
+      .map((f) => fs.readFileSync(f, 'utf8'))
+      .join('');
     // The log should reference the path, not embed the big string.
     expect(raw).toContain('"streaming_content_path":"a6.streaming.txt"');
     expect(raw).not.toContain(big);

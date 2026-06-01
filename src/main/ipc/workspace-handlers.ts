@@ -4,7 +4,7 @@ import { isInitialized, closeDatabase } from '../database';
 import { launchSession, getActiveSessionIntentIds } from '../session';
 import { transcribeAudio } from '../voice';
 import { getConfigValue, setConfigValue, getConfig } from '../config';
-import { initWorkspace, getDbPath, getLogPath, getGitSyncStatus, gitFetchOrigin, gitPush, gitPull } from '../workspace';
+import { initWorkspace, getDbPath, getLogRoot, getGitSyncStatus, gitFetchOrigin, gitPush, gitPull } from '../workspace';
 import { initDatabase, mergeSessionIds, syncCanvasContent } from '../database';
 import { startSkillWatcher, stopSkillWatcher } from '../skill-watcher';
 import { destroySettingsWindow, destroyCanvasWindow } from '../window-manager';
@@ -97,7 +97,7 @@ export function registerWorkspaceHandlers(): void {
 
         // Initialize workspace structure and DB
         initWorkspace(dir);
-        initDatabase(getDbPath(dir), getLogPath(dir));
+        initDatabase(getDbPath(dir), getLogRoot(dir));
         mergeSessionIds(getConfig().sessions);
         syncCanvasContent(dir);
         startSkillWatcher(dir);
