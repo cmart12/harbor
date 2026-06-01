@@ -58,6 +58,7 @@ function createSchema(db: Database.Database): void {
       source TEXT NOT NULL DEFAULT 'sdk',
       persona_handle TEXT,
       quoted_text TEXT,
+      run_location TEXT NOT NULL DEFAULT 'local',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     )
@@ -797,6 +798,44 @@ describe('replayLog', () => {
       expect(sess.summary).toBe('');
       expect(sess.working_dir).toBeNull();
       expect(sess.space_id).toBeNull();
+    });
+
+    it('defaults run_location to "local" when missing on the event (back-compat)', () => {
+      // Legacy events written before the run_location field existed must
+      // still replay cleanly and default to a local session.  This protects
+      // existing event logs from being broken by the schema addition.
+      writeLog([{
+        ts: '2024-01-01T00:00:00.000Z',
+        op: 'agent_session.created',
+        data: {
+          id: 'as3', session_id: 'sid-3', prompt: 'Old event', status: 'running',
+          summary: '', working_dir: null,
+          created_at: '2024-01-01T00:00:00.000Z',
+          updated_at: '2024-01-01T00:00:00.000Z',
+        },
+      }]);
+
+      replayLog(logPath, db);
+      const sess = db.prepare('SELECT * FROM agent_sessions WHERE id = ?').get('as3') as any;
+      expect(sess.run_location).toBe('local');
+    });
+
+    it('persists run_location="cloud" when present on the event', () => {
+      writeLog([{
+        ts: '2024-01-01T00:00:00.000Z',
+        op: 'agent_session.created',
+        data: {
+          id: 'as4', session_id: 'sid-4', prompt: 'Cloud event', status: 'running',
+          summary: '', working_dir: '/ws',
+          run_location: 'cloud',
+          created_at: '2024-01-01T00:00:00.000Z',
+          updated_at: '2024-01-01T00:00:00.000Z',
+        },
+      }]);
+
+      replayLog(logPath, db);
+      const sess = db.prepare('SELECT * FROM agent_sessions WHERE id = ?').get('as4') as any;
+      expect(sess.run_location).toBe('cloud');
     });
   });
 

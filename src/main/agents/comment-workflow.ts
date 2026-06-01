@@ -3,13 +3,13 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as crypto from 'crypto';
 import { getCopilotClient } from '../ai';
-import { type AgentPersona } from '../config';
+import { type AgentPersona, getConfigValue } from '../config';
 import { AgentRegistry } from './agent-registry';
 import type { AgentRecord } from './agent-registry';
 import { AgentNotifier } from './agent-notifier';
 import { AgentPersistence } from './agent-persistence';
 import { InteractionBroker } from './interaction-broker';
-import { buildCliToolsPrompt } from './sdk-runner';
+import { buildCliToolsPrompt, waitForCloudSessionStart, enableRemoteControl } from './sdk-runner';
 import { buildSandboxLaunchSetup } from './sandbox-launch';
 import { SANDBOX_SYSTEM_PROMPT } from './sandbox-policies';
 import { getWorkspaceRepo } from '../cloud-agent';
@@ -176,6 +176,7 @@ If you make changes to the document, clearly describe what you changed.${cliTool
       pendingPermissionKind: null,
       pendingApprovals: new Map(),
       summary: 'Starting...',
+      runLocation: isCloudSandbox ? 'cloud' : 'local',
       ...(sandboxState ? { sandbox: sandboxState } : {}),
       ...(persona.yolo ? { yoloMode: true } : {}),
       personaHandle: persona.handle,
@@ -207,11 +208,21 @@ If you make changes to the document, clearly describe what you changed.${cliTool
       source: 'sdk',
       persona_handle: persona.handle,
       quoted_text: quotedText || null,
+      run_location: isCloudSandbox ? 'cloud' : 'local',
       created_at: now,
       updated_at: now,
     });
 
     setupListeners(session, record);
+
+    // Auto-enable remote if the user has opted into auto-remote for all
+    // workers — mirrors launchQuickAgent so canvas @mentions/comments and
+    // the workers-tab path have the same Mission Control behavior.
+    if (getConfigValue('remoteAutoEnable')) {
+      enableRemoteControl(agentId).catch((err: any) => {
+        console.error(`[comment-workflow] Auto-enable remote failed for agent=${agentId}:`, err);
+      });
+    }
 
     // Notify renderer to show presence
     notifier.notifyRenderer('agent:presence-started', {
@@ -222,21 +233,36 @@ If you make changes to the document, clearly describe what you changed.${cliTool
       ...(threadId ? { threadId } : {}),
     });
 
-    session.send({
-      prompt: commentBody,
-      attachments: [{ type: 'file' as const, path: canvasPath, displayName: 'canvas.md' }],
-    }).catch((err: any) => {
-      record.status = 'failed';
-      record.summary = `Error: ${err.message || 'Unknown'}`;
-      persistence.updateStatus(record);
-      notifier.notifyRenderer(`chat:event:${agentId}`, {
-        type: 'session.error',
-        message: err.message || 'Failed to process message',
+    // Cloud sessions: wait for the remote worker's `session.start` event
+    // before sending — otherwise the runtime silently swallows the prompt
+    // (see waitForCloudSessionStart docs). Mirrors the gating
+    // launchQuickAgent applies for the workers-tab @cloud path so canvas
+    // @mentions/comments behave the same way.
+    console.log(`[sdk-send] comment-agent agent=${agentId.slice(0, 8)} session.send promptLen=${commentBody.length}${isCloudSandbox ? ' (after cloud start)' : ''}`);
+    const readyPromise = isCloudSandbox
+      ? waitForCloudSessionStart(session, agentId)
+      : Promise.resolve();
+    readyPromise
+      .then(() => session.send({
+        prompt: commentBody,
+        attachments: [{ type: 'file' as const, path: canvasPath, displayName: 'canvas.md' }],
+      }))
+      .then((messageId: any) => {
+        console.log(`[sdk-send] comment-agent agent=${agentId.slice(0, 8)} session.send resolved messageId=${messageId ?? '<undefined>'}`);
+      })
+      .catch((err: any) => {
+        console.error(`[sdk-send] comment-agent agent=${agentId.slice(0, 8)} session.send REJECTED:`, err?.message ?? err);
+        record.status = 'failed';
+        record.summary = `Error: ${err.message || 'Unknown'}`;
+        persistence.updateStatus(record);
+        notifier.notifyRenderer(`chat:event:${agentId}`, {
+          type: 'session.error',
+          message: err.message || 'Failed to process message',
+        });
+        if (record.commentContext) {
+          notifier.notifyRenderer('agent:presence-ended', { agentId, spaceId: record.spaceId });
+        }
       });
-      if (record.commentContext) {
-        notifier.notifyRenderer('agent:presence-ended', { agentId, spaceId: record.spaceId });
-      }
-    });
 
     return { agentId, sessionId };
   } catch (err: any) {

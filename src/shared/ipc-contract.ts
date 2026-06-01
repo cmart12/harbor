@@ -52,6 +52,12 @@ export interface AgentListAllItem extends AgentListItem {
   personaHandle: string | null;
   yoloMode: boolean;
   quotedText: string;
+  /**
+   * Where the agent's runtime executes.  Cloud sessions survive across app
+   * restarts — the renderer should not treat them as "session lost" when
+   * they appear with `running` status but no live in-memory record.
+   */
+  runLocation: 'local' | 'cloud';
 }
 
 export interface CanvasCommit {

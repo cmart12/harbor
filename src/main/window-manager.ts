@@ -1,7 +1,16 @@
-import { BrowserWindow, screen, ipcMain, shell } from 'electron';
+import { BrowserWindow, screen, ipcMain, shell, app } from 'electron';
 import { getConfigValue, setConfigValue, type SnapPosition } from './config';
 import * as fs from 'fs';
 import * as nodePath from 'path';
+
+function getWindowIconPath(): string | undefined {
+  if (process.platform === 'darwin') return undefined;
+  const iconName = process.platform === 'win32' ? 'icon.ico' : 'copilot.png';
+  if (app.isPackaged) {
+    return nodePath.join(process.resourcesPath, 'assets', iconName);
+  }
+  return nodePath.join(__dirname, '..', '..', 'src', 'assets', iconName);
+}
 
 // ── Geometry constants ───────────────────────────────────
 const WINDOW_WIDTH = 420;
@@ -129,6 +138,7 @@ export function getMainWindow(): BrowserWindow | null {
 
 /** Create and return the main BrowserWindow. Stores reference internally. */
 export function createMainWindow(options: WindowManagerOptions): BrowserWindow {
+  const iconPath = getWindowIconPath();
   const win = new BrowserWindow({
     width: WINDOW_WIDTH,
     height: WINDOW_HEIGHT,
@@ -139,6 +149,7 @@ export function createMainWindow(options: WindowManagerOptions): BrowserWindow {
     transparent: true,
     vibrancy: 'under-window',
     visualEffectState: 'active',
+    ...(iconPath ? { icon: iconPath } : {}),
     webPreferences: {
       preload: options.preloadPath,
       contextIsolation: true,
@@ -725,6 +736,7 @@ function createCanvasWindow(preloadPath: string, options: { isPrimary?: boolean 
   const display = screen.getDisplayNearestPoint(cursorPoint);
   const { x, y, width, height } = display.workArea;
 
+  const iconPath = getWindowIconPath();
   const win = new BrowserWindow({
     width: CANVAS_WIDTH,
     height: CANVAS_HEIGHT,
@@ -736,6 +748,7 @@ function createCanvasWindow(preloadPath: string, options: { isPrimary?: boolean 
     trafficLightPosition: { x: 16, y: 20 },
     vibrancy: 'under-window',
     visualEffectState: 'active',
+    ...(iconPath ? { icon: iconPath } : {}),
     webPreferences: {
       preload: preloadPath,
       contextIsolation: true,
@@ -780,6 +793,7 @@ function createSettingsWindow(preloadPath: string): BrowserWindow {
   const { x, y, width, height } = display.workArea;
 
   const isMac = process.platform === 'darwin';
+  const iconPath = getWindowIconPath();
 
   const win = new BrowserWindow({
     width: SETTINGS_WIDTH,
@@ -796,6 +810,7 @@ function createSettingsWindow(preloadPath: string): BrowserWindow {
     autoHideMenuBar: true,
     vibrancy: 'under-window',
     visualEffectState: 'active',
+    ...(iconPath ? { icon: iconPath } : {}),
     webPreferences: {
       preload: preloadPath,
       contextIsolation: true,

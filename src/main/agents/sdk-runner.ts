@@ -43,8 +43,13 @@ async function resolveCloudSessionOptions(workspaceRoot: string): Promise<{ repo
  * `sendForSchema` still resolves with a fresh messageId). See
  * copilot-agent-runtime: src/core/remote/remoteSession.ts:assertRemoteSessionStarted
  * and src/core/session.ts:sendForSchema (RemoteSession override).
+ *
+ * Exported so non-quick-launch entry points (e.g. canvas @mentions /
+ * comments via `launchCommentAgent`) gate their first `session.send` the
+ * same way the workers-tab path does — otherwise cloud comment agents
+ * appear to spawn but silently drop the prompt.
  */
-async function waitForCloudSessionStart(
+export async function waitForCloudSessionStart(
   session: CopilotSession,
   agentId: string,
   timeoutMs = 60_000,
@@ -256,6 +261,7 @@ export async function launchAgent(
       source: 'sdk',
       persona_handle: null,
       quoted_text: null,
+      run_location: 'local',
       created_at: now,
       updated_at: now,
     });
@@ -441,6 +447,7 @@ export async function launchQuickAgent(
       pendingPermissionKind: null,
       pendingApprovals: new Map(),
       summary,
+      runLocation: isCloudSandbox ? 'cloud' : 'local',
       ...(sandboxState ? { sandbox: sandboxState } : {}),
       ...(persona?.yolo ? { yoloMode: true } : {}),
       ...(persona?.handle ? { personaHandle: persona.handle } : {}),
@@ -465,6 +472,7 @@ export async function launchQuickAgent(
         source: 'sdk',
         persona_handle: persona?.handle ?? null,
         quoted_text: null,
+        run_location: isCloudSandbox ? 'cloud' : 'local',
         created_at: now,
         updated_at: now,
       });
@@ -603,6 +611,7 @@ export async function launchDocumentAgent(
       source: 'sdk',
       persona_handle: null,
       quoted_text: null,
+      run_location: 'local',
       created_at: now,
       updated_at: now,
     });
@@ -770,6 +779,7 @@ async function resumeAgentSession(agentId: string): Promise<'resumed' | 'restart
   if (!workspaceRoot) return false;
 
   const workingDir = persisted.working_dir || workspaceRoot;
+  const isCloud = persisted.run_location === 'cloud';
 
   try {
     const mcpServers = getAllMcpServers();
@@ -804,16 +814,37 @@ async function resumeAgentSession(agentId: string): Promise<'resumed' | 'restart
       pendingPermissionKind: null,
       pendingApprovals: new Map(),
       summary: persisted.summary || 'Resumed',
+      runLocation: isCloud ? 'cloud' : 'local',
+      ...(persisted.persona_handle ? { personaHandle: persisted.persona_handle } : {}),
     };
     registry.set(agentId, record);
 
     setupAgentEventListeners(session, record);
+
+    // For cloud sessions, rediscover the Mission Control URL by re-enabling
+    // remote control on the resumed session.  The cloud worker is still
+    // running (it didn't die with the app), so `remote.enable({mode:'on'})`
+    // returns the existing GitHub URL and re-broadcasts an
+    // `agent:remote-changed` so the renderer can re-attach to Mission
+    // Control without the user having to manually re-enable remote.
+    //
+    // This is fire-and-forget; if remote re-enable fails, the user can still
+    // chat with the resumed session and toggle remote manually.
+    if (isCloud) {
+      enableRemoteControl(agentId).catch((err: any) => {
+        console.warn(`[sdk-runner] Failed to rediscover remote URL on cloud session resume agent=${agentId}:`, err?.message ?? err);
+      });
+    }
+
     return 'resumed';
   } catch (err) {
     console.warn('[agent-service] resumeSession failed, attempting fresh session fallback:', err);
 
-    // Only attempt fallback for SDK sessions — CLI sessions must be resumed via CLI
-    if (persisted.source !== 'sdk') {
+    // Only attempt fallback for SDK sessions — CLI sessions must be resumed via CLI.
+    // Cloud sessions also skip the local fallback: a fresh `createSession`
+    // would spin up a new cloud worker instead of reconnecting to the
+    // existing one, leaving the original worker orphaned.
+    if (persisted.source !== 'sdk' || isCloud) {
       return false;
     }
 

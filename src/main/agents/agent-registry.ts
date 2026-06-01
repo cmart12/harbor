@@ -75,6 +75,13 @@ export interface AgentRecord {
   yoloMode?: boolean;
   /** Remote control state — tracks Mission Control integration per session. */
   remote?: { enabled: boolean; remoteSteerable: boolean; url?: string };
+  /**
+   * Where the session's runtime is executing.  `'cloud'` means the runtime
+   * lives in GitHub's cloud (created via `cloud:` option) and survives this
+   * app process exiting; `'local'` (the default) means the worker dies when
+   * the app does.  Persisted by `agent-persistence` into `agent_sessions`.
+   */
+  runLocation?: 'local' | 'cloud';
   /** When true, this agent is ephemeral — no DB persistence, in-memory session FS. */
   ephemeral?: boolean;
   /**

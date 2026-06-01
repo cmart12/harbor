@@ -142,6 +142,7 @@ import {
   setAppRemote,
   getRemoteState,
   resetRemoteControl,
+  reconcileStaleAgents,
   __resetAppRemoteForTests,
 } from './agent-service';
 import { getCopilotClient } from './ai';
@@ -337,8 +338,39 @@ describe('launchQuickAgent', () => {
         source: 'sdk',
         persona_handle: null,
         space_id: null,
+        run_location: 'local',
       }),
     );
+  });
+
+  it('persists run_location=cloud for cloud personas', async () => {
+    enableMockClient();
+    const persona = {
+      id: 'pc', handle: 'cloud', instructions: 'Run in cloud.',
+      model: 'gpt-4o', runLocation: 'cloud' as const,
+    };
+    // The cloud session waits for a `session.start` event before resolving
+    // session.send.  Fire it on the next tick so the test doesn't time out.
+    let startCb: ((event: any) => void) | null = null;
+    mockSession.on.mockImplementation((evt: any, cb?: any) => {
+      if (typeof evt === 'string' && evt === 'session.start') startCb = cb;
+      return () => { /* unsubscribe noop */ };
+    });
+    setTimeout(() => { startCb?.({ data: { producer: 'copilot-agent', remoteSteerable: true } }); }, 0);
+
+    await launchQuickAgent('add multi-line commenting', '/ws', persona as any);
+
+    expect(createAgentSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        persona_handle: 'cloud',
+        source: 'sdk',
+        run_location: 'cloud',
+      }),
+    );
+
+    // Cloud personas use SDK with the cloud session option populated.
+    const sessionOpts = mockClient.createSession.mock.calls[0][0];
+    expect(sessionOpts).toHaveProperty('cloud');
   });
 
   it('forwards persona instructions, model, and handle when persona is provided', async () => {
@@ -574,6 +606,74 @@ describe('launchCommentAgent', () => {
     expect(sessionOpts.systemMessage.content).not.toContain('sandboxed environment');
     // Persona instructions still applied.
     expect(sessionOpts.systemMessage.content).toContain('Be helpful');
+  });
+
+  it('passes cloud option and persists run_location=cloud for cloud personas', async () => {
+    enableMockClient();
+    // The cloud session waits for `session.start` before sending — fire it
+    // on the next tick so the test doesn't time out.
+    let startCb: ((event: any) => void) | null = null;
+    mockSession.on.mockImplementation((evt: any, cb?: any) => {
+      if (typeof evt === 'string' && evt === 'session.start') startCb = cb;
+      return () => { /* unsubscribe noop */ };
+    });
+    setTimeout(() => { startCb?.({ data: { producer: 'copilot-agent', remoteSteerable: true } }); }, 0);
+
+    const cloudPersona = {
+      id: 'pc-cmt', handle: 'cloud', instructions: 'cloud bot',
+      model: 'gpt-4o', runLocation: 'cloud' as const,
+    };
+    await launchCommentAgent('space-1', 'add multi-line commenting', 'q', {}, cloudPersona, null, '/ws', 'folder');
+
+    const sessionOpts = mockClient.createSession.mock.calls[0][0];
+    expect(sessionOpts).toHaveProperty('cloud');
+
+    expect(createAgentSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        persona_handle: 'cloud',
+        source: 'sdk',
+        run_location: 'cloud',
+      }),
+    );
+  });
+
+  it('delays session.send for cloud comment until session.start fires', async () => {
+    enableMockClient();
+
+    // Capture the session.start callback so the test controls when it fires.
+    let startCb: ((event: any) => void) | null = null;
+    mockSession.on.mockImplementation((evt: any, cb?: any) => {
+      if (typeof evt === 'string' && evt === 'session.start') startCb = cb;
+      return () => { /* unsubscribe noop */ };
+    });
+
+    const cloudPersona = {
+      id: 'pc-cmt-wait', handle: 'cloud', instructions: 'cloud bot',
+      model: 'gpt-4o', runLocation: 'cloud' as const,
+    };
+
+    const sendCalled = vi.fn();
+    mockSession.send.mockImplementation((...args: any[]) => { sendCalled(...args); return Promise.resolve('msg-id'); });
+
+    const launchPromise = launchCommentAgent('space-1', 'hello', 'q', {}, cloudPersona, null, '/ws', 'folder');
+    // launchCommentAgent returns immediately after kicking off the
+    // fire-and-forget send; the send itself is gated behind session.start.
+    await launchPromise;
+
+    // Before session.start, session.send MUST NOT have been called yet —
+    // this is the bug we just fixed. Allow one microtask flush.
+    await Promise.resolve();
+    expect(sendCalled).not.toHaveBeenCalled();
+
+    // Now fire session.start; the queued send should run after the promise
+    // chain flushes.
+    startCb?.({ data: { producer: 'copilot-agent', remoteSteerable: true } });
+    // Two await-Promise.resolve() cycles to drain the readyPromise → then
+    // chain that launchCommentAgent wires up.
+    await new Promise(r => setTimeout(r, 0));
+    await new Promise(r => setTimeout(r, 0));
+
+    expect(sendCalled).toHaveBeenCalledWith(expect.objectContaining({ prompt: 'hello' }));
   });
 });
 
@@ -1480,5 +1580,138 @@ describe('resetRemoteControl', () => {
     expect(remoteEvents).toHaveLength(0);
     const record = testRegistry.get('agent-disable-fails');
     expect(record?.remote?.url).toBe('https://before.example/url-Q');
+  });
+});
+
+describe('reconcileStaleAgents', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('marks running SDK sessions whose in-memory record is gone as failed', () => {
+    const now = new Date().toISOString();
+    vi.mocked(listAgentSessions).mockReturnValue([
+      {
+        id: 'lost-local',
+        session_id: 'lost-local-sid',
+        space_id: '__workspace__',
+        prompt: 'fix the bug',
+        status: 'running',
+        summary: 'Working...',
+        working_dir: '/ws',
+        source: 'sdk',
+        persona_handle: null,
+        quoted_text: null,
+        run_location: 'local',
+        created_at: now,
+        updated_at: now,
+      },
+    ]);
+
+    reconcileStaleAgents();
+
+    expect(updateAgentSessionStatus).toHaveBeenCalledWith(
+      'lost-local',
+      'failed',
+      'Session lost — app restarted',
+    );
+  });
+
+  it('preserves cloud sessions across restart (no status change)', () => {
+    const now = new Date().toISOString();
+    vi.mocked(listAgentSessions).mockReturnValue([
+      {
+        id: 'cloud-session',
+        session_id: 'cloud-session-sid',
+        space_id: '__workspace__',
+        prompt: 'add multi-line commenting',
+        status: 'running',
+        summary: 'Working in cloud...',
+        working_dir: '/ws',
+        source: 'sdk',
+        persona_handle: 'cloud',
+        quoted_text: null,
+        run_location: 'cloud',
+        created_at: now,
+        updated_at: now,
+      },
+    ]);
+
+    reconcileStaleAgents();
+
+    // The cloud session should be left untouched — its remote worker is
+    // still running and the user can resume it on click.  Specifically,
+    // updateAgentSessionStatus should NOT be called for cloud-session.
+    const calls = vi.mocked(updateAgentSessionStatus).mock.calls.filter(c => c[0] === 'cloud-session');
+    expect(calls).toHaveLength(0);
+  });
+
+  it('reconciles only local sessions when both kinds are present', () => {
+    const now = new Date().toISOString();
+    vi.mocked(listAgentSessions).mockReturnValue([
+      {
+        id: 'local-stale',
+        session_id: 'sid-l',
+        space_id: '__workspace__',
+        prompt: 'p1',
+        status: 'running',
+        summary: '',
+        working_dir: '/ws',
+        source: 'sdk',
+        persona_handle: null,
+        quoted_text: null,
+        run_location: 'local',
+        created_at: now,
+        updated_at: now,
+      },
+      {
+        id: 'cloud-alive',
+        session_id: 'sid-c',
+        space_id: '__workspace__',
+        prompt: 'p2',
+        status: 'waiting-approval',
+        summary: '',
+        working_dir: '/ws',
+        source: 'sdk',
+        persona_handle: 'cloud',
+        quoted_text: null,
+        run_location: 'cloud',
+        created_at: now,
+        updated_at: now,
+      },
+    ]);
+
+    reconcileStaleAgents();
+
+    const updateCalls = vi.mocked(updateAgentSessionStatus).mock.calls;
+    const targetIds = updateCalls.map(c => c[0]);
+    expect(targetIds).toContain('local-stale');
+    expect(targetIds).not.toContain('cloud-alive');
+  });
+
+  it('does not touch sessions already in completed/failed state', () => {
+    const now = new Date().toISOString();
+    vi.mocked(listAgentSessions).mockReturnValue([
+      {
+        id: 'already-done',
+        session_id: 'sid',
+        space_id: null,
+        prompt: 'p',
+        status: 'completed',
+        summary: 'done',
+        working_dir: '/ws',
+        source: 'sdk',
+        persona_handle: null,
+        quoted_text: null,
+        run_location: 'local',
+        created_at: now,
+        updated_at: now,
+      },
+    ]);
+
+    reconcileStaleAgents();
+
+    const calls = vi.mocked(updateAgentSessionStatus).mock.calls.filter(c => c[0] === 'already-done');
+    expect(calls).toHaveLength(0);
   });
 });

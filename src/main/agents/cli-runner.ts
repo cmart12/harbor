@@ -58,6 +58,7 @@ export async function launchCliSession(
     source: 'cli',
     persona_handle: null,
     quoted_text: null,
+    run_location: 'local',
     created_at: now,
     updated_at: now,
   });

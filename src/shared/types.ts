@@ -39,6 +39,15 @@ export interface AgentSession {
   source: 'sdk' | 'cli' | 'cca';
   persona_handle: string | null;
   quoted_text: string | null;
+  /**
+   * Where the agent's runtime executes.  `'local'` is the default and
+   * indicates a session whose worker dies when this app process exits.
+   * `'cloud'` indicates a session whose worker continues to run remotely
+   * (via the SDK's cloud session option, e.g. an @cloud persona); these
+   * sessions can be resumed across app restarts and surfaced in Mission
+   * Control.
+   */
+  run_location: 'local' | 'cloud';
   created_at: string;
   updated_at: string;
 }
