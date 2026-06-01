@@ -65,6 +65,19 @@ function createSchema(db: Database.Database): void {
   `);
 
   db.exec(`
+    CREATE TABLE agent_chat_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      agent_id TEXT NOT NULL,
+      seq INTEGER NOT NULL,
+      event_id TEXT,
+      type TEXT NOT NULL,
+      timestamp TEXT NOT NULL,
+      payload TEXT NOT NULL,
+      UNIQUE(agent_id, seq)
+    )
+  `);
+
+  db.exec(`
     CREATE TABLE space_events (
       id TEXT PRIMARY KEY,
       space_id TEXT NOT NULL,
@@ -888,6 +901,73 @@ describe('replayLog', () => {
       const sess = db.prepare('SELECT * FROM agent_sessions WHERE id = ?').get('asu1') as any;
       expect(sess.status).toBe('completed');
       expect(sess.summary).toBe('All tests passed');
+    });
+  });
+
+  describe('agent_chat.appended', () => {
+    it('inserts persisted chat events on replay', () => {
+      writeLog([
+        {
+          ts: '2024-01-01T00:00:00.000Z',
+          op: 'agent_chat.appended',
+          data: {
+            agent_id: 'chat-agent',
+            seq: 1,
+            event_id: 'evt-1',
+            type: 'user.message',
+            timestamp: '2024-01-01T00:00:00.000Z',
+            payload: JSON.stringify({ content: 'hello' }),
+          },
+        },
+        {
+          ts: '2024-01-01T00:00:01.000Z',
+          op: 'agent_chat.appended',
+          data: {
+            agent_id: 'chat-agent',
+            seq: 2,
+            event_id: 'evt-2',
+            type: 'assistant.message',
+            timestamp: '2024-01-01T00:00:01.000Z',
+            payload: JSON.stringify({ content: 'hi back' }),
+          },
+        },
+      ]);
+
+      replayLog(logPath, db);
+
+      const rows = db.prepare(
+        'SELECT seq, event_id, type, payload FROM agent_chat_events WHERE agent_id = ? ORDER BY seq ASC'
+      ).all('chat-agent') as any[];
+      expect(rows).toHaveLength(2);
+      expect(rows[0].type).toBe('user.message');
+      expect(JSON.parse(rows[0].payload).content).toBe('hello');
+      expect(rows[1].type).toBe('assistant.message');
+      expect(JSON.parse(rows[1].payload).content).toBe('hi back');
+    });
+
+    it('is idempotent across repeated replays (UNIQUE(agent_id, seq) + INSERT OR IGNORE)', () => {
+      // Replaying the same log twice (e.g. after a crash + restart)
+      // must not double-insert chat events.
+      writeLog([{
+        ts: '2024-01-01T00:00:00.000Z',
+        op: 'agent_chat.appended',
+        data: {
+          agent_id: 'dup-agent',
+          seq: 1,
+          event_id: 'evt-1',
+          type: 'user.message',
+          timestamp: '2024-01-01T00:00:00.000Z',
+          payload: '{}',
+        },
+      }]);
+
+      replayLog(logPath, db);
+      replayLog(logPath, db);
+
+      const rows = db.prepare(
+        'SELECT COUNT(*) AS n FROM agent_chat_events WHERE agent_id = ?'
+      ).get('dup-agent') as any;
+      expect(rows.n).toBe(1);
     });
   });
 

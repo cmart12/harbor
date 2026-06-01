@@ -51,6 +51,9 @@ import {
   getAgentSession,
   listAgentSessions,
   deleteAgentSession,
+  appendAgentChatEvent,
+  listAgentChatEvents,
+  clearAgentChatEvents,
 } from './database';
 import { appendEvent } from './eventlog';
 import { readCanvas } from './workspace';
@@ -549,6 +552,110 @@ describe('database', () => {
       expect(getAgentSession('as-keep')).not.toBeNull();
       expect(getAgentSession('as-remove')).toBeNull();
       expect(listAgentSessions()).toHaveLength(1);
+    });
+  });
+
+  // ── Agent Chat Events ──────────────────────────────────
+
+  describe('Agent Chat Events', () => {
+    it('appends events with auto-incrementing seq per agent', () => {
+      const seq1 = appendAgentChatEvent('agent-1', {
+        event_id: 'e-1', type: 'user.message',
+        timestamp: '2024-01-01T00:00:00Z',
+        payload: JSON.stringify({ content: 'hi' }),
+      });
+      const seq2 = appendAgentChatEvent('agent-1', {
+        event_id: 'e-2', type: 'assistant.message',
+        timestamp: '2024-01-01T00:00:01Z',
+        payload: JSON.stringify({ content: 'hi back' }),
+      });
+      // Second agent starts its own sequence at 1, independent of agent-1.
+      const seq3 = appendAgentChatEvent('agent-2', {
+        event_id: 'e-3', type: 'user.message',
+        timestamp: '2024-01-01T00:00:02Z',
+        payload: '{}',
+      });
+      expect(seq1).toBe(1);
+      expect(seq2).toBe(2);
+      expect(seq3).toBe(1);
+    });
+
+    it('is idempotent on (agent_id, event_id) — same event_id is a no-op', () => {
+      // The SDK replays its own event log on session resume, so the
+      // host may observe the same event twice.  Persistence must dedup.
+      appendAgentChatEvent('agent-dedup', {
+        event_id: 'evt-X', type: 'assistant.message',
+        timestamp: '2024-01-01T00:00:00Z', payload: '{}',
+      });
+      const seq2 = appendAgentChatEvent('agent-dedup', {
+        event_id: 'evt-X', type: 'assistant.message',
+        timestamp: '2024-01-01T00:00:00Z', payload: '{}',
+      });
+
+      const events = listAgentChatEvents('agent-dedup');
+      expect(events).toHaveLength(1);
+      // The second call should return the existing seq, not a new one.
+      expect(seq2).toBe(1);
+    });
+
+    it('listAgentChatEvents returns events in seq order', () => {
+      appendAgentChatEvent('agent-order', {
+        event_id: null, type: 'user.message',
+        timestamp: '2024-01-01T00:00:00Z', payload: JSON.stringify({ content: 'first' }),
+      });
+      appendAgentChatEvent('agent-order', {
+        event_id: null, type: 'assistant.message',
+        timestamp: '2024-01-01T00:00:01Z', payload: JSON.stringify({ content: 'second' }),
+      });
+
+      const events = listAgentChatEvents('agent-order');
+      expect(events).toHaveLength(2);
+      expect(events[0].seq).toBe(1);
+      expect(events[0].type).toBe('user.message');
+      expect(events[1].seq).toBe(2);
+      expect(events[1].type).toBe('assistant.message');
+    });
+
+    it('clearAgentChatEvents removes only the specified agents events', () => {
+      appendAgentChatEvent('agent-a', { event_id: null, type: 'user.message', timestamp: 't', payload: '{}' });
+      appendAgentChatEvent('agent-b', { event_id: null, type: 'user.message', timestamp: 't', payload: '{}' });
+
+      clearAgentChatEvents('agent-a');
+      expect(listAgentChatEvents('agent-a')).toHaveLength(0);
+      expect(listAgentChatEvents('agent-b')).toHaveLength(1);
+    });
+
+    it('deleteAgentSession cascades chat events for that agent', () => {
+      const sess = makeAgentSession({ id: 'cascade-agent', session_id: 'sid-cascade' });
+      createAgentSession(sess);
+      appendAgentChatEvent('cascade-agent', { event_id: null, type: 'user.message', timestamp: 't', payload: '{}' });
+      appendAgentChatEvent('cascade-agent', { event_id: null, type: 'assistant.message', timestamp: 't', payload: '{}' });
+      expect(listAgentChatEvents('cascade-agent')).toHaveLength(2);
+
+      deleteAgentSession('cascade-agent');
+      expect(listAgentChatEvents('cascade-agent')).toHaveLength(0);
+    });
+
+    it('writes to event log so events replay on DB rebuild', () => {
+      appendAgentChatEvent('replay-agent', {
+        event_id: 'evt-replay',
+        type: 'user.message',
+        timestamp: '2024-01-01T00:00:00Z',
+        payload: JSON.stringify({ content: 'persist me' }),
+      });
+
+      // Verify the event was logged (the eventlog round-trip test in
+      // integration.test.ts proves replay correctness end-to-end).
+      expect(appendEvent).toHaveBeenCalledWith(
+        expect.any(String),
+        'agent_chat.appended',
+        expect.objectContaining({
+          agent_id: 'replay-agent',
+          seq: 1,
+          event_id: 'evt-replay',
+          type: 'user.message',
+        }),
+      );
     });
   });
 

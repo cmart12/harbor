@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import Database from 'better-sqlite3';
 import { v4 as uuidv4 } from 'uuid';
-import { Space, Attachment, CanvasAgent, AgentSession, CreateSpaceInput, Skill, SkillFrontmatter } from '../shared/types';
+import { Space, Attachment, CanvasAgent, AgentSession, AgentChatEvent, CreateSpaceInput, Skill, SkillFrontmatter } from '../shared/types';
 import { appendEvent, replayLog } from './eventlog';
 import { readCanvas, slugify } from './workspace';
 
@@ -91,6 +91,20 @@ export function initDatabase(dbPath: string, eventLogPath: string): void {
       updated_at TEXT NOT NULL
     )
   `);
+
+  db.exec(`
+    CREATE TABLE agent_chat_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      agent_id TEXT NOT NULL,
+      seq INTEGER NOT NULL,
+      event_id TEXT,
+      type TEXT NOT NULL,
+      timestamp TEXT NOT NULL,
+      payload TEXT NOT NULL,
+      UNIQUE(agent_id, seq)
+    )
+  `);
+  db.exec('CREATE INDEX idx_agent_chat_events_agent_seq ON agent_chat_events(agent_id, seq)');
 
   db.exec(`
     CREATE TABLE space_events (
@@ -510,6 +524,69 @@ export function updateAgentSessionId(id: string, newSessionId: string): void {
 export function deleteAgentSession(id: string): void {
   appendEvent(logPath, 'agent_session.deleted', { id });
   db.prepare('DELETE FROM agent_sessions WHERE id = ?').run(id);
+  // Cascade chat events when the session goes away.
+  db.prepare('DELETE FROM agent_chat_events WHERE agent_id = ?').run(id);
+}
+
+// ── Agent Chat Events ────────────────────────────────────
+// Captured from the SDK session's catch-all event stream so we can
+// reconstruct a transcript independent of the SDK runtime.  Used by
+// `replayChatIntoFreshSession` when the original session can't be
+// resumed.
+
+/**
+ * Append a chat event for an agent.  Returns the newly-assigned `seq`.
+ *
+ * Idempotent on `(agent_id, event_id)`: if `event_id` is provided and a
+ * row with the same agent + event_id already exists, the existing row's
+ * seq is returned without inserting a duplicate.  This protects against
+ * double-capture when the SDK replays events on resume.
+ */
+export function appendAgentChatEvent(
+  agentId: string,
+  event: { event_id: string | null; type: string; timestamp: string; payload: string },
+): number {
+  // Idempotency: same SDK event id ⇒ no-op insert, return existing seq.
+  if (event.event_id) {
+    const existing = db.prepare(
+      'SELECT seq FROM agent_chat_events WHERE agent_id = ? AND event_id = ?'
+    ).get(agentId, event.event_id) as { seq: number } | undefined;
+    if (existing) return existing.seq;
+  }
+
+  const row = db.prepare(
+    'SELECT COALESCE(MAX(seq), 0) AS max_seq FROM agent_chat_events WHERE agent_id = ?'
+  ).get(agentId) as { max_seq: number };
+  const seq = row.max_seq + 1;
+
+  appendEvent(logPath, 'agent_chat.appended', {
+    agent_id: agentId,
+    seq,
+    event_id: event.event_id,
+    type: event.type,
+    timestamp: event.timestamp,
+    payload: event.payload,
+  });
+
+  db.prepare(
+    `INSERT INTO agent_chat_events (agent_id, seq, event_id, type, timestamp, payload)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  ).run(agentId, seq, event.event_id, event.type, event.timestamp, event.payload);
+
+  return seq;
+}
+
+/** Return all persisted chat events for an agent, ordered oldest-first. */
+export function listAgentChatEvents(agentId: string): AgentChatEvent[] {
+  return db.prepare(
+    `SELECT seq, event_id, type, timestamp, payload
+     FROM agent_chat_events WHERE agent_id = ? ORDER BY seq ASC`
+  ).all(agentId) as AgentChatEvent[];
+}
+
+/** Remove all persisted chat events for an agent. */
+export function clearAgentChatEvents(agentId: string): void {
+  db.prepare('DELETE FROM agent_chat_events WHERE agent_id = ?').run(agentId);
 }
 
 // ── Skills ────────────────────────────────────────────────

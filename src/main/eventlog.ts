@@ -183,6 +183,31 @@ function applyEvent(db: Database.Database, event: LogEvent): void {
     case 'agent_session.deleted': {
       const d = event.data;
       db.prepare('DELETE FROM agent_sessions WHERE id = ?').run(d.id);
+      // Cascade chat events.  Older event logs may not have the table
+      // when replayed standalone (tests) — guard with IF EXISTS-style
+      // try/catch so a missing table is non-fatal.
+      try {
+        db.prepare('DELETE FROM agent_chat_events WHERE agent_id = ?').run(d.id);
+      } catch { /* table missing — ignore */ }
+      break;
+    }
+
+    case 'agent_chat.appended': {
+      const d = event.data;
+      try {
+        db.prepare(
+          `INSERT OR IGNORE INTO agent_chat_events (agent_id, seq, event_id, type, timestamp, payload)
+           VALUES (?, ?, ?, ?, ?, ?)`
+        ).run(
+          d.agent_id, d.seq, d.event_id ?? null, d.type,
+          d.timestamp ?? event.ts, d.payload ?? '{}',
+        );
+      } catch (err) {
+        // The agent_chat_events table is a recent addition.  When old
+        // tests replay against a schema that doesn't define it, swallow
+        // the error rather than aborting the entire replay transaction.
+        console.warn(`[eventlog] agent_chat.appended replay skipped: ${(err as Error).message}`);
+      }
       break;
     }
 

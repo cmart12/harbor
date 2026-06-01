@@ -64,6 +64,9 @@ vi.mock('./database', () => ({
   updateAgentSessionId: vi.fn(),
   getAgentSession: vi.fn(),
   listAgentSessions: vi.fn().mockReturnValue([]),
+  appendAgentChatEvent: vi.fn().mockReturnValue(1),
+  listAgentChatEvents: vi.fn().mockReturnValue([]),
+  clearAgentChatEvents: vi.fn(),
 }));
 
 vi.mock('./workspace', () => ({
@@ -146,7 +149,7 @@ import {
   __resetAppRemoteForTests,
 } from './agent-service';
 import { getCopilotClient } from './ai';
-import { createCanvasAgent, createAgentSession, updateAgentSessionStatus, updateAgentSessionId, getAgentSession, listAgentSessions } from './database';
+import { createCanvasAgent, createAgentSession, updateAgentSessionStatus, updateAgentSessionId, getAgentSession, listAgentSessions, listAgentChatEvents } from './database';
 import { getConfig } from './config';
 import { launchSessionInTerminal } from './session';
 import { v4 as uuid } from 'uuid';
@@ -1341,11 +1344,13 @@ describe('getAgentHistory', () => {
     expect(mockClient.resumeSession).toHaveBeenCalled();
   });
 
-  it('returns cloud-specific error and skips fallback when sessions.connect fails', async () => {
-    // When the cloud worker is truly gone (expired/deleted), sessions.connect
-    // throws.  We must NOT fall through to restartExpiredSession (which would
-    // spin up a new cloud worker and orphan the original), and the error
-    // message should mention "cloud" so the user knows what happened.
+  it('falls back to local restart when cloud sessions.connect fails (resilient)', async () => {
+    // When the cloud worker is truly gone (connect throws), we now roll
+    // forward into a fresh LOCAL session loaded with the persisted chat
+    // transcript so the user keeps their conversation.  Skipping
+    // resumeSession (it would surface a misleading "Session not found")
+    // is still required; orphaning is no longer a concern because the
+    // failed connect tells us the remote worker is already gone.
     enableMockClient();
     vi.mocked(getConfig).mockReturnValue({ workspace: '/ws' } as any);
     const connectSpy = vi.fn().mockRejectedValue(new Error('Remote task not found'));
@@ -1370,16 +1375,117 @@ describe('getAgentHistory', () => {
 
     const result = await getAgentHistory('cloud-gone');
 
+    // Connect was attempted first.
     expect(connectSpy).toHaveBeenCalled();
-    // resumeSession must NOT be attempted after a connect failure
-    // (otherwise the renderer sees the confusing "Session not found" error
-    // instead of the cloud-specific one we produce).
+    // resumeSession must NOT have been attempted after the connect failure —
+    // it would have produced the confusing "Session not found" error.
     expect(mockClient.resumeSession).not.toHaveBeenCalled();
-    // createSession must NOT be invoked — would orphan the original cloud worker.
-    expect(mockClient.createSession).not.toHaveBeenCalled();
-    expect(result).toEqual({
-      error: expect.stringMatching(/cloud.*(stopped|expired)/i),
-    });
+    // The fallback restart created a fresh local session preloaded with the
+    // continuation system message.
+    expect(mockClient.createSession).toHaveBeenCalled();
+    const createConfig = mockClient.createSession.mock.calls[0][0];
+    expect(createConfig.systemMessage.content).toContain('continuation of a previous session');
+    // updateSessionId was called to rebind the agent to the new local session id.
+    expect(updateAgentSessionId).toHaveBeenCalledWith('cloud-gone', expect.any(String));
+    // The renderer sees a fresh-session history with restarted: true so it
+    // can surface "Previous session expired — started a fresh session" to the user.
+    expect(result).toHaveProperty('restarted', true);
+    expect(result).toHaveProperty('events');
+  });
+
+  it('uses persisted transcript when restarting an expired session (richer context)', async () => {
+    // restartExpiredSession should prefer the persisted chat events over
+    // the bare prompt+summary fallback — the model gets full prior
+    // context instead of just the original prompt.
+    enableMockClient();
+    vi.mocked(getConfig).mockReturnValue({ workspace: '/ws' } as any);
+    mockClient.resumeSession.mockRejectedValueOnce(new Error('session expired'));
+
+    const now = '2025-01-01T00:00:00Z';
+    vi.mocked(listAgentChatEvents).mockReturnValue([
+      { seq: 1, event_id: null, type: 'user.message', timestamp: now,
+        payload: JSON.stringify({ content: 'Please refactor the auth module.' }) },
+      { seq: 2, event_id: null, type: 'assistant.message', timestamp: now,
+        payload: JSON.stringify({ content: 'Started refactor of LoginController.ts.' }) },
+      { seq: 3, event_id: null, type: 'user.message', timestamp: now,
+        payload: JSON.stringify({ content: 'Also add tests.' }) },
+    ]);
+
+    const persistedSession = {
+      id: 'transcript-restart-agent',
+      session_id: 'expired-sid',
+      space_id: 'space-1',
+      prompt: 'original prompt',
+      status: 'running' as const,
+      summary: 'Working on it...',
+      working_dir: '/ws',
+      source: 'sdk' as const,
+      persona_handle: null,
+      quoted_text: null,
+      run_location: 'local' as const,
+      created_at: '2025-01-01',
+      updated_at: '2025-01-01',
+    };
+    vi.mocked(getAgentSession).mockReturnValue(persistedSession);
+
+    await getAgentHistory('transcript-restart-agent');
+
+    expect(mockClient.createSession).toHaveBeenCalled();
+    const createConfig = mockClient.createSession.mock.calls[0][0];
+    const sysContent: string = createConfig.systemMessage.content;
+    // The continuation preamble for transcript-replay mode.
+    expect(sysContent).toContain('previous conversation');
+    // All three persisted turns surfaced verbatim in the system message.
+    expect(sysContent).toContain('refactor the auth module');
+    expect(sysContent).toContain('LoginController.ts');
+    expect(sysContent).toContain('Also add tests.');
+  });
+
+  it('returns persisted transcript when both resume AND local restart fail', async () => {
+    // Worst case: SDK resume throws AND the fallback createSession also
+    // throws (e.g. auth issue).  Previously this surfaced an error and
+    // blanked the chat.  Now we serve the persisted transcript so the
+    // user can at least read what happened.
+    enableMockClient();
+    vi.mocked(getConfig).mockReturnValue({ workspace: '/ws' } as any);
+    mockClient.resumeSession.mockRejectedValueOnce(new Error('session expired'));
+    mockClient.createSession.mockRejectedValueOnce(new Error('auth failed'));
+
+    const now = '2025-01-01T00:00:00Z';
+    vi.mocked(listAgentChatEvents).mockReturnValue([
+      { seq: 1, event_id: null, type: 'user.message', timestamp: now,
+        payload: JSON.stringify({ content: 'hello' }) },
+      { seq: 2, event_id: null, type: 'assistant.message', timestamp: now,
+        payload: JSON.stringify({ content: 'hi back' }) },
+    ]);
+
+    const persistedSession = {
+      id: 'unrecoverable-agent',
+      session_id: 'unrecoverable-sid',
+      space_id: 'space-1',
+      prompt: 'p',
+      status: 'failed' as const,
+      summary: '',
+      working_dir: '/ws',
+      source: 'sdk' as const,
+      persona_handle: null,
+      quoted_text: null,
+      run_location: 'local' as const,
+      created_at: '2025-01-01',
+      updated_at: '2025-01-01',
+    };
+    vi.mocked(getAgentSession).mockReturnValue(persistedSession);
+
+    const result = await getAgentHistory('unrecoverable-agent');
+
+    expect(result).toHaveProperty('events');
+    expect(result).toHaveProperty('transcript', true);
+    const events = (result as any).events;
+    expect(events).toHaveLength(2);
+    expect(events[0].type).toBe('user.message');
+    expect(events[0].data.content).toBe('hello');
+    expect(events[1].type).toBe('assistant.message');
+    expect(events[1].data.content).toBe('hi back');
   });
 });
 

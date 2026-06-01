@@ -82,6 +82,34 @@ let persistence: AgentPersistence;
 let broker: InteractionBroker;
 let subagentTracker: SubagentTracker;
 
+/**
+ * SDK event types that represent meaningful transcript milestones.  Any
+ * event matching this set is persisted to `agent_chat_events` so the
+ * conversation can be reconstructed and replayed into a fresh session if
+ * the original session becomes unreachable.
+ *
+ * Deliberately omits:
+ *  - `*_delta` events (partial chunks superseded by the matching
+ *     complete event)
+ *  - `tool.execution_progress` (noisy free-text status updates)
+ *  - `assistant.message_partial`-style telemetry
+ *
+ * The set is closed-list rather than allow-by-default because new SDK
+ * event types should be reviewed before they enter the transcript path
+ * (some carry large internal payloads that bloat the event log).
+ */
+const PERSISTED_CHAT_EVENT_TYPES = new Set<string>([
+  'user.message',
+  'assistant.message',
+  'assistant.reasoning',
+  'tool.execution_start',
+  'tool.execution_complete',
+  'session.error',
+  'session.warning',
+  'session.idle',
+  'session.start',
+]);
+
 export function initSdkRunner(deps: {
   registry: AgentRegistry;
   notifier: AgentNotifier;
@@ -804,11 +832,12 @@ async function resumeAgentSession(agentId: string): Promise<'resumed' | 'restart
       } catch (connectErr: any) {
         const msg = connectErr?.message ?? String(connectErr);
         console.warn(`[agent-service] sessions.connect failed for cloud agent ${agentId}: ${msg}`);
-        // The cloud worker is unreachable (expired / deleted / network).
-        // Don't fall through to resumeSession — that produces a confusing
-        // "Session not found" error.  Returning false surfaces the
-        // expired-session UI in the renderer.
-        return false;
+        // Cloud worker unreachable (expired / deleted / network).  Skip
+        // resumeSession (that path would just produce the misleading
+        // "Session not found") and fall through to the outer catch so
+        // restartExpiredSession can replay the persisted transcript into
+        // a fresh local session — preserving the user's conversation.
+        throw connectErr;
       }
     }
 
@@ -866,16 +895,117 @@ async function resumeAgentSession(agentId: string): Promise<'resumed' | 'restart
   } catch (err) {
     console.warn('[agent-service] resumeSession failed, attempting fresh session fallback:', err);
 
-    // Only attempt fallback for SDK sessions — CLI sessions must be resumed via CLI.
-    // Cloud sessions also skip the local fallback: a fresh `createSession`
-    // would spin up a new cloud worker instead of reconnecting to the
-    // existing one, leaving the original worker orphaned.
-    if (persisted.source !== 'sdk' || isCloud) {
+    // CLI sessions must be resumed via CLI — no SDK fallback path.
+    if (persisted.source !== 'sdk') {
       return false;
     }
 
+    // For SDK (including cloud sessions whose `sessions.connect` raised
+    // earlier in this try-block or whose `resumeSession` failed): roll
+    // forward into a fresh local session preloaded with the persisted
+    // chat transcript so the user can continue without losing context.
+    // Cloud-worker orphaning is not a concern here — if we reached this
+    // catch it means the remote side was unreachable, so there is no
+    // live worker to orphan.
     return restartExpiredSession(agentId, persisted, workingDir);
   }
+}
+
+/**
+ * Build a system-message replay from the persisted chat transcript.
+ *
+ * The transcript is rendered as a Markdown-formatted conversation so the
+ * model can pick up where the previous session left off, even when the
+ * SDK's own event log isn't available (cloud expired, runtime restarted
+ * without local store).
+ *
+ * Returns `null` when no usable transcript exists; callers should then
+ * fall back to a prompt+summary system message.
+ *
+ * @internal exported for tests
+ */
+export function buildTranscriptReplayContent(
+  events: import('../../shared/types').AgentChatEvent[],
+  options: { maxBodyChars?: number; maxEvents?: number } = {},
+): string | null {
+  const maxBodyChars = options.maxBodyChars ?? 2000;
+  const maxEvents = options.maxEvents ?? 40;
+
+  // Keep the most recent N events — older context is summarized into a
+  // single placeholder line so we don't blow the model context window.
+  let selected = events;
+  let dropped = 0;
+  if (events.length > maxEvents) {
+    dropped = events.length - maxEvents;
+    selected = events.slice(-maxEvents);
+  }
+
+  const lines: string[] = [];
+  if (dropped > 0) {
+    lines.push(`*(${dropped} earlier turn${dropped === 1 ? '' : 's'} omitted for brevity)*`);
+    lines.push('');
+  }
+
+  let appended = 0;
+  for (const evt of selected) {
+    let payload: any;
+    try { payload = JSON.parse(evt.payload); } catch { continue; }
+
+    switch (evt.type) {
+      case 'user.message': {
+        const content = payload?.content ?? payload?.message ?? payload?.prompt ?? '';
+        if (!content) continue;
+        lines.push(`**User:** ${truncate(String(content), maxBodyChars)}`);
+        appended++;
+        break;
+      }
+      case 'assistant.message': {
+        const content = payload?.content ?? payload?.message ?? '';
+        if (!content) continue;
+        lines.push(`**Assistant:** ${truncate(String(content), maxBodyChars)}`);
+        appended++;
+        break;
+      }
+      case 'assistant.reasoning': {
+        const content = payload?.content ?? '';
+        if (!content) continue;
+        lines.push(`*(Assistant reasoning: ${truncate(String(content), 400)})*`);
+        appended++;
+        break;
+      }
+      case 'tool.execution_start': {
+        const toolName = payload?.toolName ?? 'tool';
+        let argsPreview = '';
+        try { argsPreview = JSON.stringify(payload?.arguments ?? payload?.toolArgs ?? {}); } catch { /* ignore */ }
+        lines.push(`*(Tool call: \`${toolName}\` ${truncate(argsPreview, 200)})*`);
+        appended++;
+        break;
+      }
+      case 'tool.execution_complete': {
+        const raw = payload?.result;
+        const result = typeof raw === 'string' ? raw : raw?.content ?? raw?.detailedContent ?? '';
+        const success = payload?.success !== false;
+        lines.push(`*(Tool result ${success ? 'ok' : 'failed'}: ${truncate(String(result), 400)})*`);
+        appended++;
+        break;
+      }
+      case 'session.error': {
+        const msg = payload?.message ?? payload?.error ?? '';
+        if (msg) {
+          lines.push(`*(Previous session error: ${truncate(String(msg), 200)})*`);
+          appended++;
+        }
+        break;
+      }
+      // Skip session.start / session.idle / session.warning — they're
+      // bookkeeping, not user-meaningful turns.
+      default: break;
+    }
+    lines.push('');
+  }
+
+  if (appended === 0) return null;
+  return lines.join('\n').trim();
 }
 
 /** Create a fresh SDK session to replace an expired one, preserving context. */
@@ -909,7 +1039,22 @@ async function restartExpiredSession(
       } catch { /* proceed without skills */ }
     }
 
-    // Build system message with previous context
+    // Build system message with previous context.  Prefer the rich
+    // persisted transcript when available; fall back to prompt+summary
+    // when the transcript is empty (e.g. agent crashed before producing
+    // a single chat event).
+    const transcriptEvents = persistence.listChatEvents(agentId);
+    const transcriptReplay = buildTranscriptReplayContent(transcriptEvents);
+    const continuationPreamble = transcriptReplay
+      ? `Note: This is a continuation of a previous session that became unreachable. ` +
+        `The transcript below captures what was discussed; pick up from where it left off and ` +
+        `address the most recent user request.\n\n` +
+        `--- previous conversation ---\n${transcriptReplay}\n--- end of transcript ---`
+      : `Note: This is a continuation of a previous session that expired. ` +
+        `The original request was: "${truncate(persisted.prompt, 500)}". ` +
+        `The previous session summary was: "${truncate(persisted.summary || 'No summary', 500)}". ` +
+        `Continue helping from where things left off.`;
+
     let systemContent: string;
     if (isCanvasAgent) {
       // Reconstruct canvas-style system prompt with prior context
@@ -917,16 +1062,11 @@ async function restartExpiredSession(
         `\nThe user selected the following text from their canvas document and wants you to work on it:\n\n` +
         `---\n${persisted.prompt}\n---\n\n` +
         `The full canvas document is available as canvas.md in the working directory.${cliToolsPrompt}\n\n` +
-        `Note: This is a continuation of a previous session that expired. ` +
-        `The previous session summary was: "${truncate(persisted.summary || 'No summary', 500)}". ` +
-        `Continue helping from where things left off.`;
+        continuationPreamble;
     } else {
       systemContent =
         (cliToolsPrompt ? cliToolsPrompt + '\n\n' : '') +
-        `Note: This is a continuation of a previous session that expired. ` +
-        `The original request was: "${truncate(persisted.prompt, 500)}". ` +
-        `The previous session summary was: "${truncate(persisted.summary || 'No summary', 500)}". ` +
-        `Continue helping from where things left off.`;
+        continuationPreamble;
     }
 
     const session = await client.createSession({
@@ -956,6 +1096,13 @@ async function restartExpiredSession(
       pendingApprovals: new Map(),
       summary: persisted.summary || 'Session restarted',
       restarted: true,
+      // The replacement session is always local — even when the original
+      // was cloud — because we no longer have access to the original
+      // remote worker.  Record `run_location='local'` so subsequent
+      // resume attempts don't try sessions.connect on a session that
+      // never had a cloud counterpart.
+      runLocation: 'local',
+      ...(persisted.persona_handle ? { personaHandle: persisted.persona_handle } : {}),
     };
     registry.set(agentId, record);
 
@@ -963,7 +1110,7 @@ async function restartExpiredSession(
     persistence.updateSessionId(agentId, newSessionId);
 
     setupAgentEventListeners(session, record);
-    console.info(`[agent-service] Restarted expired session for agent ${agentId} (new session: ${newSessionId})`);
+    console.info(`[agent-service] Restarted expired session for agent ${agentId} (new session: ${newSessionId})${transcriptReplay ? ` with ${transcriptEvents.length}-event transcript replay` : ''}`);
     return 'restarted';
   } catch (err) {
     console.error('[agent-service] Failed to restart expired session:', err);
@@ -989,7 +1136,7 @@ export async function setAgentModel(agentId: string, model: string): Promise<{ e
 }
 
 /** Resume an agent session and return its conversation history. */
-export async function getAgentHistory(agentId: string): Promise<{ events: any[]; restarted?: boolean } | { error: string }> {
+export async function getAgentHistory(agentId: string): Promise<{ events: any[]; restarted?: boolean; transcript?: boolean } | { error: string }> {
   // Resume if not already in memory
   let record = registry.get(agentId);
   if (!record) {
@@ -998,6 +1145,18 @@ export async function getAgentHistory(agentId: string): Promise<{ events: any[];
 
     const result = await resumeAgentSession(agentId);
     if (!result) {
+      // Resume + restart fallback both failed.  Surface the persisted
+      // transcript so the renderer can at least show the user what was
+      // said, instead of just blanking the chat.  When the transcript
+      // exists, the renderer can keep the conversation usable; the
+      // separate `transcript: true` flag tells it the events come from
+      // host storage (not the SDK session, which is gone).
+      const transcript = persistence.listChatEvents(agentId);
+      if (transcript.length > 0) {
+        const events = transcript.map(toSdkEventShape);
+        console.info(`[agent-service] getAgentHistory: serving persisted transcript for ${agentId} (${events.length} events) — session unrecoverable`);
+        return { events, transcript: true };
+      }
       const sourceLabel = persisted.source === 'cli'
         ? 'CLI'
         : persisted.run_location === 'cloud'
@@ -1018,9 +1177,34 @@ export async function getAgentHistory(agentId: string): Promise<{ events: any[];
     const events = await record.session.getEvents();
     return { events: events || [], ...(restarted ? { restarted: true } : {}) };
   } catch (err: any) {
-    console.error('[agent-service] Failed to get history:', err);
+    console.warn('[agent-service] Failed to get history from session; falling back to persisted transcript:', err?.message ?? err);
+    // SDK getEvents failure shouldn't blank the UI — try the persisted
+    // transcript as a last resort.  Same reasoning as the resume-failure
+    // path above.
+    const transcript = persistence.listChatEvents(agentId);
+    if (transcript.length > 0) {
+      const events = transcript.map(toSdkEventShape);
+      return { events, transcript: true, ...(restarted ? { restarted: true } : {}) };
+    }
     return { error: err.message || 'Failed to load conversation history' };
   }
+}
+
+/**
+ * Convert a row from `agent_chat_events` back into an SDK-style event
+ * object the renderer expects from `session.getEvents()`.  The payload
+ * was serialized as JSON at capture time; we round-trip it back into
+ * `event.data` so existing renderer code reads the same shape.
+ */
+function toSdkEventShape(row: import('../../shared/types').AgentChatEvent): any {
+  let data: any = {};
+  try { data = JSON.parse(row.payload); } catch { /* ignore */ }
+  return {
+    type: row.type,
+    data,
+    ...(row.event_id ? { id: row.event_id } : {}),
+    timestamp: row.timestamp,
+  };
 }
 
 // ── Event Listener Setup ──────────────────────────────────────
@@ -1067,6 +1251,30 @@ export function setupAgentEventListeners(session: CopilotSession, record: AgentR
         console.log(`[sdk-event] agent=${agentId.slice(0, 8)} type=${t}`);
       }
     } catch { /* never let logging break dispatch */ }
+
+    // Persist meaningful events to the chat transcript so we can replay
+    // them into a fresh session if the original session is unreachable
+    // later (e.g. cloud worker expired, SDK runtime restarted with
+    // missing local store).  Skip noisy/derivative event types — we keep
+    // only the "logical message" events that matter for reconstructing
+    // the conversation.
+    try {
+      const t = event?.type;
+      if (typeof t === 'string' && PERSISTED_CHAT_EVENT_TYPES.has(t)) {
+        const data = event?.data ?? event;
+        const eventIdRaw = data?.id ?? event?.id;
+        const eventId = typeof eventIdRaw === 'string' ? eventIdRaw : null;
+        let payload: string;
+        try { payload = JSON.stringify(data); }
+        catch { payload = JSON.stringify({ _serializationError: true, type: t }); }
+        persistence.appendChatEvent(record, {
+          event_id: eventId,
+          type: t,
+          timestamp: new Date().toISOString(),
+          payload,
+        });
+      }
+    } catch { /* persistence is best-effort */ }
   });
 
   // SDK events wrap payloads in event.data; fall back to top-level for compat

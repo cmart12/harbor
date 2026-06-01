@@ -52,6 +52,35 @@ export interface AgentSession {
   updated_at: string;
 }
 
+/**
+ * Persisted chat event for an agent.  Captured from the SDK session's
+ * catch-all event stream during the agent's lifetime so the host can
+ * reconstruct a full conversation transcript even if the SDK session is
+ * lost (e.g. cloud worker expired, app restarted, runtime resumed without
+ * the on-disk event log).
+ *
+ * When `resumeAgentSession` cannot reattach to the original session, the
+ * persisted events are used to build a system-message replay that gets
+ * fed into a fresh local session so the user can continue the
+ * conversation seamlessly.  See `replayChatIntoFreshSession` in
+ * `src/main/agents/sdk-runner.ts`.
+ */
+export interface AgentChatEvent {
+  /** Monotonic per-agent sequence number; deterministic ordering. */
+  seq: number;
+  /** SDK event UUID (when available) — used for idempotent dedup on replay. */
+  event_id: string | null;
+  /**
+   * Event type as emitted by the SDK (e.g. `assistant.message`,
+   * `user.message`, `tool.execution_complete`, `session.error`).
+   */
+  type: string;
+  /** ISO 8601 timestamp of when the host observed the event. */
+  timestamp: string;
+  /** Serialized JSON of the event payload (event.data when present). */
+  payload: string;
+}
+
 export interface AgentAnchor {
   quote: string;
   prefix: string;
