@@ -11,7 +11,7 @@ import { registerIpcHandlers } from './ipc';
 import { preloadModel } from './voice';
 import { initCopilot, shutdownCopilot } from './ai';
 import { startCliExitMonitor, stopCliExitMonitor, reconcileStaleAgents } from './agent-service';
-import { createMainWindow, toggleWindow, setupSnapOnDrop, registerWindowIpcHandlers, preWarmSettingsWindow, releaseSettingsWindow } from './window-manager';
+import { createMainWindow, toggleWindow, setupSnapOnDrop, registerWindowIpcHandlers, preWarmSettingsWindow, releaseSettingsWindow, preWarmCanvasWindow, releaseCanvasWindow } from './window-manager';
 import { createTray, destroyTray } from './tray';
 import { initAutoUpdater, cleanupAutoUpdater } from './update-service';
 
@@ -211,9 +211,9 @@ app.whenReady().then(async () => {
   mainWin.webContents.once('did-finish-load', () => {
     toggleWindow();
 
-    // Pre-warm the settings window in the background so the first open is
-    // instant. Skip when no workspace is configured (welcome flow) to keep
-    // first-launch cheap for new users.
+    // Pre-warm the settings + canvas windows in the background so the first
+    // open of each is instant. Skip when no workspace is configured (welcome
+    // flow) to keep first-launch cheap for new users.
     if (workspace && fs.existsSync(workspace)) {
       // Defer to idle so the main window finishes animating in first.
       setTimeout(() => {
@@ -221,6 +221,11 @@ app.whenReady().then(async () => {
           preWarmSettingsWindow(preloadPath);
         } catch (err) {
           console.warn('[main] Settings pre-warm failed:', err);
+        }
+        try {
+          preWarmCanvasWindow(preloadPath);
+        } catch (err) {
+          console.warn('[main] Canvas pre-warm failed:', err);
         }
       }, 1500);
     }
@@ -249,9 +254,11 @@ app.whenReady().then(async () => {
 });
 
 app.on('before-quit', () => {
-  // Let the settings window's `close` handler actually close it now that
-  // the app is quitting (normally we intercept close to hide for speed).
+  // Let the settings + canvas windows' `close` handlers actually close them
+  // now that the app is quitting (normally we intercept close to hide for
+  // speed).
   releaseSettingsWindow();
+  releaseCanvasWindow();
 });
 
 app.on('will-quit', async () => {

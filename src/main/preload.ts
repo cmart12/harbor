@@ -166,6 +166,8 @@ export interface WhimAPI {
   getCanvasAlwaysOnTop(): Promise<boolean>;
   notifyCanvasThemeChanged(theme: string): void;
   onCanvasThemeChanged(callback: (theme: string) => void): void;
+  onCanvasRequestHide(callback: () => void): void;
+  canvasHideReady(): void;
   openAgentChatInPanel(data: { agentId: string; agentPrompt: string; agentStatus: string; agentSource?: 'sdk' | 'cli'; spaceId?: string }): void;
   onOpenAgentChatInPanel(callback: (data: { agentId: string; agentPrompt: string; agentStatus: string; agentSource?: 'sdk' | 'cli'; spaceId?: string }) => void): void;
 
@@ -449,6 +451,10 @@ const api: WhimAPI = {
   onCanvasThemeChanged: (callback) => {
     ipcRenderer.on('canvas-window:theme-changed', (_event: unknown, theme: string) => callback(theme));
   },
+  onCanvasRequestHide: (callback) => {
+    ipcRenderer.on('canvas-window:request-hide', () => callback());
+  },
+  canvasHideReady: () => ipcRenderer.send('canvas-window:hide-ready'),
   openAgentChatInPanel: (data) => ipcRenderer.send('main-window:open-agent-chat', data),
   onOpenAgentChatInPanel: (callback) => {
     ipcRenderer.on('main-window:open-agent-chat', (_event: unknown, data: { agentId: string; agentPrompt: string; agentStatus: string; agentSource?: 'sdk' | 'cli'; spaceId?: string }) => callback(data));

@@ -403,6 +403,7 @@ export interface IpcMessages {
   'canvas-window:open': { args: [target: CanvasTarget] };
   'canvas-window:open-page': { args: [target: { kind: 'page'; spaceId: string; page: string; title: string }] };
   'canvas-window:theme-changed': { args: [theme: string] };
+  'canvas-window:hide-ready': { args: [] };
 }
 
 // ---------------------------------------------------------------------------
@@ -416,6 +417,7 @@ export interface IpcEvents {
   'canvas-window:load-target': CanvasTarget;
   'canvas-window:closed': void;
   'canvas-window:theme-changed': { theme: string };
+  'canvas-window:request-hide': void;
   'window:shown': void;
   'window:toggle': void;
   'workspace:committed': void;

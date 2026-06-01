@@ -7,7 +7,7 @@ import { getConfigValue, setConfigValue, getConfig } from '../config';
 import { initWorkspace, getDbPath, getLogPath, getGitSyncStatus, gitFetchOrigin, gitPush, gitPull } from '../workspace';
 import { initDatabase, mergeSessionIds, syncCanvasContent } from '../database';
 import { startSkillWatcher, stopSkillWatcher } from '../skill-watcher';
-import { destroySettingsWindow } from '../window-manager';
+import { destroySettingsWindow, destroyCanvasWindow } from '../window-manager';
 import type { GitSyncStatus } from '../../shared/ipc-contract';
 
 // ── Git sync polling ────────────────────────────────────
@@ -102,10 +102,11 @@ export function registerWorkspaceHandlers(): void {
         syncCanvasContent(dir);
         startSkillWatcher(dir);
 
-        // Destroy any pre-warmed settings window so its next open
-        // cold-starts a fresh renderer with up-to-date workspace data
-        // (rather than reusing the hidden one with stale state).
+        // Destroy any pre-warmed settings + canvas windows so their next
+        // opens cold-start fresh renderers with up-to-date workspace data
+        // (rather than reusing the hidden ones with stale state).
         destroySettingsWindow();
+        destroyCanvasWindow();
 
         // Notify all windows to reload data
         for (const w of BrowserWindow.getAllWindows()) {
@@ -181,9 +182,10 @@ export function registerWorkspaceHandlers(): void {
     closeDatabase();
     setConfigValue('workspace', null);
 
-    // Destroy any pre-warmed settings window so its next open
-    // cold-starts (the cached renderer would point at the old DB).
+    // Destroy any pre-warmed settings + canvas windows so their next opens
+    // cold-start (the cached renderers would point at the old DB).
     destroySettingsWindow();
+    destroyCanvasWindow();
 
     // Notify all windows to reload into fresh-start state
     for (const w of BrowserWindow.getAllWindows()) {

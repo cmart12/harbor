@@ -176,6 +176,8 @@ interface WhimAPI {
   onCanvasWindowClosed(callback: () => void): void;
   notifyCanvasThemeChanged(theme: string): void;
   onCanvasThemeChanged(callback: (theme: string) => void): void;
+  onCanvasRequestHide(callback: () => void): void;
+  canvasHideReady(): void;
   openAgentChatInPanel(data: { agentId: string; agentPrompt: string; agentStatus: string; agentSource?: 'sdk' | 'cli'; spaceId?: string }): void;
   onOpenAgentChatInPanel(callback: (data: { agentId: string; agentPrompt: string; agentStatus: string; agentSource?: 'sdk' | 'cli'; spaceId?: string }) => void): void;
   openPersonaSandboxEditor(personaHandle: string): void;
@@ -7135,6 +7137,34 @@ if (isCanvasMode) {
       }
 
       await openCanvas(target.id);
+    }
+  });
+
+  // Hide-on-close path: main intercepts the user's close click and asks
+  // the renderer to flush unsaved edits before actually hiding. This keeps
+  // the renderer warm so the next canvas-window:open is instant. Reset
+  // the shell back to its post-pre-warm state (empty title, no dirty
+  // marker) so the next open paints cleanly.
+  whimAPI.onCanvasRequestHide(async () => {
+    try {
+      if (canvasSpaceId || canvasSkillId || canvasPageSpaceId || canvasFilePath) {
+        await saveAndUnmountCurrent();
+      }
+      canvasTitle.textContent = '';
+      canvasTitle.contentEditable = 'false';
+      canvasTitle.classList.remove('editing');
+      canvasTitleAI.classList.add('hidden');
+      canvasSaveStatus.textContent = '';
+      canvasDirty = false;
+      canvasSaveBtn.classList.add('hidden');
+      canvasSkillChips.classList.add('hidden');
+      canvasSkillPicker.classList.add('hidden');
+      closeCanvasMenu();
+      // Reset the beforeunload guard so the next session's unsaved edits
+      // (e.g. on app quit) still flush via the beforeunload listener.
+      canvasClosing = false;
+    } finally {
+      whimAPI.canvasHideReady();
     }
   });
 

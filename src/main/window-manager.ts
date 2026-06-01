@@ -19,6 +19,7 @@ const SETTINGS_HEIGHT = 700;
 // ── Module state ─────────────────────────────────────────
 let mainWindow: BrowserWindow | null = null;
 let canvasWindow: BrowserWindow | null = null;
+let canvasWindowAllowClose = false;
 const canvasWindows = new Set<BrowserWindow>();
 const canvasUserPinned = new WeakSet<BrowserWindow>();
 let settingsWindow: BrowserWindow | null = null;
@@ -328,15 +329,41 @@ export function registerWindowIpcHandlers(preloadPath: string): void {
   // ── Canvas popout window ────────────────────────────────
   ipcMain.on('canvas-window:open', (_event, target: { kind: string; id: string; title: string }) => {
     if (canvasWindow && !canvasWindow.isDestroyed()) {
-      canvasWindow.webContents.send('canvas-window:load-target', target);
-      canvasWindow.focus();
+      // Reuse the (possibly hidden, pre-warmed) primary canvas window. If
+      // the renderer hasn't finished loading yet — e.g. user clicked during
+      // the brief window after pre-warm started but before did-finish-load
+      // — defer the load-target send until the renderer is ready.
+      const reveal = () => {
+        if (!canvasWindow || canvasWindow.isDestroyed()) return;
+        canvasWindow.webContents.send('canvas-window:load-target', target);
+        if (!canvasWindow.isVisible()) canvasWindow.show();
+        canvasWindow.focus();
+      };
+      if (canvasWindow.webContents.isLoading()) {
+        canvasWindow.webContents.once('did-finish-load', reveal);
+      } else {
+        reveal();
+      }
     } else {
-      canvasWindow = createCanvasWindow(preloadPath);
+      canvasWindow = createCanvasWindow(preloadPath, { isPrimary: true });
       canvasWindow.webContents.once('did-finish-load', () => {
         canvasWindow?.webContents.send('canvas-window:load-target', target);
         canvasWindow?.show();
+        canvasWindow?.focus();
       });
     }
+  });
+
+  // Renderer ack after flushing unsaved edits in response to
+  // `canvas-window:request-hide`. Actually hide the window here and
+  // broadcast `canvas-window:closed` so the main window's list-refresh
+  // logic still fires (preserves the pre-existing UX where closing the
+  // canvas updates the side pane with any title/body edits).
+  ipcMain.on('canvas-window:hide-ready', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win || win.isDestroyed()) return;
+    if (win.isVisible()) win.hide();
+    mainWindow?.webContents.send('canvas-window:closed');
   });
 
   // Open a new canvas window (even if one already exists)
@@ -683,7 +710,7 @@ function handleWindowMoved(): void {
   }
 }
 
-function createCanvasWindow(preloadPath: string): BrowserWindow {
+function createCanvasWindow(preloadPath: string, options: { isPrimary?: boolean } = {}): BrowserWindow {
   const cursorPoint = screen.getCursorScreenPoint();
   const display = screen.getDisplayNearestPoint(cursorPoint);
   const { x, y, width, height } = display.workArea;
@@ -710,6 +737,24 @@ function createCanvasWindow(preloadPath: string): BrowserWindow {
   attachExternalLinkHandler(win);
 
   canvasWindows.add(win);
+
+  // Primary canvas window: hide-on-close so the renderer stays warm for the
+  // next open. The renderer flushes any unsaved edits before acking via the
+  // `canvas-window:hide-ready` handler, which then calls win.hide() and
+  // broadcasts `canvas-window:closed` to the main window so its list-refresh
+  // logic still fires. The flag is bypassed during app quit (see
+  // `releaseCanvasWindow`) and during workspace switch (see
+  // `destroyCanvasWindow`).
+  if (options.isPrimary) {
+    win.on('close', (event) => {
+      if (canvasWindowAllowClose) return;
+      if (win.isDestroyed()) return;
+      if (canvasWindow !== win) return;
+      event.preventDefault();
+      win.webContents.send('canvas-window:request-hide');
+    });
+  }
+
   win.on('closed', () => {
     canvasWindows.delete(win);
     if (canvasWindow === win) canvasWindow = null;
@@ -809,5 +854,50 @@ export function destroySettingsWindow(): void {
     // not destroy, until `releaseSettingsWindow()` is called again.
     settingsWindowAllowClose = false;
     settingsWindow = null;
+  }
+}
+
+/**
+ * Pre-warm the primary canvas window at app start so the first open is
+ * instant. Creates the window hidden; the renderer process and bundle
+ * load happen in the background. No-op if a primary canvas window
+ * already exists. Mirrors `preWarmSettingsWindow`.
+ */
+export function preWarmCanvasWindow(preloadPath: string): void {
+  if (canvasWindow && !canvasWindow.isDestroyed()) return;
+  canvasWindow = createCanvasWindow(preloadPath, { isPrimary: true });
+}
+
+/**
+ * Allow the primary canvas window to actually close (used during app quit
+ * so the hide-on-close interceptor doesn't prevent shutdown). After this
+ * is called, subsequent close events on the canvas window will close it
+ * normally. Safe to call multiple times.
+ */
+export function releaseCanvasWindow(): void {
+  canvasWindowAllowClose = true;
+}
+
+/**
+ * Destroy the (possibly hidden) primary canvas window. Use this when the
+ * underlying data the canvas depends on has changed in a way that the
+ * cached renderer state can't recover from (e.g. workspace switch) — the
+ * next `canvas-window:open` will cold-start a fresh renderer (or hit the
+ * next pre-warm if scheduled).
+ */
+export function destroyCanvasWindow(): void {
+  if (!canvasWindow || canvasWindow.isDestroyed()) {
+    canvasWindow = null;
+    return;
+  }
+  const win = canvasWindow;
+  canvasWindowAllowClose = true;
+  try {
+    win.destroy();
+  } finally {
+    // Reset the flag — future primary canvas windows should hide on
+    // close, not destroy, until `releaseCanvasWindow()` is called again.
+    canvasWindowAllowClose = false;
+    canvasWindow = null;
   }
 }
