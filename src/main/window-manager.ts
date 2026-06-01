@@ -359,10 +359,20 @@ export function registerWindowIpcHandlers(preloadPath: string): void {
   // broadcast `canvas-window:closed` so the main window's list-refresh
   // logic still fires (preserves the pre-existing UX where closing the
   // canvas updates the side pane with any title/body edits).
+  //
+  // On Windows, when a focused window hides, focus does NOT reliably
+  // return to the previously-focused app window — it can fall through to
+  // the OS, leaving the still-visible main window apparently non-typable
+  // (textarea looks focused but keystrokes go nowhere). Explicitly hand
+  // focus back to the main window if it's visible. macOS handles this
+  // natively but the extra focus() call is a no-op there.
   ipcMain.on('canvas-window:hide-ready', (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win || win.isDestroyed()) return;
     if (win.isVisible()) win.hide();
+    if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) {
+      mainWindow.focus();
+    }
     mainWindow?.webContents.send('canvas-window:closed');
   });
 
