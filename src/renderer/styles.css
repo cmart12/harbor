@@ -8677,13 +8677,15 @@ body.dark .agent-card-sandbox-block .sandbox-block-btn:hover {
  * retries don't stack panels. */
 .worker-tile-sandbox-incident {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
   background: #fff7e6;
   border: 1px solid #f3c87a;
   border-left: 3px solid #d68a00;
   border-radius: 6px;
-  padding: 4px 6px;
+  padding: 3px 6px;
   margin-top: 4px;
   color: #5b3500;
   font-size: var(--fs-caption);
@@ -8703,6 +8705,7 @@ body.dark .worker-tile-sandbox-incident {
   align-items: center;
   gap: 4px;
   min-width: 0;
+  flex: 1 1 auto;
 }
 
 .worker-tile-sandbox-incident .sandbox-incident-lock {
@@ -8747,6 +8750,7 @@ body.dark .sandbox-incident-count {
   display: flex;
   flex-wrap: wrap;
   gap: 3px;
+  flex: 0 0 auto;
 }
 
 .worker-tile-sandbox-incident .sandbox-incident-btn {
