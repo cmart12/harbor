@@ -1344,11 +1344,37 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
   // Show working indicator only when actively running (not waiting for user input)
   const showWorkingIndicator = isBusy && !isWaitingForInput;
 
-  // Toolbar above the prompt input: model picker + yolo toggle. Kept inline
-  // here (rather than its own component) so all the state and handlers stay
-  // co-located with the rest of the chat view.
+  // Toolbar above the prompt input: cwd + model picker + yolo toggle. Kept
+  // inline here (rather than its own component) so all the state and handlers
+  // stay co-located with the rest of the chat view. Order: working directory
+  // (left) → model → yolo. Cwd lives here (rather than a separate top status
+  // bar) to consolidate the agent's configuration into a single row right
+  // above the prompt, freeing up vertical space.
   const promptToolbar = (
     <>
+      <button
+        className={`chat-status-bar-item ${!cwd ? 'warning' : ''}`}
+        onClick={handleBrowseCwd}
+        title={cwd || 'Click to set working directory'}
+      >
+        <span className="chat-status-bar-icon">{cwd ? '📂' : '⚠️'}</span>
+        <span className="chat-status-bar-text">
+          {cwdFolderName || '(no directory)'}
+        </span>
+        <span className="chat-status-bar-chevron">▾</span>
+      </button>
+      {cwd && (
+        <button
+          className="chat-status-bar-item"
+          onClick={() => whimAPI.openPath(cwd)}
+          title="Open folder in file manager"
+        >
+          <span className="chat-status-bar-icon">↗</span>
+        </button>
+      )}
+
+      <span className="chat-status-bar-divider">|</span>
+
       <div className="chat-prompt-toolbar-dropdown" ref={modelDropdownRef}>
         <button
           className="chat-status-bar-item"
@@ -1438,44 +1464,24 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
         )}
       </header>
 
-      {/* Status bar: CWD + Sandbox (model + yolo moved to the prompt toolbar) */}
-      <div className="chat-status-bar">
+      {/* Sandbox security banner — only renders when this session is sandboxed.
+          Stretches full-width to read as a prominent trust signal (and replaces
+          the old chat-status-bar entirely; cwd/model/yolo moved into the
+          toolbar directly above the prompt input). */}
+      {sandboxActive && (
         <button
-          className={`chat-status-bar-item ${!cwd ? 'warning' : ''}`}
-          onClick={handleBrowseCwd}
-          title={cwd || 'Click to set working directory'}
+          className="chat-sandbox-banner"
+          onClick={handleDisableSandbox}
+          disabled={sandboxDisabling}
+          title="Sandbox active — click to disable for this session"
         >
-          <span className="chat-status-bar-icon">{cwd ? '📂' : '⚠️'}</span>
-          <span className="chat-status-bar-text">
-            {cwdFolderName || '(no directory)'}
+          <span className="chat-sandbox-banner-icon">{sandboxDisabling ? '⏳' : '🔒'}</span>
+          <span className="chat-sandbox-banner-label">Sandbox active</span>
+          <span className="chat-sandbox-banner-sub">
+            {sandboxDisabling ? 'Disabling…' : 'Tool calls are confined for this session — click to disable'}
           </span>
-          <span className="chat-status-bar-chevron">▾</span>
         </button>
-        {cwd && (
-          <button
-            className="chat-status-bar-item"
-            onClick={() => whimAPI.openPath(cwd)}
-            title="Open folder in file manager"
-          >
-            <span className="chat-status-bar-icon">↗</span>
-          </button>
-        )}
-
-        {sandboxActive && (
-          <>
-            <span className="chat-status-bar-divider">|</span>
-            <button
-              className="chat-status-bar-item chat-sandbox-btn active"
-              onClick={handleDisableSandbox}
-              disabled={sandboxDisabling}
-              title="Sandbox active — click to disable for this session"
-            >
-              <span className="chat-status-bar-icon">{sandboxDisabling ? '⏳' : '🔒'}</span>
-              <span className="chat-status-bar-text">Sandbox</span>
-            </button>
-          </>
-        )}
-      </div>
+      )}
 
       {showRemoteOverlay && remoteState.enabled && (
         <div className="remote-overlay">
