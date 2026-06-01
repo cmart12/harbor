@@ -20,7 +20,7 @@ import {
   resolveAttachmentPath,
   getMimeType,
   getWhimDir,
-  getLogPath,
+  getLogRoot,
   getDbPath,
   archiveSpaceFolder,
   deleteSpaceFolder,
@@ -45,9 +45,9 @@ describe('getWhimDir', () => {
   });
 });
 
-describe('getLogPath', () => {
-  it('returns events.jsonl inside .whim', () => {
-    expect(getLogPath('/workspace')).toBe(path.join('/workspace', '.whim', 'events.jsonl'));
+describe('getLogRoot', () => {
+  it('returns the events/ tree root inside .whim', () => {
+    expect(getLogRoot('/workspace')).toBe(path.join('/workspace', '.whim', 'events'));
   });
 });
 

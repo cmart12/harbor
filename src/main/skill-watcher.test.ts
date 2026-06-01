@@ -32,7 +32,7 @@ function setup() {
   fs.mkdirSync(wsRoot, { recursive: true });
 
   const dbPath = path.join(testDir, 'test.db');
-  const logPath = path.join(testDir, 'events.jsonl');
+  const logPath = path.join(testDir, 'events');
   initDatabase(dbPath, logPath);
 }
 

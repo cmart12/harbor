@@ -1,12 +1,27 @@
 import * as fs from 'fs';
+import * as path from 'path';
 import Database from 'better-sqlite3';
 import { v4 as uuidv4 } from 'uuid';
 import { Space, Attachment, CanvasAgent, AgentSession, AgentChatEvent, CreateSpaceInput, Skill, SkillFrontmatter } from '../shared/types';
 import { appendEvent, replayLog } from './eventlog';
 import { readCanvas, slugify } from './workspace';
+import { initContentStore, closeContentStore, storeContent, type ContentRef } from './subagent-content-store';
+import {
+  canSkipReplay,
+  computeFingerprint,
+  fingerprintPathFor,
+  readFingerprint,
+  writeFingerprint,
+} from './db-fingerprint';
 
 let db: Database.Database;
-let logPath: string;
+/** Root of the rotated event-log tree (`<whim>/events/`). All appends and
+ *  the startup replay flow through this root. */
+let logRoot: string;
+/** Path of the SQLite cache file; remembered so closeDatabase can refresh
+ *  the fingerprint sidecar to reflect any events appended during this
+ *  session. */
+let dbFilePath: string;
 
 export function isInitialized(): boolean {
   return db !== undefined;
@@ -14,10 +29,30 @@ export function isInitialized(): boolean {
 
 export function closeDatabase(): void {
   if (db) {
-    db.close();
-    db = undefined as any;
-    logPath = '';
+    // Refresh the fingerprint sidecar with the current on-disk state of
+    // the log + DB so the next initDatabase can take the fast path.
+    // Without this step the sidecar would only reflect the state at the
+    // end of the previous init, missing every event we appended during
+    // the session.
+    if (dbFilePath && logRoot) {
+      try {
+        const sidecar = fingerprintPathFor(dbFilePath);
+        const previous = readFingerprint(sidecar);
+        db.close();
+        db = undefined as any;
+        const fp = computeFingerprint(logRoot, dbFilePath, previous);
+        writeFingerprint(sidecar, fp);
+      } catch (err) {
+        console.warn('[database] Failed to refresh fingerprint at close:', err);
+      }
+    } else {
+      db.close();
+      db = undefined as any;
+    }
+    logRoot = '';
+    dbFilePath = '';
   }
+  closeContentStore();
 }
 
 export function getDatabase(): Database.Database {
@@ -25,20 +60,73 @@ export function getDatabase(): Database.Database {
 }
 
 /**
- * Initialize a fresh database at the given path (inside the workspace .whim/ dir).
- * Deletes any existing DB first — the log is the source of truth.
+ * Initialize the SQLite cache at `dbPath`, replaying the rotated event
+ * log under `eventLogRoot` to materialise it.
+ *
+ * Fast path: if a `db.fingerprint.json` sidecar shows the log files and
+ * the DB file haven't changed since the last successful build (and the
+ * schema version still matches), reuse the existing DB without
+ * touching the log at all. This is the common case on a hot restart.
+ *
+ * Slow path (changed log, missing fingerprint, schema bump, tampered DB
+ * file): drop the DB, recreate the schema, replay every event, and
+ * write a fresh fingerprint sidecar.
  */
-export function initDatabase(dbPath: string, eventLogPath: string): void {
-  // Always start fresh — DB is a derived cache
+export function initDatabase(dbPath: string, eventLogRoot: string): void {
+  logRoot = eventLogRoot;
+  dbFilePath = dbPath;
+
+  // Heavy sub-agent payloads (turn responses, large tool results) live in
+  // <workspace>/.whim/subagent-content/ as side files instead of inline in
+  // the event log. Initialise that store before replay so the applyEvent
+  // handler can read paths that pre-existing events reference.
+  initContentStore(path.join(path.dirname(dbPath), 'subagent-content'));
+
+  const sidecarPath = fingerprintPathFor(dbPath);
+  const previous = readFingerprint(sidecarPath);
+  const current = computeFingerprint(eventLogRoot, dbPath, previous);
+
+  if (fs.existsSync(dbPath) && canSkipReplay(previous, current)) {
+    // Hot restart — the cache is still in sync with the log. Open the
+    // existing DB and write a refreshed fingerprint: opening SQLite
+    // touches the file (journal_mode pragma), so the recorded mtime
+    // needs to track that or every subsequent startup would think the
+    // DB had been tampered with.
+    db = new Database(dbPath);
+    db.pragma('journal_mode = DELETE');
+    const refreshed = computeFingerprint(eventLogRoot, dbPath, previous);
+    writeFingerprint(sidecarPath, refreshed);
+    return;
+  }
+
+  // Cold rebuild path.
   for (const f of [dbPath, dbPath + '-journal', dbPath + '-wal', dbPath + '-shm']) {
     if (fs.existsSync(f)) fs.unlinkSync(f);
   }
 
   db = new Database(dbPath);
   db.pragma('journal_mode = DELETE');
-  logPath = eventLogPath;
 
-  db.exec(`
+  createSchema(db);
+
+  // Rebuild state from event log
+  replayLog(eventLogRoot, db);
+
+  // Close + reopen so the DB's mtime/size on disk match what we record in
+  // the fingerprint (SQLite buffers writes in journal/WAL space otherwise,
+  // and we want the fingerprint to reflect the final persisted state).
+  db.close();
+  db = new Database(dbPath);
+  db.pragma('journal_mode = DELETE');
+
+  // Re-stat the DB after close so the fingerprint records the post-replay state.
+  const fingerprint = computeFingerprint(eventLogRoot, dbPath, previous);
+  writeFingerprint(sidecarPath, fingerprint);
+}
+
+/** Idempotent schema creation, factored out so the fast path can skip it. */
+function createSchema(database: Database.Database): void {
+  database.exec(`
     CREATE TABLE spaces (
       id TEXT PRIMARY KEY,
       description TEXT NOT NULL,
@@ -60,7 +148,7 @@ export function initDatabase(dbPath: string, eventLogPath: string): void {
     )
   `);
 
-  db.exec(`
+  database.exec(`
     CREATE TABLE canvas_agents (
       id TEXT PRIMARY KEY,
       space_id TEXT NOT NULL,
@@ -74,7 +162,7 @@ export function initDatabase(dbPath: string, eventLogPath: string): void {
     )
   `);
 
-  db.exec(`
+  database.exec(`
     CREATE TABLE agent_sessions (
       id TEXT PRIMARY KEY,
       session_id TEXT NOT NULL,
@@ -92,7 +180,7 @@ export function initDatabase(dbPath: string, eventLogPath: string): void {
     )
   `);
 
-  db.exec(`
+  database.exec(`
     CREATE TABLE agent_chat_events (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       agent_id TEXT NOT NULL,
@@ -104,9 +192,9 @@ export function initDatabase(dbPath: string, eventLogPath: string): void {
       UNIQUE(agent_id, seq)
     )
   `);
-  db.exec('CREATE INDEX idx_agent_chat_events_agent_seq ON agent_chat_events(agent_id, seq)');
+  database.exec('CREATE INDEX idx_agent_chat_events_agent_seq ON agent_chat_events(agent_id, seq)');
 
-  db.exec(`
+  database.exec(`
     CREATE TABLE space_events (
       id TEXT PRIMARY KEY,
       space_id TEXT NOT NULL,
@@ -120,7 +208,7 @@ export function initDatabase(dbPath: string, eventLogPath: string): void {
     )
   `);
 
-  db.exec(`
+  database.exec(`
     CREATE TABLE IF NOT EXISTS skills (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -138,7 +226,7 @@ export function initDatabase(dbPath: string, eventLogPath: string): void {
     )
   `);
 
-  db.exec(`
+  database.exec(`
     CREATE TABLE IF NOT EXISTS subagent_records (
       id TEXT PRIMARY KEY,
       parent_agent_id TEXT NOT NULL,
@@ -156,14 +244,16 @@ export function initDatabase(dbPath: string, eventLogPath: string): void {
       total_tool_calls INTEGER,
       error TEXT,
       streaming_content TEXT DEFAULT '',
+      streaming_content_path TEXT,
       turns_json TEXT DEFAULT '[]',
+      turns_path TEXT,
       progress_json TEXT DEFAULT '{}',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     )
   `);
 
-  db.exec(`
+  database.exec(`
     CREATE TABLE IF NOT EXISTS subagent_tool_calls (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       subagent_id TEXT NOT NULL,
@@ -172,6 +262,7 @@ export function initDatabase(dbPath: string, eventLogPath: string): void {
       tool_name TEXT NOT NULL,
       arguments_json TEXT,
       result TEXT,
+      result_path TEXT,
       success INTEGER DEFAULT 1,
       error TEXT,
       started_at INTEGER,
@@ -180,9 +271,6 @@ export function initDatabase(dbPath: string, eventLogPath: string): void {
       FOREIGN KEY (subagent_id) REFERENCES subagent_records(id)
     )
   `);
-
-  // Rebuild state from event log
-  replayLog(eventLogPath, db);
 }
 
 /** Inject per-machine session IDs from local config into the DB after replay. */
@@ -228,7 +316,7 @@ export function createSpace(input: CreateSpaceInput, sourceSkillId?: string): Sp
   };
 
   // Log first — the event log is authoritative
-  appendEvent(logPath, 'space.create', {
+  appendEvent(logRoot, 'space.create', {
     id: space.id,
     description: space.description,
     body: space.body,
@@ -292,7 +380,7 @@ export function updateSpace(id: string, updates: Partial<Pick<Space, 'descriptio
   if (updates.attachments !== undefined) fields.attachments = JSON.stringify(updates.attachments);
 
   // Log first
-  appendEvent(logPath, 'space.update', { id, fields });
+  appendEvent(logRoot, 'space.update', { id, fields });
 
   const sets = Object.keys(fields).map(k => `${k} = ?`);
   const values = [...Object.values(fields), id];
@@ -310,7 +398,7 @@ export function updateSpaceCAS(id: string, expectedVersion: string, updates: Par
 
 /** Assign a workspace folder to an space. Logged as a dedicated event. */
 export function assignSpaceFolder(spaceId: string, folder: string): void {
-  appendEvent(logPath, 'space.assign_folder', { id: spaceId, folder });
+  appendEvent(logRoot, 'space.assign_folder', { id: spaceId, folder });
   const now = new Date().toISOString();
   db.prepare('UPDATE spaces SET folder = ?, updated_at = ? WHERE id = ?')
     .run(folder, now, spaceId);
@@ -320,7 +408,7 @@ export function logSpaceEvent(spaceId: string, eventType: string, data: { due_at
   const now = new Date().toISOString();
   const eventId = uuidv4();
 
-  appendEvent(logPath, 'intent_event.log', {
+  appendEvent(logRoot, 'intent_event.log', {
     id: eventId,
     space_id: spaceId,
     event_type: eventType,
@@ -369,7 +457,7 @@ export function setSpaceSessionId(spaceId: string, sessionId: string): void {
 }
 
 export function deleteSpace(id: string): boolean {
-  appendEvent(logPath, 'space.delete', { id });
+  appendEvent(logRoot, 'space.delete', { id });
   const result = db.prepare('DELETE FROM spaces WHERE id = ?').run(id);
   return result.changes > 0;
 }
@@ -406,7 +494,7 @@ export function searchSpaces(query: string): Space[] {
 // ── Canvas Agents ─────────────────────────────────────────
 
 export function createCanvasAgent(agent: CanvasAgent): void {
-  appendEvent(logPath, 'canvas_agent.created', {
+  appendEvent(logRoot, 'canvas_agent.created', {
     id: agent.id,
     space_id: agent.space_id,
     selected_text: agent.selected_text,
@@ -425,7 +513,7 @@ export function createCanvasAgent(agent: CanvasAgent): void {
 
 export function updateCanvasAgentStatus(id: string, status: 'running' | 'waiting-approval' | 'completed' | 'failed', pid?: number | null): void {
   const now = new Date().toISOString();
-  appendEvent(logPath, 'canvas_agent.updated', { id, status, pid: pid ?? null, updated_at: now });
+  appendEvent(logRoot, 'canvas_agent.updated', { id, status, pid: pid ?? null, updated_at: now });
   const updates: any[] = [status, now];
   let sql = 'UPDATE canvas_agents SET status = ?, updated_at = ?';
   if (pid !== undefined) {
@@ -454,7 +542,7 @@ export function listAllRunningAgents(): CanvasAgent[] {
 // ── Agent Sessions (central registry) ─────────────────────
 
 export function createAgentSession(session: AgentSession): void {
-  appendEvent(logPath, 'agent_session.created', {
+  appendEvent(logRoot, 'agent_session.created', {
     id: session.id,
     session_id: session.session_id,
     space_id: session.space_id,
@@ -483,7 +571,7 @@ export function createAgentSession(session: AgentSession): void {
 
 export function updateAgentSessionStatus(id: string, status: string, summary?: string): void {
   const now = new Date().toISOString();
-  appendEvent(logPath, 'agent_session.updated', { id, status, summary: summary ?? null, updated_at: now });
+  appendEvent(logRoot, 'agent_session.updated', { id, status, summary: summary ?? null, updated_at: now });
 
   if (summary !== undefined) {
     db.prepare('UPDATE agent_sessions SET status = ?, summary = ?, updated_at = ? WHERE id = ?')
@@ -511,7 +599,7 @@ export function listAgentSessions(): AgentSession[] {
 /** Update the session_id for an agent across both tables (e.g. after session recreation). */
 export function updateAgentSessionId(id: string, newSessionId: string): void {
   const now = new Date().toISOString();
-  appendEvent(logPath, 'agent_session.updated', { id, session_id: newSessionId, updated_at: now });
+  appendEvent(logRoot, 'agent_session.updated', { id, session_id: newSessionId, updated_at: now });
   db.prepare('UPDATE agent_sessions SET session_id = ?, updated_at = ? WHERE id = ?')
     .run(newSessionId, now, id);
   // Also update canvas_agents if present (best-effort)
@@ -522,7 +610,7 @@ export function updateAgentSessionId(id: string, newSessionId: string): void {
 }
 
 export function deleteAgentSession(id: string): void {
-  appendEvent(logPath, 'agent_session.deleted', { id });
+  appendEvent(logRoot, 'agent_session.deleted', { id });
   db.prepare('DELETE FROM agent_sessions WHERE id = ?').run(id);
   // Cascade chat events when the session goes away.
   db.prepare('DELETE FROM agent_chat_events WHERE agent_id = ?').run(id);
@@ -559,7 +647,7 @@ export function appendAgentChatEvent(
   ).get(agentId) as { max_seq: number };
   const seq = row.max_seq + 1;
 
-  appendEvent(logPath, 'agent_chat.appended', {
+  appendEvent(logRoot, 'agent_chat.appended', {
     agent_id: agentId,
     seq,
     event_id: event.event_id,
@@ -769,8 +857,14 @@ export interface SubagentRecordRow {
   total_tokens: number | null;
   total_tool_calls: number | null;
   error: string | null;
+  /** Inline content when small; empty when `streaming_content_path` carries the bytes. */
   streaming_content: string;
+  /** Relative path under `.whim/subagent-content/` when content was off-loaded. */
+  streaming_content_path: string | null;
+  /** Inline turns JSON when small; '[]' when `turns_path` carries the bytes. */
   turns_json: string;
+  /** Relative path under `.whim/subagent-content/` when turns_json was off-loaded. */
+  turns_path: string | null;
   progress_json: string;
   created_at: string;
   updated_at: string;
@@ -783,7 +877,10 @@ export interface SubagentToolCallRow {
   tool_call_id: string | null;
   tool_name: string;
   arguments_json: string | null;
+  /** Inline result when small; empty/null when `result_path` carries the bytes. */
   result: string | null;
+  /** Relative path under `.whim/subagent-content/` when result was off-loaded. */
+  result_path: string | null;
   success: number;
   error: string | null;
   started_at: number | null;
@@ -791,31 +888,134 @@ export interface SubagentToolCallRow {
   created_at: string;
 }
 
-export function createSubagentRecord(record: Omit<SubagentRecordRow, 'created_at' | 'updated_at'>): void {
+/**
+ * Build the event-log payload and DB column values for a sub-agent's
+ * heavy text fields. Anything over INLINE_THRESHOLD is written to a side
+ * file and the payload carries only the relative path + digest snippet.
+ *
+ * The shape returned by `dbFields` matches the schema; the shape returned
+ * by `eventPayload` is what gets appended to events.jsonl.
+ */
+function offloadSubagentContent(
+  subagentId: string,
+  streamingContent: string,
+  turnsJson: string,
+): {
+  eventPayload: {
+    streaming_content: string;
+    streaming_content_path: string | null;
+    streaming_content_digest: ReturnType<typeof refDigest> | null;
+    turns_json: string;
+    turns_path: string | null;
+    turns_digest: ReturnType<typeof refDigest> | null;
+  };
+  dbFields: {
+    streaming_content: string;
+    streaming_content_path: string | null;
+    turns_json: string;
+    turns_path: string | null;
+  };
+} {
+  const streamingRef = storeContent(`${subagentId}.streaming.txt`, streamingContent ?? '');
+  const turnsRef = storeContent(`${subagentId}.turns.json`, turnsJson ?? '[]');
+
+  return {
+    eventPayload: {
+      streaming_content: streamingRef.inline ?? '',
+      streaming_content_path: streamingRef.path ?? null,
+      streaming_content_digest: refDigest(streamingRef),
+      turns_json: turnsRef.inline ?? '[]',
+      turns_path: turnsRef.path ?? null,
+      turns_digest: refDigest(turnsRef),
+    },
+    dbFields: {
+      streaming_content: streamingRef.inline ?? '',
+      streaming_content_path: streamingRef.path ?? null,
+      turns_json: turnsRef.inline ?? '[]',
+      turns_path: turnsRef.path ?? null,
+    },
+  };
+}
+
+function refDigest(ref: ContentRef): ContentRef['digest'] | null {
+  // Only include the digest in the event when content actually moved to a
+  // side file — saves bytes for the common small-content case.
+  return ref.path ? ref.digest : null;
+}
+
+export function createSubagentRecord(record: Omit<SubagentRecordRow, 'created_at' | 'updated_at' | 'streaming_content_path' | 'turns_path'>): void {
   const now = new Date().toISOString();
-  appendEvent(logPath, 'subagent.created', { ...record, created_at: now, updated_at: now });
+  const off = offloadSubagentContent(record.id, record.streaming_content, record.turns_json);
+  appendEvent(logRoot, 'subagent.created', {
+    ...record,
+    streaming_content: off.eventPayload.streaming_content,
+    streaming_content_path: off.eventPayload.streaming_content_path,
+    streaming_content_digest: off.eventPayload.streaming_content_digest,
+    turns_json: off.eventPayload.turns_json,
+    turns_path: off.eventPayload.turns_path,
+    turns_digest: off.eventPayload.turns_digest,
+    created_at: now,
+    updated_at: now,
+  });
   db.prepare(
-    `INSERT OR REPLACE INTO subagent_records (id, parent_agent_id, tool_call_id, agent_name, display_name, description, agent_type, status, started_at, completed_at, duration_ms, model, total_tokens, total_tool_calls, error, streaming_content, turns_json, progress_json, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT OR REPLACE INTO subagent_records (id, parent_agent_id, tool_call_id, agent_name, display_name, description, agent_type, status, started_at, completed_at, duration_ms, model, total_tokens, total_tool_calls, error, streaming_content, streaming_content_path, turns_json, turns_path, progress_json, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     record.id, record.parent_agent_id, record.tool_call_id, record.agent_name,
     record.display_name, record.description, record.agent_type, record.status,
     record.started_at, record.completed_at ?? null, record.duration_ms ?? null,
     record.model ?? null, record.total_tokens ?? null, record.total_tool_calls ?? null,
-    record.error ?? null, record.streaming_content ?? '', record.turns_json ?? '[]',
+    record.error ?? null,
+    off.dbFields.streaming_content, off.dbFields.streaming_content_path,
+    off.dbFields.turns_json, off.dbFields.turns_path,
     record.progress_json ?? '{}', now, now,
   );
 }
 
-export function updateSubagentRecord(id: string, updates: Partial<Pick<SubagentRecordRow, 'status' | 'completed_at' | 'duration_ms' | 'model' | 'total_tokens' | 'total_tool_calls' | 'error' | 'streaming_content' | 'turns_json' | 'progress_json'>>): void {
+export function updateSubagentRecord(
+  id: string,
+  updates: Partial<Pick<SubagentRecordRow, 'status' | 'completed_at' | 'duration_ms' | 'model' | 'total_tokens' | 'total_tool_calls' | 'error' | 'streaming_content' | 'turns_json' | 'progress_json'>>,
+): void {
   const now = new Date().toISOString();
-  appendEvent(logPath, 'subagent.updated', { id, ...updates, updated_at: now });
+
+  // Off-load heavy fields when they're being updated.
+  let off: ReturnType<typeof offloadSubagentContent> | null = null;
+  if (updates.streaming_content !== undefined || updates.turns_json !== undefined) {
+    off = offloadSubagentContent(
+      id,
+      updates.streaming_content ?? '',
+      updates.turns_json ?? '[]',
+    );
+  }
+
+  const eventPayload: Record<string, any> = { id, ...updates, updated_at: now };
+  if (off) {
+    if (updates.streaming_content !== undefined) {
+      eventPayload.streaming_content = off.eventPayload.streaming_content;
+      eventPayload.streaming_content_path = off.eventPayload.streaming_content_path;
+      eventPayload.streaming_content_digest = off.eventPayload.streaming_content_digest;
+    }
+    if (updates.turns_json !== undefined) {
+      eventPayload.turns_json = off.eventPayload.turns_json;
+      eventPayload.turns_path = off.eventPayload.turns_path;
+      eventPayload.turns_digest = off.eventPayload.turns_digest;
+    }
+  }
+  appendEvent(logRoot, 'subagent.updated', eventPayload);
 
   const sets: string[] = ['updated_at = ?'];
   const values: any[] = [now];
   for (const [key, val] of Object.entries(updates)) {
-    sets.push(`${key} = ?`);
-    values.push(val ?? null);
+    if (key === 'streaming_content' && off) {
+      sets.push('streaming_content = ?', 'streaming_content_path = ?');
+      values.push(off.dbFields.streaming_content, off.dbFields.streaming_content_path);
+    } else if (key === 'turns_json' && off) {
+      sets.push('turns_json = ?', 'turns_path = ?');
+      values.push(off.dbFields.turns_json, off.dbFields.turns_path);
+    } else {
+      sets.push(`${key} = ?`);
+      values.push(val ?? null);
+    }
   }
   values.push(id);
   db.prepare(`UPDATE subagent_records SET ${sets.join(', ')} WHERE id = ?`).run(...values);
@@ -827,28 +1027,70 @@ export function listSubagentRecords(parentAgentId: string): SubagentRecordRow[] 
   ).all(parentAgentId) as SubagentRecordRow[];
 }
 
-export function createSubagentToolCall(tc: Omit<SubagentToolCallRow, 'id' | 'created_at'>): void {
+export function createSubagentToolCall(tc: Omit<SubagentToolCallRow, 'id' | 'created_at' | 'result_path'>): void {
   const now = new Date().toISOString();
-  appendEvent(logPath, 'subagent_tool.created', { ...tc, created_at: now });
+  const resultRef = storeContent(
+    `${tc.subagent_id}.tool-${tc.tool_call_id ?? 'unknown'}.txt`,
+    tc.result ?? '',
+  );
+  const inlineResult = resultRef.inline ?? null;
+  const resultPath = resultRef.path ?? null;
+
+  appendEvent(logRoot, 'subagent_tool.created', {
+    ...tc,
+    result: inlineResult,
+    result_path: resultPath,
+    result_digest: refDigest(resultRef),
+    created_at: now,
+  });
   db.prepare(
-    `INSERT INTO subagent_tool_calls (subagent_id, parent_agent_id, tool_call_id, tool_name, arguments_json, result, success, error, started_at, completed_at, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO subagent_tool_calls (subagent_id, parent_agent_id, tool_call_id, tool_name, arguments_json, result, result_path, success, error, started_at, completed_at, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     tc.subagent_id, tc.parent_agent_id, tc.tool_call_id, tc.tool_name,
-    tc.arguments_json, tc.result ?? null, tc.success, tc.error ?? null,
+    tc.arguments_json, inlineResult, resultPath, tc.success, tc.error ?? null,
     tc.started_at ?? null, tc.completed_at ?? null, now,
   );
 }
 
-export function updateSubagentToolCall(subagentId: string, toolCallId: string, updates: { success: number; result?: string; error?: string; completed_at?: number }): void {
+export function updateSubagentToolCall(
+  subagentId: string,
+  toolCallId: string,
+  updates: { success: number; result?: string; error?: string; completed_at?: number },
+): void {
   const sets: string[] = [];
   const values: any[] = [];
+
+  let inlineResult: string | null | undefined;
+  let resultPath: string | null | undefined;
+  let resultDigest: ContentRef['digest'] | null | undefined;
+  const hasResultUpdate = Object.prototype.hasOwnProperty.call(updates, 'result');
+  if (hasResultUpdate) {
+    const resultRef = storeContent(
+      `${subagentId}.tool-${toolCallId}.txt`,
+      updates.result ?? '',
+    );
+    inlineResult = resultRef.inline ?? null;
+    resultPath = resultRef.path ?? null;
+    resultDigest = refDigest(resultRef);
+  }
+
   for (const [key, val] of Object.entries(updates)) {
-    sets.push(`${key} = ?`);
-    values.push(val ?? null);
+    if (key === 'result') {
+      sets.push('result = ?', 'result_path = ?');
+      values.push(inlineResult ?? null, resultPath ?? null);
+    } else {
+      sets.push(`${key} = ?`);
+      values.push(val ?? null);
+    }
   }
   if (sets.length === 0) return;
-  appendEvent(logPath, 'subagent_tool.updated', { subagent_id: subagentId, tool_call_id: toolCallId, ...updates });
+  appendEvent(logRoot, 'subagent_tool.updated', {
+    subagent_id: subagentId,
+    tool_call_id: toolCallId,
+    ...updates,
+    ...(hasResultUpdate ? { result: inlineResult, result_path: resultPath, result_digest: resultDigest } : {}),
+  });
   values.push(subagentId, toolCallId);
   db.prepare(`UPDATE subagent_tool_calls SET ${sets.join(', ')} WHERE subagent_id = ? AND tool_call_id = ?`).run(...values);
 }

@@ -4,8 +4,14 @@ import * as path from 'path';
 import * as os from 'os';
 import Database from 'better-sqlite3';
 import { appendEvent, replayLog } from './eventlog';
+import { resolveActiveSegment } from './log-store';
 
 let tmpDir: string;
+/** Root of the rotated event-log tree (`<tmp>/events/`). */
+let logRoot: string;
+/** Fixed segment file inside the tree where the test pre-seeds raw lines.
+ *  Lives under a 2024-01 bucket; replay reads it because listLogFiles
+ *  enumerates every bucket. */
 let logPath: string;
 let db: Database.Database;
 
@@ -108,7 +114,13 @@ function allSpaces(): any[] {
 
 beforeEach(() => {
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'eventlog-test-'));
-  logPath = path.join(tmpDir, 'events.jsonl');
+  logRoot = path.join(tmpDir, 'events');
+  // Seeded segments live under a fixed bucket so direct fs writes have a
+  // stable path; appendEvent calls use logRoot and pick the active segment
+  // for the current month (which may differ — replay merges both).
+  const bucketDir = path.join(logRoot, '2024-01');
+  fs.mkdirSync(bucketDir, { recursive: true });
+  logPath = path.join(bucketDir, 'events-001.jsonl');
   db = new Database(':memory:');
   createSchema(db);
 });
@@ -122,9 +134,10 @@ afterEach(() => {
 
 describe('appendEvent', () => {
   it('writes a JSON line with ts, op, and data fields', () => {
-    appendEvent(logPath, 'space.create', { id: 'abc' });
+    appendEvent(logRoot, 'space.create', { id: 'abc' });
 
-    const content = fs.readFileSync(logPath, 'utf-8');
+    const active = resolveActiveSegment(logRoot);
+    const content = fs.readFileSync(active, 'utf-8');
     const parsed = JSON.parse(content.trim());
     expect(parsed).toHaveProperty('ts');
     expect(parsed.op).toBe('space.create');
@@ -133,30 +146,33 @@ describe('appendEvent', () => {
   });
 
   it('appends to existing file content without overwriting', () => {
-    appendEvent(logPath, 'space.create', { id: '1' });
-    appendEvent(logPath, 'space.create', { id: '2' });
+    appendEvent(logRoot, 'space.create', { id: '1' });
+    appendEvent(logRoot, 'space.create', { id: '2' });
 
-    const lines = fs.readFileSync(logPath, 'utf-8').trim().split('\n');
+    const active = resolveActiveSegment(logRoot);
+    const lines = fs.readFileSync(active, 'utf-8').trim().split('\n');
     expect(lines).toHaveLength(2);
     expect(JSON.parse(lines[0]).data.id).toBe('1');
     expect(JSON.parse(lines[1]).data.id).toBe('2');
   });
 
   it('ends each line with a newline', () => {
-    appendEvent(logPath, 'space.create', { id: '1' });
+    appendEvent(logRoot, 'space.create', { id: '1' });
 
-    const content = fs.readFileSync(logPath, 'utf-8');
+    const active = resolveActiveSegment(logRoot);
+    const content = fs.readFileSync(active, 'utf-8');
     expect(content.endsWith('\n')).toBe(true);
   });
 
-  it('creates the file if it does not exist', () => {
-    const newPath = path.join(tmpDir, 'new-events.jsonl');
-    expect(fs.existsSync(newPath)).toBe(false);
+  it('creates the tree and a segment file when none exist yet', () => {
+    const newRoot = path.join(tmpDir, 'fresh-events');
+    expect(fs.existsSync(newRoot)).toBe(false);
 
-    appendEvent(newPath, 'test.op', { x: 1 });
+    appendEvent(newRoot, 'test.op', { x: 1 });
 
-    expect(fs.existsSync(newPath)).toBe(true);
-    const parsed = JSON.parse(fs.readFileSync(newPath, 'utf-8').trim());
+    const active = resolveActiveSegment(newRoot);
+    expect(fs.existsSync(active)).toBe(true);
+    const parsed = JSON.parse(fs.readFileSync(active, 'utf-8').trim());
     expect(parsed.op).toBe('test.op');
   });
 });
@@ -164,15 +180,15 @@ describe('appendEvent', () => {
 // ── replayLog ─────────────────────────────────────────────
 
 describe('replayLog', () => {
-  it('handles missing log file gracefully', () => {
-    const missing = path.join(tmpDir, 'does-not-exist.jsonl');
+  it('handles missing log root gracefully', () => {
+    const missing = path.join(tmpDir, 'does-not-exist');
     expect(() => replayLog(missing, db)).not.toThrow();
     expect(allSpaces()).toHaveLength(0);
   });
 
   it('handles empty log file gracefully', () => {
     fs.writeFileSync(logPath, '', 'utf-8');
-    expect(() => replayLog(logPath, db)).not.toThrow();
+    expect(() => replayLog(logRoot, db)).not.toThrow();
     expect(allSpaces()).toHaveLength(0);
   });
 
@@ -193,7 +209,7 @@ describe('replayLog', () => {
         },
       }]);
 
-      replayLog(logPath, db);
+      replayLog(logRoot, db);
       const space = getSpace('i1');
       expect(space).toBeTruthy();
       expect(space.description).toBe('Test space');
@@ -213,7 +229,7 @@ describe('replayLog', () => {
         },
       }]);
 
-      replayLog(logPath, db);
+      replayLog(logRoot, db);
       expect(getSpace('i2').status).toBe('captured');
     });
 
@@ -228,7 +244,7 @@ describe('replayLog', () => {
         },
       }]);
 
-      replayLog(logPath, db);
+      replayLog(logRoot, db);
       expect(getSpace('i3').body).toBe('raw text value');
     });
 
@@ -243,7 +259,7 @@ describe('replayLog', () => {
         },
       }]);
 
-      replayLog(logPath, db);
+      replayLog(logRoot, db);
       expect(getSpace('i4').body).toBe('Just description');
     });
 
@@ -259,7 +275,7 @@ describe('replayLog', () => {
         },
       }]);
 
-      replayLog(logPath, db);
+      replayLog(logRoot, db);
       // body ?? raw_text ?? description ?? '' → null ?? null ?? 'Has description' → 'Has description'
       expect(getSpace('i5').body).toBe('Has description');
     });
@@ -279,7 +295,7 @@ describe('replayLog', () => {
           updated_at: '2024-01-01T00:00:00.000Z',
         },
       }]);
-      replayLog(logPath, db);
+      replayLog(logRoot, db);
     });
 
     it('updates allowed fields on an space', () => {
@@ -303,7 +319,7 @@ describe('replayLog', () => {
 
       // Re-create DB for clean replay
       db.exec('DELETE FROM spaces');
-      replayLog(logPath, db);
+      replayLog(logRoot, db);
 
       const space = getSpace('u1');
       expect(space.description).toBe('Updated');
@@ -336,7 +352,7 @@ describe('replayLog', () => {
       ]);
 
       db.exec('DELETE FROM spaces');
-      expect(() => replayLog(logPath, db)).not.toThrow();
+      expect(() => replayLog(logRoot, db)).not.toThrow();
 
       const space = getSpace('u1');
       expect(space.description).toBe('Updated');
@@ -369,7 +385,7 @@ describe('replayLog', () => {
       ]);
 
       db.exec('DELETE FROM spaces');
-      expect(() => replayLog(logPath, db)).not.toThrow();
+      expect(() => replayLog(logRoot, db)).not.toThrow();
       expect(getSpace('u1').description).toBe('Original');
 
       warnSpy.mockRestore();
@@ -398,7 +414,7 @@ describe('replayLog', () => {
         },
       ]);
 
-      replayLog(logPath, db);
+      replayLog(logRoot, db);
       expect(getSpace('d1')).toBeUndefined();
     });
   });
@@ -425,7 +441,7 @@ describe('replayLog', () => {
         },
       ]);
 
-      replayLog(logPath, db);
+      replayLog(logRoot, db);
       const space = getSpace('f1');
       expect(space.folder).toBe('/workspace/projects/cool');
       expect(space.updated_at).toBe('2024-06-15T12:00:00.000Z');
@@ -459,7 +475,7 @@ describe('replayLog', () => {
         },
       ]);
 
-      replayLog(logPath, db);
+      replayLog(logRoot, db);
       expect(getSpace('ord1')).toBeUndefined();
       expect(allSpaces()).toHaveLength(0);
     });
@@ -488,7 +504,7 @@ describe('replayLog', () => {
         },
       }]);
 
-      replayLog(logPath, db);
+      replayLog(logRoot, db);
       expect(allSpaces()).toHaveLength(2);
       expect(getSpace('s1').description).toBe('Snap one');
       expect(getSpace('s2').status).toBe('done');
@@ -519,7 +535,7 @@ describe('replayLog', () => {
         },
       }]);
 
-      replayLog(logPath, db);
+      replayLog(logRoot, db);
       const events = db.prepare('SELECT * FROM space_events ORDER BY created_at').all() as any[];
       expect(events).toHaveLength(2);
       expect(events[0].id).toBe('ie1');
@@ -535,7 +551,7 @@ describe('replayLog', () => {
         data: {},
       }]);
 
-      expect(() => replayLog(logPath, db)).not.toThrow();
+      expect(() => replayLog(logRoot, db)).not.toThrow();
       expect(allSpaces()).toHaveLength(0);
     });
   });
@@ -558,7 +574,7 @@ describe('replayLog', () => {
       });
       fs.writeFileSync(logPath, goodLine + '\n' + '{corrupt json\n', 'utf-8');
 
-      expect(() => replayLog(logPath, db)).not.toThrow();
+      expect(() => replayLog(logRoot, db)).not.toThrow();
       expect(getSpace('c1')).toBeTruthy();
       expect(warnSpy).toHaveBeenCalledWith(
         expect.stringContaining('Ignoring corrupt final line')
@@ -595,7 +611,7 @@ describe('replayLog', () => {
         'utf-8',
       );
 
-      expect(() => replayLog(logPath, db)).toThrow(/Corrupt event log at line 2/);
+      expect(() => replayLog(logRoot, db)).toThrow(/Corrupt event log at .*:2/);
     });
   });
 
@@ -626,7 +642,7 @@ describe('replayLog', () => {
         },
       ]);
 
-      replayLog(logPath, db);
+      replayLog(logRoot, db);
       const evt = db.prepare('SELECT * FROM space_events WHERE id = ?').get('evt1') as any;
       expect(evt).toBeTruthy();
       expect(evt.space_id).toBe('ie-parent');
@@ -663,7 +679,7 @@ describe('replayLog', () => {
         },
       ]);
 
-      replayLog(logPath, db);
+      replayLog(logRoot, db);
       const agent = db.prepare('SELECT * FROM canvas_agents WHERE id = ?').get('ca1') as any;
       expect(agent).toBeTruthy();
       expect(agent.space_id).toBe('ca-parent');
@@ -697,7 +713,7 @@ describe('replayLog', () => {
         },
       ]);
 
-      replayLog(logPath, db);
+      replayLog(logRoot, db);
       const agent = db.prepare('SELECT * FROM canvas_agents WHERE id = ?').get('ca2') as any;
       expect(agent).toBeTruthy();
       expect(agent.pid).toBeNull();
@@ -741,7 +757,7 @@ describe('replayLog', () => {
       });
       fs.writeFileSync(logPath, lines + updateLine + '\n', 'utf-8');
 
-      replayLog(logPath, db);
+      replayLog(logRoot, db);
       const agent = db.prepare('SELECT * FROM canvas_agents WHERE id = ?').get('cau1') as any;
       expect(agent.status).toBe('completed');
       expect(agent.updated_at).toBe('2024-01-03T00:00:00.000Z');
@@ -761,7 +777,7 @@ describe('replayLog', () => {
       });
       fs.writeFileSync(logPath, lines + updateLine + '\n', 'utf-8');
 
-      replayLog(logPath, db);
+      replayLog(logRoot, db);
       const agent = db.prepare('SELECT * FROM canvas_agents WHERE id = ?').get('cau1') as any;
       expect(agent.status).toBe('running');
       expect(agent.pid).toBe(9999);
@@ -784,7 +800,7 @@ describe('replayLog', () => {
         },
       }]);
 
-      replayLog(logPath, db);
+      replayLog(logRoot, db);
       const sess = db.prepare('SELECT * FROM agent_sessions WHERE id = ?').get('as1') as any;
       expect(sess).toBeTruthy();
       expect(sess.session_id).toBe('sid-1');
@@ -806,7 +822,7 @@ describe('replayLog', () => {
         },
       }]);
 
-      replayLog(logPath, db);
+      replayLog(logRoot, db);
       const sess = db.prepare('SELECT * FROM agent_sessions WHERE id = ?').get('as2') as any;
       expect(sess.summary).toBe('');
       expect(sess.working_dir).toBeNull();
@@ -828,7 +844,7 @@ describe('replayLog', () => {
         },
       }]);
 
-      replayLog(logPath, db);
+      replayLog(logRoot, db);
       const sess = db.prepare('SELECT * FROM agent_sessions WHERE id = ?').get('as3') as any;
       expect(sess.run_location).toBe('local');
     });
@@ -846,7 +862,7 @@ describe('replayLog', () => {
         },
       }]);
 
-      replayLog(logPath, db);
+      replayLog(logRoot, db);
       const sess = db.prepare('SELECT * FROM agent_sessions WHERE id = ?').get('as4') as any;
       expect(sess.run_location).toBe('cloud');
     });
@@ -864,7 +880,7 @@ describe('replayLog', () => {
           updated_at: '2024-01-01T00:00:00.000Z',
         },
       }]);
-      replayLog(logPath, db);
+      replayLog(logRoot, db);
     });
 
     it('updates status without summary', () => {
@@ -877,7 +893,7 @@ describe('replayLog', () => {
 
       // Replay from scratch
       db.exec('DELETE FROM agent_sessions');
-      replayLog(logPath, db);
+      replayLog(logRoot, db);
 
       const sess = db.prepare('SELECT * FROM agent_sessions WHERE id = ?').get('asu1') as any;
       expect(sess.status).toBe('completed');
@@ -896,7 +912,7 @@ describe('replayLog', () => {
       }) + '\n', 'utf-8');
 
       db.exec('DELETE FROM agent_sessions');
-      replayLog(logPath, db);
+      replayLog(logRoot, db);
 
       const sess = db.prepare('SELECT * FROM agent_sessions WHERE id = ?').get('asu1') as any;
       expect(sess.status).toBe('completed');
@@ -933,7 +949,7 @@ describe('replayLog', () => {
         },
       ]);
 
-      replayLog(logPath, db);
+      replayLog(logRoot, db);
 
       const rows = db.prepare(
         'SELECT seq, event_id, type, payload FROM agent_chat_events WHERE agent_id = ? ORDER BY seq ASC'
@@ -961,8 +977,8 @@ describe('replayLog', () => {
         },
       }]);
 
-      replayLog(logPath, db);
-      replayLog(logPath, db);
+      replayLog(logRoot, db);
+      replayLog(logRoot, db);
 
       const rows = db.prepare(
         'SELECT COUNT(*) AS n FROM agent_chat_events WHERE agent_id = ?'
@@ -983,7 +999,7 @@ describe('replayLog', () => {
         data: { id: 'x' },
       }]);
 
-      expect(() => replayLog(logPath, db)).not.toThrow();
+      expect(() => replayLog(logRoot, db)).not.toThrow();
       expect(warnSpy).toHaveBeenCalledWith(
         expect.stringContaining('Unknown event op: totally.unknown.operation')
       );
@@ -1014,11 +1030,11 @@ describe('replayLog', () => {
         },
       ]);
 
-      replayLog(logPath, db);
+      replayLog(logRoot, db);
       const first = getSpace('idem1');
 
       // Replay again on same DB
-      replayLog(logPath, db);
+      replayLog(logRoot, db);
       const second = getSpace('idem1');
 
       expect(second).toEqual(first);

@@ -3,7 +3,8 @@ import * as fs from 'fs';
 import { app } from 'electron';
 import Database from 'better-sqlite3';
 import { appendEvent } from './eventlog';
-import { getLogPath } from './workspace';
+import { getLogRoot } from './workspace';
+import { listLogFiles } from './log-store';
 import { setConfigValue, loadConfig } from './config';
 
 const OLD_DB_PATH = path.join(app.getPath('userData'), 'spaces.db');
@@ -15,12 +16,19 @@ const OLD_DB_PATH = path.join(app.getPath('userData'), 'spaces.db');
 export function migrateOldDatabase(workspaceRoot: string): void {
   if (!fs.existsSync(OLD_DB_PATH)) return;
 
-  const logPath = getLogPath(workspaceRoot);
+  const logRoot = getLogRoot(workspaceRoot);
 
-  // Skip if log already has events (migration already done or fresh data exists)
-  if (fs.existsSync(logPath) && fs.statSync(logPath).size > 0) {
-    console.log('[migration] Event log already has content, skipping migration');
-    return;
+  // Skip if any log file has events (migration already done or fresh data exists).
+  // Covers both the rotated tree (new layout) and any inherited legacy file
+  // that initWorkspace already migrated into the tree.
+  const files = listLogFiles(logRoot);
+  for (const f of files) {
+    try {
+      if (fs.statSync(f).size > 0) {
+        console.log('[migration] Event log already has content, skipping migration');
+        return;
+      }
+    } catch { /* ignore: race with another writer */ }
   }
 
   console.log('[migration] Migrating old database to workspace event log...');
@@ -80,7 +88,7 @@ export function migrateOldDatabase(workspaceRoot: string): void {
     let migrationSucceeded = false;
     if (intents.length > 0 || intentEvents.length > 0) {
       try {
-        appendEvent(logPath, 'snapshot', {
+        appendEvent(logRoot, 'snapshot', {
           intents: intents.map(i => ({ ...i, folder: null })),
           intent_events: intentEvents,
         });
