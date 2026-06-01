@@ -6,6 +6,7 @@ import { transcribeAudio } from '../voice';
 import { getConfigValue, setConfigValue, getConfig } from '../config';
 import { initWorkspace, getDbPath, getLogRoot, getGitSyncStatus, gitFetchOrigin, gitPush, gitPull } from '../workspace';
 import { initDatabase, mergeSessionIds, syncCanvasContent } from '../database';
+import { compactOldSegments } from '../compaction';
 import { startSkillWatcher, stopSkillWatcher } from '../skill-watcher';
 import { destroySettingsWindow, destroyCanvasWindow } from '../window-manager';
 import type { GitSyncStatus } from '../../shared/ipc-contract';
@@ -101,6 +102,14 @@ export function registerWorkspaceHandlers(): void {
         mergeSessionIds(getConfig().sessions);
         syncCanvasContent(dir);
         startSkillWatcher(dir);
+
+        // Opportunistic compaction for the newly-opened workspace —
+        // deferred to idle so the switch UX feels instant. Cheap when
+        // nothing is cold.
+        setTimeout(() => {
+          try { compactOldSegments(getLogRoot(dir)); }
+          catch (err) { console.warn('[workspace] Compaction failed:', err); }
+        }, 5000).unref();
 
         // Destroy any pre-warmed settings + canvas windows so their next
         // opens cold-start fresh renderers with up-to-date workspace data

@@ -7,6 +7,7 @@ import { initWorkspace, getDbPath, getLogRoot } from './workspace';
 import { startSkillWatcher } from './skill-watcher';
 import { startScheduler, stopScheduler } from './services/scheduler';
 import { migrateOldDatabase } from './migration';
+import { compactOldSegments } from './compaction';
 import { registerIpcHandlers } from './ipc';
 import { preloadModel } from './voice';
 import { initCopilot, shutdownCopilot } from './ai';
@@ -186,6 +187,13 @@ app.whenReady().then(async () => {
     syncCanvasContent(workspace);
     startSkillWatcher(workspace);
     startScheduler();
+
+    // Background compaction — fold events older than the 30-day keep
+    // window into a single snapshot.jsonl. Runs once after startup
+    // (deferred to idle so it doesn't compete with first-paint work)
+    // and then once a day for long-running sessions. Cheap to call
+    // when no segments are cold.
+    scheduleCompaction(workspace);
   } else if (workspace) {
     // Workspace path configured but directory missing — clear it
     console.warn(`[main] Workspace directory not found: ${workspace}`);
@@ -276,3 +284,37 @@ app.on('window-all-closed', () => {
     // On macOS this is standard behavior (app stays in dock)
   }
 });
+
+/**
+ * Schedule background log compaction. Runs once at idle after startup
+ * (so it doesn't compete with first-paint or DB-replay work) and then
+ * once every 24 hours for long-running sessions.
+ *
+ * Compaction itself is cheap when nothing is cold: it just stats the
+ * segment files and exits early. The 24h cadence is intentionally
+ * generous — segments only become eligible after 30 days, so more
+ * frequent runs would be wasted work.
+ */
+function scheduleCompaction(workspace: string): void {
+  const logRoot = getLogRoot(workspace);
+  const dayMs = 24 * 60 * 60 * 1000;
+
+  const run = (): void => {
+    try {
+      const result = compactOldSegments(logRoot);
+      if (result.ran) {
+        console.log(
+          `[main] Compaction folded ${result.compactedSegments} segment(s) ` +
+          `and GC'd ${result.removedSideFiles ?? 0} side file(s)`,
+        );
+      }
+    } catch (err) {
+      console.warn('[main] Compaction run failed:', err);
+    }
+  };
+
+  // First run: 30 seconds after startup so DB init + window paint finish first.
+  setTimeout(run, 30 * 1000).unref();
+  // Periodic: once a day for sessions that stay open.
+  setInterval(run, dayMs).unref();
+}
