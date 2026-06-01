@@ -45,7 +45,7 @@ vi.mock('../config', () => ({
 vi.mock('../workspace', () => ({
   initWorkspace: vi.fn(),
   getDbPath: vi.fn((dir: string) => `${dir}/.whim/spaces.db`),
-  getLogPath: vi.fn((dir: string) => `${dir}/.whim/events.jsonl`),
+  getLogRoot: vi.fn((dir: string) => `${dir}/.whim/events`),
   getGitSyncStatus: vi.fn(async () => ({ available: true, branch: 'main', ahead: 0, behind: 0 })),
   gitFetchOrigin: vi.fn(async () => {}),
   gitPush: vi.fn(async () => ({ ok: true })),

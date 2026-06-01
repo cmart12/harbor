@@ -115,7 +115,7 @@ vi.mock('./frontmatter', () => ({
 vi.mock('./workspace', () => ({
   initWorkspace: vi.fn(),
   getDbPath: vi.fn((dir: string) => `${dir}/.whim/spaces.db`),
-  getLogPath: vi.fn((dir: string) => `${dir}/.whim/events.jsonl`),
+  getLogRoot: vi.fn((dir: string) => `${dir}/.whim/events`),
   initSpaceCanvas: vi.fn(() => 'test-folder'),
   materializeSpaceCanvas: vi.fn(async () => {}),
   ensureSpaceCanvas: vi.fn(),

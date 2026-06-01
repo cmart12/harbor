@@ -12,7 +12,16 @@ import type {
   SubagentToolCall,
   SubagentTurn,
 } from '../shared/subagent-types';
-import { isInitialized } from './database';
+import {
+  isInitialized,
+  createSubagentRecord,
+  updateSubagentRecord,
+  createSubagentToolCall,
+  updateSubagentToolCall,
+  listSubagentRecords,
+  listSubagentToolCalls,
+} from './database';
+import { resolveContent } from './subagent-content-store';
 
 /** Max completed turns to retain per agent (prevents unbounded memory) */
 const MAX_TURNS_PER_AGENT = 50;
@@ -339,7 +348,6 @@ export class SubagentTracker {
   private persistCreated(agent: SubagentInfo): void {
     if (!isInitialized()) return;
     try {
-      const { createSubagentRecord } = require('./database');
       createSubagentRecord({
         id: agent.agentId,
         parent_agent_id: agent.parentAgentId,
@@ -366,7 +374,6 @@ export class SubagentTracker {
   private persistCompleted(agent: SubagentInfo): void {
     if (!isInitialized()) return;
     try {
-      const { updateSubagentRecord } = require('./database');
       updateSubagentRecord(agent.agentId, {
         status: agent.status,
         completed_at: agent.completedAt ?? null,
@@ -385,7 +392,6 @@ export class SubagentTracker {
   private persistToolStart(subagentId: string, parentAgentId: string, data: { toolCallId: string; toolName: string; args: Record<string, unknown> }): void {
     if (!isInitialized()) return;
     try {
-      const { createSubagentToolCall } = require('./database');
       createSubagentToolCall({
         subagent_id: subagentId,
         parent_agent_id: parentAgentId,
@@ -404,7 +410,6 @@ export class SubagentTracker {
   private persistToolComplete(subagentId: string, _parentAgentId: string, data: { toolCallId: string; success: boolean; result?: string; error?: string }): void {
     if (!isInitialized()) return;
     try {
-      const { updateSubagentToolCall } = require('./database');
       updateSubagentToolCall(subagentId, data.toolCallId, {
         success: data.success ? 1 : 0,
         result: data.result,
@@ -418,20 +423,34 @@ export class SubagentTracker {
   loadPersistedSubagents(parentAgentId: string): SubagentInfo[] {
     if (!isInitialized()) return [];
     try {
-      const { listSubagentRecords, listSubagentToolCalls } = require('./database');
       const rows = listSubagentRecords(parentAgentId);
-      return rows.map((row: any) => {
-        const toolCalls = listSubagentToolCalls(row.id).map((tc: any) => ({
-          toolCallId: tc.tool_call_id ?? '',
-          toolName: tc.tool_name,
-          args: tc.arguments_json ? JSON.parse(tc.arguments_json) : {},
-          completed: tc.completed_at != null,
-          success: tc.success === 1,
-          result: tc.result ?? undefined,
-          error: tc.error ?? undefined,
-          startedAt: tc.started_at ?? 0,
-          completedAt: tc.completed_at ?? undefined,
-        }));
+      return rows.map((row) => {
+        const toolCalls = listSubagentToolCalls(row.id).map((tc): SubagentToolCall => {
+          const resultText = resolveContent({ inline: tc.result, path: tc.result_path });
+          return {
+            toolCallId: tc.tool_call_id ?? '',
+            toolName: tc.tool_name,
+            args: tc.arguments_json ? JSON.parse(tc.arguments_json) : {},
+            completed: tc.completed_at != null,
+            success: tc.success === 1,
+            result: resultText || undefined,
+            error: tc.error ?? undefined,
+            startedAt: tc.started_at ?? 0,
+            completedAt: tc.completed_at ?? undefined,
+          };
+        });
+        // Resolve potentially off-loaded turns_json + streaming_content via
+        // the side-file store. Parse failures fall back to safe defaults so
+        // a corrupt side file never breaks the overlay.
+        const turnsText = resolveContent({ inline: row.turns_json, path: row.turns_path });
+        let turns: SubagentTurn[] = [];
+        if (turnsText) {
+          try { turns = JSON.parse(turnsText); } catch { turns = []; }
+        }
+        const streamingContent = resolveContent({
+          inline: row.streaming_content,
+          path: row.streaming_content_path,
+        });
         return {
           agentId: row.id,
           parentAgentId: row.parent_agent_id,
@@ -440,7 +459,7 @@ export class SubagentTracker {
           displayName: row.display_name ?? row.agent_name,
           description: row.description ?? '',
           agentType: row.agent_type ?? row.agent_name,
-          status: row.status,
+          status: row.status as SubagentInfo['status'],
           startedAt: row.started_at,
           completedAt: row.completed_at ?? undefined,
           durationMs: row.duration_ms ?? undefined,
@@ -449,10 +468,10 @@ export class SubagentTracker {
           totalToolCalls: row.total_tool_calls ?? undefined,
           error: row.error ?? undefined,
           progress: row.progress_json ? JSON.parse(row.progress_json) : { toolCallsCompleted: 0, totalInputTokens: 0, totalOutputTokens: 0 },
-          streamingContent: row.streaming_content ?? '',
-          turns: row.turns_json ? JSON.parse(row.turns_json) : [],
+          streamingContent,
+          turns,
           toolCalls,
-        } as SubagentInfo;
+        };
       });
     } catch { return []; }
   }

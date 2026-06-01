@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import Database from 'better-sqlite3';
+import { resolveActiveSegment, listLogFiles } from './log-store';
 
 export interface LogEvent {
   ts: string;
@@ -13,14 +14,22 @@ const ALLOWED_SPACE_FIELDS = new Set([
   'attachments', 'source_skill_id',
 ]);
 
-export function appendEvent(logPath: string, op: string, data: Record<string, any>): void {
+/**
+ * Append a single event to the active rotated segment under `logRoot`.
+ *
+ * The active segment is resolved per-call so callers don't need to know
+ * about month buckets or 25 MB rotation — they just pass the workspace
+ * log root and the LogStore picks the right file.
+ */
+export function appendEvent(logRoot: string, op: string, data: Record<string, any>): void {
   const event: LogEvent = {
     ts: new Date().toISOString(),
     op,
     data,
   };
   const line = JSON.stringify(event) + '\n';
-  const fd = fs.openSync(logPath, 'a');
+  const target = resolveActiveSegment(logRoot);
+  const fd = fs.openSync(target, 'a');
   try {
     fs.writeSync(fd, line);
     fs.fsyncSync(fd);
@@ -29,33 +38,60 @@ export function appendEvent(logPath: string, op: string, data: Record<string, an
   }
 }
 
-export function replayLog(logPath: string, db: Database.Database): void {
-  if (!fs.existsSync(logPath)) return;
-
-  const content = fs.readFileSync(logPath, 'utf-8');
-  const lines = content.split('\n');
+/**
+ * Replay every event under `logRoot` into `db`. Files are loaded in
+ * chronological order (snapshot first, then segments by date) so the
+ * resulting state matches what the live writers produced.
+ *
+ * Phase 3 will swap this for a streamed k-way merge with cached prepared
+ * statements; for now we keep the existing semantics (single transaction,
+ * one db.prepare per line) and just generalise across multiple files.
+ */
+export function replayLog(logRoot: string, db: Database.Database): void {
+  const files = listLogFiles(logRoot);
+  if (files.length === 0) return;
 
   const replay = db.transaction(() => {
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (!line) continue;
-
-      try {
-        const event: LogEvent = JSON.parse(line);
-        applyEvent(db, event);
-      } catch (err) {
-        // Only tolerate corruption on the final line (crash during append)
-        const remaining = lines.slice(i + 1).some(l => l.trim());
-        if (!remaining) {
-          console.warn(`[eventlog] Ignoring corrupt final line ${i + 1}`);
-        } else {
-          throw new Error(`Corrupt event log at line ${i + 1}: ${(err as Error).message}`);
-        }
-      }
+    for (const file of files) {
+      replayOneFile(file, db);
     }
   });
 
   replay();
+}
+
+/**
+ * Replay the events of a single segment file. The caller owns the
+ * transaction (so compaction can replay snapshot + cold segments
+ * atomically without double-applying). Tolerates a corrupt final line
+ * for crash recovery; mid-file corruption throws so the caller can
+ * decide how to handle it.
+ */
+export function replayFile(filePath: string, db: Database.Database): void {
+  replayOneFile(filePath, db);
+}
+
+function replayOneFile(filePath: string, db: Database.Database): void {
+  const content = fs.readFileSync(filePath, 'utf-8');
+  const lines = content.split('\n');
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+
+    try {
+      const event: LogEvent = JSON.parse(line);
+      applyEvent(db, event);
+    } catch (err) {
+      // Only tolerate corruption on the final line (crash during append)
+      const remaining = lines.slice(i + 1).some(l => l.trim());
+      if (!remaining) {
+        console.warn(`[eventlog] Ignoring corrupt final line ${i + 1} of ${filePath}`);
+      } else {
+        throw new Error(`Corrupt event log at ${filePath}:${i + 1}: ${(err as Error).message}`);
+      }
+    }
+  }
 }
 
 function applyEvent(db: Database.Database, event: LogEvent): void {
@@ -214,15 +250,17 @@ function applyEvent(db: Database.Database, event: LogEvent): void {
     case 'subagent.created': {
       const d = event.data;
       db.prepare(
-        `INSERT OR REPLACE INTO subagent_records (id, parent_agent_id, tool_call_id, agent_name, display_name, description, agent_type, status, started_at, completed_at, duration_ms, model, total_tokens, total_tool_calls, error, streaming_content, turns_json, progress_json, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT OR REPLACE INTO subagent_records (id, parent_agent_id, tool_call_id, agent_name, display_name, description, agent_type, status, started_at, completed_at, duration_ms, model, total_tokens, total_tool_calls, error, streaming_content, streaming_content_path, turns_json, turns_path, progress_json, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(
         d.id, d.parent_agent_id, d.tool_call_id ?? null, d.agent_name,
         d.display_name ?? null, d.description ?? null, d.agent_type ?? null,
         d.status ?? 'running', d.started_at, d.completed_at ?? null,
         d.duration_ms ?? null, d.model ?? null, d.total_tokens ?? null,
-        d.total_tool_calls ?? null, d.error ?? null, d.streaming_content ?? '',
-        d.turns_json ?? '[]', d.progress_json ?? '{}',
+        d.total_tool_calls ?? null, d.error ?? null,
+        d.streaming_content ?? '', d.streaming_content_path ?? null,
+        d.turns_json ?? '[]', d.turns_path ?? null,
+        d.progress_json ?? '{}',
         d.created_at, d.updated_at,
       );
       break;
@@ -232,11 +270,21 @@ function applyEvent(db: Database.Database, event: LogEvent): void {
       const d = event.data;
       const sets: string[] = ['updated_at = ?'];
       const values: any[] = [d.updated_at ?? event.ts];
-      for (const key of ['status', 'completed_at', 'duration_ms', 'model', 'total_tokens', 'total_tool_calls', 'error', 'streaming_content', 'turns_json', 'progress_json']) {
+      for (const key of ['status', 'completed_at', 'duration_ms', 'model', 'total_tokens', 'total_tool_calls', 'error', 'progress_json']) {
         if (d[key] !== undefined) {
           sets.push(`${key} = ?`);
           values.push(d[key] ?? null);
         }
+      }
+      // streaming_content + streaming_content_path are paired: when either
+      // is present in the event, write both columns to keep them in sync.
+      if (d.streaming_content !== undefined || d.streaming_content_path !== undefined) {
+        sets.push('streaming_content = ?', 'streaming_content_path = ?');
+        values.push(d.streaming_content ?? '', d.streaming_content_path ?? null);
+      }
+      if (d.turns_json !== undefined || d.turns_path !== undefined) {
+        sets.push('turns_json = ?', 'turns_path = ?');
+        values.push(d.turns_json ?? '[]', d.turns_path ?? null);
       }
       values.push(d.id);
       db.prepare(`UPDATE subagent_records SET ${sets.join(', ')} WHERE id = ?`).run(...values);
@@ -246,11 +294,12 @@ function applyEvent(db: Database.Database, event: LogEvent): void {
     case 'subagent_tool.created': {
       const d = event.data;
       db.prepare(
-        `INSERT INTO subagent_tool_calls (subagent_id, parent_agent_id, tool_call_id, tool_name, arguments_json, result, success, error, started_at, completed_at, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO subagent_tool_calls (subagent_id, parent_agent_id, tool_call_id, tool_name, arguments_json, result, result_path, success, error, started_at, completed_at, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(
         d.subagent_id, d.parent_agent_id, d.tool_call_id ?? null, d.tool_name,
-        d.arguments_json ?? null, d.result ?? null, d.success ?? 1, d.error ?? null,
+        d.arguments_json ?? null, d.result ?? null, d.result_path ?? null,
+        d.success ?? 1, d.error ?? null,
         d.started_at ?? null, d.completed_at ?? null, d.created_at,
       );
       break;
@@ -260,11 +309,15 @@ function applyEvent(db: Database.Database, event: LogEvent): void {
       const d = event.data;
       const sets: string[] = [];
       const values: any[] = [];
-      for (const key of ['success', 'result', 'error', 'completed_at']) {
+      for (const key of ['success', 'error', 'completed_at']) {
         if (d[key] !== undefined) {
           sets.push(`${key} = ?`);
           values.push(d[key] ?? null);
         }
+      }
+      if (d.result !== undefined || d.result_path !== undefined) {
+        sets.push('result = ?', 'result_path = ?');
+        values.push(d.result ?? null, d.result_path ?? null);
       }
       if (sets.length > 0) {
         values.push(d.subagent_id, d.tool_call_id);
@@ -304,6 +357,64 @@ function applyEvent(db: Database.Database, event: LogEvent): void {
             evt.due_at ?? null, evt.due_at_utc ?? null,
             evt.completed_at ?? null, evt.recurrence_json ?? null,
             evt.created_at,
+          );
+        }
+      }
+      // Extended snapshot payload (Phase 4 compaction): bulk-restore
+      // the remaining entity types so the snapshot encodes the full
+      // materialised state.
+      if (Array.isArray(d.canvas_agents)) {
+        for (const a of d.canvas_agents) {
+          db.prepare(
+            `INSERT OR REPLACE INTO canvas_agents (id, space_id, selected_text, session_id, pid, status, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+          ).run(
+            a.id, a.space_id, a.selected_text, a.session_id,
+            a.pid ?? null, a.status ?? 'completed', a.created_at, a.updated_at,
+          );
+        }
+      }
+      if (Array.isArray(d.agent_sessions)) {
+        for (const a of d.agent_sessions) {
+          db.prepare(
+            `INSERT OR REPLACE INTO agent_sessions (id, session_id, space_id, prompt, status, summary, working_dir, source, persona_handle, quoted_text, run_location, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          ).run(
+            a.id, a.session_id, a.space_id ?? null, a.prompt,
+            a.status ?? 'completed', a.summary ?? '', a.working_dir ?? null,
+            a.source ?? 'sdk', a.persona_handle ?? null, a.quoted_text ?? null,
+            a.run_location === 'cloud' ? 'cloud' : 'local',
+            a.created_at, a.updated_at,
+          );
+        }
+      }
+      if (Array.isArray(d.subagent_records)) {
+        for (const r of d.subagent_records) {
+          db.prepare(
+            `INSERT OR REPLACE INTO subagent_records (id, parent_agent_id, tool_call_id, agent_name, display_name, description, agent_type, status, started_at, completed_at, duration_ms, model, total_tokens, total_tool_calls, error, streaming_content, streaming_content_path, turns_json, turns_path, progress_json, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          ).run(
+            r.id, r.parent_agent_id, r.tool_call_id ?? null, r.agent_name,
+            r.display_name ?? null, r.description ?? null, r.agent_type ?? null,
+            r.status ?? 'completed', r.started_at, r.completed_at ?? null,
+            r.duration_ms ?? null, r.model ?? null, r.total_tokens ?? null,
+            r.total_tool_calls ?? null, r.error ?? null,
+            r.streaming_content ?? '', r.streaming_content_path ?? null,
+            r.turns_json ?? '[]', r.turns_path ?? null,
+            r.progress_json ?? '{}', r.created_at, r.updated_at,
+          );
+        }
+      }
+      if (Array.isArray(d.subagent_tool_calls)) {
+        for (const tc of d.subagent_tool_calls) {
+          db.prepare(
+            `INSERT INTO subagent_tool_calls (subagent_id, parent_agent_id, tool_call_id, tool_name, arguments_json, result, result_path, success, error, started_at, completed_at, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          ).run(
+            tc.subagent_id, tc.parent_agent_id, tc.tool_call_id ?? null, tc.tool_name,
+            tc.arguments_json ?? null, tc.result ?? null, tc.result_path ?? null,
+            tc.success ?? 1, tc.error ?? null,
+            tc.started_at ?? null, tc.completed_at ?? null, tc.created_at,
           );
         }
       }
