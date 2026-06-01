@@ -796,6 +796,26 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
         }
 
         case 'session.idle': {
+          // Surface a clear inline "Completed" entry as the latest item in the
+          // timeline so the user immediately sees that the agent finished —
+          // replaces the old "Completed" badge that used to live in the header.
+          // Avoid emitting a duplicate completion entry if the previous run
+          // was already terminated (e.g. by handleAbort emitting "Stopped by
+          // user" just before the SDK fires session.idle on the dead session).
+          setMessages(prev => {
+            const last = prev[prev.length - 1];
+            const alreadyTerminated =
+              last && last.type === 'session_event' &&
+              (last.eventType === 'completed' || last.eventType === 'error');
+            if (alreadyTerminated) return prev;
+            return [...prev, {
+              id: genId(),
+              type: 'session_event',
+              eventType: 'completed',
+              message: 'Completed',
+              timestamp: new Date().toISOString(),
+            } as SessionEventMessage];
+          });
           setIsBusy(false);
           setStatus('completed');
           setIsWaitingForInput(false);
@@ -1277,20 +1297,19 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
     setStatus('failed');
     setIsWaitingForInput(false);
     finalizeStreamingMessages();
+    // Surface an inline timeline entry so the abort is visible alongside
+    // other session events (mirrors the new 'completed' entry emitted on
+    // session.idle below).
+    setMessages(prev => [...prev, {
+      id: genId(),
+      type: 'session_event',
+      eventType: 'error',
+      message: 'Stopped by user',
+      timestamp: new Date().toISOString(),
+    } as SessionEventMessage]);
     // Fire backend abort (errors are non-fatal)
     void whimAPI.abortAgent(currentAgentId).catch(() => {});
   }, [currentAgentId, finalizeStreamingMessages]);
-
-  const statusIcon = status === 'new' ? '✦' :
-                     status === 'running' ? '⚡' :
-                     status === 'waiting-approval' ? '⏳' :
-                     status === 'completed' ? '✓' :
-                     status === 'failed' ? '✗' : '•';
-
-  const statusLabel = status === 'new' ? 'New' :
-                      status === 'waiting-approval' ? 'Waiting' :
-                      status === 'completed' ? 'Completed' :
-                      status === 'failed' ? 'Failed' : status;
 
   const selectedModelInfo = models.find(m => m.id === selectedModel);
   const cwdFolderName = cwd ? cwd.split('/').pop() || cwd : '';
@@ -1299,8 +1318,12 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
   const streamingPreviews = useMemo(() => {
     let thinkingPreview: string | undefined;
     let outputPreview: string | undefined;
+    let activeToolName: string | undefined;
     for (let i = messages.length - 1; i >= 0; i--) {
       const m = messages[i];
+      if (!activeToolName && m.type === 'tool_call' && !m.completed && m.toolName !== '__subagent__') {
+        activeToolName = m.toolName;
+      }
       if (m.type === 'reasoning' && m.isStreaming && m.content) {
         // Take last ~80 chars of thinking content
         const text = m.content.replace(/\s+/g, ' ').trim();
@@ -1315,25 +1338,73 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
       // Stop scanning if we hit a non-streaming message type that isn't a tool
       if (m.type === 'user' || (m.type === 'assistant' && !m.isStreaming)) break;
     }
-    return { thinkingPreview, outputPreview };
+    return { thinkingPreview, outputPreview, activeToolName };
   }, [messages]);
 
   // Show working indicator only when actively running (not waiting for user input)
   const showWorkingIndicator = isBusy && !isWaitingForInput;
 
+  // Toolbar above the prompt input: model picker + yolo toggle. Kept inline
+  // here (rather than its own component) so all the state and handlers stay
+  // co-located with the rest of the chat view.
+  const promptToolbar = (
+    <>
+      <div className="chat-prompt-toolbar-dropdown" ref={modelDropdownRef}>
+        <button
+          className="chat-status-bar-item"
+          onClick={() => setModelDropdownOpen(!modelDropdownOpen)}
+        >
+          <span className="chat-status-bar-icon">🧠</span>
+          <span className="chat-status-bar-text">
+            {selectedModelInfo?.name || selectedModel || 'Select model'}
+          </span>
+          <span className={`chat-status-bar-chevron ${modelDropdownOpen ? 'open' : ''}`}>▾</span>
+        </button>
+
+        {modelDropdownOpen && (
+          <div className="chat-model-dropdown chat-model-dropdown-up">
+            {models.map((m) => {
+              const isSelected = m.id === selectedModel;
+              return (
+                <button
+                  key={m.id}
+                  className={`chat-model-dropdown-item ${isSelected ? 'selected' : ''}`}
+                  onClick={() => handleModelSwitch(m.id)}
+                >
+                  <span className="chat-model-dropdown-name">
+                    {isSelected ? '✓ ' : ''}{m.name || m.id}
+                  </span>
+                </button>
+              );
+            })}
+            {models.length === 0 && (
+              <div className="chat-model-dropdown-empty">Loading…</div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <span className="chat-status-bar-divider">|</span>
+
+      <button
+        className={`chat-status-bar-item chat-yolo-btn${yoloEnabled ? ' active' : ''}`}
+        onClick={handleToggleYolo}
+        title={yoloEnabled ? 'Yolo mode ON — auto-approving all permissions' : 'Enable yolo mode (auto-approve all)'}
+      >
+        <span className="chat-status-bar-icon">🔥</span>
+        <span className="chat-status-bar-text">
+          {yoloEnabled ? 'YOLO' : 'Yolo'}
+        </span>
+      </button>
+    </>
+  );
+
   return (
     <div className="chat-container">
       <header className="chat-header">
         <button className="header-icon-btn" onClick={onClose} title="Back (Esc)">←</button>
-        <div className="chat-header-info">
-          <span className={`chat-status-badge ${status}`}>{statusIcon} {statusLabel}</span>
-        </div>
+        <div className="chat-header-info" />
         <div className="header-actions">
-          {isBusy && (
-            <button className="chat-abort-btn" onClick={handleAbort} title="Stop agent">
-              ◼ Stop
-            </button>
-          )}
           {spaceId && onOpenCanvas && hasCanvas && (
             <button className="header-icon-btn" onClick={() => onOpenCanvas(spaceId)} title="Open canvas">
               📄
@@ -1344,10 +1415,24 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
               ⌨️
             </button>
           )}
+          {agentSource !== 'cli' && (
+            <button
+              className={`header-icon-btn chat-remote-icon-btn${remoteState.enabled ? ' active' : ''}`}
+              onClick={remoteState.enabled && remoteState.url ? () => setShowRemoteOverlay(true) : handleToggleRemote}
+              disabled={remoteLoading}
+              title={remoteState.enabled ? 'Remote control enabled — click to view link' : 'Enable remote control (Mission Control)'}
+              aria-label={remoteState.enabled ? 'Remote control enabled' : 'Enable remote control'}
+            >
+              {remoteLoading ? '⏳' : '📱'}
+            </button>
+          )}
         </div>
+        {remoteError && (
+          <span className="remote-error-toast">{remoteError}</span>
+        )}
       </header>
 
-      {/* Status bar: CWD + Model */}
+      {/* Status bar: CWD + Sandbox (model + yolo moved to the prompt toolbar) */}
       <div className="chat-status-bar">
         <button
           className={`chat-status-bar-item ${!cwd ? 'warning' : ''}`}
@@ -1370,56 +1455,6 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
           </button>
         )}
 
-        <span className="chat-status-bar-divider">|</span>
-
-        <div className="chat-status-bar-dropdown" ref={modelDropdownRef}>
-          <button
-            className="chat-status-bar-item"
-            onClick={() => setModelDropdownOpen(!modelDropdownOpen)}
-          >
-            <span className="chat-status-bar-icon">🧠</span>
-            <span className="chat-status-bar-text">
-              {selectedModelInfo?.name || selectedModel || 'Select model'}
-            </span>
-            <span className={`chat-status-bar-chevron ${modelDropdownOpen ? 'open' : ''}`}>▾</span>
-          </button>
-
-          {modelDropdownOpen && (
-            <div className="chat-model-dropdown">
-              {models.map((m) => {
-                const isSelected = m.id === selectedModel;
-                return (
-                  <button
-                    key={m.id}
-                    className={`chat-model-dropdown-item ${isSelected ? 'selected' : ''}`}
-                    onClick={() => handleModelSwitch(m.id)}
-                  >
-                    <span className="chat-model-dropdown-name">
-                      {isSelected ? '✓ ' : ''}{m.name || m.id}
-                    </span>
-                  </button>
-                );
-              })}
-              {models.length === 0 && (
-                <div className="chat-model-dropdown-empty">Loading…</div>
-              )}
-            </div>
-          )}
-        </div>
-
-        <span className="chat-status-bar-divider">|</span>
-
-        <button
-          className={`chat-status-bar-item chat-yolo-btn${yoloEnabled ? ' active' : ''}`}
-          onClick={handleToggleYolo}
-          title={yoloEnabled ? 'Yolo mode ON — auto-approving all permissions' : 'Enable yolo mode (auto-approve all)'}
-        >
-          <span className="chat-status-bar-icon">🔥</span>
-          <span className="chat-status-bar-text">
-            {yoloEnabled ? 'YOLO' : 'Yolo'}
-          </span>
-        </button>
-
         {sandboxActive && (
           <>
             <span className="chat-status-bar-divider">|</span>
@@ -1432,26 +1467,6 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
               <span className="chat-status-bar-icon">{sandboxDisabling ? '⏳' : '🔒'}</span>
               <span className="chat-status-bar-text">Sandbox</span>
             </button>
-          </>
-        )}
-
-        {agentSource !== 'cli' && (
-          <>
-            <span className="chat-status-bar-divider">|</span>
-            <button
-              className={`chat-status-bar-item chat-remote-btn${remoteState.enabled ? ' active' : ''}`}
-              onClick={remoteState.enabled && remoteState.url ? () => setShowRemoteOverlay(true) : handleToggleRemote}
-              disabled={remoteLoading}
-              title={remoteState.enabled ? 'Remote control enabled — click to view link' : 'Enable remote control (Mission Control)'}
-            >
-              <span className="chat-status-bar-icon">{remoteLoading ? '⏳' : '📱'}</span>
-              <span className="chat-status-bar-text">
-                {remoteState.enabled ? 'Remote' : 'Remote'}
-              </span>
-            </button>
-            {remoteError && (
-              <span className="remote-error-toast">{remoteError}</span>
-            )}
           </>
         )}
       </div>
@@ -1523,15 +1538,19 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
         <WorkingIndicator
           thinkingPreview={streamingPreviews.thinkingPreview}
           outputPreview={streamingPreviews.outputPreview}
+          activeToolName={streamingPreviews.activeToolName}
         />
       )}
 
       <PromptBar
         onSend={handleSend}
         disabled={false}
+        isBusy={isBusy}
+        onAbort={currentAgentId ? handleAbort : undefined}
+        toolbar={promptToolbar}
         placeholder={
           !currentAgentId ? 'What would you like the agent to do?' :
-          isBusy ? 'Agent is working...' :
+          isBusy ? 'Type to queue a follow-up — or press ◼ to stop' :
           agentSource === 'cli' ? 'Continue this CLI session here...' :
           'Send a follow-up message...'
         }

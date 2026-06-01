@@ -6,6 +6,12 @@ interface PromptBarProps {
   onSend: (message: string, attachments?: FileAttachment[]) => void;
   disabled: boolean;
   placeholder?: string;
+  /** True when the agent is actively working. Used to morph send → stop when input is empty. */
+  isBusy?: boolean;
+  /** Called when the user clicks the stop button (only available when isBusy && empty input). */
+  onAbort?: () => void;
+  /** Optional content rendered as a toolbar row directly above the input (e.g. model picker, yolo toggle). */
+  toolbar?: React.ReactNode;
 }
 
 const MAX_ROWS = 6;
@@ -18,7 +24,7 @@ function filesFromInput(fileList: FileList): FileAttachment[] {
   }));
 }
 
-export function PromptBar({ onSend, disabled, placeholder }: PromptBarProps) {
+export function PromptBar({ onSend, disabled, placeholder, isBusy, onAbort, toolbar }: PromptBarProps) {
   const [value, setValue] = useState('');
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
   const [dragOver, setDragOver] = useState(false);
@@ -85,6 +91,12 @@ export function PromptBar({ onSend, disabled, placeholder }: PromptBarProps) {
     }
   }, []);
 
+  // Morph the send button into a stop button only when the agent is busy AND
+  // the input is empty. As soon as the user starts typing, the button reverts
+  // to a send button so they can queue a follow-up message without losing the
+  // ability to interrupt by clearing the input first.
+  const stopMode = !!isBusy && !!onAbort && !value.trim();
+
   return (
     <div
       className={`chat-prompt-bar${dragOver ? ' drag-over' : ''}`}
@@ -107,6 +119,9 @@ export function PromptBar({ onSend, disabled, placeholder }: PromptBarProps) {
             </span>
           ))}
         </div>
+      )}
+      {toolbar && (
+        <div className="chat-prompt-toolbar">{toolbar}</div>
       )}
       <div className="chat-prompt-input-wrap">
         <textarea
@@ -134,14 +149,26 @@ export function PromptBar({ onSend, disabled, placeholder }: PromptBarProps) {
         >
           📎
         </button>
-        <button
-          className="chat-prompt-send"
-          onClick={handleSubmit}
-          disabled={disabled || !value.trim()}
-          title="Send (Enter)"
-        >
-          ↩
-        </button>
+        {stopMode ? (
+          <button
+            className="chat-prompt-send stop"
+            onClick={onAbort}
+            title="Stop agent"
+            aria-label="Stop agent"
+          >
+            ◼
+          </button>
+        ) : (
+          <button
+            className="chat-prompt-send"
+            onClick={handleSubmit}
+            disabled={disabled || !value.trim()}
+            title="Send (Enter)"
+            aria-label="Send"
+          >
+            ↩
+          </button>
+        )}
       </div>
     </div>
   );

@@ -88,6 +88,13 @@ export function ToolTile({ toolName, args, result, completed, success, error }: 
           )}
         </div>
       );
+    } else if (cmd) {
+      // No result yet — still let the user expand to read the full command.
+      expandContent = (
+        <div className="chat-tool-output">
+          <pre className="chat-tool-wrap">$ {cmd}</pre>
+        </div>
+      );
     }
   } else if (category === 'file_edit') {
     const rawPath = extractPath(args);
@@ -159,12 +166,15 @@ export function ToolTile({ toolName, args, result, completed, success, error }: 
     icon = isRunning ? '●' : '';
     title = <span className="chat-tool-label">{formatToolLabel(toolName)}</span>;
     const argKeys = Object.keys(args).filter(k => !k.startsWith('_'));
+    let summaryTruncated = false;
     if (argKeys.length > 0) {
       const summaryItems = argKeys.slice(0, 3).map(k => {
         const v = typeof args[k] === 'string' ? (args[k] as string) : JSON.stringify(args[k]);
+        if ((v as string).length > 80) summaryTruncated = true;
         const truncated = (v as string).length > 80 ? (v as string).slice(0, 77) + '…' : v;
         return `${k}: ${truncated}`;
       });
+      if (argKeys.length > 3) summaryTruncated = true;
       preview = <span className="chat-tool-summary">{summaryItems.join(', ')}{argKeys.length > 3 ? ` …+${argKeys.length - 3}` : ''}</span>;
     }
     if (result) {
@@ -176,6 +186,18 @@ export function ToolTile({ toolName, args, result, completed, success, error }: 
               {expanded ? 'Hide details' : 'Show full data'}
             </button>
           )}
+        </div>
+      );
+    } else if (summaryTruncated && argKeys.length > 0) {
+      // No result yet, but the preview row was truncated — let the user expand
+      // to see all arguments pretty-printed so nothing is permanently hidden.
+      const pretty = argKeys.map(k => {
+        const v = args[k];
+        return `${k}: ${typeof v === 'string' ? v : JSON.stringify(v, null, 2)}`;
+      }).join('\n');
+      expandContent = (
+        <div className="chat-tool-output">
+          <pre className="chat-tool-wrap">{pretty}</pre>
         </div>
       );
     }

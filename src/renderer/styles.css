@@ -528,6 +528,17 @@ header h1 {
   color: #7c66dc;
 }
 
+/* Remote control icon in the chat header — slightly different active tint
+   (blue) so it reads as "connected/streaming" rather than "selected". */
+.chat-remote-icon-btn.active {
+  color: #3b82f6;
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.chat-remote-icon-btn.active:hover {
+  background: rgba(59, 130, 246, 0.18);
+}
+
 #pin-btn.active {
   color: #f59e0b;
   background: rgba(245, 158, 11, 0.1);
@@ -6400,6 +6411,16 @@ body.dark .remote-overlay-hint {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
 }
 
+/* When the model dropdown lives in the prompt-toolbar (below the messages),
+   open upward so the panel doesn't clip below the prompt input. */
+.chat-model-dropdown.chat-model-dropdown-up {
+  top: auto;
+  bottom: 100%;
+  margin-top: 0;
+  margin-bottom: 4px;
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.12);
+}
+
 .chat-model-dropdown-item {
   display: flex;
   align-items: center;
@@ -6593,9 +6614,9 @@ body.dark .remote-overlay-hint {
 .chat-working-indicator {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   padding: 8px 16px;
-  color: rgba(124, 102, 220, 0.85);
+  color: rgba(124, 102, 220, 0.95);
   font-size: var(--fs-label);
   flex-shrink: 0;
   animation: working-fade-in 0.25s ease-out;
@@ -6606,6 +6627,50 @@ body.dark .remote-overlay-hint {
   to   { opacity: 1; transform: translateY(0); }
 }
 
+/* Pulsing avatar dot with an expanding ring — replaces the old three-dot pulse
+   for a more delightful "alive" feel while the agent is working. */
+.chat-working-pulse {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chat-working-pulse-core {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 8px currentColor;
+  animation: working-core-breath 1.6s ease-in-out infinite;
+}
+
+.chat-working-pulse-ring {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  opacity: 0;
+  animation: working-ring-expand 1.6s ease-out infinite;
+}
+
+@keyframes working-core-breath {
+  0%, 100% { transform: scale(0.85); opacity: 0.75; }
+  50%      { transform: scale(1.05); opacity: 1; }
+}
+
+@keyframes working-ring-expand {
+  0%   { transform: scale(0.6); opacity: 0.6; }
+  80%  { transform: scale(1.8); opacity: 0; }
+  100% { transform: scale(1.8); opacity: 0; }
+}
+
+/* Backward-compat — older callsites may still render the three-dot version */
 .chat-working-dots {
   display: flex;
   align-items: center;
@@ -6628,8 +6693,14 @@ body.dark .remote-overlay-hint {
 }
 
 .chat-working-label {
-  font-weight: 500;
+  font-weight: 600;
   letter-spacing: 0.02em;
+}
+
+.chat-working-sublabel {
+  font-weight: 400;
+  opacity: 0.7;
+  font-style: italic;
 }
 
 .chat-working-preview {
@@ -6654,11 +6725,13 @@ body.dark .remote-overlay-hint {
 
 /* Dark mode */
 body.dark .chat-working-indicator {
-  color: rgba(168, 133, 247, 0.85);
+  color: rgba(168, 133, 247, 0.95);
 }
 
 @media (prefers-reduced-motion: reduce) {
   .chat-working-dot { animation: none; opacity: 0.5; }
+  .chat-working-pulse-core { animation: none; opacity: 0.9; }
+  .chat-working-pulse-ring { animation: none; opacity: 0; }
   .chat-working-indicator { animation: none; }
 }
 
@@ -6983,6 +7056,31 @@ body.dark .chat-working-indicator {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: 'SF Mono', Menlo, Consolas, monospace;
+  border-radius: 3px;
+  padding: 2px 4px;
+  margin-left: -4px;
+  margin-right: -4px;
+}
+
+.chat-approval-detail.clickable {
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.chat-approval-detail.clickable:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.chat-approval-detail.expanded {
+  white-space: pre-wrap;
+  overflow: visible;
+  word-break: break-word;
+}
+
+.chat-approval-detail-chevron {
+  color: rgba(0, 0, 0, 0.35);
+  font-size: var(--fs-meta);
+  margin-left: 2px;
 }
 
 .chat-approval-actions {
@@ -7043,7 +7141,26 @@ body.dark .chat-working-indicator {
 }
 
 .chat-session-event.completed {
-  color: #22c55e;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 6px auto 2px;
+  padding: 4px 12px;
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.25);
+  border-radius: 999px;
+  color: #16a34a;
+  font-weight: 600;
+  font-size: var(--fs-caption);
+  letter-spacing: 0.02em;
+  width: fit-content;
+  animation: chat-completed-pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes chat-completed-pop {
+  from { opacity: 0; transform: translateY(6px) scale(0.92); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 /* Prompt bar */
@@ -7051,6 +7168,24 @@ body.dark .chat-working-indicator {
   padding-top: 8px;
   border-top: 1px solid rgba(140, 120, 180, 0.1);
   flex-shrink: 0;
+}
+
+/* Inline toolbar (model picker, yolo toggle) rendered directly above the
+   input row. Hosts the items previously in the top status bar so they never
+   get clipped by narrow chat widths. */
+.chat-prompt-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 2px 6px;
+  font-size: var(--fs-label);
+  position: relative;
+  -webkit-app-region: no-drag;
+}
+
+.chat-prompt-toolbar-dropdown {
+  position: relative;
 }
 
 .chat-prompt-input-wrap {
@@ -7104,7 +7239,7 @@ body.dark .chat-working-indicator {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  transition: opacity 0.15s;
+  transition: opacity 0.15s, background 0.15s;
 }
 
 .chat-prompt-send:hover {
@@ -7114,6 +7249,17 @@ body.dark .chat-working-indicator {
 .chat-prompt-send:disabled {
   opacity: 0.3;
   cursor: default;
+}
+
+/* Stop-mode variant — visually distinct so it's obvious the button now aborts
+   the agent instead of sending. Triggered when isBusy && input is empty. */
+.chat-prompt-send.stop {
+  background: #ef4444;
+  color: white;
+}
+
+.chat-prompt-send.stop:hover {
+  background: #dc2626;
 }
 
 /* ── Dark theme for chat ─────────────────────────────────── */
