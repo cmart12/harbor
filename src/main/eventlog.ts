@@ -187,15 +187,17 @@ function applyEvent(db: Database.Database, event: LogEvent): void {
     case 'subagent.created': {
       const d = event.data;
       db.prepare(
-        `INSERT OR REPLACE INTO subagent_records (id, parent_agent_id, tool_call_id, agent_name, display_name, description, agent_type, status, started_at, completed_at, duration_ms, model, total_tokens, total_tool_calls, error, streaming_content, turns_json, progress_json, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT OR REPLACE INTO subagent_records (id, parent_agent_id, tool_call_id, agent_name, display_name, description, agent_type, status, started_at, completed_at, duration_ms, model, total_tokens, total_tool_calls, error, streaming_content, streaming_content_path, turns_json, turns_path, progress_json, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(
         d.id, d.parent_agent_id, d.tool_call_id ?? null, d.agent_name,
         d.display_name ?? null, d.description ?? null, d.agent_type ?? null,
         d.status ?? 'running', d.started_at, d.completed_at ?? null,
         d.duration_ms ?? null, d.model ?? null, d.total_tokens ?? null,
-        d.total_tool_calls ?? null, d.error ?? null, d.streaming_content ?? '',
-        d.turns_json ?? '[]', d.progress_json ?? '{}',
+        d.total_tool_calls ?? null, d.error ?? null,
+        d.streaming_content ?? '', d.streaming_content_path ?? null,
+        d.turns_json ?? '[]', d.turns_path ?? null,
+        d.progress_json ?? '{}',
         d.created_at, d.updated_at,
       );
       break;
@@ -205,11 +207,21 @@ function applyEvent(db: Database.Database, event: LogEvent): void {
       const d = event.data;
       const sets: string[] = ['updated_at = ?'];
       const values: any[] = [d.updated_at ?? event.ts];
-      for (const key of ['status', 'completed_at', 'duration_ms', 'model', 'total_tokens', 'total_tool_calls', 'error', 'streaming_content', 'turns_json', 'progress_json']) {
+      for (const key of ['status', 'completed_at', 'duration_ms', 'model', 'total_tokens', 'total_tool_calls', 'error', 'progress_json']) {
         if (d[key] !== undefined) {
           sets.push(`${key} = ?`);
           values.push(d[key] ?? null);
         }
+      }
+      // streaming_content + streaming_content_path are paired: when either
+      // is present in the event, write both columns to keep them in sync.
+      if (d.streaming_content !== undefined || d.streaming_content_path !== undefined) {
+        sets.push('streaming_content = ?', 'streaming_content_path = ?');
+        values.push(d.streaming_content ?? '', d.streaming_content_path ?? null);
+      }
+      if (d.turns_json !== undefined || d.turns_path !== undefined) {
+        sets.push('turns_json = ?', 'turns_path = ?');
+        values.push(d.turns_json ?? '[]', d.turns_path ?? null);
       }
       values.push(d.id);
       db.prepare(`UPDATE subagent_records SET ${sets.join(', ')} WHERE id = ?`).run(...values);
@@ -219,11 +231,12 @@ function applyEvent(db: Database.Database, event: LogEvent): void {
     case 'subagent_tool.created': {
       const d = event.data;
       db.prepare(
-        `INSERT INTO subagent_tool_calls (subagent_id, parent_agent_id, tool_call_id, tool_name, arguments_json, result, success, error, started_at, completed_at, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO subagent_tool_calls (subagent_id, parent_agent_id, tool_call_id, tool_name, arguments_json, result, result_path, success, error, started_at, completed_at, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(
         d.subagent_id, d.parent_agent_id, d.tool_call_id ?? null, d.tool_name,
-        d.arguments_json ?? null, d.result ?? null, d.success ?? 1, d.error ?? null,
+        d.arguments_json ?? null, d.result ?? null, d.result_path ?? null,
+        d.success ?? 1, d.error ?? null,
         d.started_at ?? null, d.completed_at ?? null, d.created_at,
       );
       break;
@@ -233,11 +246,15 @@ function applyEvent(db: Database.Database, event: LogEvent): void {
       const d = event.data;
       const sets: string[] = [];
       const values: any[] = [];
-      for (const key of ['success', 'result', 'error', 'completed_at']) {
+      for (const key of ['success', 'error', 'completed_at']) {
         if (d[key] !== undefined) {
           sets.push(`${key} = ?`);
           values.push(d[key] ?? null);
         }
+      }
+      if (d.result !== undefined || d.result_path !== undefined) {
+        sets.push('result = ?', 'result_path = ?');
+        values.push(d.result ?? null, d.result_path ?? null);
       }
       if (sets.length > 0) {
         values.push(d.subagent_id, d.tool_call_id);
