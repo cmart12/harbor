@@ -315,114 +315,120 @@ export function WorkerTiles({ spaceId, onSelectAgent, selectedAgentId }: WorkerT
           : [];
 
         return (
-          <div
-            key={agent.agentId}
-            className={`worker-tile ${agent.status} ${isSelected ? 'selected' : ''}`}
-            onClick={() => onSelectAgent(agent.agentId, agent.selectedText, agent.status, agent.source)}
-          >
-            <div className="worker-tile-status">
-              {isRunning && <span className="worker-dot running" />}
-              {isWaiting && <span className="worker-dot waiting" />}
-              {agent.status === 'completed' && <span className="worker-dot completed">✓</span>}
-              {agent.status === 'failed' && <span className="worker-dot failed">✗</span>}
-            </div>
-            <div className="worker-tile-content">
-              <div className="worker-tile-task">{preview || agent.summary || 'Agent session'}</div>
-              {lastStep && isRunning && (
-                <div className="worker-tile-step">
-                  <span className={`step-dot ${lastStep.status}`} />
-                  <span className="step-text">{lastStep.label}</span>
-                </div>
-              )}
-              {approval && (
-                <div className="worker-tile-approval" onClick={e => e.stopPropagation()}>
-                  <span className="approval-desc">{describePermission(approval.permissionKind, approval.path)}</span>
-                  <button
-                    className="tile-approve-btn approve"
-                    onClick={() => handleApprove(agent.agentId, approval.requestId, true)}
-                  >✓</button>
-                  <button
-                    className="tile-approve-btn deny"
-                    onClick={() => handleApprove(agent.agentId, approval.requestId, false)}
-                  >✗</button>
-                </div>
-              )}
-              {incidents.map(incident => {
-                const block = incident.sample;
-                const isPostTool = block.source === 'post-tool-shell';
-                const decisions = (block.allowedDecisions ?? ['allow-once', 'allow-for-session', 'disable']);
-                const truncated = truncateCommandPreview(block.target, 40);
-                const layerTip = [
-                  block.layer ? `Layer: ${block.layer}` : null,
-                  block.intention ? `Why: ${block.intention}` : null,
-                  block.personaHandle ? `Persona: @${block.personaHandle}` : null,
-                  block.kind ? `Kind: ${block.kind}` : null,
-                  block.toolName ? `Tool: ${block.toolName}` : null,
-                ].filter(Boolean).join('\n');
-                return (
-                  <div
-                    key={incident.key}
-                    className="worker-tile-sandbox-incident"
-                    onClick={e => e.stopPropagation()}
-                    title={layerTip || undefined}
-                  >
-                    <div className="sandbox-incident-cmd-row">
-                      <span className="sandbox-incident-lock" aria-hidden="true">🔒</span>
-                      <span className="sandbox-incident-cmd" title={block.target}>{truncated}</span>
-                      {incident.count > 1 && (
-                        <span
-                          className="sandbox-incident-count"
-                          title={`${incident.count} identical attempts`}
-                        >
-                          ×{incident.count}
-                        </span>
-                      )}
-                    </div>
-                    <div className="sandbox-incident-actions">
-                      {decisions.map(d => (
-                        <button
-                          key={d}
-                          type="button"
-                          className="sandbox-incident-btn"
-                          onClick={() =>
-                            handleResolveIncident(agent.agentId, incident.requestIds, d)
-                          }
-                        >
-                          {d === 'allow-once'
-                            ? 'Allow once'
-                            : d === 'allow-for-session'
-                              ? 'Allow session'
-                              : isPostTool ? 'Disable & retry' : 'Disable'}
-                        </button>
-                      ))}
-                      {isPostTool && (
-                        <button
-                          type="button"
-                          className="sandbox-incident-btn ignore"
-                          onClick={() =>
-                            handleResolveIncident(agent.agentId, incident.requestIds, 'allow-once')
-                          }
-                        >
-                          Ignore
-                        </button>
-                      )}
-                      {block.personaHandle && (
-                        <button
-                          type="button"
-                          className="sandbox-incident-btn icon"
-                          title="Edit sandbox config in main window"
-                          aria-label="Edit sandbox config"
-                          onClick={() => handleOpenSandboxEditor(block.personaHandle)}
-                        >
-                          ⚙
-                        </button>
-                      )}
-                    </div>
+          <React.Fragment key={agent.agentId}>
+            <div
+              className={`worker-tile ${agent.status} ${isSelected ? 'selected' : ''}`}
+              onClick={() => onSelectAgent(agent.agentId, agent.selectedText, agent.status, agent.source)}
+            >
+              <div className="worker-tile-status">
+                {isRunning && <span className="worker-dot running" />}
+                {isWaiting && <span className="worker-dot waiting" />}
+                {agent.status === 'completed' && <span className="worker-dot completed">✓</span>}
+                {agent.status === 'failed' && <span className="worker-dot failed">✗</span>}
+              </div>
+              <div className="worker-tile-content">
+                <div className="worker-tile-task">{preview || agent.summary || 'Agent session'}</div>
+                {lastStep && isRunning && (
+                  <div className="worker-tile-step">
+                    <span className={`step-dot ${lastStep.status}`} />
+                    <span className="step-text">{lastStep.label}</span>
                   </div>
-                );
-              })}
+                )}
+                {approval && (
+                  <div className="worker-tile-approval" onClick={e => e.stopPropagation()}>
+                    <span className="approval-desc">{describePermission(approval.permissionKind, approval.path)}</span>
+                    <button
+                      className="tile-approve-btn approve"
+                      onClick={() => handleApprove(agent.agentId, approval.requestId, true)}
+                    >✓</button>
+                    <button
+                      className="tile-approve-btn deny"
+                      onClick={() => handleApprove(agent.agentId, approval.requestId, false)}
+                    >✗</button>
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+            {/* Sandbox-block incidents render as sibling pills in the same
+                horizontal row as the parent agent tile so multi-block agents
+                don't balloon the agent tile's height. Each pill has its own
+                command + action buttons; the orange theme keeps the visual
+                association with the parent agent obvious. */}
+            {incidents.map(incident => {
+              const block = incident.sample;
+              const isPostTool = block.source === 'post-tool-shell';
+              const decisions = (block.allowedDecisions ?? ['allow-once', 'allow-for-session', 'disable']);
+              const truncated = truncateCommandPreview(block.target, 40);
+              const layerTip = [
+                block.layer ? `Layer: ${block.layer}` : null,
+                block.intention ? `Why: ${block.intention}` : null,
+                block.personaHandle ? `Persona: @${block.personaHandle}` : null,
+                block.kind ? `Kind: ${block.kind}` : null,
+                block.toolName ? `Tool: ${block.toolName}` : null,
+              ].filter(Boolean).join('\n');
+              return (
+                <div
+                  key={`${agent.agentId}-${incident.key}`}
+                  className="worker-tile-sandbox-incident"
+                  onClick={e => e.stopPropagation()}
+                  title={layerTip || undefined}
+                >
+                  <div className="sandbox-incident-cmd-row">
+                    <span className="sandbox-incident-lock" aria-hidden="true">🔒</span>
+                    <span className="sandbox-incident-cmd" title={block.target}>{truncated}</span>
+                    {incident.count > 1 && (
+                      <span
+                        className="sandbox-incident-count"
+                        title={`${incident.count} identical attempts`}
+                      >
+                        ×{incident.count}
+                      </span>
+                    )}
+                  </div>
+                  <div className="sandbox-incident-actions">
+                    {decisions.map(d => (
+                      <button
+                        key={d}
+                        type="button"
+                        className="sandbox-incident-btn"
+                        onClick={() =>
+                          handleResolveIncident(agent.agentId, incident.requestIds, d)
+                        }
+                      >
+                        {d === 'allow-once'
+                          ? 'Allow once'
+                          : d === 'allow-for-session'
+                            ? 'Allow session'
+                            : isPostTool ? 'Disable & retry' : 'Disable'}
+                      </button>
+                    ))}
+                    {isPostTool && (
+                      <button
+                        type="button"
+                        className="sandbox-incident-btn ignore"
+                        onClick={() =>
+                          handleResolveIncident(agent.agentId, incident.requestIds, 'allow-once')
+                        }
+                      >
+                        Ignore
+                      </button>
+                    )}
+                    {block.personaHandle && (
+                      <button
+                        type="button"
+                        className="sandbox-incident-btn icon"
+                        title="Edit sandbox config in main window"
+                        aria-label="Edit sandbox config"
+                        onClick={() => handleOpenSandboxEditor(block.personaHandle)}
+                      >
+                        ⚙
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </React.Fragment>
         );
       })}
     </div>
