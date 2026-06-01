@@ -1265,6 +1265,122 @@ describe('getAgentHistory', () => {
     const resumeConfig = mockClient.resumeSession.mock.calls[0][1];
     expect(resumeConfig).not.toHaveProperty('systemMessage');
   });
+
+  it('calls sessions.connect before resumeSession for cloud sessions', async () => {
+    // For cloud sessions (run_location='cloud'), the SDK runtime has no
+    // record of the session after an app restart, so a plain
+    // client.resumeSession would throw "Session not found".  The fix is to
+    // call client.rpc.sessions.connect first to re-register the remote
+    // session against the new runtime instance.  See
+    // copilot-agent-runtime src/core/server.ts:543 (sessions.connect).
+    enableMockClient();
+    vi.mocked(getConfig).mockReturnValue({ workspace: '/ws' } as any);
+    const connectSpy = vi.fn().mockResolvedValue({
+      sessionId: 'cloud-session-id',
+      metadata: { sessionId: 'cloud-session-id' },
+    });
+    // Inject the spy into the mocked rpc surface (it's not normally needed
+    // for non-cloud paths so the base mock omits it).
+    (mockClient as any).rpc = { sessions: { connect: connectSpy } };
+
+    const persistedSession = {
+      id: 'cloud-agent-id',
+      session_id: 'cloud-session-id',
+      space_id: '__workspace__',
+      prompt: 'create an overview',
+      status: 'running' as const,
+      summary: 'Working in cloud',
+      working_dir: '/ws',
+      source: 'sdk' as const,
+      persona_handle: 'cloud',
+      quoted_text: null,
+      run_location: 'cloud' as const,
+      created_at: '2025-01-01',
+      updated_at: '2025-01-01',
+    };
+    vi.mocked(getAgentSession).mockReturnValue(persistedSession);
+
+    const result = await getAgentHistory('cloud-agent-id');
+
+    // Must call sessions.connect first with the cloud session id.
+    expect(connectSpy).toHaveBeenCalledWith({ sessionId: 'cloud-session-id' });
+    // Then resumeSession picks up the now-registered session.
+    expect(mockClient.resumeSession).toHaveBeenCalledWith('cloud-session-id', expect.any(Object));
+    // Sequence: connect resolved before resumeSession was invoked.
+    expect(connectSpy.mock.invocationCallOrder[0])
+      .toBeLessThan((mockClient.resumeSession as any).mock.invocationCallOrder[0]);
+    expect(result).toEqual({ events: [{ type: 'assistant.message', content: 'hello' }] });
+  });
+
+  it('does NOT call sessions.connect for local (non-cloud) sessions', async () => {
+    enableMockClient();
+    vi.mocked(getConfig).mockReturnValue({ workspace: '/ws' } as any);
+    const connectSpy = vi.fn();
+    (mockClient as any).rpc = { sessions: { connect: connectSpy } };
+
+    const persistedSession = {
+      id: 'local-agent-id',
+      session_id: 'local-session-id',
+      space_id: 'space-1',
+      prompt: 'do something local',
+      status: 'completed' as const,
+      summary: 'Done',
+      working_dir: '/ws',
+      source: 'sdk' as const,
+      persona_handle: null,
+      quoted_text: null,
+      run_location: 'local' as const,
+      created_at: '2025-01-01',
+      updated_at: '2025-01-01',
+    };
+    vi.mocked(getAgentSession).mockReturnValue(persistedSession);
+
+    await getAgentHistory('local-agent-id');
+
+    expect(connectSpy).not.toHaveBeenCalled();
+    expect(mockClient.resumeSession).toHaveBeenCalled();
+  });
+
+  it('returns cloud-specific error and skips fallback when sessions.connect fails', async () => {
+    // When the cloud worker is truly gone (expired/deleted), sessions.connect
+    // throws.  We must NOT fall through to restartExpiredSession (which would
+    // spin up a new cloud worker and orphan the original), and the error
+    // message should mention "cloud" so the user knows what happened.
+    enableMockClient();
+    vi.mocked(getConfig).mockReturnValue({ workspace: '/ws' } as any);
+    const connectSpy = vi.fn().mockRejectedValue(new Error('Remote task not found'));
+    (mockClient as any).rpc = { sessions: { connect: connectSpy } };
+
+    const persistedSession = {
+      id: 'cloud-gone',
+      session_id: 'cloud-gone-sid',
+      space_id: '__workspace__',
+      prompt: 'p',
+      status: 'running' as const,
+      summary: '',
+      working_dir: '/ws',
+      source: 'sdk' as const,
+      persona_handle: 'cloud',
+      quoted_text: null,
+      run_location: 'cloud' as const,
+      created_at: '2025-01-01',
+      updated_at: '2025-01-01',
+    };
+    vi.mocked(getAgentSession).mockReturnValue(persistedSession);
+
+    const result = await getAgentHistory('cloud-gone');
+
+    expect(connectSpy).toHaveBeenCalled();
+    // resumeSession must NOT be attempted after a connect failure
+    // (otherwise the renderer sees the confusing "Session not found" error
+    // instead of the cloud-specific one we produce).
+    expect(mockClient.resumeSession).not.toHaveBeenCalled();
+    // createSession must NOT be invoked — would orphan the original cloud worker.
+    expect(mockClient.createSession).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      error: expect.stringMatching(/cloud.*(stopped|expired)/i),
+    });
+  });
 });
 
 // ── setAppRemote (app-level remote reconciliation) ──────────────────────

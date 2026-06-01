@@ -786,6 +786,32 @@ async function resumeAgentSession(agentId: string): Promise<'resumed' | 'restart
     const findRecord = (sid: string) => registry.findBySessionId(sid);
     const customToolsContext = createCustomToolsContext(agentId, shouldEnableWhimTools(persisted.space_id));
 
+    // Cloud sessions: the local SDK runtime has no record of the session
+    // after an app restart (the runtime process is fresh; only the cloud
+    // worker persisted). `session.resume` would fail with
+    // "Session not found: <id>" because activeSessions/disk-store don't
+    // contain it.  `sessions.connect` re-registers the cloud session with
+    // the runtime by fetching the remote task metadata and constructing a
+    // RemoteSession — see copilot-agent-runtime
+    // src/core/server.ts:543 (sessions.connect → initializeConnectedRemoteSession).
+    // After connect succeeds the session is in activeSessions and the
+    // subsequent `resumeSession` finds it (server.ts:2079) and wires up
+    // our handlers without reloading from disk.
+    if (isCloud) {
+      try {
+        await (client as any).rpc.sessions.connect({ sessionId: persisted.session_id });
+        console.log(`[agent-service] Reconnected to cloud session ${persisted.session_id} for agent ${agentId}`);
+      } catch (connectErr: any) {
+        const msg = connectErr?.message ?? String(connectErr);
+        console.warn(`[agent-service] sessions.connect failed for cloud agent ${agentId}: ${msg}`);
+        // The cloud worker is unreachable (expired / deleted / network).
+        // Don't fall through to resumeSession — that produces a confusing
+        // "Session not found" error.  Returning false surfaces the
+        // expired-session UI in the renderer.
+        return false;
+      }
+    }
+
     // Use resumeSession to restore full conversation history (not createSession
     // which would start a fresh session with no history).
     const session = await client.resumeSession(persisted.session_id, {
@@ -972,8 +998,15 @@ export async function getAgentHistory(agentId: string): Promise<{ events: any[];
 
     const result = await resumeAgentSession(agentId);
     if (!result) {
-      const sourceLabel = persisted.source === 'cli' ? 'CLI' : 'SDK';
-      return { error: `Failed to resume ${sourceLabel} session — the session may have expired or been deleted` };
+      const sourceLabel = persisted.source === 'cli'
+        ? 'CLI'
+        : persisted.run_location === 'cloud'
+          ? 'cloud'
+          : 'SDK';
+      const detail = persisted.run_location === 'cloud'
+        ? ' — the cloud worker may have been stopped or expired'
+        : ' — the session may have expired or been deleted';
+      return { error: `Failed to resume ${sourceLabel} session${detail}` };
     }
     record = registry.get(agentId);
   }
