@@ -336,7 +336,7 @@ export function getAgentSessionId(agentId: string): string | null {
   return registry.get(agentId)?.sessionId ?? null;
 }
 
-export function listAllAgents(): Array<{ agentId: string; sessionId: string; status: import('./agents/agent-registry').AgentStatus; summary: string; selectedText: string; quotedText: string; spaceId: string; createdAt: string; pendingApprovalId: string | null; pendingPermissionKind: string | null; pendingIntention: string | null; pendingPath: string | null; source: 'sdk' | 'cli' | 'cca'; personaHandle: string | null; yoloMode: boolean; sandboxed: boolean }> {
+export function listAllAgents(): Array<{ agentId: string; sessionId: string; status: import('./agents/agent-registry').AgentStatus; summary: string; selectedText: string; quotedText: string; spaceId: string; createdAt: string; pendingApprovalId: string | null; pendingPermissionKind: string | null; pendingIntention: string | null; pendingPath: string | null; source: 'sdk' | 'cli' | 'cca'; personaHandle: string | null; yoloMode: boolean; sandboxed: boolean; runLocation: 'local' | 'cloud' }> {
   // Read persisted sessions from DB (sorted newest first)
   let persisted: AgentSession[] = [];
   try {
@@ -345,7 +345,7 @@ export function listAllAgents(): Array<{ agentId: string; sessionId: string; sta
 
   // Build result: overlay live in-memory state on top of DB records
   const seen = new Set<string>();
-  const result: Array<{ agentId: string; sessionId: string; status: import('./agents/agent-registry').AgentStatus; summary: string; selectedText: string; quotedText: string; spaceId: string; createdAt: string; pendingApprovalId: string | null; pendingPermissionKind: string | null; pendingIntention: string | null; pendingPath: string | null; source: 'sdk' | 'cli' | 'cca'; personaHandle: string | null; yoloMode: boolean; sandboxed: boolean }> = [];
+  const result: Array<{ agentId: string; sessionId: string; status: import('./agents/agent-registry').AgentStatus; summary: string; selectedText: string; quotedText: string; spaceId: string; createdAt: string; pendingApprovalId: string | null; pendingPermissionKind: string | null; pendingIntention: string | null; pendingPath: string | null; source: 'sdk' | 'cli' | 'cca'; personaHandle: string | null; yoloMode: boolean; sandboxed: boolean; runLocation: 'local' | 'cloud' }> = [];
 
   for (const row of persisted) {
     seen.add(row.id);
@@ -368,6 +368,7 @@ export function listAllAgents(): Array<{ agentId: string; sessionId: string; sta
       personaHandle: row.persona_handle ?? null,
       yoloMode: live?.yoloMode ?? false,
       sandboxed: live?.sandbox?.state === 'on',
+      runLocation: row.run_location ?? 'local',
     });
   }
 
@@ -392,6 +393,7 @@ export function listAllAgents(): Array<{ agentId: string; sessionId: string; sta
         personaHandle: a.commentContext?.personaHandle ?? null,
         yoloMode: a.yoloMode ?? false,
         sandboxed: a.sandbox?.state === 'on',
+        runLocation: a.runLocation ?? 'local',
       });
     }
   }
@@ -404,6 +406,12 @@ export function listAllAgents(): Array<{ agentId: string; sessionId: string; sta
  * as "failed" when no corresponding live process exists.  This handles the
  * case where the app quit while agents were active — the in-memory registry
  * is lost on restart so these entries would otherwise stay stale forever.
+ *
+ * Cloud sessions (`run_location === 'cloud'`) are explicitly preserved: their
+ * worker continues to run remotely after the app quits, so on restart we
+ * leave their status untouched and let the user resume them on click.  The
+ * resumed session reconnects to the live cloud worker via
+ * `client.resumeSession`.
  *
  * Call once after DB + agent-service initialization.
  */
@@ -418,6 +426,13 @@ export function reconcileStaleAgents(): void {
 
   for (const row of persisted) {
     if (STALE_STATUSES.has(row.status) && !registry.has(row.id)) {
+      // Cloud sessions persist across app restarts — the runtime is remote
+      // and the user can resume by clicking the session.  Don't mark these
+      // as failed.
+      if (row.run_location === 'cloud') {
+        console.log(`[agent-service] Preserving cloud agent session ${row.id} across restart (status=${row.status})`);
+        continue;
+      }
       try {
         persistence.updateSessionStatus(row.id, 'failed', 'Session lost — app restarted');
         console.log(`[agent-service] Reconciled stale agent session ${row.id}: ${row.status} → failed`);

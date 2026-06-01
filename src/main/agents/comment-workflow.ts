@@ -207,6 +207,7 @@ If you make changes to the document, clearly describe what you changed.${cliTool
       source: 'sdk',
       persona_handle: persona.handle,
       quoted_text: quotedText || null,
+      run_location: isCloudSandbox ? 'cloud' : 'local',
       created_at: now,
       updated_at: now,
     });

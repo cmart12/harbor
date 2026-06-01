@@ -156,12 +156,14 @@ function applyEvent(db: Database.Database, event: LogEvent): void {
       const d = event.data;
       // Normalize legacy source value: old 'cloud' meant CCA, now 'cca'
       const source = d.source === 'cloud' ? 'cca' : (d.source ?? 'sdk');
+      const runLocation = d.run_location === 'cloud' ? 'cloud' : 'local';
       db.prepare(
-        `INSERT OR REPLACE INTO agent_sessions (id, session_id, space_id, prompt, status, summary, working_dir, source, persona_handle, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT OR REPLACE INTO agent_sessions (id, session_id, space_id, prompt, status, summary, working_dir, source, persona_handle, run_location, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(
         d.id, d.session_id, d.space_id ?? null, d.prompt, d.status ?? 'running',
-        d.summary ?? '', d.working_dir ?? null, source, d.persona_handle ?? null, d.created_at, d.updated_at,
+        d.summary ?? '', d.working_dir ?? null, source, d.persona_handle ?? null,
+        runLocation, d.created_at, d.updated_at,
       );
       break;
     }
