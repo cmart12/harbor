@@ -202,6 +202,15 @@ vi.mock('./cloud-agent', () => ({
   getWorkspaceRepo: vi.fn(async () => ({ owner: 'test', repo: 'repo' })),
   getGitHubToken: vi.fn(async () => 'token'),
   launchCloudAgent: vi.fn(async () => ({ sessionId: 'cs1', jobId: 123 })),
+  launchCloudAgentWithFallback: vi.fn(async () => ({
+    result: {
+      jobId: 'cs1-job',
+      sessionId: 'cs1',
+      actor: { id: 'u', login: 'test' },
+      createdAt: '2026-06-03T00:00:00Z',
+      updatedAt: '2026-06-03T00:00:00Z',
+    },
+  })),
 }));
 
 vi.mock('./cloud-agent-poller', () => ({
@@ -504,23 +513,23 @@ describe('IPC handlers', () => {
       expect(result).toEqual({ error: 'Persona @ghost not found' });
     });
 
-    it('routes cloud persona to launchCloudAgent and prepends instructions', async () => {
+    it('routes cloud persona to launchCloudAgentWithFallback and prepends instructions', async () => {
       const cfg = vi.mocked(getConfigValue);
       cfg.mockImplementationOnce((key: string) => key === 'workspace' ? '/mock/workspace' : null as any);
       cfg.mockImplementationOnce((key: string) => key === 'personas' ? [{
         id: 'p2', handle: 'cloudie', instructions: 'You run in the cloud.',
         model: 'gpt-4o', runLocation: 'cca',
       }] as any : null as any);
-      const { launchCloudAgent } = await import('./cloud-agent');
-      vi.mocked(launchCloudAgent).mockClear();
+      const { launchCloudAgentWithFallback } = await import('./cloud-agent');
+      vi.mocked(launchCloudAgentWithFallback).mockClear();
       const { launchQuickAgent } = await import('./agent-service');
       vi.mocked(launchQuickAgent).mockClear();
 
       const result = await invoke('agent:quick-launch', 'fix the build', 'cloudie');
       expect(result).toEqual({ agentId: 'mock-uuid', sessionId: 'cs1' });
       expect(launchQuickAgent).not.toHaveBeenCalled();
-      expect(launchCloudAgent).toHaveBeenCalledOnce();
-      const cloudPrompt = vi.mocked(launchCloudAgent).mock.calls[0][2];
+      expect(launchCloudAgentWithFallback).toHaveBeenCalledOnce();
+      const cloudPrompt = vi.mocked(launchCloudAgentWithFallback).mock.calls[0][2];
       expect(cloudPrompt).toContain('You run in the cloud.');
       expect(cloudPrompt).toContain('fix the build');
     });
