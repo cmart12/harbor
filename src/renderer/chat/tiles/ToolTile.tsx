@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { parseUnifiedDiff, DiffViewer } from './DiffViewer';
 
 interface ToolTileProps {
   toolName: string;
@@ -117,21 +118,30 @@ export function ToolTile({ toolName, args, result, completed, success, error }: 
       );
     }
     if (result) {
-      const lines = result.split('\n');
-      const previewLines = lines.slice(0, 10);
-      expandContent = (
-        <div className="chat-tool-diff">
-          <pre>{(expanded ? lines : previewLines).map((line, i) => {
-            const cls = line.startsWith('+') && !line.startsWith('+++') ? 'diff-add' : line.startsWith('-') && !line.startsWith('---') ? 'diff-remove' : '';
-            return <span key={i} className={cls}>{line}{'\n'}</span>;
-          })}</pre>
-          {lines.length > 10 && (
-            <button className="chat-tool-expand" onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}>
-              {expanded ? 'Collapse diff' : `Show full diff (${lines.length} lines)`}
-            </button>
-          )}
-        </div>
-      );
+      const parsed = parseUnifiedDiff(result);
+      if (parsed) {
+        expandContent = (
+          <div className="chat-tool-diff">
+            <DiffViewer parsed={parsed} previewLines={14} />
+          </div>
+        );
+      } else {
+        const lines = result.split('\n');
+        const previewLines = lines.slice(0, 10);
+        expandContent = (
+          <div className="chat-tool-diff">
+            <pre>{(expanded ? lines : previewLines).map((line, i) => {
+              const cls = line.startsWith('+') && !line.startsWith('+++') ? 'diff-add' : line.startsWith('-') && !line.startsWith('---') ? 'diff-remove' : '';
+              return <span key={i} className={cls}>{line}{'\n'}</span>;
+            })}</pre>
+            {lines.length > 10 && (
+              <button className="chat-tool-expand" onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}>
+                {expanded ? 'Collapse diff' : `Show full diff (${lines.length} lines)`}
+              </button>
+            )}
+          </div>
+        );
+      }
     }
   } else if (category === 'file_read') {
     const rawPath = extractPath(args);
