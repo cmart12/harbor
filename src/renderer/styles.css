@@ -6964,6 +6964,11 @@ body.dark .chat-working-indicator {
   overflow-y: auto;
 }
 
+.chat-tool-diff:has(.diff-viewer) {
+  padding: 0;
+  max-height: 420px;
+}
+
 .chat-tool-output pre,
 .chat-tool-diff pre {
   font-family: 'SF Mono', 'Menlo', 'Monaco', monospace;
@@ -6983,6 +6988,191 @@ body.dark .chat-working-indicator {
 .diff-remove {
   background: rgba(248, 81, 73, 0.1);
   color: #ef4444;
+}
+
+/* --- Pretty diff viewer (parsed unified-diff) --- */
+.diff-viewer {
+  display: flex;
+  flex-direction: column;
+}
+
+.diff-file {
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  background: #fbfbfd;
+}
+.diff-file:first-child { border-top: none; }
+
+.diff-file-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: rgba(124, 102, 220, 0.06);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  font-size: var(--fs-caption);
+}
+
+.diff-file-icon {
+  display: inline-flex;
+  align-items: center;
+  color: rgba(0, 0, 0, 0.45);
+  flex-shrink: 0;
+}
+
+.diff-file-name {
+  font-family: 'SF Mono', 'Menlo', 'Monaco', monospace;
+  font-weight: 600;
+  color: #2a2a2a;
+  white-space: nowrap;
+}
+
+.diff-file-dir {
+  color: rgba(0, 0, 0, 0.5);
+  font-size: var(--fs-meta);
+  font-family: 'SF Mono', 'Menlo', 'Monaco', monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1;
+}
+
+.diff-file-badge {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.badge-added   { background: rgba(34, 197, 94, 0.15); color: #15803d; }
+.badge-deleted { background: rgba(239, 68, 68, 0.15); color: #b91c1c; }
+.badge-renamed { background: rgba(245, 158, 11, 0.15); color: #b45309; }
+.badge-modified { background: rgba(124, 102, 220, 0.15); color: #5b46c4; }
+
+.diff-file-stats {
+  display: flex;
+  gap: 6px;
+  font-family: 'SF Mono', 'Menlo', 'Monaco', monospace;
+  font-size: var(--fs-caption);
+  flex-shrink: 0;
+}
+
+.diff-stat-add    { color: #15803d; font-weight: 600; }
+.diff-stat-remove { color: #b91c1c; font-weight: 600; }
+
+.diff-file-body {
+  --diff-gutter-ch: 3ch;
+  font-family: 'SF Mono', 'Menlo', 'Monaco', monospace;
+  font-size: var(--fs-caption);
+  line-height: 1.45;
+}
+
+.diff-hunk-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 10px;
+  background: rgba(124, 102, 220, 0.05);
+  color: rgba(0, 0, 0, 0.5);
+  border-top: 1px dashed rgba(0, 0, 0, 0.08);
+  border-bottom: 1px dashed rgba(0, 0, 0, 0.08);
+}
+.diff-hunk-header:first-child { border-top: none; }
+
+.diff-hunk-range {
+  font-size: var(--fs-meta);
+  color: rgba(124, 102, 220, 0.85);
+}
+
+.diff-hunk-section {
+  font-size: var(--fs-meta);
+  color: rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
+}
+
+.diff-hunk-divider {
+  height: 0;
+  border-top: 1px dashed rgba(0, 0, 0, 0.1);
+  margin: 4px 0;
+}
+
+.diff-row {
+  display: grid;
+  grid-template-columns: var(--diff-gutter-ch) var(--diff-gutter-ch) 1.25rem 1fr;
+  align-items: baseline;
+  padding-right: 10px;
+}
+
+.diff-row-add    { background: rgba(34, 197, 94, 0.10); }
+.diff-row-remove { background: rgba(239, 68, 68, 0.10); }
+.diff-row-add:hover    { background: rgba(34, 197, 94, 0.15); }
+.diff-row-remove:hover { background: rgba(239, 68, 68, 0.15); }
+.diff-row-context:hover { background: rgba(0, 0, 0, 0.025); }
+
+.diff-gutter {
+  text-align: right;
+  padding: 0 6px 0 8px;
+  color: rgba(0, 0, 0, 0.35);
+  font-size: 11px;
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.diff-gutter-new {
+  padding-left: 0;
+  padding-right: 8px;
+  border-right: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.diff-row-add .diff-gutter-new    { color: #15803d; }
+.diff-row-remove .diff-gutter-old { color: #b91c1c; }
+
+.diff-marker {
+  text-align: center;
+  user-select: none;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.3);
+  padding-left: 4px;
+}
+
+.diff-row-add .diff-marker    { color: #15803d; }
+.diff-row-remove .diff-marker { color: #b91c1c; }
+
+.diff-code {
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #2a2a2a;
+}
+
+.diff-truncated {
+  padding: 4px 10px 4px calc(var(--diff-gutter-ch) * 2 + 1.5rem);
+  color: rgba(0, 0, 0, 0.45);
+  font-size: var(--fs-meta);
+  font-style: italic;
+}
+
+.diff-file-expand {
+  display: block;
+  width: 100%;
+  background: rgba(124, 102, 220, 0.04);
+  border: none;
+  border-top: 1px solid rgba(0, 0, 0, 0.05);
+  color: #7c66dc;
+  font-size: var(--fs-caption);
+  padding: 6px 10px;
+  cursor: pointer;
+  text-align: center;
+}
+
+.diff-file-expand:hover {
+  background: rgba(124, 102, 220, 0.1);
 }
 
 .chat-tool-expand {
@@ -7381,6 +7571,39 @@ body.dark .chat-tool-diff pre { color: rgba(255, 255, 255, 0.65); }
 body.dark .chat-tool-expand { color: #a594e8; }
 body.dark .diff-add { background: rgba(63, 185, 80, 0.12); color: #4ade80; }
 body.dark .diff-remove { background: rgba(248, 81, 73, 0.12); color: #f87171; }
+
+/* Dark theme — pretty diff viewer */
+body.dark .diff-file { background: rgba(255, 255, 255, 0.02); border-top-color: rgba(255, 255, 255, 0.06); }
+body.dark .diff-file-header { background: rgba(124, 102, 220, 0.12); border-bottom-color: rgba(255, 255, 255, 0.06); }
+body.dark .diff-file-icon { color: rgba(255, 255, 255, 0.45); }
+body.dark .diff-file-name { color: #e8e8ec; }
+body.dark .diff-file-dir { color: rgba(255, 255, 255, 0.45); }
+body.dark .badge-added   { background: rgba(34, 197, 94, 0.2); color: #4ade80; }
+body.dark .badge-deleted { background: rgba(239, 68, 68, 0.2); color: #f87171; }
+body.dark .badge-renamed { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
+body.dark .badge-modified { background: rgba(165, 148, 232, 0.18); color: #c4b5ff; }
+body.dark .diff-stat-add    { color: #4ade80; }
+body.dark .diff-stat-remove { color: #f87171; }
+body.dark .diff-hunk-header { background: rgba(124, 102, 220, 0.1); color: rgba(255, 255, 255, 0.5); border-top-color: rgba(255, 255, 255, 0.08); border-bottom-color: rgba(255, 255, 255, 0.08); }
+body.dark .diff-hunk-range { color: #c4b5ff; }
+body.dark .diff-hunk-section { color: rgba(255, 255, 255, 0.5); }
+body.dark .diff-hunk-divider { border-top-color: rgba(255, 255, 255, 0.1); }
+body.dark .diff-row-add    { background: rgba(63, 185, 80, 0.12); }
+body.dark .diff-row-remove { background: rgba(248, 81, 73, 0.12); }
+body.dark .diff-row-add:hover    { background: rgba(63, 185, 80, 0.2); }
+body.dark .diff-row-remove:hover { background: rgba(248, 81, 73, 0.2); }
+body.dark .diff-row-context:hover { background: rgba(255, 255, 255, 0.04); }
+body.dark .diff-gutter { color: rgba(255, 255, 255, 0.35); }
+body.dark .diff-gutter-new { border-right-color: rgba(255, 255, 255, 0.06); }
+body.dark .diff-row-add .diff-gutter-new    { color: #4ade80; }
+body.dark .diff-row-remove .diff-gutter-old { color: #f87171; }
+body.dark .diff-marker { color: rgba(255, 255, 255, 0.35); }
+body.dark .diff-row-add .diff-marker    { color: #4ade80; }
+body.dark .diff-row-remove .diff-marker { color: #f87171; }
+body.dark .diff-code { color: rgba(255, 255, 255, 0.85); }
+body.dark .diff-truncated { color: rgba(255, 255, 255, 0.45); }
+body.dark .diff-file-expand { background: rgba(124, 102, 220, 0.08); border-top-color: rgba(255, 255, 255, 0.06); color: #a594e8; }
+body.dark .diff-file-expand:hover { background: rgba(124, 102, 220, 0.18); }
 body.dark .chat-tool-error { color: #f87171; border-top-color: rgba(255, 255, 255, 0.06); }
 
 body.dark .chat-reasoning-tile { background: rgba(168, 85, 247, 0.08); }
