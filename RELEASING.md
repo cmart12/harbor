@@ -1,4 +1,4 @@
-# Releasing Copilot Whim
+# Releasing whim
 
 ## Quick Release
 
@@ -11,11 +11,12 @@ git add package.json
 git commit -m "v0.1.0"
 git tag v0.1.0
 git push origin master --tags
+
+# 3. Trigger the release workflow
+gh workflow run release.yml --field tag=v0.1.0
 ```
 
-This triggers the CI workflow which builds, signs, and publishes both platforms to GitHub Releases in parallel.
-
-Releases are published to the **public** [`getnurture/whim-releases`](https://github.com/getnurture/whim-releases) repo so that the auto-updater can fetch `latest-mac.yml` / `latest.yml` without authentication. A draft release is also created on the private `getnurture/whim` repo for reference.
+The workflow builds, signs, and publishes both platforms in parallel directly to the [`patniko/whim`](https://github.com/patniko/whim/releases) repo's Releases page. The auto-updater (electron-updater) reads `latest-mac.yml` / `latest.yml` from there with no authentication required (the repo is public).
 
 ---
 
@@ -25,7 +26,7 @@ Releases are published to the **public** [`getnurture/whim-releases`](https://gi
 
 - **Signing**: Developer ID Application certificate (Patrick Nikoletich, YFVZ335843)
 - **Notarization**: Automated via Apple notary service
-- **Output**: `.dmg` installer
+- **Output**: `.dmg` installer + `.zip` for updater delta
 
 The signing certificate and private key must be exported as a `.p12` and stored as a base64-encoded GitHub secret (see [Secrets](#github-secrets) below).
 
@@ -58,8 +59,9 @@ The signing config is in `package.json` under `build.win.azureSignOptions`.
 #### Local Windows build
 
 ```bash
-npm run build:win             # Unpacked app in build/win-unpacked/
-npm run build:installer:win   # NSIS installer in build/
+npm run build:win                       # Unpacked app in build/win-unpacked/
+npm run build:installer:win             # Signed NSIS installer in build/
+npm run build:installer:win:unsigned    # Unsigned NSIS installer (useful for local smoke tests)
 ```
 
 For local signed builds on Windows, set these env vars first:
@@ -74,22 +76,18 @@ set AZURE_CLIENT_SECRET=your-client-secret
 
 ## CI Release (GitHub Actions)
 
-The `.github/workflows/release.yml` workflow runs on tag pushes matching `v*`. It runs two parallel jobs:
+The `.github/workflows/release.yml` workflow runs on `workflow_dispatch` with a `tag` input. It runs two parallel jobs:
 
 | Job | Runner | What it does |
 |-----|--------|--------------|
-| `release-mac` | `macos-latest` | Build, sign, notarize, publish DMG |
-| `release-win` | `windows-2022` | Build, sign (Azure Artifact Signing), publish NSIS installer |
+| `release-mac` | `macos-latest` | Build, sign, notarize, publish DMG + ZIP + `latest-mac.yml` |
+| `release-win` | `windows-2022` | Build, sign (Azure Artifact Signing), publish EXE + `latest.yml` |
+
+Both jobs publish directly to `patniko/whim` using the default `GITHUB_TOKEN` — no PAT is required.
 
 ### GitHub Secrets
 
 All values are stored as **Secrets** in Settings → Secrets and variables → Actions:
-
-#### Release publishing
-
-| Secret | Description |
-|--------|-------------|
-| `RELEASE_PAT` | GitHub PAT (classic) with `repo` scope — used to publish releases to the public `whim-releases` repo |
 
 #### macOS signing & notarization
 
@@ -137,7 +135,7 @@ base64 -i certificate.p12 | tr -d '\n' | pbcopy
 
 ### Azure Artifact Signing setup
 
-The Azure resources are in the **Nurture** subscription.
+The Azure resources are in the existing Azure subscription used for whim signing.
 
 1. **Artifact Signing Account**: `whim`
    - Endpoint: `https://wus2.codesigning.azure.net/`
@@ -147,6 +145,7 @@ The Azure resources are in the **Nurture** subscription.
    - Subject: `CN=Patrick Nikoletich, O=Patrick Nikoletich, L=Bothell, S=wa, C=US`
    - Type: Public Trust
    - The `publisherName` in `package.json` must match the CN exactly
+   - The profile name (`nurturewhim`) is just an internal Azure identifier — not user-visible. It can be renamed later without affecting trust.
 
 3. **App Registration (Entra ID)**: `whim`
    - This is the service principal used by CI to authenticate with Azure

@@ -58,22 +58,11 @@ jobs:
 
       - name: Build, sign, notarize, and publish
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: npm run release
-
-      - name: Upload mac artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-mac
-          path: |
-            build/*.dmg
-            build/*.zip
-            build/*.blockmap
-            build/latest-mac.yml
-          if-no-files-found: error
 
       - name: Clean up keychain
         if: always()
@@ -96,39 +85,8 @@ jobs:
 
       - name: Build, sign, and publish
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
         run: npm run release:win
-
-      - name: Upload win artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-win
-          path: |
-            build/*.exe
-            build/*.blockmap
-            build/latest.yml
-          if-no-files-found: error
-
-  draft-release:
-    needs: [release-mac, release-win]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-
-      - name: Create draft release on private repo
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG="${{ inputs.tag }}"
-          # Delete existing draft for this tag (re-releases)
-          gh release delete "$TAG" --repo getnurture/whim --yes 2>/dev/null || true
-          # Create fresh draft with all platform artifacts
-          gh release create "$TAG" --draft --title "$TAG" --repo getnurture/whim \
-            artifacts/release-mac/build/* \
-            artifacts/release-win/build/*
