@@ -1,6 +1,6 @@
 {
   "name": "whim",
-  "version": "0.0.12",
+  "version": "0.0.13",
   "description": "Quick capture from system tray",
   "productName": "whim",
   "main": "dist/main/main.js",
