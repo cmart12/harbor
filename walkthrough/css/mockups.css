@@ -1,6 +1,6 @@
 /* ============================================================
-   Whim Walkthrough — shared mockup components
-   Reusable "fake Whim UI" building blocks used by every widget.
+   whim Walkthrough — shared mockup components
+   Reusable "fake whim UI" building blocks used by every widget.
    Widget-specific styling is injected by each widget module via a
    scoped <style> tag, so this file stays conflict-free.
    ============================================================ */

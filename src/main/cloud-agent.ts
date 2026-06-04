@@ -141,7 +141,7 @@ export async function launchCloudAgent(
       body: JSON.stringify({
         problem_statement: prompt,
         pull_request: {
-          body_suffix: 'Created from Whim app.',
+          body_suffix: 'Created from whim app.',
         },
         event_type: 'intent_app',
       }),
@@ -196,7 +196,7 @@ async function launchCloudAgentRaw(
     },
     body: JSON.stringify({
       problem_statement: prompt,
-      pull_request: { body_suffix: 'Created from Whim app.' },
+      pull_request: { body_suffix: 'Created from whim app.' },
       event_type: 'intent_app',
     }),
   });

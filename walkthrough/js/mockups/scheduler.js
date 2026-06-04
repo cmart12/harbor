@@ -1,4 +1,4 @@
-// Slide mockup — scheduled Whim skills spawning Spaces.
+// Slide mockup — scheduled whim skills spawning Spaces.
 const STYLE_ID = 'mk-scheduler-style';
 
 function injectStyle() {
@@ -151,7 +151,7 @@ export function init(el) {
           <div class="skill-head">
             <div>
               <div class="skill-name"><span class="skill-icon">📦</span><span>Weekly Dependency Audit</span></div>
-              <div class="skill-sub">Schedule a Whim skill to run automatically and spawn a Space.</div>
+              <div class="skill-sub">Schedule a whim skill to run automatically and spawn a Space.</div>
             </div>
             <div class="status-line" data-status></div>
           </div>

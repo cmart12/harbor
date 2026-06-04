@@ -1,6 +1,6 @@
-# Intent User Guide
+# whim User Guide
 
-This guide walks you through everything you can do with Intent — from first launch to deploying cloud agents.
+This guide walks you through everything you can do with whim — from first launch to deploying cloud agents.
 
 ---
 
@@ -9,14 +9,14 @@ This guide walks you through everything you can do with Intent — from first la
 ### First Launch
 
 1. Install and start the app (`npm run start`)
-2. Intent appears as a ⚡ icon in your system tray
+2. whim appears as a ⚡ icon in your system tray
 3. Press **Ctrl+Shift+Space** (or **Cmd+Shift+Space** on Mac) to open the window
 4. You'll be prompted to **select a workspace directory** — this is where all your intent data will be stored
 
 ### Setting Up Your Workspace
 
-Your workspace is a regular directory (ideally a git repository) where Intent stores:
-- Intent canvas documents as markdown files
+Your workspace is a regular directory (ideally a git repository) where whim stores:
+- whim canvas documents as markdown files
 - File attachments
 - An event log and database cache
 
@@ -28,15 +28,15 @@ Click **⚙ Settings** → **Workspace** → **Change** to select your directory
 
 ### Typing
 
-1. Press **Ctrl+Shift+Space** to open Intent
+1. Press **Ctrl+Shift+Space** to open whim
 2. Start typing your thought, task, or goal
 3. Press **Enter** to capture it
 
-Intent uses AI to refine your input in the background — extracting a clean title, client names, and due dates. You'll see the refined text animate in with a subtle glow effect.
+whim uses AI to refine your input in the background — extracting a clean title, client names, and due dates. You'll see the refined text animate in with a subtle glow effect.
 
 ### Voice Input
 
-1. Open Intent and make sure the text field is empty
+1. Open whim and make sure the text field is empty
 2. Press **Spacebar** to start recording (you'll see a red recording indicator)
 3. Speak naturally — describe your task in full sentences
 4. Press **Spacebar** again to stop recording
@@ -45,9 +45,9 @@ Intent uses AI to refine your input in the background — extracting a clean tit
 
 ### Smart Features
 
-- **Query detection** — if you type a question instead of a task, Intent answers it inline
+- **Query detection** — if you type a question instead of a task, whim answers it inline
 - **Recall** — when a new intent is similar to a past one, you'll see a hint linking them
-- **Recurrence** — when you complete a recurring task (e.g., "weekly status update"), Intent automatically creates the next occurrence
+- **Recurrence** — when you complete a recurring task (e.g., "weekly status update"), whim automatically creates the next occurrence
 
 ---
 
@@ -121,7 +121,7 @@ Click the title in the canvas header to edit it. You can also click the **✨** 
 
 ## AI Agents
 
-Intent's agent system lets AI work on your documents and code autonomously.
+whim's agent system lets AI work on your documents and code autonomously.
 
 ### Deploying a Local Agent
 
@@ -217,13 +217,13 @@ Toggle between **Light** ☀️ and **Dark** 🌙 themes.
 Select which Copilot model to use for AI refinement and agent sessions.
 
 ### Workspace
-Choose the directory where Intent stores all data.
+Choose the directory where whim stores all data.
 
 ### Copilot CLI
 Auto-detected by default. Override with a custom path if needed.
 
 ### MCP Servers
-Model Context Protocol servers extend what agents can do. Intent auto-discovers servers from `~/.copilot/mcp-config.json` and installed plugins. You can also add custom servers:
+Model Context Protocol servers extend what agents can do. whim auto-discovers servers from `~/.copilot/mcp-config.json` and installed plugins. You can also add custom servers:
 - **stdio** — command-line tool servers
 - **http/sse** — web-based servers
 
@@ -243,7 +243,7 @@ Create @mentionable personas:
 
 | Shortcut | Action |
 |---|---|
-| `Ctrl+Shift+Space` | Toggle Intent window |
+| `Ctrl+Shift+Space` | Toggle whim window |
 | `Enter` | Save intent / Open selected canvas |
 | `Cmd+Enter` | Open canvas in expanded mode |
 | `Escape` | Close current view / Dismiss window |

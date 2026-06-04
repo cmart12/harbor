@@ -48,7 +48,7 @@ export function createTray(): void {
   }
 
   tray = new Tray(icon);
-  tray.setToolTip('Whim');
+  tray.setToolTip('whim');
   tray.setContextMenu(buildContextMenu());
   tray.on('click', () => toggleWindow());
 }

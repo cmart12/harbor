@@ -2,7 +2,7 @@
   "name": "whim",
   "version": "0.0.12",
   "description": "Quick capture from system tray",
-  "productName": "Copilot Whim",
+  "productName": "whim",
   "main": "dist/main/main.js",
   "scripts": {
     "clean": "node -e \"const fs=require('fs');const p=require('path');if(fs.existsSync('dist'))fs.rmSync('dist',{recursive:true,force:true})\"",
@@ -28,8 +28,8 @@
     "release:win": "npm run build && npm run rebuild:electron && electron-builder --win --publish always"
   },
   "build": {
-    "appId": "com.copilot.tokens",
-    "productName": "Copilot Whim",
+    "appId": "com.patniko.whim",
+    "productName": "whim",
     "directories": {
       "output": "build"
     },
@@ -59,6 +59,7 @@
     },
     "mac": {
       "icon": "build/icon.icns",
+      "productName": "Copilot Whim",
       "target": [
         "dmg",
         "zip"
@@ -69,7 +70,7 @@
       "entitlementsInherit": "scripts/entitlements.plist",
       "extendInfo": {
         "LSUIElement": true,
-        "NSMicrophoneUsageDescription": "Copilot Whim needs microphone access for voice input."
+        "NSMicrophoneUsageDescription": "whim needs microphone access for voice input."
       }
     }
   },
@@ -79,9 +80,25 @@
     ],
     "quiet": true
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": [
+    "electron",
+    "copilot",
+    "productivity",
+    "system-tray",
+    "ai-agents",
+    "markdown",
+    "voice-input"
+  ],
+  "author": "Patrick Nikoletich",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/patniko/whim.git"
+  },
+  "bugs": {
+    "url": "https://github.com/patniko/whim/issues"
+  },
+  "homepage": "https://github.com/patniko/whim#readme",
   "type": "commonjs",
   "dependencies": {
     "@github/copilot-sdk": "^1.0.0-beta.10",

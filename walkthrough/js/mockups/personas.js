@@ -109,11 +109,11 @@ export function init(el) {
     <div class="win">
       <div class="win-titlebar">
         <div class="win-dots"><span class="win-dot red"></span><span class="win-dot amber"></span><span class="win-dot green"></span></div>
-        <span class="win-title">Copilot Whim · Agent personas</span>
+        <span class="win-title">whim · Agent personas</span>
       </div>
       <div class="win-body">
         <div class="personas-kicker">
-          <span>Built-in @mentionable agents seeded by Whim</span>
+          <span>Built-in @mentionable agents seeded by whim</span>
           <span class="badge done">7 personas</span>
         </div>
         <div class="personas-layout">

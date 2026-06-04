@@ -92,7 +92,7 @@ export function init(el) {
       <div class="win">
         <div class="win-titlebar">
           <div class="win-dots"><span class="win-dot red"></span><span class="win-dot amber"></span><span class="win-dot green"></span></div>
-          <span class="win-title">Copilot Whim</span>
+          <span class="win-title">whim</span>
           <span class="win-spacer"></span>
           <span class="hotkey">⌘⇧Space</span>
         </div>

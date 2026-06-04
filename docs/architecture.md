@@ -1,12 +1,12 @@
 # Architecture
 
-Intent is an Electron app with a clear separation between the main process (Node.js) and the renderer process (Chromium). The renderer uses a hybrid approach: vanilla DOM for most views, with React islands for the Documint markdown editor and the agent chat interface.
+whim is an Electron app with a clear separation between the main process (Node.js) and the renderer process (Chromium). The renderer uses a hybrid approach: vanilla DOM for most views, with React islands for the Documint markdown editor and the agent chat interface.
 
 ## System Overview
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                         INTENT (Electron App)                       │
+│                          WHIM (Electron App)                        │
 ├────────────────────────────┬────────────────────────────────────────┤
 │     Main Process (Node)    │        Renderer Process (Chromium)     │
 │                            │                                        │
@@ -31,7 +31,7 @@ Intent is an Electron app with a clear separation between the main process (Node
 - Supports **window expand/collapse** — canvas opens expand to 720×700 centered; closing collapses back
 - Registers a system tray icon with context menu (Show / Quit)
 - Binds `Ctrl+Shift+Space` as a global shortcut to toggle the window
-- Registers a custom `copilot-intent://` protocol for a real origin (microphone + image loading)
+- Registers a custom `copilot-whim://` protocol for a real origin (microphone + image loading)
 - **Blur-hide logic**: auto-hides on focus loss unless canvas is open, input has content, or window is pinned
 - **Edge snapping**: detects nearest screen edge after drag, snaps to position
 - **Pin mode**: disables auto-hide, enables resizing, opens canvases in popout windows
@@ -72,7 +72,7 @@ Polls every 10s, maps cloud statuses to agent lifecycle, updates DB, emits event
 
 ### workspace.ts — Workspace & Persistence
 
-Event-sourced via append-only `.intent/events.jsonl`. SQLite is a disposable cache. Auto-commits to git. Attachment handling with 25MB limit.
+Event-sourced via append-only `.whim/events.jsonl`. SQLite is a disposable cache. Auto-commits to git. Attachment handling with 25MB limit.
 
 ### mcp.ts — MCP Server Discovery
 

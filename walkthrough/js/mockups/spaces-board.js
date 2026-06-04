@@ -96,7 +96,7 @@ export function init(el) {
       <div class="win">
         <div class="win-titlebar">
           <div class="win-dots"><span class="win-dot red"></span><span class="win-dot amber"></span><span class="win-dot green"></span></div>
-          <span class="win-title">Copilot Whim · Spaces</span>
+          <span class="win-title">whim · Spaces</span>
         </div>
         <div class="win-body">
           <div class="tabs" aria-label="Sections">

@@ -1,5 +1,5 @@
 // Slide 7 — Skills. A live editor that turns a name, description, and instructions
-// into the SKILL.md file Copilot Whim stores under .agents/skills/.
+// into the SKILL.md file whim stores under .agents/skills/.
 const STYLE_ID = 'mk-skilleditor-style';
 const EMOJIS = ['📦', '📊', '✉️', '📄', '🧩'];
 const EXAMPLE = {
@@ -64,7 +64,7 @@ export function init(el) {
     <div class="win skill-window">
       <div class="win-titlebar">
         <div class="win-dots"><span class="win-dot red"></span><span class="win-dot amber"></span><span class="win-dot green"></span></div>
-        <span class="win-title">Copilot Whim · New skill</span>
+        <span class="win-title">whim · New skill</span>
       </div>
       <div class="win-body skill-body">
         <div class="skill-form">
@@ -117,7 +117,7 @@ export function init(el) {
 
   function renderPreview() {
     const skillName = name.value || 'Untitled Skill';
-    const desc = description.value || 'Reusable instructions for Copilot Whim.';
+    const desc = description.value || 'Reusable instructions for whim.';
     const instructions = body.value || '<add instructions here>';
     const slug = slugify(skillName);
     const pickedEmoji = shuffledEmoji || emojiForName(skillName);

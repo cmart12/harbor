@@ -1,4 +1,4 @@
-# MXC Sandbox Schema (as consumed by Intent)
+# MXC Sandbox Schema (as consumed by whim)
 
 This document describes the sandbox configuration schema used end-to-end:
 
@@ -7,12 +7,12 @@ This document describes the sandbox configuration schema used end-to-end:
 2. The **runtime sandbox config** that `copilot-agent-runtime` reads from a
    per-session `configDir` and uses to spawn shell processes through
    `wxc-exec.exe`.
-3. The **Intent `SandboxPolicy`** that the user edits in the Personas tab and
+3. The **whim `SandboxPolicy`** that the user edits in the Personas tab and
    that gets translated into a runtime config per agent.
 
 > The full upstream schema lives at
 > [`../../mxc/schemas/stable/mxc-config.schema.0.4.0-alpha.json`](../../mxc/schemas/stable/mxc-config.schema.0.4.0-alpha.json).
-> This doc covers only the slice that Intent uses.
+> This doc covers only the slice that whim uses.
 
 ---
 
@@ -59,18 +59,18 @@ The MXC SDK accepts a JSON config like this (Windows AppContainer example):
 }
 ```
 
-### Containment backends Intent uses
+### Containment backends whim uses
 
 | Value | Notes |
 |-------|-------|
 | `"appcontainer"` | Default. Windows AppContainer process-level isolation via `wxc-exec.exe`. **Windows-only.** |
 
-> Intent does not use `windows_sandbox`, `wslc`, `lxc`, `vm`, or `microvm` in v1.
+> whim does not use `windows_sandbox`, `wslc`, `lxc`, `vm`, or `microvm` in v1.
 
 ### Versioning
 
 MXC stable schema is `0.4.0-alpha`. Dev schema is `0.5.0-alpha`. Pre-release
-suffixes signal that breaking changes can land in any release. Intent pins the
+suffixes signal that breaking changes can land in any release. whim pins the
 `0.4.0-alpha` version when materializing configs.
 
 ---
@@ -155,9 +155,9 @@ and **do not** consult `sandbox`. These have to be policed host-side by Whim
 
 ---
 
-## 3. Intent `SandboxPolicy`
+## 3. whim `SandboxPolicy`
 
-The persona-level type Intent stores in its own `userData/config.json`:
+The persona-level type whim stores in its own `userData/config.json`:
 
 ```ts
 export interface SandboxPolicy {
@@ -182,7 +182,7 @@ export interface SandboxPolicy {
 
 This shape is intentionally smaller than the upstream MXC schema:
 
-| Upstream MXC field | Intent representation | Why |
+| Upstream MXC field | whim representation | Why |
 |---|---|---|
 | `version` | hardcoded to `0.4.0-alpha` | runtime + intent pin one version |
 | `containment` | hardcoded to `"appcontainer"` | only Windows backend in v1 |
@@ -195,7 +195,7 @@ This shape is intentionally smaller than the upstream MXC schema:
 | `network.defaultPolicy` | `allowOutbound ? "allow" : "block"` | derived |
 | `network.allowedHosts` | **not exposed** | runtime doesn't read it today |
 | `appContainer.capabilities` | `["internetClient"]` if `allowOutbound` | derived |
-| `ui` | n/a | Intent's agents don't render UI inside the sandbox |
+| `ui` | n/a | whim's agents don't render UI inside the sandbox |
 
 ### Resolution: default policy + per-persona override
 
@@ -262,7 +262,7 @@ bubble-up banner can show *which* layer fired:
 
 ### How the policy materializes per agent
 
-For each sandboxed agent launch, Intent writes **two** runtime-format configs:
+For each sandboxed agent launch, whim writes **two** runtime-format configs:
 
 ```
 ${userData}/sandbox-config/<agentId>/on/config.json    // sandbox.enabled = true
@@ -283,4 +283,4 @@ can `resumeSession` into it instantly.
   `../../copilot-agent-runtime/src/core/persistence/userSettings.ts` (`sandbox` block)
 - Runtime shell wrapper:
   `../../copilot-agent-runtime/src/core/sandbox/sandboxSpawn.ts`
-- Intent flow doc: [`mxc-sandbox-flow.md`](./mxc-sandbox-flow.md)
+- whim flow doc: [`mxc-sandbox-flow.md`](./mxc-sandbox-flow.md)

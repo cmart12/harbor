@@ -1,6 +1,6 @@
-# Copilot Whim — Interactive Walkthrough
+# whim — Interactive Walkthrough
 
-A web-based, interactive slide deck that walks new users through Copilot Whim. Each slide pairs
+A web-based, interactive slide deck that walks new users through whim. Each slide pairs
 short copy with a **live, clickable simulated UI mockup** (no real app or backend required), built
 on [Reveal.js](https://revealjs.com/).
 
@@ -41,7 +41,7 @@ walkthrough/
 ├── index.html            # Reveal.js deck; one <section> per slide, widget mount points
 ├── serve.js              # zero-dependency static server (npm start)
 ├── css/
-│   ├── whim-theme.css     # deck theme matching Whim's look
+│   ├── whim-theme.css     # deck theme matching whim's look
 │   └── mockups.css        # shared fake-UI components (window chrome, badges, buttons…)
 └── js/
     ├── deck.js            # Reveal init; lazy-loads + (re)initializes mockups per slide

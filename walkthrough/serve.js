@@ -1,4 +1,4 @@
-// Minimal zero-dependency static file server for the Whim walkthrough deck.
+// Minimal zero-dependency static file server for the whim walkthrough deck.
 // Usage: node serve.js [port]
 import http from 'node:http';
 import fs from 'node:fs';
@@ -49,5 +49,5 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(port, () => {
-  console.log(`Whim walkthrough running at http://localhost:${port}`);
+  console.log(`whim walkthrough running at http://localhost:${port}`);
 });

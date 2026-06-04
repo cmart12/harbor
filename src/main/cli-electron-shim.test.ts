@@ -78,19 +78,19 @@ describe('cli-electron-shim', () => {
 
     it('writes shim file under userData/cli-shim on Windows and returns its path', () => {
       Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
-      mockGetPath.mockReturnValue('C:\\Users\\test\\AppData\\Roaming\\Whim');
+      mockGetPath.mockReturnValue('C:\\Users\\test\\AppData\\Roaming\\whim');
 
       const result = getCliShimPath('C:\\Users\\test\\AppData\\Local\\copilot\\pkg\\universal\\1.0.57-3\\index.js');
 
       // Must be .js (not .mjs) — the SDK only spawns .js files via Node.
-      expect(result).toBe('C:\\Users\\test\\AppData\\Roaming\\Whim\\cli-shim\\cli-electron-shim.js');
+      expect(result).toBe('C:\\Users\\test\\AppData\\Roaming\\whim\\cli-shim\\cli-electron-shim.js');
       expect(mockMkdirSync).toHaveBeenCalledWith(
-        'C:\\Users\\test\\AppData\\Roaming\\Whim\\cli-shim',
+        'C:\\Users\\test\\AppData\\Roaming\\whim\\cli-shim',
         { recursive: true },
       );
       expect(mockWriteFileSync).toHaveBeenCalledOnce();
       const writeCall = mockWriteFileSync.mock.calls[0];
-      expect(writeCall[0]).toBe('C:\\Users\\test\\AppData\\Roaming\\Whim\\cli-shim\\cli-electron-shim.js');
+      expect(writeCall[0]).toBe('C:\\Users\\test\\AppData\\Roaming\\whim\\cli-shim\\cli-electron-shim.js');
       expect(writeCall[1]).toContain('delete process.versions.electron');
       expect(writeCall[1]).toContain('1.0.57-3');
       expect(writeCall[2]).toBe('utf8');

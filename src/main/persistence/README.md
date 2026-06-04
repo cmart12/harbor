@@ -1,6 +1,6 @@
 # Persistence Contract
 
-Intent uses a **dual-write architecture**: an append-only event log paired with a
+whim uses a **dual-write architecture**: an append-only event log paired with a
 SQLite database. This document defines the rules that all code touching persistent
 state must follow.
 
@@ -10,8 +10,8 @@ state must follow.
 
 | Layer | File | Role |
 |-------|------|------|
-| **Event log** | `.intent/events.jsonl` | Authoritative record of every state change. Append-only JSONL. |
-| **SQLite DB** | `.intent/intents.db` | Derived, disposable materialised view. Rebuilt on every startup. |
+| **Event log** | `.whim/events.jsonl` | Authoritative record of every state change. Append-only JSONL. |
+| **SQLite DB** | `.whim/intents.db` | Derived, disposable materialised view. Rebuilt on every startup. |
 
 The database is **deleted and recreated** from the event log each time
 `initDatabase()` is called (see `database.ts`). Never treat the DB as the source
@@ -111,7 +111,7 @@ The database is rebuilt automatically on every startup:
 ```
 
 To manually rebuild:
-1. Delete `.intent/intents.db` (and any `-journal`, `-wal`, `-shm` siblings).
+1. Delete `.whim/intents.db` (and any `-journal`, `-wal`, `-shm` siblings).
 2. Restart the application. `initDatabase()` replays the event log.
 
 The integration tests in `src/main/integration.test.ts` validate that every

@@ -37,25 +37,6 @@ export function getDbPath(workspaceRoot: string): string {
 export function initWorkspace(rootPath: string): void {
   const whimDir = getWhimDir(rootPath);
 
-  // Backward compatibility: migrate .intent/ → .whim/
-  const oldDir = path.join(rootPath, '.intent');
-  if (fs.existsSync(oldDir)) {
-    if (!fs.existsSync(whimDir)) {
-      // Simple rename when .whim/ doesn't exist yet
-      fs.renameSync(oldDir, whimDir);
-    } else {
-      // Both exist: move any files from .intent/ into .whim/ (don't overwrite)
-      for (const entry of fs.readdirSync(oldDir)) {
-        const src = path.join(oldDir, entry);
-        const dest = path.join(whimDir, entry);
-        if (!fs.existsSync(dest)) {
-          fs.renameSync(src, dest);
-        }
-      }
-      fs.rmSync(oldDir, { recursive: true, force: true });
-    }
-  }
-
   if (!fs.existsSync(whimDir)) {
     fs.mkdirSync(whimDir, { recursive: true });
   }
@@ -94,7 +75,7 @@ export function initWorkspace(rootPath: string): void {
   const missing = requiredEntries.filter(entry => !existing.includes(entry));
   if (missing.length > 0) {
     const nl = existing && !existing.endsWith('\n') ? '\n' : '';
-    const addition = `${nl}# Whim app local cache\n${missing.join('\n')}\n`;
+    const addition = `${nl}# whim app local cache\n${missing.join('\n')}\n`;
     fs.appendFileSync(gitignorePath, addition);
   }
 }

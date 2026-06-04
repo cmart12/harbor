@@ -10,7 +10,7 @@ agent execution and bubble-up of denials. Pair this with
 ## High-level architecture
 
 ```
-┌─────────────────────── Intent (Electron host) ──────────────────────────┐
+┌─────────────────────── whim (Electron host) ──────────────────────────┐
 │                                                                          │
 │  Renderer                       Main process                              │
 │  ─────────                       ────────────                             │
@@ -51,10 +51,10 @@ agent execution and bubble-up of denials. Pair this with
 
 1. **Process-level (MXC)** — applies *only* to the shell tool. The wxc-exec
    AppContainer enforces filesystem and network policy at the OS level.
-2. **Host-level (Intent)** — applies to SDK-mediated tools (`view`, `edit`,
+2. **Host-level (whim)** — applies to SDK-mediated tools (`view`, `edit`,
    `create`, `glob`, `grep`, `show_file`, `applyPatch`, `str_replace_editor`)
    and host-side custom tools (`web_fetch`). MXC does not see these because
-   they run inside the runtime process. Intent gates them via
+   they run inside the runtime process. whim gates them via
    `onPermissionRequest` and `hooks.onPreToolUse`.
 
 These two layers cooperate so the user's mental model — "the agent is confined
@@ -141,7 +141,7 @@ bubble-up banner shows it as `Enforced by: MXC (mxc:…)` or
 
 ```
 agent → tool call
-  └──► hooks.onPreToolUse (Intent host)
+  └──► hooks.onPreToolUse (whim host)
         ├── isPathInScope(target, policy) === true
         │     └── return undefined (allow); SDK proceeds → runs Node fs op
         │
@@ -162,7 +162,7 @@ Notes:
 
 ```
 agent → tool call
-  └──► onPermissionRequest (Intent host, sandbox-aware version)
+  └──► onPermissionRequest (whim host, sandbox-aware version)
         ├── kind === 'read' / 'write' and path in scope → return 'approve-once'
         ├── kind === 'mcp' and !policy.allowMcpServers → bubble-up
         ├── kind === 'url'  and not in url-allow → bubble-up
@@ -187,7 +187,7 @@ When the user resolves a bubble-up:
 
 ```
 agent → shell tool call
-  └──► hooks.onPreToolUse (Intent host)
+  └──► hooks.onPreToolUse (whim host)
         ├── existing read-only classifier (defense in depth)
         │     └── obvious destructive command → bubble-up
         │
@@ -266,7 +266,7 @@ When an agent reaches `idle` / `failed` / aborted:
    `sandboxDenied` signal yet. The `onPostToolUse` matcher is best-effort and
    may mis-classify normal failures.
 3. **`allowedHosts` not yet wired.** Runtime schema today doesn't include it,
-   so we drop it from the Intent policy v1 and re-enable when the runtime
+   so we drop it from the whim policy v1 and re-enable when the runtime
    adds support.
 4. **MCP / `web_fetch` are removed, not policy-checked.** Sandboxed agents
    default to no MCP and no `web_fetch`. A future revision can add per-server

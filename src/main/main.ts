@@ -21,7 +21,7 @@ let currentToggleAccelerator: string | null = null;
 // Windows toast notifications require an AppUserModelId to be properly
 // associated with the app in the notification center.
 if (process.platform === 'win32') {
-  app.setAppUserModelId('com.copilot.tokens');
+  app.setAppUserModelId('com.patniko.whim');
 }
 
 // Suppress EPIPE errors that bubble up from vscode-jsonrpc when the Copilot
@@ -255,7 +255,7 @@ app.whenReady().then(async () => {
   registerToggleShortcut(hotkeys.toggleWindow);
   } catch (err) {
     console.error('[main] Fatal startup error:', err);
-    dialog.showErrorBox('Copilot Whim — Startup Error',
+    dialog.showErrorBox('whim — Startup Error',
       `The app failed to initialize:\n\n${err instanceof Error ? err.message : String(err)}`);
     app.quit();
   }

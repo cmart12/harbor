@@ -1,4 +1,4 @@
-# Intent Lifecycle & Recurrence — Feature Spec
+# whim Lifecycle & Recurrence — Feature Spec
 
 ## Problem
 

@@ -1,5 +1,5 @@
 // Slide 2 — Setup process. A fake first-run flow: choose a workspace, then the
-// tray icon + Whim window appear with the global hotkey hint.
+// tray icon + whim window appear with the global hotkey hint.
 const STYLE_ID = 'mk-setup-style';
 
 function injectStyle() {
@@ -34,7 +34,7 @@ export function init(el) {
       <div class="win">
         <div class="win-titlebar">
           <div class="win-dots"><span class="win-dot red"></span><span class="win-dot amber"></span><span class="win-dot green"></span></div>
-          <span class="win-title">Copilot Whim · First run</span>
+          <span class="win-title">whim · First run</span>
         </div>
         <div class="win-body">
           <div class="field-label">Workspace folder</div>
