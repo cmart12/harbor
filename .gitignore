@@ -8,3 +8,10 @@ build/
 !build/icon.icns
 !build/icon.ico
 !build/icon.iconset/
+
+# Local working trees
+.worktrees/
+
+# Internal artifacts that should never end up in OSS history
+*.docx
+*.pptx

@@ -1,10 +1,10 @@
-# Intent
+# whim
 
 A powerful Electron system-tray app for capturing intents — ideas, tasks, and goals — with voice input, AI-powered refinement, a rich markdown canvas, and an integrated AI agent system that can work locally or in the cloud.
 
 ## Overview
 
-Intent lives in your system tray and pops up with `Ctrl+Shift+Space`. Type or speak what you need to do, press Enter, and it's captured instantly. In the background, an LLM refines your raw input — cleaning up the description and extracting structured fields like client names and due dates.
+whim lives in your system tray and pops up with `Ctrl+Shift+Space`. Type or speak what you need to do, press Enter, and it's captured instantly. In the background, an LLM refines your raw input — cleaning up the description and extracting structured fields like client names and due dates.
 
 Each intent has a **canvas** — a full markdown editor (powered by [Documint](https://github.com/lostintangent/documint)) where you can flesh out notes, paste files, and deploy AI agents to work on specific sections of your document.
 
@@ -76,7 +76,7 @@ src/
 │   ├── subagent-service.ts    # Sub-agent state tracking
 │   ├── ipc.ts                 # IPC handlers bridging renderer ↔ main
 │   ├── workspace.ts           # Workspace folders, canvas I/O, git auto-commit
-│   ├── eventlog.ts            # Append-only event log (.intent/events.jsonl)
+│   ├── eventlog.ts            # Append-only event log (.whim/events.jsonl)
 │   ├── session.ts             # Copilot CLI discovery, terminal launch
 │   ├── voice.ts               # Local Whisper model (speech-to-text)
 │   ├── config.ts              # User config (theme, model, personas)
@@ -150,13 +150,13 @@ npm run lint   # Lint with oxlint
 | Settings | Click ⚙ in the header |
 | Dismiss window | `Escape` or click outside |
 
-## Workspace Structure
+### Workspace Structure
 
-Intent stores data in a user-selected workspace directory:
+whim stores data in a user-selected workspace directory:
 
 ```
 <workspace>/
-├── .intent/
+├── .whim/
 │   ├── events.jsonl       # Append-only event log (source of truth)
 │   └── intents.db         # SQLite cache (rebuilt from event log)
 ├── <intent-slug-a1b2>/
@@ -165,7 +165,7 @@ Intent stores data in a user-selected workspace directory:
 └── .gitignore
 ```
 
-All workspace changes are auto-committed to git with `intent: auto-save` messages.
+All workspace changes are auto-committed to git with `whim: auto-save` messages.
 
 ## Testing
 
@@ -178,4 +178,4 @@ Tests cover: database operations, validators, config, MCP servers, agent service
 
 ## License
 
-ISC
+[MIT](./LICENSE) © Patrick Nikoletich

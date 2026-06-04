@@ -23,6 +23,7 @@
     "build:installer:mac": "npm run build && npm run rebuild:electron && electron-builder --mac",
     "build:win": "npm run build && npm run rebuild:electron && electron-builder --win --dir",
     "build:installer:win": "npm run build && npm run rebuild:electron && electron-builder --win",
+    "build:installer:win:unsigned": "npm run build && npm run rebuild:electron && electron-builder --win --config scripts/electron-builder-unsigned.js",
     "release": "npm run build && npm run rebuild:electron && electron-builder --mac --publish always",
     "release:win": "npm run build && npm run rebuild:electron && electron-builder --win --publish always"
   },
