@@ -17,7 +17,8 @@ import type {
 } from './types';
 import { splitComments, joinComments, extractMentions, newThreadId } from './editor/comments';
 import { SelectionToolbar, CommentComposer, CommentPopover } from './editor/CommentUI';
-import type { Rect, SelectionInfo } from './editor/geometry';
+import { MentionPopup, type MentionCandidate } from './editor/MentionUI';
+import type { Rect, SelectionInfo, MentionQuery } from './editor/geometry';
 import { FrontmatterEditor } from './FrontmatterEditor';
 import { VoiceRecorderButton, type VoiceRecordingResult } from './VoiceRecorderButton';
 import { SpaceLinkPicker, type SpaceResult } from './SpaceLinkPicker';
@@ -207,6 +208,11 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
     const [selection, setSelection] = useState<SelectionInfo | null>(null);
     const [composer, setComposer] = useState<{ quote: string; anchor: { prefix?: string; suffix?: string; kind?: string }; rect: Rect } | null>(null);
 
+    // Mention suggestion state
+    const [mentionQuery, setMentionQuery] = useState<MentionQuery | null>(null);
+    const [mentionIndex, setMentionIndex] = useState(0);
+    const recentInlineMentions = useRef(new Set<string>());
+
     const personasRef = useRef(personas);
     personasRef.current = personas;
 
@@ -229,7 +235,7 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
     editorModeRef.current = editorMode;
     rawContentRef.current = rawContent;
 
-    void presence; void agentUsers; void onInlineMention;
+    void presence; void agentUsers;
 
     /** Build the full document string for saving. */
     const getFullContent = useCallback(() => {
@@ -611,6 +617,68 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
       setActiveComment(null);
     }, [activeComment, updateThreads]);
 
+    // ── Mention suggestions ────────────────────────────────
+    const mentionCandidates: MentionCandidate[] = useMemo(() => {
+      if (!mentionQuery) return [];
+      const q = mentionQuery.query.toLowerCase();
+      return personas
+        .filter(p => p.handle.toLowerCase().includes(q))
+        .slice(0, 8)
+        .map(p => ({ handle: p.handle, emoji: p.emoji, model: p.model }));
+    }, [mentionQuery, personas]);
+
+    const mentionCandidatesRef = useRef(mentionCandidates);
+    mentionCandidatesRef.current = mentionCandidates;
+    const mentionIndexRef = useRef(mentionIndex);
+    mentionIndexRef.current = mentionIndex;
+
+    const handleMentionQuery = useCallback((info: MentionQuery | null) => {
+      setMentionQuery(info);
+      setMentionIndex(0);
+    }, []);
+
+    const applySelectedMention = useCallback((handle: string) => {
+      const mq = mentionQuery;
+      if (!mq) return;
+      setMentionQuery(null);
+      const result = editorRef.current?.applyMention(handle, mq.from, mq.to);
+      if (result && onInlineMention) {
+        const key = `${handle}:${result.lineNumber}:${result.lineMarkdown}`;
+        if (recentInlineMentions.current.has(key)) return;
+        recentInlineMentions.current.add(key);
+        setTimeout(() => recentInlineMentions.current.delete(key), 5000);
+        onInlineMention(handle, result.lineMarkdown, result.lineNumber);
+      }
+    }, [mentionQuery, onInlineMention]);
+
+    // Intercept navigation keys while the mention popup is open (before the editor).
+    useEffect(() => {
+      if (!mentionQuery) return;
+      const handler = (e: KeyboardEvent) => {
+        const list = mentionCandidatesRef.current;
+        if (list.length === 0) {
+          if (e.key === 'Escape') setMentionQuery(null);
+          return;
+        }
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          setMentionIndex(i => Math.min(i + 1, list.length - 1));
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          setMentionIndex(i => Math.max(i - 1, 0));
+        } else if (e.key === 'Enter' || e.key === 'Tab') {
+          e.preventDefault();
+          const c = list[mentionIndexRef.current];
+          if (c) applySelectedMention(c.handle);
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          setMentionQuery(null);
+        }
+      };
+      document.addEventListener('keydown', handler, true);
+      return () => document.removeEventListener('keydown', handler, true);
+    }, [mentionQuery, applySelectedMention]);
+
     // File drag-and-drop handler
     useEffect(() => {
       const el = containerRef.current;
@@ -783,6 +851,7 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
                 uploadFile={uploadFile}
                 onCommentActivate={handleCommentActivate}
                 onSelectionChange={handleSelectionChange}
+                onMentionQuery={handleMentionQuery}
               />
               {isTranscribing && (
                 <div className="canvas-voice-transcribing-bar">
@@ -823,6 +892,15 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
                 onResolve={handleResolve}
                 onDelete={handleDeleteThread}
                 onClose={() => setActiveComment(null)}
+              />
+            )}
+            {mentionQuery && mentionCandidates.length > 0 && (
+              <MentionPopup
+                rect={mentionQuery.rect}
+                candidates={mentionCandidates}
+                activeIndex={mentionIndex}
+                onSelect={applySelectedMention}
+                onHover={setMentionIndex}
               />
             )}
           </>

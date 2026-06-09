@@ -4713,6 +4713,48 @@ body.dark .md-comment-item { background: rgba(255, 255, 255, 0.05); }
 .md-comment-btn-primary { background: #7c66dc; color: #fff; }
 .md-comment-btn-primary:disabled { opacity: 0.45; cursor: default; }
 
+/* Mention suggestion popup */
+.md-mention-popup {
+  min-width: 200px;
+  max-width: 280px;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 9px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  max-height: 240px;
+  overflow-y: auto;
+}
+body.dark .md-mention-popup {
+  background: #26262c;
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #e1e1e6;
+}
+.md-mention-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 8px;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  font-size: var(--fs-body);
+}
+.md-mention-item.active,
+.md-mention-item:hover { background: rgba(124, 102, 220, 0.14); }
+.md-mention-emoji { font-size: var(--fs-card-title); }
+.md-mention-handle { font-weight: 500; }
+.md-mention-model {
+  margin-left: auto;
+  font-size: var(--fs-meta);
+  opacity: 0.5;
+}
+
 /* ── Canvas Voice Recorder ───────────────────────────── */
 
 .canvas-voice-recorder {

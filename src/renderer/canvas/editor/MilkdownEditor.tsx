@@ -30,7 +30,8 @@ import {
 import { computeAnchor } from './anchor';
 import { createImageNodeView, createImagePasteHandler, type ImageSrcResolver, type ImageUploader } from './plugins/image-view';
 import type { CanvasDecoration, CommentThread, CommentTrigger, TextAnchor } from '../types';
-import type { Rect, SelectionInfo } from './geometry';
+import type { Rect, SelectionInfo, MentionQuery } from './geometry';
+import type { EditorState } from '@milkdown/kit/prose/state';
 
 /**
  * Imperative surface the canvas wrapper drives. The editor is *uncontrolled*:
@@ -45,6 +46,8 @@ export interface MilkdownEditorHandle {
   getSelectedText(): string;
   /** Quote + content-addressable anchor for the current selection (null if collapsed). */
   getSelectionAnchor(): { quote: string; anchor: TextAnchor } | null;
+  /** Replace an `@`-mention query range with `@handle ` and report the line. */
+  applyMention(handle: string, from: number, to: number): { lineMarkdown: string; lineNumber: number } | null;
   focus(): void;
 }
 
@@ -66,6 +69,23 @@ export interface MilkdownEditorProps {
   onCommentActivate?: (threadId: string | null, rect: Rect | null) => void;
   /** Fired when the text selection changes (for the selection toolbar). */
   onSelectionChange?: (info: SelectionInfo | null) => void;
+  /** Fired with the active `@`-mention query (for the suggestion popup), or null. */
+  onMentionQuery?: (info: MentionQuery | null) => void;
+}
+
+/** Detect an in-progress `@`-mention immediately before a collapsed caret. */
+function detectMention(state: EditorState): { from: number; to: number; query: string } | null {
+  const sel = state.selection;
+  if (!sel.empty) return null;
+  const $from = sel.$from;
+  if (!$from.parent.isTextblock) return null;
+  const textBefore = $from.parent.textBetween(0, $from.parentOffset, undefined, '\uFFFC');
+  const m = /(^|\s)@([\w-]*)$/.exec(textBefore);
+  if (!m) return null;
+  const query = m[2];
+  const to = $from.pos;
+  const from = to - query.length - 1; // include the '@'
+  return { from, to, query };
 }
 
 function rectFromRange(view: EditorView, from: number, to: number): Rect | null {
@@ -84,7 +104,7 @@ function rectFromRange(view: EditorView, from: number, to: number): Rect | null 
 
 const MilkdownInner = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
   function MilkdownInner(
-    { initialContent, onContentChanged, onFocus, onBlur, decorations, commentThreads, activeCommentId, commentTrigger, resolveImageSrc, uploadFile, onCommentActivate, onSelectionChange },
+    { initialContent, onContentChanged, onFocus, onBlur, decorations, commentThreads, activeCommentId, commentTrigger, resolveImageSrc, uploadFile, onCommentActivate, onSelectionChange, onMentionQuery },
     ref,
   ) {
     // Latest callbacks via refs so the editor factory (created once) never goes stale.
@@ -98,6 +118,8 @@ const MilkdownInner = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
     onCommentActivateRef.current = onCommentActivate;
     const onSelectionChangeRef = useRef(onSelectionChange);
     onSelectionChangeRef.current = onSelectionChange;
+    const onMentionQueryRef = useRef(onMentionQuery);
+    onMentionQueryRef.current = onMentionQuery;
     const commentTriggerRef = useRef<CommentTrigger>(commentTrigger ?? 'caret');
     commentTriggerRef.current = commentTrigger ?? 'caret';
     const resolveImageSrcRef = useRef<ImageSrcResolver | undefined>(resolveImageSrc);
@@ -154,6 +176,7 @@ const MilkdownInner = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
             const view = sctx.get(editorViewCtx);
             const { from, to, empty } = selection;
             if (!empty) {
+              onMentionQueryRef.current?.(null);
               const text = view.state.doc.textBetween(from, to, '\n', '\uFFFC');
               const rect = rectFromRange(view, from, to);
               if (rect && text.trim()) {
@@ -171,6 +194,15 @@ const MilkdownInner = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
               onCommentActivateRef.current?.(range.threadId, rect);
             } else {
               onCommentActivateRef.current?.(null, null);
+            }
+            // Surface any in-progress @-mention query for the suggestion popup.
+            const mention = detectMention(view.state);
+            if (mention) {
+              const rect = rectFromRange(view, mention.from, mention.from);
+              if (rect) onMentionQueryRef.current?.({ ...mention, rect });
+              else onMentionQueryRef.current?.(null);
+            } else {
+              onMentionQueryRef.current?.(null);
             }
           });
         })
@@ -247,6 +279,22 @@ const MilkdownInner = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
             const { from, to, empty } = view.state.selection;
             if (empty) return null;
             return computeAnchor(view.state.doc, from, to);
+          });
+        },
+        applyMention: (handle: string, from: number, to: number) => {
+          const ed = get();
+          if (!ed) return null;
+          return ed.action((ctx) => {
+            const view = ctx.get(editorViewCtx);
+            const docSize = view.state.doc.content.size;
+            if (from < 0 || to > docSize || from > to) return null;
+            const tr = view.state.tr.insertText(`@${handle} `, from, to);
+            view.dispatch(tr);
+            view.focus();
+            const $pos = view.state.selection.$from;
+            const lineMarkdown = $pos.parent.textContent;
+            const lineNumber = $pos.before();
+            return { lineMarkdown, lineNumber };
           });
         },
         focus: () => {

@@ -15,3 +15,11 @@ export interface SelectionInfo {
   to: number;
   rect: Rect;
 }
+
+/** Active `@`-mention query surfaced to the host for the suggestion popup. */
+export interface MentionQuery {
+  query: string;
+  from: number;
+  to: number;
+  rect: Rect;
+}
