@@ -23,3 +23,6 @@ export interface MentionQuery {
   to: number;
   rect: Rect;
 }
+
+/** Inline formatting marks the selection toolbar can toggle. */
+export type FormatMark = 'strong' | 'emphasis' | 'inlineCode' | 'strikethrough';

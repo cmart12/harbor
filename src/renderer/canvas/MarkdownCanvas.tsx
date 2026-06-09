@@ -18,7 +18,7 @@ import type {
 import { splitComments, joinComments, extractMentions, newThreadId } from './editor/comments';
 import { SelectionToolbar, CommentComposer, CommentPopover } from './editor/CommentUI';
 import { MentionPopup, type MentionCandidate } from './editor/MentionUI';
-import type { Rect, SelectionInfo, MentionQuery } from './editor/geometry';
+import type { Rect, SelectionInfo, MentionQuery, FormatMark } from './editor/geometry';
 import { FrontmatterEditor } from './FrontmatterEditor';
 import { VoiceRecorderButton, type VoiceRecordingResult } from './VoiceRecorderButton';
 import { SpaceLinkPicker, type SpaceResult } from './SpaceLinkPicker';
@@ -295,7 +295,7 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
           if (editorModeRef.current === 'rendered') editorRef.current?.replaceAll(body);
         }
         onDirtyChange(getFullContent() !== lastSavedRef.current);
-        onSaveStatus('✓');
+        onSaveStatus('Saved ✓');
         setTimeout(() => onSaveStatus(''), 1500);
       } catch {
         onSaveStatus('✗ save failed');
@@ -333,7 +333,7 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
       const dirty = getFullContent() !== lastSavedRef.current;
       onDirtyChange(dirty);
       if (dirty) {
-        onSaveStatus('');
+        onSaveStatus('Saving…');
         scheduleSave();
       }
     }, [getFullContent, onDirtyChange, onSaveStatus, scheduleSave]);
@@ -631,6 +631,10 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
       setActiveComment(null);
       setComposer({ quote: anchor.quote, anchor: anchor.anchor, rect: sel.rect });
     }, [selection]);
+
+    const handleFormat = useCallback((mark: FormatMark) => {
+      editorRef.current?.toggleMark(mark);
+    }, []);
 
     const handleComposerSubmit = useCallback((body: string) => {
       const c = composer;
@@ -930,6 +934,7 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
             {selection && !composer && (
               <SelectionToolbar
                 rect={selection.rect}
+                onFormat={handleFormat}
                 onComment={handleStartComment}
                 onFork={onForkSelection ? () => { onForkSelection(selection.text); setSelection(null); } : undefined}
                 onExtract={onExtractToPage ? () => { onExtractToPage(selection.text); setSelection(null); } : undefined}

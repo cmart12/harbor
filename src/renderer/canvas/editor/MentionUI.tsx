@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import type { Rect } from './geometry';
 
 export interface MentionCandidate {
@@ -38,10 +39,10 @@ export function MentionPopup({
     position: 'fixed',
     left: Math.round(rect.left),
     top: Math.round(rect.bottom + 4),
-    zIndex: 122,
+    zIndex: 2147483000,
   };
 
-  return (
+  const popup = (
     <div className="md-mention-popup" style={style} ref={listRef} onMouseDown={(e) => e.preventDefault()}>
       {candidates.map((c, i) => (
         <button
@@ -58,4 +59,6 @@ export function MentionPopup({
       ))}
     </div>
   );
+
+  return typeof document === 'undefined' ? popup : createPortal(popup, document.body);
 }

@@ -12,13 +12,13 @@ import {
   editorViewCtx,
   editorViewOptionsCtx,
 } from '@milkdown/kit/core';
-import { commonmark } from '@milkdown/kit/preset/commonmark';
-import { gfm } from '@milkdown/kit/preset/gfm';
+import { commonmark, toggleStrongCommand, toggleEmphasisCommand, toggleInlineCodeCommand } from '@milkdown/kit/preset/commonmark';
+import { gfm, toggleStrikethroughCommand } from '@milkdown/kit/preset/gfm';
 import { listener, listenerCtx } from '@milkdown/kit/plugin/listener';
 import { clipboard } from '@milkdown/kit/plugin/clipboard';
 import { history } from '@milkdown/kit/plugin/history';
 import { cursor } from '@milkdown/kit/plugin/cursor';
-import { getMarkdown, replaceAll, insert } from '@milkdown/kit/utils';
+import { getMarkdown, replaceAll, insert, callCommand } from '@milkdown/kit/utils';
 import type { EditorView } from '@milkdown/kit/prose/view';
 import { MilkdownProvider, Milkdown, useEditor } from '@milkdown/react';
 import { hostDecorationPlugin, decorationPluginKey } from './plugins/decoration-plugin';
@@ -32,8 +32,15 @@ import { computeAnchor } from './anchor';
 import { createImageNodeView, createImagePasteHandler, type ImageSrcResolver, type ImageUploader } from './plugins/image-view';
 import { presencePlugin, SET_PRESENCE } from './plugins/presence-plugin';
 import type { CanvasDecoration, CanvasPresence, CommentThread, CommentTrigger, TextAnchor } from '../types';
-import type { Rect, SelectionInfo, MentionQuery } from './geometry';
+import type { Rect, SelectionInfo, MentionQuery, FormatMark } from './geometry';
 import type { EditorState } from '@milkdown/kit/prose/state';
+
+const MARK_COMMANDS = {
+  strong: toggleStrongCommand,
+  emphasis: toggleEmphasisCommand,
+  inlineCode: toggleInlineCodeCommand,
+  strikethrough: toggleStrikethroughCommand,
+} as const;
 
 /**
  * Imperative surface the canvas wrapper drives. The editor is *uncontrolled*:
@@ -50,6 +57,8 @@ export interface MilkdownEditorHandle {
   getSelectionAnchor(): { quote: string; anchor: TextAnchor } | null;
   /** Replace an `@`-mention query range with `@handle ` and report the line. */
   applyMention(handle: string, from: number, to: number): { lineMarkdown: string; lineNumber: number } | null;
+  /** Toggle an inline formatting mark over the current selection. */
+  toggleMark(mark: FormatMark): void;
   focus(): void;
 }
 
@@ -333,6 +342,14 @@ const MilkdownInner = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
             const lineNumber = $pos.before();
             return { lineMarkdown, lineNumber };
           });
+        },
+        toggleMark: (mark: FormatMark) => {
+          const ed = get();
+          if (!ed) return;
+          const command = MARK_COMMANDS[mark];
+          if (!command) return;
+          ed.action(callCommand(command.key));
+          ed.action((ctx) => ctx.get(editorViewCtx).focus());
         },
         focus: () => {
           get()?.action((ctx) => {

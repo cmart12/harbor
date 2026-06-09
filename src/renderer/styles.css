@@ -4614,6 +4614,13 @@ body.dark .skill-picker-desc {
   cursor: pointer;
 }
 .md-selection-btn:hover { background: rgba(255, 255, 255, 0.14); }
+.md-selection-icon { padding: 5px 6px; }
+.md-selection-sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 3px 2px;
+  background: rgba(255, 255, 255, 0.18);
+}
 
 /* Comment popover / composer */
 .md-comment-popover {
