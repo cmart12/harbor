@@ -4381,13 +4381,6 @@ body.dark .skill-picker-desc {
   border-bottom: 1px solid rgba(197, 48, 48, 0.12);
 }
 
-.documint-editor-wrap {
-  flex: 1;
-  position: relative;
-  min-height: 0;
-  overflow: hidden;
-}
-
 /* ── Milkdown markdown editor ─────────────────────────── */
 .markdown-canvas-container {
   width: 100%;
@@ -5224,21 +5217,6 @@ body.dark .canvas-voice-transcribing-spinner {
 
 .preview-banner-btn.back:hover {
   background: rgba(0, 0, 0, 0.1);
-}
-
-.documint-canvas-container {
-  width: 100%;
-  height: 100%;
-  position: relative;
-  overflow: hidden;
-  user-select: auto;
-  display: flex;
-  flex-direction: column;
-}
-
-.documint-canvas-container.drag-over {
-  box-shadow: inset 0 0 0 2px rgba(124, 102, 220, 0.3);
-  border-radius: 1.5px;
 }
 
 /* ── Space link picker (Cmd+P) ─────────────────────── */
@@ -6243,7 +6221,7 @@ body.dark .canvas-view header h1.editing { border-color: rgba(165, 148, 232, 0.4
 body.dark .canvas-save-status { color: rgba(255, 255, 255, 0.55); }
 body.dark .canvas-save-btn { background: rgba(124, 102, 220, 0.2); color: #a594e8; }
 body.dark .canvas-save-btn:hover { background: rgba(124, 102, 220, 0.3); }
-body.dark .documint-canvas-container.drag-over { box-shadow: inset 0 0 0 2px rgba(124, 102, 220, 0.4); }
+body.dark .markdown-canvas-container.drag-over { box-shadow: inset 0 0 0 2px rgba(124, 102, 220, 0.4); }
 
 /* Dark space link picker */
 body.dark .space-link-picker-overlay { background: rgba(0, 0, 0, 0.45); }

@@ -74,7 +74,7 @@ export const commentPlugin = $prose(() => {
   return new Plugin<CommentPluginState>({
     key: commentPluginKey,
     state: {
-      init: (_config, state) => ({
+      init: (_config, _state) => ({
         threads: [],
         ranges: [],
         activeId: null,

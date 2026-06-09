@@ -29,7 +29,7 @@ import {
 } from './plugins/comment-plugin';
 import { computeAnchor } from './anchor';
 import { createImageNodeView, createImagePasteHandler, type ImageSrcResolver, type ImageUploader } from './plugins/image-view';
-import { presencePlugin, presencePluginKey, SET_PRESENCE } from './plugins/presence-plugin';
+import { presencePlugin, SET_PRESENCE } from './plugins/presence-plugin';
 import type { CanvasDecoration, CanvasPresence, CommentThread, CommentTrigger, TextAnchor } from '../types';
 import type { Rect, SelectionInfo, MentionQuery } from './geometry';
 import type { EditorState } from '@milkdown/kit/prose/state';
@@ -149,12 +149,12 @@ const MilkdownInner = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
               spellcheck: 'true',
             },
             nodeViews: {
-              ...(prev.nodeViews ?? {}),
+              ...prev.nodeViews,
               image: createImageNodeView(resolveImageSrcRef),
             },
             handlePaste: createImagePasteHandler(uploadFileRef),
             handleDOMEvents: {
-              ...(prev.handleDOMEvents ?? {}),
+              ...prev.handleDOMEvents,
               click: (_view, event) => {
                 const target = event.target as HTMLElement | null;
                 const a = target?.closest?.('a') as HTMLAnchorElement | null;

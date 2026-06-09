@@ -1,6 +1,6 @@
 # Architecture
 
-whim is an Electron app with a clear separation between the main process (Node.js) and the renderer process (Chromium). The renderer uses a hybrid approach: vanilla DOM for most views, with React islands for the Documint markdown editor and the agent chat interface.
+whim is an Electron app with a clear separation between the main process (Node.js) and the renderer process (Chromium). The renderer uses a hybrid approach: vanilla DOM for most views, with React islands for the Milkdown markdown editor and the agent chat interface.
 
 ## System Overview
 
@@ -11,7 +11,7 @@ whim is an Electron app with a clear separation between the main process (Node.j
 │     Main Process (Node)    │        Renderer Process (Chromium)     │
 │                            │                                        │
 │  ai.ts — Copilot SDK       │  app.ts — UI logic, navigation        │
-│  agent-service.ts — Local  │  canvas/ — Documint markdown editor   │
+│  agent-service.ts — Local  │  canvas/ — Milkdown markdown editor   │
 │  cloud-agent.ts — CCA API  │  chat/ — Agent chat interface         │
 │  database.ts — SQLite      │  styles.css — Light/dark themes       │
 │  workspace.ts — File I/O   │                                        │
@@ -91,9 +91,9 @@ Runs `whisper-tiny.en` locally via `@huggingface/transformers`. Pre-loaded on st
 - **Past tab**: completed intents with activity timelines
 - Canvas mounting, agent chat, keyboard navigation, window lifecycle
 
-### canvas/DocumintCanvas.tsx — Markdown Editor
+### canvas/MarkdownCanvas.tsx — Markdown Editor
 
-Documint wrapper: auto-save, file attachments, @mention agent deployment, agent presence indicators, comment threads.
+Milkdown (ProseMirror + remark) wrapper: auto-save, file attachments, @mention agent deployment, agent presence indicators, and multi-line comment threads. The Milkdown integration lives under `canvas/editor/` (the editor component plus custom ProseMirror plugins for comments, mentions, presence, and decorations). Comments are stored inline in the markdown via a `:::documint-comments` block for backward compatibility.
 
 ### chat/ — Agent Chat UI
 

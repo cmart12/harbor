@@ -4978,7 +4978,7 @@ async function unarchiveIntent(id: string): Promise<void> {
 // ── Canvas view ─────────────────────────────────────────
 import { mountCanvas, unmountCanvas, getCanvasContent, saveCanvas as saveCanvasEditor, updateCanvasPresence, updateCanvasDecorations, updateCanvasAgentUsers, addCanvasCommentReply, toggleCanvasMode, getCanvasEditorMode, replaceCanvasContent, appendCanvasLink, replaceCanvasText, getCanvasSelectedText } from './canvas/mount.tsx';
 import { mountCanvasWorkerPanel, unmountCanvasWorkerPanel, isCanvasChatPaneOpen, closeCanvasChatPane } from './canvas/worker-panel-mount.tsx';
-import type { DocumentPresence, DocumentUser, DocumintDecoration } from '@patniko/documint';
+import type { CanvasPresence, CanvasUser, CanvasDecoration } from './canvas/types';
 
 const canvasView = document.getElementById('canvas-view') as HTMLDivElement;
 const canvasBack = document.getElementById('canvas-back') as HTMLButtonElement;
@@ -6151,8 +6151,8 @@ if (!isCanvasMode) {
 }
 
 // ── Agent Presence Management ──────────────────────────
-const canvasAgentPresence = new Map<string, DocumentPresence>();
-const canvasAgentUserMap = new Map<string, DocumentUser>();
+const canvasAgentPresence = new Map<string, CanvasPresence>();
+const canvasAgentUserMap = new Map<string, CanvasUser>();
 // Agents anchored to a comment thread — presence handles their busy state,
 // so the text-decoration system should skip them.
 const commentThreadAgents = new Set<string>();
@@ -6277,11 +6277,11 @@ function pickDecorationText(agent: { selectedText: string; quotedText?: string }
   return '';
 }
 
-/** Rebuild DocumintDecoration[] from the tracking map and push to canvas. */
+/** Rebuild CanvasDecoration[] from the tracking map and push to canvas. */
 function syncCanvasDecorations(): void {
   if (!canvasSpaceId) return;
 
-  const decorations: DocumintDecoration[] = [];
+  const decorations: CanvasDecoration[] = [];
   for (const entry of agentDecorationMap.values()) {
     if (!entry.decorationText) continue;
     const colors = DECORATION_COLORS[entry.status];

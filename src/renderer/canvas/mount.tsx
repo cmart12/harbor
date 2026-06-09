@@ -1,10 +1,10 @@
 import React from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { DocumintCanvas, type DocumintCanvasHandle, type DocumintCanvasProps, type AgentPersona, type MentionEvent } from './DocumintCanvas';
-import type { DocumentPresence, DocumentUser, DocumintDecoration } from '@patniko/documint';
+import { MarkdownCanvas, type MarkdownCanvasHandle, type AgentPersona, type MentionEvent } from './MarkdownCanvas';
+import type { CanvasPresence, CanvasUser, CanvasDecoration } from './types';
 
 let root: Root | null = null;
-let canvasRef: React.RefObject<DocumintCanvasHandle | null> = React.createRef();
+let canvasRef: React.RefObject<MarkdownCanvasHandle | null> = React.createRef();
 
 export interface MountCanvasOptions {
   spaceId: string;
@@ -12,7 +12,7 @@ export interface MountCanvasOptions {
   frontmatter?: Record<string, unknown>;
   theme: 'light' | 'dark';
   personas?: AgentPersona[];
-  agentPresence?: DocumentPresence[];
+  agentPresence?: CanvasPresence[];
   onDirtyChange: (dirty: boolean) => void;
   onSaveStatus: (status: string) => void;
   onAgentMentioned?: (event: MentionEvent) => void;
@@ -29,7 +29,7 @@ export function mountCanvas(container: HTMLElement, options: MountCanvasOptions)
   canvasRef = React.createRef();
   root = createRoot(container);
   root.render(
-    <DocumintCanvas
+    <MarkdownCanvas
       ref={canvasRef}
       spaceId={options.spaceId}
       initialContent={options.content}
@@ -67,7 +67,7 @@ export async function saveCanvas(): Promise<void> {
   }
 }
 
-export function updateCanvasPresence(presence: DocumentPresence[]): void {
+export function updateCanvasPresence(presence: CanvasPresence[]): void {
   canvasRef.current?.updatePresence(presence);
 }
 
@@ -75,11 +75,11 @@ export function updateCanvasPersonas(personas: AgentPersona[]): void {
   canvasRef.current?.updatePersonas(personas);
 }
 
-export function updateCanvasDecorations(decorations: readonly DocumintDecoration[]): void {
+export function updateCanvasDecorations(decorations: readonly CanvasDecoration[]): void {
   canvasRef.current?.updateDecorations(decorations);
 }
 
-export function updateCanvasAgentUsers(users: DocumentUser[]): void {
+export function updateCanvasAgentUsers(users: CanvasUser[]): void {
   canvasRef.current?.updateAgentUsers(users);
 }
 

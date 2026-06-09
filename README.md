@@ -6,7 +6,7 @@ A powerful Electron system-tray app for capturing intents — ideas, tasks, and 
 
 whim lives in your system tray and pops up with `Ctrl+Shift+Space`. Type or speak what you need to do, press Enter, and it's captured instantly. In the background, an LLM refines your raw input — cleaning up the description and extracting structured fields like client names and due dates.
 
-Each intent has a **canvas** — a full markdown editor (powered by [Documint](https://github.com/lostintangent/documint)) where you can flesh out notes, paste files, and deploy AI agents to work on specific sections of your document.
+Each intent has a **canvas** — a full markdown editor (powered by [Milkdown](https://milkdown.dev), built on ProseMirror + remark) where you can flesh out notes, paste files, and deploy AI agents to work on specific sections of your document.
 
 Agents can run **locally** via the Copilot SDK, or in the **cloud** via GitHub's Copilot Coding Agent (CCA) infrastructure. Create personas like `@cca` to route work to the cloud, or `@reviewer` to run tasks locally — all from the same interface.
 
@@ -88,7 +88,8 @@ src/
 │   ├── styles.css             # Light/dark theme styles
 │   ├── app.ts                 # UI logic, filters, navigation
 │   ├── canvas/                # React island for markdown editor
-│   │   ├── DocumintCanvas.tsx # Documint wrapper with agents, attachments
+│   │   ├── MarkdownCanvas.tsx # Milkdown wrapper with agents, attachments
+│   │   ├── editor/            # Milkdown editor + ProseMirror plugins
 │   │   └── mount.tsx          # React root lifecycle
 │   └── chat/                  # React chat UI for agent conversations
 │       ├── ChatView.tsx       # Main chat interface
