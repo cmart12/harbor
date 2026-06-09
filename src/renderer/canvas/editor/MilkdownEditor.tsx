@@ -28,6 +28,7 @@ import {
   SET_ACTIVE,
 } from './plugins/comment-plugin';
 import { computeAnchor } from './anchor';
+import { createImageNodeView, createImagePasteHandler, type ImageSrcResolver, type ImageUploader } from './plugins/image-view';
 import type { CanvasDecoration, CommentThread, CommentTrigger, TextAnchor } from '../types';
 import type { Rect, SelectionInfo } from './geometry';
 
@@ -57,6 +58,10 @@ export interface MilkdownEditorProps {
   commentThreads?: readonly CommentThread[];
   activeCommentId?: string | null;
   commentTrigger?: CommentTrigger;
+  /** Resolve workspace-relative image srcs into displayable URLs. */
+  resolveImageSrc?: ImageSrcResolver;
+  /** Persist a pasted image file, returning its workspace-relative src. */
+  uploadFile?: ImageUploader;
   /** Fired when the caret enters/leaves a commented range (or a thread is hovered). */
   onCommentActivate?: (threadId: string | null, rect: Rect | null) => void;
   /** Fired when the text selection changes (for the selection toolbar). */
@@ -79,7 +84,7 @@ function rectFromRange(view: EditorView, from: number, to: number): Rect | null 
 
 const MilkdownInner = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
   function MilkdownInner(
-    { initialContent, onContentChanged, onFocus, onBlur, decorations, commentThreads, activeCommentId, commentTrigger, onCommentActivate, onSelectionChange },
+    { initialContent, onContentChanged, onFocus, onBlur, decorations, commentThreads, activeCommentId, commentTrigger, resolveImageSrc, uploadFile, onCommentActivate, onSelectionChange },
     ref,
   ) {
     // Latest callbacks via refs so the editor factory (created once) never goes stale.
@@ -95,6 +100,10 @@ const MilkdownInner = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
     onSelectionChangeRef.current = onSelectionChange;
     const commentTriggerRef = useRef<CommentTrigger>(commentTrigger ?? 'caret');
     commentTriggerRef.current = commentTrigger ?? 'caret';
+    const resolveImageSrcRef = useRef<ImageSrcResolver | undefined>(resolveImageSrc);
+    resolveImageSrcRef.current = resolveImageSrc;
+    const uploadFileRef = useRef<ImageUploader | undefined>(uploadFile);
+    uploadFileRef.current = uploadFile;
 
     // Suppress the markdownUpdated callback while we apply host-initiated changes
     // (replaceAll), so a programmatic write isn't echoed back as a user edit.
@@ -111,6 +120,11 @@ const MilkdownInner = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
               class: 'milkdown-prose',
               spellcheck: 'true',
             },
+            nodeViews: {
+              ...(prev.nodeViews ?? {}),
+              image: createImageNodeView(resolveImageSrcRef),
+            },
+            handlePaste: createImagePasteHandler(uploadFileRef),
             handleDOMEvents: {
               ...(prev.handleDOMEvents ?? {}),
               mouseover: (view, event) => {

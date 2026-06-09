@@ -520,6 +520,31 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
       applyProgrammaticContent(current + separator + link);
     }, [applyProgrammaticContent]);
 
+    // Resolve workspace-relative image srcs into object URLs for display.
+    const resolveImageSrc = useCallback(async (src: string): Promise<string | null> => {
+      try {
+        const r = await whimAPI.readFile(spaceId, src);
+        if (r.error || !r.data) return null;
+        const blob = new Blob([new Uint8Array(r.data)], { type: r.mimeType || 'application/octet-stream' });
+        return URL.createObjectURL(blob);
+      } catch {
+        return null;
+      }
+    }, [spaceId]);
+
+    // Persist a pasted image and return its workspace-relative src.
+    const uploadFile = useCallback(async (file: File): Promise<{ src: string } | null> => {
+      try {
+        const buffer = await file.arrayBuffer();
+        const dataArray = Array.from(new Uint8Array(buffer));
+        const r = await whimAPI.pasteFile(spaceId, file.name, dataArray);
+        if (r.error || !r.relativePath) return null;
+        return { src: r.relativePath };
+      } catch {
+        return null;
+      }
+    }, [spaceId]);
+
     // ── Comment interactions ───────────────────────────────
     const handleCommentActivate = useCallback((threadId: string | null, rect: Rect | null) => {
       if (threadId && rect) {
@@ -754,6 +779,8 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
                 commentThreads={threads}
                 activeCommentId={activeComment?.id ?? null}
                 commentTrigger={commentTrigger}
+                resolveImageSrc={resolveImageSrc}
+                uploadFile={uploadFile}
                 onCommentActivate={handleCommentActivate}
                 onSelectionChange={handleSelectionChange}
               />
