@@ -4755,6 +4755,37 @@ body.dark .md-mention-popup {
   opacity: 0.5;
 }
 
+/* Agent presence carets */
+.markdown-canvas-container .whim-presence {
+  position: relative;
+  display: inline-block;
+  width: 0;
+  vertical-align: text-bottom;
+}
+.markdown-canvas-container .whim-presence-bar {
+  position: absolute;
+  left: -1px;
+  top: -0.05em;
+  width: 2px;
+  height: 1.2em;
+  background: var(--presence-color, #7c66dc);
+  border-radius: 1px;
+}
+.markdown-canvas-container .whim-presence-label {
+  position: absolute;
+  left: -1px;
+  top: -1.35em;
+  white-space: nowrap;
+  font-size: 10px;
+  line-height: 1.4;
+  padding: 0 4px;
+  border-radius: 4px 4px 4px 0;
+  color: #fff;
+  background: var(--presence-color, #7c66dc);
+  pointer-events: none;
+  opacity: 0.9;
+}
+
 /* ── Canvas Voice Recorder ───────────────────────────── */
 
 .canvas-voice-recorder {

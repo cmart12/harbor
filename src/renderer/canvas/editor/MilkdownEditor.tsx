@@ -29,7 +29,8 @@ import {
 } from './plugins/comment-plugin';
 import { computeAnchor } from './anchor';
 import { createImageNodeView, createImagePasteHandler, type ImageSrcResolver, type ImageUploader } from './plugins/image-view';
-import type { CanvasDecoration, CommentThread, CommentTrigger, TextAnchor } from '../types';
+import { presencePlugin, presencePluginKey, SET_PRESENCE } from './plugins/presence-plugin';
+import type { CanvasDecoration, CanvasPresence, CommentThread, CommentTrigger, TextAnchor } from '../types';
 import type { Rect, SelectionInfo, MentionQuery } from './geometry';
 import type { EditorState } from '@milkdown/kit/prose/state';
 
@@ -58,6 +59,7 @@ export interface MilkdownEditorProps {
   onFocus?: () => void;
   onBlur?: () => void;
   decorations?: readonly CanvasDecoration[];
+  presence?: readonly CanvasPresence[];
   commentThreads?: readonly CommentThread[];
   activeCommentId?: string | null;
   commentTrigger?: CommentTrigger;
@@ -71,6 +73,8 @@ export interface MilkdownEditorProps {
   onSelectionChange?: (info: SelectionInfo | null) => void;
   /** Fired with the active `@`-mention query (for the suggestion popup), or null. */
   onMentionQuery?: (info: MentionQuery | null) => void;
+  /** Fired when a link is clicked, with its raw href (for whim:// / external routing). */
+  onLinkClick?: (url: string) => void;
 }
 
 /** Detect an in-progress `@`-mention immediately before a collapsed caret. */
@@ -104,7 +108,7 @@ function rectFromRange(view: EditorView, from: number, to: number): Rect | null 
 
 const MilkdownInner = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
   function MilkdownInner(
-    { initialContent, onContentChanged, onFocus, onBlur, decorations, commentThreads, activeCommentId, commentTrigger, resolveImageSrc, uploadFile, onCommentActivate, onSelectionChange, onMentionQuery },
+    { initialContent, onContentChanged, onFocus, onBlur, decorations, presence, commentThreads, activeCommentId, commentTrigger, resolveImageSrc, uploadFile, onCommentActivate, onSelectionChange, onMentionQuery, onLinkClick },
     ref,
   ) {
     // Latest callbacks via refs so the editor factory (created once) never goes stale.
@@ -120,6 +124,8 @@ const MilkdownInner = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
     onSelectionChangeRef.current = onSelectionChange;
     const onMentionQueryRef = useRef(onMentionQuery);
     onMentionQueryRef.current = onMentionQuery;
+    const onLinkClickRef = useRef(onLinkClick);
+    onLinkClickRef.current = onLinkClick;
     const commentTriggerRef = useRef<CommentTrigger>(commentTrigger ?? 'caret');
     commentTriggerRef.current = commentTrigger ?? 'caret';
     const resolveImageSrcRef = useRef<ImageSrcResolver | undefined>(resolveImageSrc);
@@ -149,6 +155,16 @@ const MilkdownInner = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
             handlePaste: createImagePasteHandler(uploadFileRef),
             handleDOMEvents: {
               ...(prev.handleDOMEvents ?? {}),
+              click: (_view, event) => {
+                const target = event.target as HTMLElement | null;
+                const a = target?.closest?.('a') as HTMLAnchorElement | null;
+                if (!a) return false;
+                const href = a.getAttribute('href');
+                if (!href) return false;
+                event.preventDefault();
+                onLinkClickRef.current?.(href);
+                return true;
+              },
               mouseover: (view, event) => {
                 if (commentTriggerRef.current !== 'hover-or-caret') return false;
                 const target = event.target as HTMLElement | null;
@@ -213,7 +229,8 @@ const MilkdownInner = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
         .use(history)
         .use(cursor)
         .use(hostDecorationPlugin)
-        .use(commentPlugin);
+        .use(commentPlugin)
+        .use(presencePlugin);
     }, []);
 
     // Sync host-provided regex decorations.
@@ -233,6 +250,15 @@ const MilkdownInner = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
         view.dispatch(view.state.tr.setMeta(SET_THREADS, (commentThreads ?? []) as CommentThread[]));
       });
     }, [loading, get, commentThreads]);
+
+    // Sync agent presence carets.
+    useEffect(() => {
+      if (loading) return;
+      get()?.action((ctx) => {
+        const view = ctx.get(editorViewCtx);
+        view.dispatch(view.state.tr.setMeta(SET_PRESENCE, (presence ?? []) as CanvasPresence[]));
+      });
+    }, [loading, get, presence]);
 
     // Sync active comment highlight.
     useEffect(() => {

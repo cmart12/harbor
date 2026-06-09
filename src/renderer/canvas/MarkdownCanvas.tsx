@@ -43,6 +43,23 @@ declare const whimAPI: {
   openLink(spaceId: string, url: string): Promise<{ action: string; error?: string }>;
 };
 
+/** Route a whim:// resource click to the matching window opener. */
+function openWhimResource(url: string): void {
+  if (url.startsWith('whim://space/')) {
+    const id = url.slice('whim://space/'.length);
+    if (id) whimAPI.openCanvasWindow({ kind: 'space', id, title: '' });
+    return;
+  }
+  if (url.startsWith('whim://page/')) {
+    const parts = decodeURIComponent(url.slice('whim://page/'.length)).split('/');
+    if (parts.length >= 2) {
+      const [spaceId, ...rest] = parts;
+      const page = rest.join('/');
+      whimAPI.openPageWindow({ kind: 'page', spaceId, page, title: page });
+    }
+  }
+}
+
 export interface AgentPersona {
   id: string;
   handle: string;
@@ -235,7 +252,7 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
     editorModeRef.current = editorMode;
     rawContentRef.current = rawContent;
 
-    void presence; void agentUsers;
+    void agentUsers;
 
     /** Build the full document string for saving. */
     const getFullContent = useCallback(() => {
@@ -551,6 +568,15 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
       }
     }, [spaceId]);
 
+    // Route link clicks: whim:// to window openers, everything else to the host.
+    const handleLinkClick = useCallback((url: string) => {
+      if (url.startsWith('whim://')) {
+        openWhimResource(url);
+        return;
+      }
+      whimAPI.openLink(spaceId, url);
+    }, [spaceId]);
+
     // ── Comment interactions ───────────────────────────────
     const handleCommentActivate = useCallback((threadId: string | null, rect: Rect | null) => {
       if (threadId && rect) {
@@ -844,6 +870,7 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
                 theme={theme}
                 onContentChanged={onEditorContentChanged}
                 decorations={decorations}
+                presence={presence}
                 commentThreads={threads}
                 activeCommentId={activeComment?.id ?? null}
                 commentTrigger={commentTrigger}
@@ -852,6 +879,7 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
                 onCommentActivate={handleCommentActivate}
                 onSelectionChange={handleSelectionChange}
                 onMentionQuery={handleMentionQuery}
+                onLinkClick={handleLinkClick}
               />
               {isTranscribing && (
                 <div className="canvas-voice-transcribing-bar">
