@@ -1376,6 +1376,78 @@ body.dark .sandbox-block-banner-btn:hover {
   cursor: pointer;
 }
 
+.web-remote-settings {
+  border: 1px solid rgba(124, 102, 220, 0.12);
+  border-radius: var(--card-inner-radius);
+  padding: 12px;
+  background: rgba(124, 102, 220, 0.04);
+}
+
+.web-remote-port-row label {
+  min-width: 36px;
+}
+
+.web-remote-port-input {
+  max-width: 120px;
+}
+
+.web-remote-interface-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border-radius: var(--card-inner-radius);
+  background: var(--card-inner-bg);
+}
+
+.web-remote-interface-option {
+  white-space: normal;
+}
+
+.web-remote-token-row {
+  align-items: stretch;
+}
+
+.web-remote-token-input {
+  flex: 1;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: var(--fs-label);
+}
+
+.web-remote-url-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.web-remote-url {
+  padding: 6px 8px;
+  border-radius: var(--btn-radius);
+  background: rgba(0, 0, 0, 0.04);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: var(--fs-label);
+  user-select: text;
+  word-break: break-all;
+}
+
+.web-remote-onboarding {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.web-remote-qr {
+  width: 96px;
+  height: 96px;
+  border-radius: 8px;
+  background: #fff;
+  padding: 6px;
+}
+
+.web-remote-error {
+  color: #b91414;
+}
+
 /* Persona form checkbox labels (sandbox, yolo, etc.) */
 .persona-form-checkbox-label {
   display: flex;
@@ -6111,6 +6183,9 @@ body.dark .settings-row select:focus { border-color: rgba(124, 102, 220, 0.5); }
 body.dark .settings-row select option { background: #1c1c20; color: #e0e0e0; }
 body.dark .settings-hint { color: rgba(255, 255, 255, 0.45); }
 body.dark .settings-checkbox-label { color: rgba(255, 255, 255, 0.85); }
+body.dark .web-remote-settings { background: rgba(124, 102, 220, 0.08); border-color: rgba(124, 102, 220, 0.18); }
+body.dark .web-remote-url { background: rgba(255, 255, 255, 0.06); color: rgba(255, 255, 255, 0.78); }
+body.dark .web-remote-error { color: #ff9c9c; }
 body.dark .workspace-path { color: rgba(255, 255, 255, 0.6); }
 body.dark .workspace-path.clickable:hover { color: rgba(255, 255, 255, 0.85); }
 body.dark .workspace-btn { background: rgba(255, 255, 255, 0.06); border-color: rgba(255, 255, 255, 0.08); color: rgba(255, 255, 255, 0.6); }

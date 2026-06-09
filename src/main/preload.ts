@@ -7,6 +7,8 @@ import type {
   CustomMcpServer,
   SandboxPolicy,
   HotkeyConfig,
+  WebRemoteInterface,
+  WebRemoteState,
 } from '../shared/ipc-contract';
 import type { ChatEvent } from '../shared/chat-types';
 import type { AgentAnchor, RecurrenceResult, RecallMatch, Skill, SkillContent, SkillScheduleFrequency, CanvasTarget, UpdateState } from '../shared/types';
@@ -46,6 +48,11 @@ export interface WhimAPI {
   // ── Settings ─────────────────────────────────────────────
   getSetting(key: string): Promise<IpcCommandResult<'settings:get'>>;
   setSetting(key: string, value: string): Promise<IpcCommandResult<'settings:set'>>;
+  getWebRemoteState(): Promise<WebRemoteState>;
+  setWebRemoteEnabled(enabled: boolean): Promise<WebRemoteState>;
+  setWebRemoteConfig(config: { port?: number; bindAddresses?: string[] }): Promise<WebRemoteState | { error: string }>;
+  regenerateWebRemoteToken(): Promise<WebRemoteState>;
+  listWebRemoteInterfaces(): Promise<WebRemoteInterface[]>;
 
   // ── Hotkeys ──────────────────────────────────────────────
   getHotkeys(): Promise<IpcCommandResult<'hotkeys:get'>>;
@@ -267,6 +274,11 @@ const api: WhimAPI = {
   // ── Settings ─────────────────────────────────────────────
   getSetting: (key) => ipcRenderer.invoke('settings:get', key),
   setSetting: (key, value) => ipcRenderer.invoke('settings:set', key, value),
+  getWebRemoteState: () => ipcRenderer.invoke('web-remote:get-state'),
+  setWebRemoteEnabled: (enabled) => ipcRenderer.invoke('web-remote:set-enabled', enabled),
+  setWebRemoteConfig: (config) => ipcRenderer.invoke('web-remote:set-config', config),
+  regenerateWebRemoteToken: () => ipcRenderer.invoke('web-remote:regenerate-token'),
+  listWebRemoteInterfaces: () => ipcRenderer.invoke('web-remote:list-interfaces'),
 
   // ── Hotkeys ──────────────────────────────────────────────
   getHotkeys: () => ipcRenderer.invoke('hotkeys:get'),

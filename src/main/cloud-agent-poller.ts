@@ -1,6 +1,7 @@
 import { BrowserWindow } from 'electron';
 import { getCloudJobStatus, CloudJobStatus } from './cloud-agent';
 import { updateAgentSessionStatus } from './database';
+import { mirrorRendererEvent } from './web/event-hub';
 
 interface PollState {
   agentId: string;
@@ -16,6 +17,7 @@ interface PollState {
 const activePollers = new Map<string, PollState>();
 
 function notifyAllWindows(channel: string, ...args: any[]): void {
+  mirrorRendererEvent(channel, ...args);
   for (const win of BrowserWindow.getAllWindows()) {
     win.webContents.send(channel, ...args);
   }

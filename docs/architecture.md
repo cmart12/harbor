@@ -18,6 +18,7 @@ whim is an Electron app with a clear separation between the main process (Node.j
 │  ipc.ts ◄──────────────────┼──► preload.ts (context bridge)        │
 │  config.ts, mcp.ts,        │                                        │
 │  voice.ts, session.ts      │                                        │
+│  web/ — Remote web server  │  src/web — Mobile remote UI            │
 ├────────────────────────────┴────────────────────────────────────────┤
 │  External: Copilot SDK (local) │ Copilot CCA (cloud) │ MCP Servers │
 └─────────────────────────────────────────────────────────────────────┘
@@ -69,6 +70,17 @@ Three specialized sessions: **Parse** (extract title/client/dates), **Recurrence
 ### cloud-agent-poller.ts — Cloud Job Polling
 
 Polls every 10s, maps cloud statuses to agent lifecycle, updates DB, emits events, auto-stops on terminal status.
+
+### web/ — Remote Web Access
+
+The optional remote web server is disabled by default and lives entirely in the Electron main process:
+
+- `server.ts` starts/stops Node `http` servers on the selected bind addresses and serves `dist/web/`
+- `auth.ts` enforces a shared token on every `/api/*` request and WebSocket handshake using constant-time comparison plus bad-attempt lockout
+- `gateway.ts` exposes only an explicit v1 allowlist: capture, browse spaces, list/chat/approve workers, deploy agents, personas, and models
+- `event-hub.ts` mirrors allowlisted renderer events into a WebSocket stream, including dynamic `chat:event:<agentId>` channels
+
+The desktop settings panel controls enablement, port, bind addresses, token rotation, and QR onboarding. Plain HTTP is acceptable over Tailscale's encrypted tunnel; raw LAN use should be limited to trusted networks.
 
 ### workspace.ts — Workspace & Persistence
 

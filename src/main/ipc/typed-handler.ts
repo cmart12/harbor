@@ -7,6 +7,7 @@
  */
 
 import { BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
+import { mirrorRendererEvent } from '../web/event-hub';
 import type {
   IpcCommandChannel,
   IpcCommands,
@@ -50,6 +51,7 @@ export function sendToAllWindows<C extends IpcEventChannel>(
   channel: C,
   ...args: IpcEvents[C] extends void ? [] : [payload: IpcEvents[C]]
 ): void {
+  mirrorRendererEvent(channel, ...args);
   for (const win of BrowserWindow.getAllWindows()) {
     win.webContents.send(channel, ...args);
   }

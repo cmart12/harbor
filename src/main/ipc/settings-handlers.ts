@@ -3,11 +3,12 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { setAIModel, listAvailableModels, reinitCopilot, previewSandboxConfig } from '../ai';
 import { resolveCopilotCliPath, invalidateCliPath, checkCliCompatibility, resolveCommandOnPath, resolveCmdToJs, isCliMxcCapable } from '../session';
-import { getConfigValue, setConfigValue, getConfig, getResolvedHotkeys, DEFAULT_PERSONAS, DEFAULT_HOTKEYS, HOTKEY_LABELS, type AgentPersona, type CliRuntime, type HotkeyConfig } from '../config';
+import { getConfigValue, setConfigValue, getConfig, getResolvedHotkeys, DEFAULT_PERSONAS, DEFAULT_HOTKEYS, HOTKEY_LABELS, rotateWebRemoteToken, normalizeWebRemotePort, normalizeWebRemoteBindAddresses, listWebRemoteInterfaces, type AgentPersona, type CliRuntime, type HotkeyConfig } from '../config';
 import { listDiscoveredMcpServers } from '../mcp';
 import { validateMcpServers, validateCliTools, validateSandboxPolicy } from '../validators';
 import { onAutoHideSidePaneChanged } from '../window-manager';
 import { setAutoDownload } from '../update-service';
+import { getWebRemoteState, restartWebRemoteServer, syncWebRemoteServer } from '../web/server';
 
 const HANDLE_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;
 
@@ -61,6 +62,49 @@ export function registerSettingsHandlers(): void {
       setConfigValue('commentTrigger', next);
       return next;
     }
+  });
+
+  ipcMain.handle('web-remote:get-state', async () => {
+    return getWebRemoteState();
+  });
+
+  ipcMain.handle('web-remote:set-enabled', async (_event, enabled: boolean) => {
+    setConfigValue('webRemoteEnabled', enabled === true);
+    return syncWebRemoteServer();
+  });
+
+  ipcMain.handle('web-remote:set-config', async (_event, next: unknown) => {
+    if (!next || typeof next !== 'object' || Array.isArray(next)) {
+      return { error: 'invalid payload' };
+    }
+
+    const raw = next as { port?: unknown; bindAddresses?: unknown };
+    if (raw.port !== undefined) {
+      const port = normalizeWebRemotePort(raw.port);
+      if (port !== Number(raw.port)) {
+        return { error: 'Port must be between 1024 and 65535.' };
+      }
+      setConfigValue('webRemotePort', port);
+    }
+
+    if (raw.bindAddresses !== undefined) {
+      const bindAddresses = normalizeWebRemoteBindAddresses(raw.bindAddresses);
+      if (bindAddresses.length === 0) {
+        return { error: 'Select at least one network interface.' };
+      }
+      setConfigValue('webRemoteBindAddresses', bindAddresses);
+    }
+
+    return restartWebRemoteServer();
+  });
+
+  ipcMain.handle('web-remote:regenerate-token', async () => {
+    rotateWebRemoteToken();
+    return restartWebRemoteServer();
+  });
+
+  ipcMain.handle('web-remote:list-interfaces', () => {
+    return listWebRemoteInterfaces();
   });
 
   ipcMain.handle('cli:resolve-path', () => {

@@ -186,6 +186,27 @@ export interface DiscoveredMcpServer {
   url?: string;
 }
 
+export interface WebRemoteInterface {
+  name: string;
+  address: string;
+  family: 'IPv4' | 'IPv6';
+  internal: boolean;
+  tailscale: boolean;
+  label: string;
+}
+
+export interface WebRemoteState {
+  enabled: boolean;
+  running: boolean;
+  port: number;
+  token: string;
+  bindAddresses: string[];
+  interfaces: WebRemoteInterface[];
+  urls: string[];
+  qrDataUrl: string | null;
+  error: string | null;
+}
+
 export interface HotkeyConfig {
   toggleWindow: string;
   canvasPinToTop: string;
@@ -234,7 +255,7 @@ export interface IpcCommands {
   'space:delete': { args: [id: string]; result: boolean };
   'space:dismiss-recurrence': { args: [id: string]; result: boolean };
   'space:events': { args: [limit?: number]; result: SpaceEvent[] };
-  'space:resolve-date': { args: [dateText: string]; result: { date: string; utc: string } | null };
+  'space:resolve-date': { args: [dateText: string]; result: { due_at: string; due_at_utc: string | null } | null };
   'space:classify': { args: [text: string]; result: { type: 'space' | 'query'; answer?: string } };
   'space:summarize-title': { args: [canvasContent: string]; result: { title: string | null } };
   'space:search': { args: [query: string]; result: Space[] };
@@ -246,6 +267,14 @@ export interface IpcCommands {
   // ── Settings ─────────────────────────────────────────────
   'settings:get': { args: [key: string]; result: unknown };
   'settings:set': { args: [key: string, value: string]; result: string | null | undefined };
+  'web-remote:get-state': { args: []; result: WebRemoteState };
+  'web-remote:set-enabled': { args: [enabled: boolean]; result: WebRemoteState };
+  'web-remote:set-config': {
+    args: [config: { port?: number; bindAddresses?: string[] }];
+    result: WebRemoteState | { error: string };
+  };
+  'web-remote:regenerate-token': { args: []; result: WebRemoteState };
+  'web-remote:list-interfaces': { args: []; result: WebRemoteInterface[] };
 
   // ── Hotkeys ──────────────────────────────────────────────
   'hotkeys:get': { args: []; result: HotkeyConfig };

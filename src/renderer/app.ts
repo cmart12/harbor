@@ -87,6 +87,27 @@ interface DiscoveredMcpServer {
   url?: string;
 }
 
+interface WebRemoteInterface {
+  name: string;
+  address: string;
+  family: 'IPv4' | 'IPv6';
+  internal: boolean;
+  tailscale: boolean;
+  label: string;
+}
+
+interface WebRemoteState {
+  enabled: boolean;
+  running: boolean;
+  port: number;
+  token: string;
+  bindAddresses: string[];
+  interfaces: WebRemoteInterface[];
+  urls: string[];
+  qrDataUrl: string | null;
+  error: string | null;
+}
+
 interface FolderCommit {
   sha: string;
   shortSha: string;
@@ -105,6 +126,11 @@ interface WhimAPI {
   transcribe(audioData: number[]): Promise<string>;
   getSetting(key: string): Promise<string | null>;
   setSetting(key: string, value: string): Promise<string | null | undefined>;
+  getWebRemoteState(): Promise<WebRemoteState>;
+  setWebRemoteEnabled(enabled: boolean): Promise<WebRemoteState>;
+  setWebRemoteConfig(config: { port?: number; bindAddresses?: string[] }): Promise<WebRemoteState | { error: string }>;
+  regenerateWebRemoteToken(): Promise<WebRemoteState>;
+  listWebRemoteInterfaces(): Promise<WebRemoteInterface[]>;
   getHotkeys(): Promise<Record<string, string>>;
   setHotkey(key: string, accelerator: string): Promise<{ ok?: boolean; error?: string }>;
   resetHotkeys(key?: string): Promise<{ ok?: boolean; hotkeys?: Record<string, string> }>;
@@ -4092,6 +4118,140 @@ if (autoRemoteCb) {
   });
 }
 
+// ── Remote Web Access setting ───────────────────────────
+const webRemoteEnabledCb = document.getElementById('web-remote-enabled-cb') as HTMLInputElement | null;
+const webRemotePortInput = document.getElementById('web-remote-port-input') as HTMLInputElement | null;
+const webRemoteSaveBtn = document.getElementById('web-remote-save-btn') as HTMLButtonElement | null;
+const webRemoteRegenerateBtn = document.getElementById('web-remote-regenerate-btn') as HTMLButtonElement | null;
+const webRemoteTokenInput = document.getElementById('web-remote-token-input') as HTMLInputElement | null;
+const webRemoteInterfaceList = document.getElementById('web-remote-interface-list') as HTMLDivElement | null;
+const webRemoteUrlList = document.getElementById('web-remote-url-list') as HTMLDivElement | null;
+const webRemoteQr = document.getElementById('web-remote-qr') as HTMLImageElement | null;
+const webRemoteStatus = document.getElementById('web-remote-status') as HTMLDivElement | null;
+
+function setWebRemoteStatus(message: string, error = false): void {
+  if (!webRemoteStatus) return;
+  webRemoteStatus.textContent = message;
+  webRemoteStatus.classList.toggle('web-remote-error', error);
+}
+
+function selectedWebRemoteAddresses(): string[] {
+  if (!webRemoteInterfaceList) return [];
+  return Array.from(webRemoteInterfaceList.querySelectorAll<HTMLInputElement>('input[type="checkbox"]:checked'))
+    .map(input => input.value);
+}
+
+function renderWebRemoteInterfaces(state: WebRemoteState): void {
+  if (!webRemoteInterfaceList) return;
+  webRemoteInterfaceList.innerHTML = '';
+
+  const selected = new Set(state.bindAddresses);
+  const interfaces = state.interfaces.filter(iface => iface.family === 'IPv4');
+  if (interfaces.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'settings-hint';
+    empty.textContent = 'No network interfaces detected.';
+    webRemoteInterfaceList.appendChild(empty);
+    return;
+  }
+
+  for (const iface of interfaces) {
+    const label = document.createElement('label');
+    label.className = 'settings-checkbox-label web-remote-interface-option';
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.value = iface.address;
+    checkbox.checked = selected.has(iface.address);
+    label.appendChild(checkbox);
+
+    const text = document.createElement('span');
+    text.textContent = iface.label;
+    if (!iface.internal && !iface.tailscale) {
+      text.title = 'Plain HTTP on raw LAN. Prefer Tailscale unless you trust this network.';
+    }
+    label.appendChild(text);
+    webRemoteInterfaceList.appendChild(label);
+  }
+}
+
+function renderWebRemoteState(state: WebRemoteState): void {
+  if (webRemoteEnabledCb) webRemoteEnabledCb.checked = state.enabled;
+  if (webRemotePortInput) webRemotePortInput.value = String(state.port);
+  if (webRemoteTokenInput) webRemoteTokenInput.value = state.token;
+  renderWebRemoteInterfaces(state);
+
+  if (webRemoteUrlList) {
+    webRemoteUrlList.innerHTML = '';
+    for (const url of state.urls) {
+      const row = document.createElement('div');
+      row.className = 'web-remote-url';
+      row.textContent = url;
+      webRemoteUrlList.appendChild(row);
+    }
+  }
+
+  if (webRemoteQr) {
+    if (state.qrDataUrl && state.enabled) {
+      webRemoteQr.src = state.qrDataUrl;
+      webRemoteQr.classList.remove('hidden');
+    } else {
+      webRemoteQr.removeAttribute('src');
+      webRemoteQr.classList.add('hidden');
+    }
+  }
+
+  if (!state.enabled) {
+    setWebRemoteStatus('Remote web access is off.');
+  } else if (state.running) {
+    setWebRemoteStatus('Remote web access is running. Scan the QR code from your phone.');
+  } else {
+    setWebRemoteStatus(state.error || 'Remote web access is enabled but not running.', true);
+  }
+}
+
+async function loadWebRemoteSetting(): Promise<void> {
+  if (!webRemoteEnabledCb) return;
+  try {
+    renderWebRemoteState(await whimAPI.getWebRemoteState());
+  } catch (err: any) {
+    setWebRemoteStatus(err?.message || 'Failed to load remote web settings.', true);
+  }
+}
+
+if (webRemoteEnabledCb) {
+  webRemoteEnabledCb.addEventListener('change', async () => {
+    setWebRemoteStatus(webRemoteEnabledCb.checked ? 'Starting remote web access…' : 'Stopping remote web access…');
+    try {
+      renderWebRemoteState(await whimAPI.setWebRemoteEnabled(webRemoteEnabledCb.checked));
+    } catch (err: any) {
+      setWebRemoteStatus(err?.message || 'Failed to update remote web access.', true);
+      await loadWebRemoteSetting();
+    }
+  });
+}
+
+if (webRemoteSaveBtn) {
+  webRemoteSaveBtn.addEventListener('click', async () => {
+    const port = Number(webRemotePortInput?.value || 0);
+    const bindAddresses = selectedWebRemoteAddresses();
+    setWebRemoteStatus('Saving remote web settings…');
+    const result = await whimAPI.setWebRemoteConfig({ port, bindAddresses });
+    if ('error' in result) {
+      setWebRemoteStatus(result.error, true);
+      return;
+    }
+    renderWebRemoteState(result);
+  });
+}
+
+if (webRemoteRegenerateBtn) {
+  webRemoteRegenerateBtn.addEventListener('click', async () => {
+    setWebRemoteStatus('Regenerating token and closing existing mobile sessions…');
+    renderWebRemoteState(await whimAPI.regenerateWebRemoteToken());
+  });
+}
+
 // ── Comment trigger setting ──────────────────────────────
 const commentHoverCb = document.getElementById('comment-hover-cb') as HTMLInputElement | null;
 
@@ -7203,6 +7363,7 @@ if (isSettingsMode) {
     loadThemeSetting(),
     loadAutoHideSetting(),
     loadAutoRemoteSetting(),
+    loadWebRemoteSetting(),
     loadCommentTriggerSetting(),
     loadPersonas(),
     loadRuntimes(),

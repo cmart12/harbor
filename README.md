@@ -41,6 +41,12 @@ Agents can run **locally** via the Copilot SDK, or in the **cloud** via GitHub's
 - **Delete sessions** — remove completed or failed agent sessions
 - **Open canvas** — jump from a worker back to its source canvas
 
+### 📱 Remote Web Access
+- **Mobile web UI** — optionally serve a lightweight phone-friendly site from the running desktop app
+- **LAN / Tailscale access** — bind to selected network interfaces, with Tailscale addresses labeled in Settings
+- **Token gated** — every `/api/*` request and WebSocket event stream requires the shared token
+- **Real-time workers** — chat events, worker status, approvals, sandbox blocks, and space updates stream over WebSocket
+
 ### 🎨 UI/UX
 - **Light/dark themes** with translucent, blurred backgrounds
 - **Edge snapping** — drag the window to any screen edge; it snaps to position
@@ -55,6 +61,7 @@ Agents can run **locally** via the Copilot SDK, or in the **cloud** via GitHub's
 - **Agent personas** — define @mentionable personas with custom instructions and local/cloud execution
 - **MCP servers** — auto-discovered from `~/.copilot/` + user-added custom servers
 - **CLI tools** — define CLI tools available in the environment so agents know when to use them
+- **Remote web access** — enable the mobile site, choose port/interfaces, rotate the token, and scan a QR code
 
 ### 📊 Additional Features
 - **Smart recurrence** — dated intents are re-evaluated on completion; recurring tasks auto-spawn
@@ -81,6 +88,7 @@ src/
 │   ├── voice.ts               # Local Whisper model (speech-to-text)
 │   ├── config.ts              # User config (theme, model, personas)
 │   ├── mcp.ts                 # MCP server discovery & management
+│   ├── web/                   # Optional LAN/Tailscale web server + RPC gateway
 │   ├── migration.ts           # Database migrations
 │   └── preload.ts             # Context bridge exposing intentAPI
 ├── renderer/                  # Electron renderer process
@@ -96,6 +104,9 @@ src/
 │       ├── PromptBar.tsx      # Message input bar
 │       ├── MessageList.tsx    # Message history
 │       └── tiles/             # Message type renderers
+├── web/                       # Mobile-first remote web client
+│   ├── index.tsx              # React app for capture/spaces/workers/chat/deploy
+│   └── lib/client.ts          # Token-authenticated HTTP + WebSocket transport
 ├── shared/
 │   └── types.ts               # Shared TypeScript types
 └── assets/
@@ -149,6 +160,7 @@ npm run lint   # Lint with oxlint
 | Toggle done | Click the circle next to an intent |
 | Delete intent | Hover → click ✕ |
 | Settings | Click ⚙ in the header |
+| Enable mobile web | Settings → Remote Web Access → Serve mobile web UI |
 | Dismiss window | `Escape` or click outside |
 
 ### Workspace Structure

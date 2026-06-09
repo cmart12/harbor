@@ -9,7 +9,7 @@ vi.mock('electron', () => ({
   },
 }));
 
-import { loadConfig, getConfig, getConfigValue, setConfigValue, getSessionId, setSessionId, removeSession, saveConfig } from './config';
+import { loadConfig, getConfig, getConfigValue, setConfigValue, getSessionId, setSessionId, removeSession, saveConfig, DEFAULT_WEB_REMOTE_PORT, isTailscaleAddress } from './config';
 
 const CONFIG_PATH = path.join('/tmp/space-test-config', 'config.json');
 
@@ -32,6 +32,9 @@ describe('config', () => {
       expect(config.workspace).toBeNull();
       expect(config.personas).toEqual([]);
       expect(config.personasSeeded).toBe(false);
+      expect(config.webRemoteEnabled).toBe(false);
+      expect(config.webRemotePort).toBe(DEFAULT_WEB_REMOTE_PORT);
+      expect(config.webRemoteToken.length).toBeGreaterThan(20);
     });
 
     it('includes new cliTools field with default empty array', () => {
@@ -42,6 +45,12 @@ describe('config', () => {
     it('includes new mcpServers field with default empty array', () => {
       const config = loadConfig();
       expect(config.mcpServers).toEqual([]);
+    });
+
+    it('detects Tailscale interface addresses', () => {
+      expect(isTailscaleAddress('100.64.0.1')).toBe(true);
+      expect(isTailscaleAddress('100.127.255.254')).toBe(true);
+      expect(isTailscaleAddress('192.168.1.10')).toBe(false);
     });
 
     it('loads existing config and merges with defaults', () => {

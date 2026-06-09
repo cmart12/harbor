@@ -15,6 +15,7 @@ import { startCliExitMonitor, stopCliExitMonitor, reconcileStaleAgents } from '.
 import { createMainWindow, toggleWindow, setupSnapOnDrop, registerWindowIpcHandlers, preWarmSettingsWindow, releaseSettingsWindow, preWarmCanvasWindow, releaseCanvasWindow } from './window-manager';
 import { createTray, destroyTray } from './tray';
 import { initAutoUpdater, cleanupAutoUpdater } from './update-service';
+import { syncWebRemoteServer, stopWebRemoteServer } from './web/server';
 
 let currentToggleAccelerator: string | null = null;
 
@@ -200,6 +201,7 @@ app.whenReady().then(async () => {
     setConfigValue('workspace', null);
   }
   // If no workspace, DB is not initialized — IPC handlers return empty/error states
+  await syncWebRemoteServer();
 
   // ── Module initialization ──────────────────────────────
   const preloadPath = path.join(__dirname, 'preload.js');
@@ -273,6 +275,7 @@ app.on('will-quit', async () => {
   globalShortcut.unregisterAll();
   stopCliExitMonitor();
   stopScheduler();
+  await stopWebRemoteServer();
   cleanupAutoUpdater();
   destroyTray();
   await shutdownCopilot();

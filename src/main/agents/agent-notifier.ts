@@ -1,4 +1,5 @@
 import { BrowserWindow, Notification } from 'electron';
+import { mirrorRendererEvent } from '../web/event-hub';
 
 export interface ApprovalNotificationOptions {
   agentId: string;
@@ -71,6 +72,7 @@ export function buildToastXml(
 export class AgentNotifier {
   /** Send an event to all renderer windows */
   notifyRenderer(channel: string, ...args: any[]): void {
+    mirrorRendererEvent(channel, ...args);
     for (const win of BrowserWindow.getAllWindows()) {
       win.webContents.send(channel, ...args);
     }

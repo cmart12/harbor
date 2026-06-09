@@ -200,6 +200,25 @@ Each agent card shows:
 
 ---
 
+## Remote Web Access
+
+Remote Web Access serves a lightweight mobile site from the running whim desktop app. It is **off by default**.
+
+### Enabling
+
+1. Open **Settings** → **Remote Web Access**
+2. Check **Serve mobile web UI on this network**
+3. Choose a port and one or more bind interfaces. Tailscale interfaces are labeled; prefer those for phone access.
+4. Scan the QR code from your phone, or open one of the listed URLs.
+
+The phone UI can capture intents, browse spaces, view workers, chat with agents, approve/deny permission requests, and deploy agents. Canvas editing and settings editing are not available from mobile.
+
+### Security model
+
+Every remote API request and the live WebSocket event stream require the shared token shown in Settings. Regenerating the token closes existing mobile sessions. Tailscale traffic is encrypted by the tunnel; raw LAN HTTP is plaintext, so only enable raw LAN interfaces on trusted networks.
+
+---
+
 ## The Past Tab
 
 The **Past** tab shows completed intents with their activity history, organized by completion date. Click any past intent to reopen its canvas.

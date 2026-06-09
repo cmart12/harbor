@@ -1,10 +1,11 @@
 const esbuild = require('esbuild');
+const fs = require('fs');
 const path = require('path');
 
 const watch = process.argv.includes('--watch');
 const minify = !watch;
 
-const buildOptions = {
+const rendererOptions = {
   entryPoints: [path.join(__dirname, '..', 'src', 'renderer', 'app.ts')],
   bundle: true,
   outfile: path.join(__dirname, '..', 'dist', 'renderer', 'app.js'),
@@ -27,13 +28,37 @@ const buildOptions = {
   logLevel: 'info',
 };
 
+const webOptions = {
+  ...rendererOptions,
+  entryPoints: [path.join(__dirname, '..', 'src', 'web', 'index.tsx')],
+  outfile: path.join(__dirname, '..', 'dist', 'web', 'app.js'),
+};
+
+function copyWebAssets() {
+  const srcDir = path.join(__dirname, '..', 'src', 'web');
+  const distDir = path.join(__dirname, '..', 'dist', 'web');
+  fs.mkdirSync(distDir, { recursive: true });
+  for (const asset of ['index.html', 'styles.css']) {
+    fs.copyFileSync(path.join(srcDir, asset), path.join(distDir, asset));
+  }
+}
+
 async function main() {
   if (watch) {
-    const ctx = await esbuild.context(buildOptions);
-    await ctx.watch();
-    console.log('[esbuild] Watching renderer...');
+    copyWebAssets();
+    const rendererCtx = await esbuild.context(rendererOptions);
+    const webCtx = await esbuild.context(webOptions);
+    await Promise.all([rendererCtx.watch(), webCtx.watch()]);
+    for (const asset of ['index.html', 'styles.css']) {
+      fs.watchFile(path.join(__dirname, '..', 'src', 'web', asset), { interval: 300 }, copyWebAssets);
+    }
+    console.log('[esbuild] Watching renderer and web remote...');
   } else {
-    await esbuild.build(buildOptions);
+    await Promise.all([
+      esbuild.build(rendererOptions),
+      esbuild.build(webOptions),
+    ]);
+    copyWebAssets();
   }
 }
 
