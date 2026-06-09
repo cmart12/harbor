@@ -116,6 +116,33 @@ function rectFromRange(view: EditorView, from: number, to: number): Rect | null 
   }
 }
 
+/**
+ * Bounding rect of the selection built from a DOM Range at the ProseMirror
+ * positions. `getBoundingClientRect` on a multi-line range returns the true
+ * union box (ProseMirror endpoint coords don't span lines), and unlike reading
+ * `window.getSelection()` it's valid synchronously during a transaction.
+ */
+function domRangeRect(view: EditorView, from: number, to: number): Rect | null {
+  try {
+    if (typeof document === 'undefined') return null;
+    const a = view.domAtPos(from);
+    const b = view.domAtPos(to);
+    const range = document.createRange();
+    range.setStart(a.node, a.offset);
+    range.setEnd(b.node, b.offset);
+    const r = range.getBoundingClientRect();
+    if (!r || (r.width === 0 && r.height === 0)) return null;
+    return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height };
+  } catch {
+    return null;
+  }
+}
+
+/** Best available rect for a selection: true highlight box, else PM endpoints. */
+function selectionRect(view: EditorView, from: number, to: number): Rect | null {
+  return domRangeRect(view, from, to) ?? rectFromRange(view, from, to);
+}
+
 const MilkdownInner = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
   function MilkdownInner(
     { initialContent, onContentChanged, onFocus, onBlur, decorations, presence, commentThreads, activeCommentId, commentTrigger, resolveImageSrc, uploadFile, onCommentActivate, onSelectionChange, onMentionQuery, onLinkClick },
@@ -210,7 +237,7 @@ const MilkdownInner = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
             if (!empty) {
               onMentionQueryRef.current?.(null);
               const text = view.state.doc.textBetween(from, to, '\n', '\uFFFC');
-              const rect = rectFromRange(view, from, to);
+              const rect = selectionRect(view, from, to);
               if (rect && text.trim()) {
                 onSelectionChangeRef.current?.({ text, from, to, rect });
               } else {

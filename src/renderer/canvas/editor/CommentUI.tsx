@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Bold, Italic, Strikethrough, Code, MessageSquarePlus, GitFork, FileOutput, Check, Trash2, CornerDownLeft } from 'lucide-react';
 import type { CommentThread } from '../types';
 import type { Rect, FormatMark } from './geometry';
+import { useAnchoredPosition } from './floating';
 
 /** Render floating UI on document.body so it escapes the app's backdrop-filter
  *  containing block (which otherwise breaks position: fixed coordinates). */
@@ -34,16 +35,10 @@ export function SelectionToolbar({
   onFork?: () => void;
   onExtract?: () => void;
 }) {
-  const style: React.CSSProperties = {
-    position: 'fixed',
-    left: Math.round(rect.left + rect.width / 2),
-    top: Math.round(rect.top - 8),
-    transform: 'translate(-50%, -100%)',
-    zIndex: 2147483000,
-  };
+  const { ref, style } = useAnchoredPosition(rect, { placement: 'above', align: 'center' });
   return (
     <Floating>
-      <div className="md-selection-toolbar" style={style} onMouseDown={(e) => e.preventDefault()}>
+      <div ref={ref} className="md-selection-toolbar" style={style} onMouseDown={(e) => e.preventDefault()}>
         <button className="md-selection-btn md-selection-icon" title="Bold (⌘B)" onClick={() => onFormat('strong')}>
           <Bold size={14} />
         </button>
@@ -89,8 +84,9 @@ export function CommentComposer({
   onCancel: () => void;
 }) {
   const [body, setBody] = useState('');
-  const ref = useRef<HTMLTextAreaElement>(null);
-  useEffect(() => { ref.current?.focus(); }, []);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const { ref, style } = useAnchoredPosition(rect, { placement: 'below', align: 'start', gap: 6 });
+  useEffect(() => { inputRef.current?.focus(); }, []);
 
   const submit = () => {
     const t = body.trim();
@@ -99,10 +95,10 @@ export function CommentComposer({
 
   return (
     <Floating>
-      <div className="md-comment-popover" style={popoverStyle(rect)} onMouseDown={(e) => e.stopPropagation()}>
+      <div ref={ref} className="md-comment-popover" style={style} onMouseDown={(e) => e.stopPropagation()}>
         <div className="md-comment-quote">{quote.length > 120 ? quote.slice(0, 120) + '…' : quote}</div>
         <textarea
-          ref={ref}
+          ref={inputRef}
           className="md-comment-input"
           placeholder="Add a comment…  (@mention an agent to deploy it)"
           value={body}
@@ -142,6 +138,7 @@ export function CommentPopover({
   onClose: () => void;
 }) {
   const [body, setBody] = useState('');
+  const { ref, style } = useAnchoredPosition(rect, { placement: 'below', align: 'start', gap: 6 });
   void roster;
 
   const submit = () => {
@@ -151,7 +148,7 @@ export function CommentPopover({
 
   return (
     <Floating>
-      <div className="md-comment-popover" style={popoverStyle(rect)} onMouseDown={(e) => e.stopPropagation()}>
+      <div ref={ref} className="md-comment-popover" style={style} onMouseDown={(e) => e.stopPropagation()}>
         <div className="md-comment-header">
           <span className="md-comment-quote-inline">“{thread.quote.length > 80 ? thread.quote.slice(0, 80) + '…' : thread.quote}”</span>
           <div className="md-comment-header-actions">
@@ -190,13 +187,4 @@ export function CommentPopover({
       </div>
     </Floating>
   );
-}
-
-function popoverStyle(rect: Rect): React.CSSProperties {
-  return {
-    position: 'fixed',
-    left: Math.round(rect.left),
-    top: Math.round(rect.bottom + 6),
-    zIndex: 2147483000,
-  };
 }
