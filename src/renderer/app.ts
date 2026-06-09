@@ -7,6 +7,14 @@
  *   - src/renderer/views/ (React components)
  */
 
+import {
+  acceleratorsConflict,
+  eventMatchesAccelerator,
+  formatAccelerator,
+  keyboardEventToAccelerator,
+  modifierEventToAccelerator,
+} from './lib/hotkeys';
+
 interface RecurrenceResult {
   should_recur: boolean;
   reasoning: string;
@@ -4339,61 +4347,45 @@ const DEFAULT_HOTKEYS: Record<string, string> = {
 // Current hotkeys loaded from config — renderer-side cache
 let currentHotkeys: Record<string, string> = { ...DEFAULT_HOTKEYS };
 let hotkeyRecordingKey: string | null = null;
+let hotkeyFeedback: { key: string; message: string } | null = null;
+let hotkeyFeedbackTimer: number | null = null;
 
-const isMac = navigator.platform.toUpperCase().includes('MAC');
-
-function acceleratorToDisplay(accel: string): string {
-  return accel
-    .replace(/CommandOrControl/g, isMac ? '⌘' : 'Ctrl')
-    .replace(/CmdOrCtrl/g, isMac ? '⌘' : 'Ctrl')
-    .replace(/Command/g, '⌘')
-    .replace(/Control/g, isMac ? '⌃' : 'Ctrl')
-    .replace(/Shift/g, isMac ? '⇧' : 'Shift')
-    .replace(/Alt/g, isMac ? '⌥' : 'Alt')
-    .replace(/Meta/g, isMac ? '⌘' : 'Win')
-    .replace(/ArrowUp/g, '↑')
-    .replace(/ArrowDown/g, '↓')
-    .replace(/ArrowLeft/g, '←')
-    .replace(/ArrowRight/g, '→')
-    .replace(/Escape/g, 'Esc')
-    .replace(/\+/g, isMac ? '' : '+');
-}
-
-function keyEventToAccelerator(e: KeyboardEvent): string | null {
-  // Ignore modifier-only presses
-  if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) return null;
-
-  const parts: string[] = [];
-  if (e.ctrlKey || e.metaKey) parts.push('CommandOrControl');
-  if (e.shiftKey) parts.push('Shift');
-  if (e.altKey) parts.push('Alt');
-
-  let key = e.key;
-  // Normalize key names to Electron accelerator format
-  if (key === ' ') key = 'Space';
-  else if (key === 'Tab') key = 'Tab';
-  else if (key === 'Enter') key = 'Enter';
-  else if (key === 'Escape') key = 'Escape';
-  else if (key === 'Backspace') key = 'Backspace';
-  else if (key === 'Delete') key = 'Delete';
-  else if (key.startsWith('Arrow')) { /* already in correct format */ }
-  else if (key.length === 1) key = key.toUpperCase();
-
-  parts.push(key);
-  return parts.join('+');
-}
+const hotkeyPlatform = navigator.platform;
+const hotkeyCleanupByElement = new WeakMap<HTMLElement, () => void>();
 
 function findConflict(accel: string, excludeKey: string): string | null {
   for (const [k, v] of Object.entries(currentHotkeys)) {
-    if (k !== excludeKey && v === accel) {
+    if (k !== excludeKey && acceleratorsConflict(v, accel, hotkeyPlatform)) {
       return HOTKEY_LABELS[k] || k;
     }
   }
   return null;
 }
 
+function setHotkeyFeedback(key: string, message: string): void {
+  hotkeyFeedback = { key, message };
+  if (hotkeyFeedbackTimer !== null) {
+    window.clearTimeout(hotkeyFeedbackTimer);
+  }
+  hotkeyFeedbackTimer = window.setTimeout(() => {
+    if (hotkeyFeedback?.key === key && hotkeyFeedback.message === message) {
+      hotkeyFeedback = null;
+      hotkeyFeedbackTimer = null;
+      renderHotkeysTab();
+    }
+  }, 3000);
+}
+
 const hotkeysList = document.getElementById('hotkeys-list') as HTMLDivElement;
 const hotkeysResetAll = document.getElementById('hotkeys-reset-all') as HTMLButtonElement;
+
+function clearHotkeyFeedback(): void {
+  hotkeyFeedback = null;
+  if (hotkeyFeedbackTimer !== null) {
+    window.clearTimeout(hotkeyFeedbackTimer);
+    hotkeyFeedbackTimer = null;
+  }
+}
 
 function renderHotkeysTab(): void {
   hotkeysList.innerHTML = '';
@@ -4412,14 +4404,16 @@ function renderHotkeysTab(): void {
       label.className = 'hotkey-label';
       label.textContent = HOTKEY_LABELS[key] || key;
 
-      const binding = document.createElement('div');
+      const binding = document.createElement('button');
       binding.className = 'hotkey-binding';
+      binding.type = 'button';
       const accel = currentHotkeys[key] || DEFAULT_HOTKEYS[key];
-      binding.textContent = acceleratorToDisplay(accel);
+      binding.textContent = formatAccelerator(accel, hotkeyPlatform);
       if (accel !== DEFAULT_HOTKEYS[key]) {
         binding.classList.add('modified');
       }
       binding.title = 'Click to change';
+      binding.setAttribute('aria-label', `Change ${HOTKEY_LABELS[key] || key} hotkey`);
 
       binding.addEventListener('click', () => {
         startHotkeyRecording(key, binding);
@@ -4442,6 +4436,12 @@ function renderHotkeysTab(): void {
       row.appendChild(label);
       row.appendChild(binding);
       row.appendChild(resetBtn);
+      if (hotkeyFeedback?.key === key) {
+        const feedbackEl = document.createElement('span');
+        feedbackEl.className = 'hotkey-conflict';
+        feedbackEl.textContent = `⚠ ${hotkeyFeedback.message}`;
+        row.appendChild(feedbackEl);
+      }
       hotkeysList.appendChild(row);
     }
   }
@@ -4450,10 +4450,11 @@ function renderHotkeysTab(): void {
 function startHotkeyRecording(key: string, bindingEl: HTMLElement): void {
   // Cancel any previous recording
   stopRecording_hotkey();
+  clearHotkeyFeedback();
 
   hotkeyRecordingKey = key;
   bindingEl.classList.add('recording');
-  bindingEl.textContent = 'Press keys…';
+  bindingEl.textContent = 'Press shortcut…';
 
   const handler = async (e: KeyboardEvent) => {
     e.preventDefault();
@@ -4466,13 +4467,20 @@ function startHotkeyRecording(key: string, bindingEl: HTMLElement): void {
       return;
     }
 
-    const accel = keyEventToAccelerator(e);
-    if (!accel) return; // modifier-only press
+    const accel = keyboardEventToAccelerator(e, hotkeyPlatform);
+    if (!accel) {
+      const modifiers = modifierEventToAccelerator(e, hotkeyPlatform);
+      bindingEl.textContent = modifiers
+        ? `${formatAccelerator(modifiers, hotkeyPlatform)}…`
+        : 'Press shortcut…';
+      return;
+    }
 
     const conflict = findConflict(accel, key);
     if (conflict) {
+      bindingEl.parentElement?.querySelectorAll('.hotkey-conflict').forEach(el => el.remove());
       bindingEl.classList.remove('recording');
-      bindingEl.textContent = acceleratorToDisplay(accel);
+      bindingEl.textContent = formatAccelerator(accel, hotkeyPlatform);
       // Show conflict warning — block the save, let user try again
       const conflictEl = document.createElement('span');
       conflictEl.className = 'hotkey-conflict';
@@ -4482,7 +4490,7 @@ function startHotkeyRecording(key: string, bindingEl: HTMLElement): void {
         conflictEl.remove();
         // Re-enter recording so user can try again
         bindingEl.classList.add('recording');
-        bindingEl.textContent = 'Press keys…';
+        bindingEl.textContent = 'Press shortcut…';
       }, 1500);
       return;
     }
@@ -4494,24 +4502,17 @@ function startHotkeyRecording(key: string, bindingEl: HTMLElement): void {
   document.addEventListener('keydown', handler, true);
 
   // Store cleanup reference
-  (bindingEl as any)._hotkeyCleanup = () => {
+  hotkeyCleanupByElement.set(bindingEl, () => {
     document.removeEventListener('keydown', handler, true);
-  };
+  });
 }
 
 async function saveHotkeyAndStop(key: string, accel: string): Promise<void> {
   const result = await whimAPI.setHotkey(key, accel);
   if (result.error) {
-    // Show error briefly
-    const row = hotkeysList.querySelector(`[data-hotkey-key="${key}"]`);
-    if (row) {
-      const errEl = document.createElement('span');
-      errEl.className = 'hotkey-conflict';
-      errEl.textContent = `⚠ ${result.error}`;
-      row.appendChild(errEl);
-      setTimeout(() => errEl.remove(), 3000);
-    }
+    setHotkeyFeedback(key, result.error);
   } else {
+    clearHotkeyFeedback();
     currentHotkeys[key] = accel;
   }
   hotkeyRecordingKey = null;
@@ -4525,7 +4526,8 @@ function stopRecording_hotkey(): void {
     ) as HTMLElement | null;
     if (bindingEl) {
       bindingEl.classList.remove('recording');
-      (bindingEl as any)._hotkeyCleanup?.();
+      hotkeyCleanupByElement.get(bindingEl)?.();
+      hotkeyCleanupByElement.delete(bindingEl);
     }
     hotkeyRecordingKey = null;
   }
@@ -4557,28 +4559,7 @@ loadHotkeys();
 function matchesHotkey(e: KeyboardEvent, hotkeyName: string): boolean {
   const accel = currentHotkeys[hotkeyName];
   if (!accel) return false;
-
-  const parts = accel.split('+');
-  const key = parts[parts.length - 1];
-  const mods = parts.slice(0, -1).map(m => m.toLowerCase());
-
-  const needsCtrlOrCmd = mods.includes('commandorcontrol') || mods.includes('cmdorctrl');
-  const needsShift = mods.includes('shift');
-  const needsAlt = mods.includes('alt');
-
-  const hasCtrlOrCmd = e.ctrlKey || e.metaKey;
-
-  if (needsCtrlOrCmd && !hasCtrlOrCmd) return false;
-  if (!needsCtrlOrCmd && hasCtrlOrCmd) return false;
-  if (needsShift !== e.shiftKey) return false;
-  if (needsAlt !== e.altKey) return false;
-
-  // Normalize key comparison
-  let eventKey = e.key;
-  if (eventKey === ' ') eventKey = 'Space';
-  else if (eventKey.length === 1) eventKey = eventKey.toUpperCase();
-
-  return eventKey === key;
+  return eventMatchesAccelerator(e, accel, hotkeyPlatform);
 }
 
 // ── Sandbox policy form helpers ─────────────────────────
