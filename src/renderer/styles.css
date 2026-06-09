@@ -832,16 +832,20 @@ body.dark .hotkey-label {
   background: rgba(0, 0, 0, 0.03);
   min-width: 80px;
   justify-content: center;
+  font-family: inherit;
   font-size: var(--fs-label);
   font-weight: 500;
   color: rgba(0, 0, 0, 0.7);
   transition: border-color 0.15s ease, background 0.15s ease;
   user-select: none;
+  appearance: none;
 }
 
-.hotkey-binding:hover {
+.hotkey-binding:hover,
+.hotkey-binding:focus-visible {
   border-color: rgba(0, 0, 0, 0.2);
   background: rgba(0, 0, 0, 0.06);
+  outline: none;
 }
 
 body.dark .hotkey-binding {
@@ -850,7 +854,8 @@ body.dark .hotkey-binding {
   color: rgba(255, 255, 255, 0.8);
 }
 
-body.dark .hotkey-binding:hover {
+body.dark .hotkey-binding:hover,
+body.dark .hotkey-binding:focus-visible {
   border-color: rgba(255, 255, 255, 0.2);
   background: rgba(255, 255, 255, 0.1);
 }

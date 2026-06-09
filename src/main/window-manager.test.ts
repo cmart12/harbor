@@ -63,6 +63,9 @@ vi.mock('electron', () => {
         ipcOnHandlers.set(channel, handler);
       }),
     },
+    app: {
+      isPackaged: false,
+    },
     shell: { openExternal: vi.fn() },
   };
 });

@@ -198,14 +198,14 @@ export interface LaunchResult {
  */
 export function findLatestSelfUpdatedCli(): string | null {
   if (process.platform !== 'win32') return null;
-  const base = path.join(process.env.LOCALAPPDATA || '', 'copilot', 'pkg', 'universal');
+  const base = path.win32.join(process.env.LOCALAPPDATA || '', 'copilot', 'pkg', 'universal');
   if (!base || !fs.existsSync(base)) return null;
 
   let entries: string[];
   try {
     entries = fs.readdirSync(base).filter(name => {
-      const full = path.join(base, name);
-      return fs.statSync(full).isDirectory() && fs.existsSync(path.join(full, 'index.js'));
+      const full = path.win32.join(base, name);
+      return fs.statSync(full).isDirectory() && fs.existsSync(path.win32.join(full, 'index.js'));
     });
   } catch {
     return null;
@@ -220,7 +220,7 @@ export function findLatestSelfUpdatedCli(): string | null {
   });
 
   const latest = entries[entries.length - 1];
-  return path.join(base, latest, 'index.js');
+  return path.win32.join(base, latest, 'index.js');
 }
 
 /**
@@ -315,9 +315,9 @@ function autoDetectCopilotCli(): string | null {
 
   if (process.platform === 'win32') {
     const candidates = [
-      path.join(process.env.APPDATA || '', 'npm', 'copilot.cmd'),
-      path.join(process.env.LOCALAPPDATA || '', 'npm', 'copilot.cmd'),
-      path.join(process.env.ProgramData || 'C:\\ProgramData', 'npm', 'copilot.cmd'),
+      path.win32.join(process.env.APPDATA || '', 'npm', 'copilot.cmd'),
+      path.win32.join(process.env.LOCALAPPDATA || '', 'npm', 'copilot.cmd'),
+      path.win32.join(process.env.ProgramData || 'C:\\ProgramData', 'npm', 'copilot.cmd'),
     ];
     for (const p of candidates) {
       if (fs.existsSync(p)) return resolveCmdToJs(p);
