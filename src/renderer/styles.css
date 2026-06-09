@@ -4388,6 +4388,195 @@ body.dark .skill-picker-desc {
   overflow: hidden;
 }
 
+/* ── Milkdown markdown editor ─────────────────────────── */
+.markdown-canvas-container {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+  user-select: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.markdown-canvas-container.drag-over {
+  box-shadow: inset 0 0 0 2px rgba(124, 102, 220, 0.3);
+  border-radius: 1.5px;
+}
+
+.markdown-editor-wrap {
+  flex: 1;
+  position: relative;
+  min-height: 0;
+  overflow: auto;
+}
+
+.markdown-editor-wrap .milkdown {
+  height: 100%;
+}
+
+/* ProseMirror base (vendored from @milkdown/prose) */
+.markdown-canvas-container .ProseMirror {
+  position: relative;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+  white-space: break-spaces;
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0;
+}
+.markdown-canvas-container .ProseMirror pre { white-space: pre-wrap; }
+.markdown-canvas-container .ProseMirror li { position: relative; }
+.markdown-canvas-container .ProseMirror-hideselection *::selection { background: transparent; }
+.markdown-canvas-container .ProseMirror-hideselection { caret-color: transparent; }
+.markdown-canvas-container .ProseMirror [draggable][contenteditable=false] { user-select: text; }
+.markdown-canvas-container .ProseMirror-selectednode { outline: 2px solid #8cf; }
+.markdown-canvas-container li.ProseMirror-selectednode { outline: none; }
+.markdown-canvas-container img.ProseMirror-separator {
+  display: inline !important;
+  border: none !important;
+  margin: 0 !important;
+}
+
+/* Editable surface */
+.markdown-canvas-container .milkdown-prose {
+  outline: none;
+  min-height: 100%;
+  padding: 18px 22px 96px;
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  color: #2c2c3a;
+  caret-color: #7c66dc;
+}
+
+.markdown-canvas-container .milkdown-prose > *:first-child { margin-top: 0; }
+
+.markdown-canvas-container .milkdown-prose h1,
+.markdown-canvas-container .milkdown-prose h2,
+.markdown-canvas-container .milkdown-prose h3,
+.markdown-canvas-container .milkdown-prose h4,
+.markdown-canvas-container .milkdown-prose h5,
+.markdown-canvas-container .milkdown-prose h6 {
+  font-family: 'Fraunces', Georgia, serif;
+  font-weight: 500;
+  line-height: var(--lh-tight);
+  margin: 1.2em 0 0.5em;
+}
+.markdown-canvas-container .milkdown-prose h1 { font-size: 1.7em; }
+.markdown-canvas-container .milkdown-prose h2 { font-size: 1.4em; }
+.markdown-canvas-container .milkdown-prose h3 { font-size: 1.2em; }
+.markdown-canvas-container .milkdown-prose h4 { font-size: 1.05em; }
+.markdown-canvas-container .milkdown-prose h5,
+.markdown-canvas-container .milkdown-prose h6 { font-size: 1em; }
+
+.markdown-canvas-container .milkdown-prose p { margin: 0.5em 0; }
+
+.markdown-canvas-container .milkdown-prose ul,
+.markdown-canvas-container .milkdown-prose ol { margin: 0.5em 0; padding-left: 1.5em; }
+.markdown-canvas-container .milkdown-prose li { margin: 0.2em 0; }
+.markdown-canvas-container .milkdown-prose li > p { margin: 0.2em 0; }
+
+/* Task lists */
+.markdown-canvas-container .milkdown-prose li.task-list-item,
+.markdown-canvas-container .milkdown-prose li[data-item-type="task"] { list-style: none; }
+.markdown-canvas-container .milkdown-prose .task-list-item-checkbox,
+.markdown-canvas-container .milkdown-prose input[type="checkbox"] {
+  margin-right: 0.5em;
+  accent-color: #7c66dc;
+}
+
+.markdown-canvas-container .milkdown-prose a {
+  color: #2d6cdf;
+  text-decoration: none;
+  cursor: pointer;
+}
+.markdown-canvas-container .milkdown-prose a:hover { text-decoration: underline; }
+
+.markdown-canvas-container .milkdown-prose code {
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+  font-size: 0.88em;
+  background: rgba(124, 102, 220, 0.1);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+}
+.markdown-canvas-container .milkdown-prose pre {
+  background: rgba(0, 0, 0, 0.045);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin: 0.7em 0;
+  overflow: auto;
+}
+.markdown-canvas-container .milkdown-prose pre code {
+  background: none;
+  padding: 0;
+  font-size: 0.85em;
+}
+
+.markdown-canvas-container .milkdown-prose blockquote {
+  margin: 0.7em 0;
+  padding: 0.1em 0 0.1em 1em;
+  border-left: 3px solid rgba(124, 102, 220, 0.4);
+  color: #555;
+}
+
+.markdown-canvas-container .milkdown-prose hr {
+  border: none;
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+  margin: 1.2em 0;
+}
+
+.markdown-canvas-container .milkdown-prose img {
+  max-width: 100%;
+  border-radius: 8px;
+}
+
+.markdown-canvas-container .milkdown-prose table {
+  border-collapse: collapse;
+  margin: 0.7em 0;
+  width: 100%;
+}
+.markdown-canvas-container .milkdown-prose th,
+.markdown-canvas-container .milkdown-prose td {
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  padding: 6px 10px;
+  text-align: left;
+}
+.markdown-canvas-container .milkdown-prose th {
+  background: rgba(0, 0, 0, 0.04);
+  font-weight: 600;
+}
+
+/* Dark theme */
+.markdown-canvas-container.md-theme-dark { background: #1c1c20; }
+.markdown-canvas-container.md-theme-dark .milkdown-prose { color: #e1e1e6; caret-color: #a99bf0; }
+.markdown-canvas-container.md-theme-dark .milkdown-prose a { color: #6ea0ff; }
+.markdown-canvas-container.md-theme-dark .milkdown-prose code { background: rgba(169, 155, 240, 0.18); }
+.markdown-canvas-container.md-theme-dark .milkdown-prose pre {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+.markdown-canvas-container.md-theme-dark .milkdown-prose blockquote {
+  border-left-color: rgba(169, 155, 240, 0.5);
+  color: #a8a8b3;
+}
+.markdown-canvas-container.md-theme-dark .milkdown-prose hr { border-top-color: rgba(255, 255, 255, 0.12); }
+.markdown-canvas-container.md-theme-dark .milkdown-prose th,
+.markdown-canvas-container.md-theme-dark .milkdown-prose td { border-color: rgba(255, 255, 255, 0.14); }
+.markdown-canvas-container.md-theme-dark .milkdown-prose th { background: rgba(255, 255, 255, 0.06); }
+
+/* Host regex decorations (agent activity) */
+.markdown-canvas-container .whim-decoration {
+  border-radius: 3px;
+  transition: background-color 0.2s ease;
+}
+.markdown-canvas-container .whim-decoration-pulse {
+  animation: whim-decoration-pulse 1.4s ease-in-out infinite;
+}
+@keyframes whim-decoration-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(124, 102, 220, 0); }
+  50% { box-shadow: 0 0 0 2px rgba(124, 102, 220, 0.25); }
+}
+
 /* ── Canvas Voice Recorder ───────────────────────────── */
 
 .canvas-voice-recorder {

@@ -102,8 +102,13 @@
   "dependencies": {
     "@github/copilot-sdk": "^1.0.0-beta.10",
     "@huggingface/transformers": "^4.1.0",
+    "@milkdown/kit": "^7.21.2",
+    "@milkdown/react": "^7.21.2",
     "@mozilla/readability": "^0.6.0",
     "@patniko/documint": "^0.0.24",
+    "@prosemirror-adapter/react": "^0.5.3",
+    "@types/qrcode": "^1.5.6",
+    "@types/ws": "^8.18.1",
     "better-sqlite3": "^12.9.0",
     "electron-updater": "^6.8.3",
     "js-yaml": "^4.1.0",
