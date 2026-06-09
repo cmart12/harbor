@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import type { Rect } from './geometry';
+import { useAnchoredPosition } from './floating';
 
 export interface MentionCandidate {
   handle: string;
@@ -26,24 +27,18 @@ export function MentionPopup({
   onSelect: (handle: string) => void;
   onHover: (index: number) => void;
 }) {
-  const listRef = React.useRef<HTMLDivElement>(null);
+  // Anchored just below the caret, flipped above + clamped to stay on screen.
+  const { ref, style } = useAnchoredPosition(rect, { placement: 'below', align: 'start', gap: 4 });
 
   useEffect(() => {
-    const el = listRef.current?.querySelector<HTMLElement>(`[data-idx="${activeIndex}"]`);
+    const el = ref.current?.querySelector<HTMLElement>(`[data-idx="${activeIndex}"]`);
     el?.scrollIntoView({ block: 'nearest' });
-  }, [activeIndex]);
+  }, [ref, activeIndex]);
 
   if (candidates.length === 0) return null;
 
-  const style: React.CSSProperties = {
-    position: 'fixed',
-    left: Math.round(rect.left),
-    top: Math.round(rect.bottom + 4),
-    zIndex: 2147483000,
-  };
-
   const popup = (
-    <div className="md-mention-popup" style={style} ref={listRef} onMouseDown={(e) => e.preventDefault()}>
+    <div className="md-mention-popup" style={style} ref={ref} onMouseDown={(e) => e.preventDefault()}>
       {candidates.map((c, i) => (
         <button
           key={c.handle}
