@@ -1,5 +1,6 @@
 import React, {
   forwardRef,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useRef,
@@ -133,9 +134,11 @@ const MilkdownInner = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
     const uploadFileRef = useRef<ImageUploader | undefined>(uploadFile);
     uploadFileRef.current = uploadFile;
 
-    // Suppress the markdownUpdated callback while we apply host-initiated changes
-    // (replaceAll), so a programmatic write isn't echoed back as a user edit.
-    const suppressRef = useRef(false);
+    // Milkdown's markdownUpdated is debounced (~200ms), so a synchronous flag
+    // can't gate it. Instead we remember the exact serialized markdown produced
+    // by a programmatic replaceAll and skip the one echo that matches it, so a
+    // host-initiated write isn't re-delivered as a user edit.
+    const pendingEchoRef = useRef<string | null>(null);
 
     const { loading, get } = useEditor((root) => {
       return Editor.make()
@@ -183,7 +186,11 @@ const MilkdownInner = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
           }));
           const l = ctx.get(listenerCtx);
           l.markdownUpdated((_ctx, markdown) => {
-            if (suppressRef.current) return;
+            if (pendingEchoRef.current !== null) {
+              const expected = pendingEchoRef.current;
+              pendingEchoRef.current = null;
+              if (markdown === expected) return; // swallow the programmatic echo
+            }
             onChangeRef.current(markdown);
           });
           l.focus(() => onFocusRef.current?.());
@@ -233,41 +240,38 @@ const MilkdownInner = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
         .use(presencePlugin);
     }, []);
 
+    // Dispatch a plugin meta transaction, tolerating a torn-down view (can happen
+    // under React StrictMode's mount→destroy→remount with async editor create).
+    const dispatchMeta = useCallback((metaKey: unknown, value: unknown) => {
+      try {
+        get()?.action((ctx) => {
+          const view = ctx.get(editorViewCtx);
+          view.dispatch(view.state.tr.setMeta(metaKey as any, value));
+        });
+      } catch {
+        /* view torn down between get() and dispatch */
+      }
+    }, [get]);
+
     // Sync host-provided regex decorations.
     useEffect(() => {
-      if (loading) return;
-      get()?.action((ctx) => {
-        const view = ctx.get(editorViewCtx);
-        view.dispatch(view.state.tr.setMeta(decorationPluginKey, (decorations ?? []) as CanvasDecoration[]));
-      });
-    }, [loading, get, decorations]);
+      if (!loading) dispatchMeta(decorationPluginKey, (decorations ?? []) as CanvasDecoration[]);
+    }, [loading, dispatchMeta, decorations]);
 
     // Sync comment threads.
     useEffect(() => {
-      if (loading) return;
-      get()?.action((ctx) => {
-        const view = ctx.get(editorViewCtx);
-        view.dispatch(view.state.tr.setMeta(SET_THREADS, (commentThreads ?? []) as CommentThread[]));
-      });
-    }, [loading, get, commentThreads]);
+      if (!loading) dispatchMeta(SET_THREADS, (commentThreads ?? []) as CommentThread[]);
+    }, [loading, dispatchMeta, commentThreads]);
 
     // Sync agent presence carets.
     useEffect(() => {
-      if (loading) return;
-      get()?.action((ctx) => {
-        const view = ctx.get(editorViewCtx);
-        view.dispatch(view.state.tr.setMeta(SET_PRESENCE, (presence ?? []) as CanvasPresence[]));
-      });
-    }, [loading, get, presence]);
+      if (!loading) dispatchMeta(SET_PRESENCE, (presence ?? []) as CanvasPresence[]);
+    }, [loading, dispatchMeta, presence]);
 
     // Sync active comment highlight.
     useEffect(() => {
-      if (loading) return;
-      get()?.action((ctx) => {
-        const view = ctx.get(editorViewCtx);
-        view.dispatch(view.state.tr.setMeta(SET_ACTIVE, { id: activeCommentId ?? null }));
-      });
-    }, [loading, get, activeCommentId]);
+      if (!loading) dispatchMeta(SET_ACTIVE, { id: activeCommentId ?? null });
+    }, [loading, dispatchMeta, activeCommentId]);
 
     useImperativeHandle(
       ref,
@@ -277,12 +281,16 @@ const MilkdownInner = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
         replaceAll: (markdown: string) => {
           const ed = get();
           if (!ed) return;
-          suppressRef.current = true;
-          try {
-            ed.action(replaceAll(markdown));
-          } finally {
-            suppressRef.current = false;
-          }
+          ed.action((ctx) => {
+            replaceAll(markdown)(ctx);
+            // Record the editor's own serialization of the new doc — that's the
+            // exact string the debounced markdownUpdated echo will carry.
+            try {
+              pendingEchoRef.current = getMarkdown()(ctx);
+            } catch {
+              pendingEchoRef.current = markdown;
+            }
+          });
         },
         insertMarkdown: (markdown: string, inline?: boolean) => {
           get()?.action(insert(markdown, inline));
@@ -314,6 +322,9 @@ const MilkdownInner = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
             const view = ctx.get(editorViewCtx);
             const docSize = view.state.doc.content.size;
             if (from < 0 || to > docSize || from > to) return null;
+            // Guard against a stale range: the span must still be the @-query.
+            const existing = view.state.doc.textBetween(from, to, '\n', '\uFFFC');
+            if (!existing.startsWith('@')) return null;
             const tr = view.state.tr.insertText(`@${handle} `, from, to);
             view.dispatch(tr);
             view.focus();

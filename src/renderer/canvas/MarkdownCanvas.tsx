@@ -270,8 +270,12 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
     );
     void users;
 
+    const saveRequestedDuringSaveRef = useRef(false);
+    const doSaveRef = useRef<(() => Promise<void>) | undefined>(undefined);
+
     const doSave = useCallback(async () => {
-      if (savingRef.current) return;
+      // A save is already in flight — record that another is needed and bail.
+      if (savingRef.current) { saveRequestedDuringSaveRef.current = true; return; }
       const fullContent = getFullContent();
       if (fullContent === lastSavedRef.current) return;
 
@@ -298,8 +302,16 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
         setTimeout(() => onSaveStatus(''), 3000);
       } finally {
         savingRef.current = false;
+        // Edits arrived while we were saving — flush them now so nothing is lost.
+        if (saveRequestedDuringSaveRef.current) {
+          saveRequestedDuringSaveRef.current = false;
+          if (getFullContent() !== lastSavedRef.current) {
+            setTimeout(() => { void doSaveRef.current?.(); }, 0);
+          }
+        }
       }
     }, [spaceId, onDirtyChange, onSaveStatus, getFullContent, stripFm]);
+    doSaveRef.current = doSave;
 
     const scheduleSave = useCallback(() => {
       if (pendingSaveRef.current) clearTimeout(pendingSaveRef.current);
@@ -435,15 +447,35 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
         updateThreads(next);
       },
       replaceContent: (newDiskContent: string) => {
-        const { body: diskBody, threads: diskThreads } = splitComments(newDiskContent);
+        // Strip frontmatter first for frontmatter-backed canvases, so the
+        // comments split + merge operate on the body region (not the YAML block).
+        let region = newDiskContent;
+        if (hasFrontmatterRef.current) {
+          const m = newDiskContent.match(FRONTMATTER_RE);
+          if (m) {
+            const parsed = tryParseFm(newDiskContent);
+            if (parsed) {
+              setFrontmatter(parsed.frontmatter);
+              frontmatterRef.current = parsed.frontmatter;
+              region = parsed.body;
+            }
+          }
+        }
+        const { body: diskBody, threads: diskThreads } = splitComments(region);
 
         // Comments are authoritative from disk.
         setThreads(diskThreads);
         threadsRef.current = diskThreads;
 
         if (editorModeRef.current === 'raw') {
-          if (pendingSaveRef.current) { clearTimeout(pendingSaveRef.current); pendingSaveRef.current = null; }
           const full = buildFull(diskBody, diskThreads);
+          // Don't clobber unsaved raw edits — keep the user's text (raw mode has
+          // no merge; their next save wins). Record disk state for later merges.
+          if (rawContentRef.current !== lastSavedRef.current) {
+            lastDiskContentRef.current = full;
+            return;
+          }
+          if (pendingSaveRef.current) { clearTimeout(pendingSaveRef.current); pendingSaveRef.current = null; }
           setRawContent(full);
           rawContentRef.current = full;
           setContent(diskBody);

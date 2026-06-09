@@ -16,6 +16,7 @@ export function createImageNodeView(resolverRef: { current?: ImageSrcResolver })
     const dom = document.createElement('img');
     dom.className = 'milkdown-image';
     let objectUrl: string | null = null;
+    let destroyed = false;
 
     const apply = (n: ProseNode) => {
       const src = String(n.attrs.src ?? '');
@@ -23,6 +24,7 @@ export function createImageNodeView(resolverRef: { current?: ImageSrcResolver })
       if (n.attrs.title) dom.title = String(n.attrs.title);
       if (!src) return;
       if (ABSOLUTE_SRC.test(src)) {
+        if (objectUrl) { URL.revokeObjectURL(objectUrl); objectUrl = null; }
         dom.src = src;
         return;
       }
@@ -31,6 +33,11 @@ export function createImageNodeView(resolverRef: { current?: ImageSrcResolver })
       resolver(src)
         .then((url) => {
           if (!url) return;
+          // The node view may have been destroyed while we were resolving.
+          if (destroyed) {
+            if (url.startsWith('blob:')) URL.revokeObjectURL(url);
+            return;
+          }
           if (objectUrl) URL.revokeObjectURL(objectUrl);
           objectUrl = url.startsWith('blob:') ? url : null;
           dom.src = url;
@@ -48,6 +55,7 @@ export function createImageNodeView(resolverRef: { current?: ImageSrcResolver })
         return true;
       },
       destroy: () => {
+        destroyed = true;
         if (objectUrl) URL.revokeObjectURL(objectUrl);
       },
     };

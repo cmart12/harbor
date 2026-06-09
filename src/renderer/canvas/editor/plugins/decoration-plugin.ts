@@ -17,7 +17,9 @@ function buildDecorationSet(doc: ProseNode, decorations: CanvasDecoration[]): De
   const decos: Decoration[] = [];
   doc.descendants((node, pos) => {
     if (!node.isTextblock) return;
-    const text = node.textContent;
+    // Use a placeholder for inline leaves (images, hard breaks) so text offsets
+    // stay aligned with ProseMirror positions (textContent would drop them).
+    const text = node.textBetween(0, node.content.size, undefined, '\uFFFC');
     if (!text) return;
     // Block text starts at pos + 1 (inside the block node).
     const base = pos + 1;
