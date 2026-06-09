@@ -3,6 +3,7 @@ import React, {
   useRef,
   useCallback,
   useEffect,
+  useMemo,
   useImperativeHandle,
   forwardRef,
 } from 'react';
@@ -11,10 +12,12 @@ import type {
   CanvasUser,
   CanvasPresence,
   CanvasDecoration,
-  CommentChange,
-  UserMentionEvent,
+  CommentThread,
   CommentTrigger,
 } from './types';
+import { splitComments, joinComments, extractMentions, newThreadId } from './editor/comments';
+import { SelectionToolbar, CommentComposer, CommentPopover } from './editor/CommentUI';
+import type { Rect, SelectionInfo } from './editor/geometry';
 import { FrontmatterEditor } from './FrontmatterEditor';
 import { VoiceRecorderButton, type VoiceRecordingResult } from './VoiceRecorderButton';
 import { SpaceLinkPicker, type SpaceResult } from './SpaceLinkPicker';
@@ -38,23 +41,6 @@ declare const whimAPI: {
   openExternal(url: string): Promise<{ ok: true }>;
   openLink(spaceId: string, url: string): Promise<{ action: string; error?: string }>;
 };
-
-/** Route a whim:// resource click to the matching window opener. */
-function openWhimResource(url: string): void {
-  if (url.startsWith('whim://space/')) {
-    const id = url.slice('whim://space/'.length);
-    if (id) whimAPI.openCanvasWindow({ kind: 'space', id, title: '' });
-    return;
-  }
-  if (url.startsWith('whim://page/')) {
-    const parts = decodeURIComponent(url.slice('whim://page/'.length)).split('/');
-    if (parts.length >= 2) {
-      const [spaceId, ...rest] = parts;
-      const page = rest.join('/');
-      whimAPI.openPageWindow({ kind: 'page', spaceId, page, title: page });
-    }
-  }
-}
 
 export interface AgentPersona {
   id: string;
@@ -164,21 +150,49 @@ function formatAttachmentRef(filename: string, relativePath: string, mimeType: s
 export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasProps>(
   function MarkdownCanvas({ spaceId, initialContent, initialFrontmatter, theme, personas: initialPersonas, agentPresence: initialPresence, decorations: initialDecorations, onDirtyChange, onSaveStatus, onAgentMentioned, onInlineMention, onForkSelection, onExtractToPage }, ref) {
     const hasFrontmatter = initialFrontmatter !== undefined;
-    const [content, setContent] = useState(initialContent);
+
+    // Split the embedded comments block out of the editor body once at mount.
+    const initialSplit = useMemo(() => splitComments(initialContent), [initialContent]);
+
+    const [content, setContent] = useState(initialSplit.body);
+    const [threads, setThreads] = useState<CommentThread[]>(initialSplit.threads);
     const [frontmatter, setFrontmatter] = useState<Record<string, unknown>>(initialFrontmatter ?? {});
     const [editorMode, setEditorMode] = useState<EditorMode>('rendered');
     const [rawContent, setRawContent] = useState('');
     const [parseError, setParseError] = useState<string | null>(null);
-    const lastSavedRef = useRef(hasFrontmatter ? serializeFm(initialFrontmatter!, initialContent) : initialContent);
-    const lastDiskContentRef = useRef(hasFrontmatter ? serializeFm(initialFrontmatter!, initialContent) : initialContent);
-    const pendingSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const savingRef = useRef(false);
+
     const contentRef = useRef(content);
+    const threadsRef = useRef(threads);
     const frontmatterRef = useRef(frontmatter);
     const editorModeRef = useRef<EditorMode>(editorMode);
     const rawContentRef = useRef(rawContent);
     const containerRef = useRef<HTMLDivElement>(null);
     const editorRef = useRef<MilkdownEditorHandle>(null);
+
+    const hasFrontmatterRef = useRef(hasFrontmatter);
+    hasFrontmatterRef.current = hasFrontmatter;
+
+    /** Full on-disk string: frontmatter + body + comments block. */
+    const buildFull = useCallback((body: string, t: CommentThread[]) => {
+      const withComments = joinComments(body, t);
+      return hasFrontmatterRef.current ? serializeFm(frontmatterRef.current, withComments) : withComments;
+    }, []);
+
+    /** Strip frontmatter, returning the body+comments region. */
+    const stripFm = useCallback((full: string) => {
+      return hasFrontmatterRef.current ? (tryParseFm(full)?.body ?? full) : full;
+    }, []);
+
+    const initialFull = useMemo(
+      () => buildFull(initialSplit.body, initialSplit.threads),
+      [buildFull, initialSplit],
+    );
+
+    const lastSavedRef = useRef(initialFull);
+    const lastDiskContentRef = useRef(initialFull);
+    const pendingSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const savingRef = useRef(false);
+
     const [isDragging, setIsDragging] = useState(false);
     const [personas, setPersonas] = useState<AgentPersona[]>(initialPersonas || []);
     const [presence, setPresence] = useState<CanvasPresence[]>(initialPresence || []);
@@ -187,6 +201,14 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
     const [agentUsers, setAgentUsers] = useState<CanvasUser[]>([]);
     const [showLinkPicker, setShowLinkPicker] = useState(false);
     const [commentTrigger, setCommentTrigger] = useState<CommentTrigger>('caret');
+
+    // Comment UI state
+    const [activeComment, setActiveComment] = useState<{ id: string; rect: Rect } | null>(null);
+    const [selection, setSelection] = useState<SelectionInfo | null>(null);
+    const [composer, setComposer] = useState<{ quote: string; anchor: { prefix?: string; suffix?: string; kind?: string }; rect: Rect } | null>(null);
+
+    const personasRef = useRef(personas);
+    personasRef.current = personas;
 
     useEffect(() => {
       let cancelled = false;
@@ -202,22 +224,21 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
     }, []);
 
     contentRef.current = content;
+    threadsRef.current = threads;
     frontmatterRef.current = frontmatter;
     editorModeRef.current = editorMode;
     rawContentRef.current = rawContent;
 
-    // Suppress noise from unused-for-now state until their plugins land (p3–p6).
-    void presence; void agentUsers; void commentTrigger;
-    void onAgentMentioned; void onInlineMention; void onForkSelection; void onExtractToPage;
+    void presence; void agentUsers; void onInlineMention;
 
     /** Build the full document string for saving. */
     const getFullContent = useCallback(() => {
-      if (!hasFrontmatter) return contentRef.current;
-      return serializeFm(frontmatterRef.current, contentRef.current);
-    }, [hasFrontmatter]);
+      if (editorModeRef.current === 'raw') return rawContentRef.current;
+      return buildFull(contentRef.current, threadsRef.current);
+    }, [buildFull]);
 
     // Merge persona users (for mention roster) with active agent users (for presence display)
-    const users: CanvasUser[] = React.useMemo(
+    const users: CanvasUser[] = useMemo(
       () => [
         ...personas.map(p => ({ id: p.handle, username: p.handle })),
         ...agentUsers,
@@ -238,9 +259,12 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
         lastSavedRef.current = savedContent;
         lastDiskContentRef.current = savedContent;
         if (savedContent !== fullContent) {
-          const body = hasFrontmatter ? (tryParseFm(savedContent)?.body ?? savedContent) : savedContent;
+          const region = stripFm(savedContent);
+          const { body, threads: savedThreads } = splitComments(region);
           setContent(body);
           contentRef.current = body;
+          setThreads(savedThreads);
+          threadsRef.current = savedThreads;
           if (editorModeRef.current === 'rendered') editorRef.current?.replaceAll(body);
         }
         onDirtyChange(getFullContent() !== lastSavedRef.current);
@@ -252,7 +276,7 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
       } finally {
         savingRef.current = false;
       }
-    }, [spaceId, onDirtyChange, onSaveStatus, getFullContent, hasFrontmatter]);
+    }, [spaceId, onDirtyChange, onSaveStatus, getFullContent, stripFm]);
 
     const scheduleSave = useCallback(() => {
       if (pendingSaveRef.current) clearTimeout(pendingSaveRef.current);
@@ -270,53 +294,57 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
       await doSave();
     }, [doSave]);
 
-    // Content change ORIGINATING in the editor (user typing). Does NOT write back
-    // into the editor — only updates host state + schedules a save.
-    const onEditorContentChanged = useCallback((newContent: string) => {
-      if (newContent === contentRef.current) return;
-      setContent(newContent);
-      contentRef.current = newContent;
-      const fullContent = hasFrontmatter ? serializeFm(frontmatterRef.current, newContent) : newContent;
-      const dirty = fullContent !== lastSavedRef.current;
+    const markDirtyAndSave = useCallback(() => {
+      const dirty = getFullContent() !== lastSavedRef.current;
       onDirtyChange(dirty);
       if (dirty) {
         onSaveStatus('');
         scheduleSave();
       }
-    }, [onDirtyChange, onSaveStatus, scheduleSave, hasFrontmatter]);
+    }, [getFullContent, onDirtyChange, onSaveStatus, scheduleSave]);
 
-    // Content change ORIGINATING in the host (voice, drop, links, replies). Pushes
-    // the new markdown INTO the editor and updates host state.
-    const applyProgrammaticContent = useCallback((newContent: string) => {
-      if (newContent === contentRef.current) return;
-      setContent(newContent);
-      contentRef.current = newContent;
+    // Content change ORIGINATING in the editor (user typing).
+    const onEditorContentChanged = useCallback((newBody: string) => {
+      if (newBody === contentRef.current) return;
+      setContent(newBody);
+      contentRef.current = newBody;
+      markDirtyAndSave();
+    }, [markDirtyAndSave]);
+
+    // Content change ORIGINATING in the host (voice, drop, links, replies).
+    const applyProgrammaticContent = useCallback((newBody: string) => {
+      if (newBody === contentRef.current) return;
+      setContent(newBody);
+      contentRef.current = newBody;
       if (editorModeRef.current === 'rendered') {
-        editorRef.current?.replaceAll(newContent);
+        editorRef.current?.replaceAll(newBody);
       }
-      const fullContent = hasFrontmatter ? serializeFm(frontmatterRef.current, newContent) : newContent;
-      const dirty = fullContent !== lastSavedRef.current;
-      onDirtyChange(dirty);
-      if (dirty) {
-        onSaveStatus('');
-        scheduleSave();
-      }
-    }, [onDirtyChange, onSaveStatus, scheduleSave, hasFrontmatter]);
+      markDirtyAndSave();
+    }, [markDirtyAndSave]);
+
+    /** Update threads, re-highlight, and persist (body is unchanged). */
+    const updateThreads = useCallback((next: CommentThread[]) => {
+      setThreads(next);
+      threadsRef.current = next;
+      markDirtyAndSave();
+    }, [markDirtyAndSave]);
+
+    const fireMentions = useCallback((body: string, quote: string, anchor: { prefix?: string; suffix?: string }, threadId: string) => {
+      if (!onAgentMentioned) return;
+      const handles = extractMentions(body, personasRef.current.map(p => p.handle));
+      if (handles.length === 0) return;
+      onAgentMentioned({ handles, commentBody: body, quote, anchor, threadId });
+    }, [onAgentMentioned]);
 
     const handleFrontmatterChange = useCallback((updated: Record<string, unknown>) => {
       setFrontmatter(updated);
       frontmatterRef.current = updated;
-      const dirty = serializeFm(updated, contentRef.current) !== lastSavedRef.current;
-      onDirtyChange(dirty);
-      if (dirty) {
-        onSaveStatus('');
-        scheduleSave();
-      }
-    }, [onDirtyChange, onSaveStatus, scheduleSave]);
+      markDirtyAndSave();
+    }, [markDirtyAndSave]);
 
     const handleToggleMode = useCallback((): { mode: EditorMode; error?: string } => {
       if (editorModeRef.current === 'rendered') {
-        const full = getFullContent();
+        const full = buildFull(contentRef.current, threadsRef.current);
         setRawContent(full);
         rawContentRef.current = full;
         setParseError(null);
@@ -324,6 +352,7 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
         editorModeRef.current = 'raw';
         return { mode: 'raw' };
       } else {
+        let region = rawContentRef.current;
         if (hasFrontmatter) {
           const parsed = tryParseFm(rawContentRef.current);
           if (!parsed) {
@@ -333,40 +362,36 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
           }
           setFrontmatter(parsed.frontmatter);
           frontmatterRef.current = parsed.frontmatter;
-          setContent(parsed.body);
-          contentRef.current = parsed.body;
-        } else {
-          setContent(rawContentRef.current);
-          contentRef.current = rawContentRef.current;
+          region = parsed.body;
         }
+        const { body, threads: parsedThreads } = splitComments(region);
+        setContent(body);
+        contentRef.current = body;
+        setThreads(parsedThreads);
+        threadsRef.current = parsedThreads;
         setParseError(null);
         setEditorMode('rendered');
         editorModeRef.current = 'rendered';
         return { mode: 'rendered' };
       }
-    }, [hasFrontmatter, getFullContent]);
+    }, [hasFrontmatter, buildFull]);
 
     const handleRawContentChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
       const newRaw = e.target.value;
       setRawContent(newRaw);
       rawContentRef.current = newRaw;
       setParseError(null);
-      const dirty = newRaw !== lastSavedRef.current;
-      onDirtyChange(dirty);
-      if (dirty) {
-        onSaveStatus('');
-        if (hasFrontmatter) {
-          const parsed = tryParseFm(newRaw);
-          if (parsed) {
-            contentRef.current = parsed.body;
-            frontmatterRef.current = parsed.frontmatter;
-          }
-        } else {
-          contentRef.current = newRaw;
-        }
-        scheduleSave();
+      // Keep body/threads refs roughly in sync so a save reflects raw edits.
+      const region = hasFrontmatter ? (tryParseFm(newRaw)?.body ?? newRaw) : newRaw;
+      const split = splitComments(region);
+      contentRef.current = split.body;
+      threadsRef.current = split.threads;
+      if (hasFrontmatter) {
+        const parsed = tryParseFm(newRaw);
+        if (parsed) frontmatterRef.current = parsed.frontmatter;
       }
-    }, [onDirtyChange, onSaveStatus, scheduleSave, hasFrontmatter]);
+      markDirtyAndSave();
+    }, [hasFrontmatter, markDirtyAndSave]);
 
     useImperativeHandle(ref, () => ({
       saveNow,
@@ -378,66 +403,58 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
       updateDecorations: (nextDecorations: readonly CanvasDecoration[]) => setDecorations(nextDecorations),
       updateAgentUsers: (nextUsers: CanvasUser[]) => setAgentUsers(nextUsers),
       addCommentReply: (threadId: string, body: string) => {
-        const current = contentRef.current;
-        const updated = insertCommentReply(current, threadId, body);
-        if (updated !== current) {
-          applyProgrammaticContent(updated);
-        }
+        const current = threadsRef.current;
+        const idx = current.findIndex(t => t.id === threadId);
+        if (idx < 0) return;
+        const next = current.map((t, i) =>
+          i === idx ? { ...t, comments: [...t.comments, { body, updatedAt: new Date().toISOString() }] } : t,
+        );
+        updateThreads(next);
       },
       replaceContent: (newDiskContent: string) => {
-        // In raw mode, fall back to wholesale replace (no merge for textarea)
+        const { body: diskBody, threads: diskThreads } = splitComments(newDiskContent);
+
+        // Comments are authoritative from disk.
+        setThreads(diskThreads);
+        threadsRef.current = diskThreads;
+
         if (editorModeRef.current === 'raw') {
-          if (pendingSaveRef.current) {
-            clearTimeout(pendingSaveRef.current);
-            pendingSaveRef.current = null;
-          }
-          setRawContent(hasFrontmatter ? serializeFm(frontmatterRef.current, newDiskContent) : newDiskContent);
-          rawContentRef.current = hasFrontmatter ? serializeFm(frontmatterRef.current, newDiskContent) : newDiskContent;
-          setContent(newDiskContent);
-          contentRef.current = newDiskContent;
-          const fullContent = hasFrontmatter ? serializeFm(frontmatterRef.current, newDiskContent) : newDiskContent;
-          lastSavedRef.current = fullContent;
-          lastDiskContentRef.current = fullContent;
+          if (pendingSaveRef.current) { clearTimeout(pendingSaveRef.current); pendingSaveRef.current = null; }
+          const full = buildFull(diskBody, diskThreads);
+          setRawContent(full);
+          rawContentRef.current = full;
+          setContent(diskBody);
+          contentRef.current = diskBody;
+          lastSavedRef.current = full;
+          lastDiskContentRef.current = full;
           onDirtyChange(false);
           return;
         }
 
-        const currentContent = contentRef.current;
-        const base = lastDiskContentRef.current;
-
-        const fullDisk = hasFrontmatter ? serializeFm(frontmatterRef.current, newDiskContent) : newDiskContent;
+        const currentBody = contentRef.current;
+        const baseBody = splitComments(stripFm(lastDiskContentRef.current)).body;
+        const fullDisk = buildFull(diskBody, diskThreads);
         lastDiskContentRef.current = fullDisk;
 
-        // Fast path: no local changes since last disk sync — simple replace
-        const currentFull = hasFrontmatter ? serializeFm(frontmatterRef.current, currentContent) : currentContent;
-        if (currentFull === base) {
-          if (pendingSaveRef.current) {
-            clearTimeout(pendingSaveRef.current);
-            pendingSaveRef.current = null;
-          }
-          setContent(newDiskContent);
-          contentRef.current = newDiskContent;
-          editorRef.current?.replaceAll(newDiskContent);
+        // Fast path: no local edits since last disk sync.
+        if (currentBody === baseBody) {
+          if (pendingSaveRef.current) { clearTimeout(pendingSaveRef.current); pendingSaveRef.current = null; }
+          setContent(diskBody);
+          contentRef.current = diskBody;
+          editorRef.current?.replaceAll(diskBody);
           lastSavedRef.current = fullDisk;
           onDirtyChange(false);
           return;
         }
 
-        // Merge path: user has local edits — three-way merge
-        const baseBody = hasFrontmatter ? (tryParseFm(base)?.body ?? base) : base;
-        const { merged } = merge3(baseBody, currentContent, newDiskContent);
-
-        if (pendingSaveRef.current) {
-          clearTimeout(pendingSaveRef.current);
-          pendingSaveRef.current = null;
-        }
-
+        // Merge path: three-way merge of the body.
+        const { merged } = merge3(baseBody, currentBody, diskBody);
+        if (pendingSaveRef.current) { clearTimeout(pendingSaveRef.current); pendingSaveRef.current = null; }
         setContent(merged);
         contentRef.current = merged;
         editorRef.current?.replaceAll(merged);
 
-        const fullMerged = hasFrontmatter ? serializeFm(frontmatterRef.current, merged) : merged;
-
+        const fullMerged = buildFull(merged, diskThreads);
         if (fullMerged !== fullDisk) {
           onDirtyChange(true);
           scheduleSave();
@@ -467,13 +484,12 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
         const sel = window.getSelection();
         return sel ? sel.toString() : '';
       },
-    }), [saveNow, applyProgrammaticContent, scheduleSave, hasFrontmatter, onDirtyChange, getFullContent, handleToggleMode]);
+    }), [saveNow, applyProgrammaticContent, updateThreads, scheduleSave, buildFull, stripFm, onDirtyChange, getFullContent, handleToggleMode]);
 
     // Cmd+S handler
     useEffect(() => {
       const el = containerRef.current;
       if (!el) return;
-
       const handler = (e: KeyboardEvent) => {
         if ((e.metaKey || e.ctrlKey) && e.key === 's') {
           e.preventDefault();
@@ -504,6 +520,72 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
       applyProgrammaticContent(current + separator + link);
     }, [applyProgrammaticContent]);
 
+    // ── Comment interactions ───────────────────────────────
+    const handleCommentActivate = useCallback((threadId: string | null, rect: Rect | null) => {
+      if (threadId && rect) {
+        setComposer(null);
+        setActiveComment({ id: threadId, rect });
+      } else {
+        setActiveComment(null);
+      }
+    }, []);
+
+    const handleSelectionChange = useCallback((info: SelectionInfo | null) => {
+      setSelection(info);
+    }, []);
+
+    const handleStartComment = useCallback(() => {
+      const anchor = editorRef.current?.getSelectionAnchor();
+      const sel = selection;
+      if (!anchor || !sel) return;
+      setSelection(null);
+      setActiveComment(null);
+      setComposer({ quote: anchor.quote, anchor: anchor.anchor, rect: sel.rect });
+    }, [selection]);
+
+    const handleComposerSubmit = useCallback((body: string) => {
+      const c = composer;
+      if (!c) return;
+      const thread: CommentThread = {
+        id: newThreadId(),
+        quote: c.quote,
+        comments: [{ body, updatedAt: new Date().toISOString() }],
+        anchor: { kind: 'text', prefix: c.anchor.prefix, suffix: c.anchor.suffix },
+      };
+      updateThreads([...threadsRef.current, thread]);
+      fireMentions(body, thread.quote, { prefix: thread.anchor.prefix, suffix: thread.anchor.suffix }, thread.id);
+      setComposer(null);
+    }, [composer, updateThreads, fireMentions]);
+
+    const handleReply = useCallback((body: string) => {
+      const id = activeComment?.id;
+      if (!id) return;
+      const current = threadsRef.current;
+      const thread = current.find(t => t.id === id);
+      if (!thread) return;
+      const next = current.map(t =>
+        t.id === id ? { ...t, comments: [...t.comments, { body, updatedAt: new Date().toISOString() }] } : t,
+      );
+      updateThreads(next);
+      fireMentions(body, thread.quote, { prefix: thread.anchor.prefix, suffix: thread.anchor.suffix }, thread.id);
+    }, [activeComment, updateThreads, fireMentions]);
+
+    const handleResolve = useCallback(() => {
+      const id = activeComment?.id;
+      if (!id) return;
+      const next = threadsRef.current.map(t =>
+        t.id === id ? { ...t, resolvedAt: t.resolvedAt ? undefined : new Date().toISOString() } : t,
+      );
+      updateThreads(next);
+    }, [activeComment, updateThreads]);
+
+    const handleDeleteThread = useCallback(() => {
+      const id = activeComment?.id;
+      if (!id) return;
+      updateThreads(threadsRef.current.filter(t => t.id !== id));
+      setActiveComment(null);
+    }, [activeComment, updateThreads]);
+
     // File drag-and-drop handler
     useEffect(() => {
       const el = containerRef.current;
@@ -513,11 +595,7 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
         e.preventDefault();
         setIsDragging(true);
       };
-
-      const handleDragLeave = () => {
-        setIsDragging(false);
-      };
-
+      const handleDragLeave = () => setIsDragging(false);
       const handleDrop = async (e: DragEvent) => {
         e.preventDefault();
         setIsDragging(false);
@@ -528,15 +606,13 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
             const buffer = await file.arrayBuffer();
             const dataArray = Array.from(new Uint8Array(buffer));
             const result = await whimAPI.pasteFile(spaceId, file.name, dataArray);
-
             if (result.error) {
               onSaveStatus('✗ ' + result.error);
               setTimeout(() => onSaveStatus(''), 3000);
               continue;
             }
-
-            const ref = formatAttachmentRef(result.filename!, result.relativePath!, file.type);
-            insertAttachment(ref);
+            const ref2 = formatAttachmentRef(result.filename!, result.relativePath!, file.type);
+            insertAttachment(ref2);
           } catch {
             onSaveStatus('✗ drop failed');
             setTimeout(() => onSaveStatus(''), 3000);
@@ -547,7 +623,6 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
       el.addEventListener('dragover', handleDragOver);
       el.addEventListener('dragleave', handleDragLeave);
       el.addEventListener('drop', handleDrop);
-
       return () => {
         el.removeEventListener('dragover', handleDragOver);
         el.removeEventListener('dragleave', handleDragLeave);
@@ -563,31 +638,25 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
 
     const handleRecordingStart = useCallback(() => {
       const current = contentRef.current;
-      const placeholder = VOICE_PLACEHOLDER;
-
       const separator = current.endsWith('\n') ? '\n' : '\n\n';
-      applyProgrammaticContent(current + separator + placeholder + '\n');
+      applyProgrammaticContent(current + separator + VOICE_PLACEHOLDER + '\n');
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     const handleRecordingComplete = useCallback(async (result: VoiceRecordingResult) => {
       setIsTranscribing(true);
       onSaveStatus('🎤 Saving clip…');
-
       try {
         const timestamp = Date.now();
         const filename = `voice-${timestamp}.webm`;
         const buffer = await result.audioBlob.arrayBuffer();
         const dataArray = Array.from(new Uint8Array(buffer));
         const pasteResult = await whimAPI.pasteFile(spaceId, filename, dataArray);
-
         if (pasteResult.error) {
           onSaveStatus('✗ Failed to save audio');
           setTimeout(() => onSaveStatus(''), 3000);
           return;
         }
-
         const audioRef = `[🎵 ${pasteResult.filename}](${pasteResult.relativePath})`;
-
         let transcription = '';
         try {
           onSaveStatus('✨ Transcribing…');
@@ -597,11 +666,7 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
           console.error('[canvas-voice] Transcription failed:', err);
           transcription = '_Transcription failed_';
         }
-
-        const block = transcription
-          ? `${audioRef}\n\n${transcription}`
-          : audioRef;
-
+        const block = transcription ? `${audioRef}\n\n${transcription}` : audioRef;
         const current = contentRef.current;
         const bareIdx = current.indexOf(VOICE_PLACEHOLDER);
         if (bareIdx >= 0) {
@@ -610,7 +675,6 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
           let lineEnd = current.indexOf('\n', bareIdx + VOICE_PLACEHOLDER.length);
           if (lineEnd < 0) lineEnd = current.length;
           else lineEnd += 1;
-
           const before = current.slice(0, lineStart);
           const after = current.slice(lineEnd);
           const pre = before.length === 0 || before.endsWith('\n') ? '' : '\n';
@@ -620,7 +684,6 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
           const separator = current.endsWith('\n') ? '\n' : '\n\n';
           applyProgrammaticContent(current + separator + block + '\n');
         }
-
         onSaveStatus('✓ Voice clip added');
         setTimeout(() => onSaveStatus(''), 2000);
       } catch (err: any) {
@@ -650,9 +713,7 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
     // Cleanup pending save on unmount
     useEffect(() => {
       return () => {
-        if (pendingSaveRef.current) {
-          clearTimeout(pendingSaveRef.current);
-        }
+        if (pendingSaveRef.current) clearTimeout(pendingSaveRef.current);
       };
     }, []);
 
@@ -660,12 +721,12 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
     useEffect(() => {
       if (editorMode !== 'rendered') return;
       const raf = requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          editorRef.current?.focus();
-        });
+        requestAnimationFrame(() => editorRef.current?.focus());
       });
       return () => cancelAnimationFrame(raf);
     }, [editorMode]);
+
+    const activeThread = activeComment ? threads.find(t => t.id === activeComment.id) ?? null : null;
 
     return (
       <div
@@ -690,6 +751,11 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
                 theme={theme}
                 onContentChanged={onEditorContentChanged}
                 decorations={decorations}
+                commentThreads={threads}
+                activeCommentId={activeComment?.id ?? null}
+                commentTrigger={commentTrigger}
+                onCommentActivate={handleCommentActivate}
+                onSelectionChange={handleSelectionChange}
               />
               {isTranscribing && (
                 <div className="canvas-voice-transcribing-bar">
@@ -705,6 +771,33 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
                 disabled={isTranscribing}
               />
             </div>
+            {selection && !composer && (
+              <SelectionToolbar
+                rect={selection.rect}
+                onComment={handleStartComment}
+                onFork={onForkSelection ? () => { onForkSelection(selection.text); setSelection(null); } : undefined}
+                onExtract={onExtractToPage ? () => { onExtractToPage(selection.text); setSelection(null); } : undefined}
+              />
+            )}
+            {composer && (
+              <CommentComposer
+                rect={composer.rect}
+                quote={composer.quote}
+                onSubmit={handleComposerSubmit}
+                onCancel={() => setComposer(null)}
+              />
+            )}
+            {activeThread && activeComment && (
+              <CommentPopover
+                thread={activeThread}
+                rect={activeComment.rect}
+                roster={personas.map(p => p.handle)}
+                onReply={handleReply}
+                onResolve={handleResolve}
+                onDelete={handleDeleteThread}
+                onClose={() => setActiveComment(null)}
+              />
+            )}
           </>
         ) : (
           <textarea
@@ -725,37 +818,6 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
   }
 );
 
-const COMMENTS_START = ':::documint-comments';
-const COMMENTS_END = ':::';
-
-function insertCommentReply(content: string, threadId: string, body: string): string {
-  const startIdx = content.indexOf(COMMENTS_START);
-  if (startIdx < 0) return content;
-
-  const jsonStart = startIdx + COMMENTS_START.length;
-  const endIdx = content.indexOf(COMMENTS_END, jsonStart);
-  if (endIdx < 0) return content;
-
-  const jsonStr = content.slice(jsonStart, endIdx).trim();
-  try {
-    const threads = JSON.parse(jsonStr);
-    if (!Array.isArray(threads)) return content;
-
-    const thread = threads.find((t: any) => t.id === threadId);
-    if (!thread || !Array.isArray(thread.comments)) return content;
-
-    thread.comments.push({
-      body,
-      updatedAt: new Date().toISOString(),
-    });
-
-    const newJson = JSON.stringify(threads, null, 2);
-    return content.slice(0, jsonStart) + '\n' + newJson + '\n' + content.slice(endIdx);
-  } catch {
-    return content;
-  }
-}
-
-// Handlers reserved for the comment/mention plugins (p3–p4). Keeping the shapes
-// here documents the contract the plugins will fulfill.
-export type { CommentChange, UserMentionEvent };
+// Inline mention support lives in the mention plugin (p4); these are re-exported
+// for the host event types.
+export type { CommentThread };

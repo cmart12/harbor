@@ -18,9 +18,18 @@ import { clipboard } from '@milkdown/kit/plugin/clipboard';
 import { history } from '@milkdown/kit/plugin/history';
 import { cursor } from '@milkdown/kit/plugin/cursor';
 import { getMarkdown, replaceAll, insert } from '@milkdown/kit/utils';
+import type { EditorView } from '@milkdown/kit/prose/view';
 import { MilkdownProvider, Milkdown, useEditor } from '@milkdown/react';
 import { hostDecorationPlugin, decorationPluginKey } from './plugins/decoration-plugin';
-import type { CanvasDecoration } from '../types';
+import {
+  commentPlugin,
+  commentThreadAt,
+  SET_THREADS,
+  SET_ACTIVE,
+} from './plugins/comment-plugin';
+import { computeAnchor } from './anchor';
+import type { CanvasDecoration, CommentThread, CommentTrigger, TextAnchor } from '../types';
+import type { Rect, SelectionInfo } from './geometry';
 
 /**
  * Imperative surface the canvas wrapper drives. The editor is *uncontrolled*:
@@ -29,15 +38,12 @@ import type { CanvasDecoration } from '../types';
  */
 export interface MilkdownEditorHandle {
   isReady(): boolean;
-  /** Serialize the current document to markdown. */
   getMarkdown(): string;
-  /** Replace the whole document from a markdown string (re-parses). */
   replaceAll(markdown: string): void;
-  /** Insert markdown at the current selection. */
   insertMarkdown(markdown: string, inline?: boolean): void;
-  /** Plain text of the current selection (empty when collapsed). */
   getSelectedText(): string;
-  /** Focus the editable surface. */
+  /** Quote + content-addressable anchor for the current selection (null if collapsed). */
+  getSelectionAnchor(): { quote: string; anchor: TextAnchor } | null;
   focus(): void;
 }
 
@@ -48,10 +54,34 @@ export interface MilkdownEditorProps {
   onFocus?: () => void;
   onBlur?: () => void;
   decorations?: readonly CanvasDecoration[];
+  commentThreads?: readonly CommentThread[];
+  activeCommentId?: string | null;
+  commentTrigger?: CommentTrigger;
+  /** Fired when the caret enters/leaves a commented range (or a thread is hovered). */
+  onCommentActivate?: (threadId: string | null, rect: Rect | null) => void;
+  /** Fired when the text selection changes (for the selection toolbar). */
+  onSelectionChange?: (info: SelectionInfo | null) => void;
+}
+
+function rectFromRange(view: EditorView, from: number, to: number): Rect | null {
+  try {
+    const a = view.coordsAtPos(from);
+    const b = view.coordsAtPos(to);
+    const left = Math.min(a.left, b.left);
+    const right = Math.max(a.right, b.right);
+    const top = Math.min(a.top, b.top);
+    const bottom = Math.max(a.bottom, b.bottom);
+    return { left, top, right, bottom, width: right - left, height: bottom - top };
+  } catch {
+    return null;
+  }
 }
 
 const MilkdownInner = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
-  function MilkdownInner({ initialContent, onContentChanged, onFocus, onBlur, decorations }, ref) {
+  function MilkdownInner(
+    { initialContent, onContentChanged, onFocus, onBlur, decorations, commentThreads, activeCommentId, commentTrigger, onCommentActivate, onSelectionChange },
+    ref,
+  ) {
     // Latest callbacks via refs so the editor factory (created once) never goes stale.
     const onChangeRef = useRef(onContentChanged);
     onChangeRef.current = onContentChanged;
@@ -59,6 +89,12 @@ const MilkdownInner = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
     onFocusRef.current = onFocus;
     const onBlurRef = useRef(onBlur);
     onBlurRef.current = onBlur;
+    const onCommentActivateRef = useRef(onCommentActivate);
+    onCommentActivateRef.current = onCommentActivate;
+    const onSelectionChangeRef = useRef(onSelectionChange);
+    onSelectionChangeRef.current = onSelectionChange;
+    const commentTriggerRef = useRef<CommentTrigger>(commentTrigger ?? 'caret');
+    commentTriggerRef.current = commentTrigger ?? 'caret';
 
     // Suppress the markdownUpdated callback while we apply host-initiated changes
     // (replaceAll), so a programmatic write isn't echoed back as a user edit.
@@ -75,6 +111,23 @@ const MilkdownInner = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
               class: 'milkdown-prose',
               spellcheck: 'true',
             },
+            handleDOMEvents: {
+              ...(prev.handleDOMEvents ?? {}),
+              mouseover: (view, event) => {
+                if (commentTriggerRef.current !== 'hover-or-caret') return false;
+                const target = event.target as HTMLElement | null;
+                const el = target?.closest?.('.whim-comment') as HTMLElement | null;
+                if (!el) return false;
+                const pos = view.posAtCoords({ left: event.clientX, top: event.clientY });
+                if (!pos) return false;
+                const range = commentThreadAt(view.state, pos.pos);
+                if (range) {
+                  const rect = rectFromRange(view, range.from, range.to);
+                  onCommentActivateRef.current?.(range.threadId, rect);
+                }
+                return false;
+              },
+            },
           }));
           const l = ctx.get(listenerCtx);
           l.markdownUpdated((_ctx, markdown) => {
@@ -83,6 +136,29 @@ const MilkdownInner = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
           });
           l.focus(() => onFocusRef.current?.());
           l.blur(() => onBlurRef.current?.());
+          l.selectionUpdated((sctx, selection) => {
+            const view = sctx.get(editorViewCtx);
+            const { from, to, empty } = selection;
+            if (!empty) {
+              const text = view.state.doc.textBetween(from, to, '\n', '\uFFFC');
+              const rect = rectFromRange(view, from, to);
+              if (rect && text.trim()) {
+                onSelectionChangeRef.current?.({ text, from, to, rect });
+              } else {
+                onSelectionChangeRef.current?.(null);
+              }
+              return;
+            }
+            // Collapsed caret: surface the comment thread under the caret, if any.
+            onSelectionChangeRef.current?.(null);
+            const range = commentThreadAt(view.state, from);
+            if (range) {
+              const rect = rectFromRange(view, range.from, range.to);
+              onCommentActivateRef.current?.(range.threadId, rect);
+            } else {
+              onCommentActivateRef.current?.(null, null);
+            }
+          });
         })
         .use(commonmark)
         .use(gfm)
@@ -90,19 +166,36 @@ const MilkdownInner = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
         .use(clipboard)
         .use(history)
         .use(cursor)
-        .use(hostDecorationPlugin);
+        .use(hostDecorationPlugin)
+        .use(commentPlugin);
     }, []);
 
-    // Sync host-provided regex decorations into the plugin whenever they change.
+    // Sync host-provided regex decorations.
     useEffect(() => {
       if (loading) return;
-      const ed = get();
-      if (!ed) return;
-      ed.action((ctx) => {
+      get()?.action((ctx) => {
         const view = ctx.get(editorViewCtx);
         view.dispatch(view.state.tr.setMeta(decorationPluginKey, (decorations ?? []) as CanvasDecoration[]));
       });
     }, [loading, get, decorations]);
+
+    // Sync comment threads.
+    useEffect(() => {
+      if (loading) return;
+      get()?.action((ctx) => {
+        const view = ctx.get(editorViewCtx);
+        view.dispatch(view.state.tr.setMeta(SET_THREADS, (commentThreads ?? []) as CommentThread[]));
+      });
+    }, [loading, get, commentThreads]);
+
+    // Sync active comment highlight.
+    useEffect(() => {
+      if (loading) return;
+      get()?.action((ctx) => {
+        const view = ctx.get(editorViewCtx);
+        view.dispatch(view.state.tr.setMeta(SET_ACTIVE, { id: activeCommentId ?? null }));
+      });
+    }, [loading, get, activeCommentId]);
 
     useImperativeHandle(
       ref,
@@ -130,6 +223,16 @@ const MilkdownInner = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
             const { from, to, empty } = view.state.selection;
             if (empty) return '';
             return view.state.doc.textBetween(from, to, '\n', '\n');
+          });
+        },
+        getSelectionAnchor: () => {
+          const ed = get();
+          if (!ed) return null;
+          return ed.action((ctx) => {
+            const view = ctx.get(editorViewCtx);
+            const { from, to, empty } = view.state.selection;
+            if (empty) return null;
+            return computeAnchor(view.state.doc, from, to);
           });
         },
         focus: () => {

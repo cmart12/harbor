@@ -4577,6 +4577,142 @@ body.dark .skill-picker-desc {
   50% { box-shadow: 0 0 0 2px rgba(124, 102, 220, 0.25); }
 }
 
+/* Comment highlights */
+.markdown-canvas-container .whim-comment {
+  background: rgba(255, 196, 0, 0.18);
+  border-bottom: 1.5px solid rgba(230, 160, 0, 0.55);
+  border-radius: 2px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.markdown-canvas-container .whim-comment:hover { background: rgba(255, 196, 0, 0.3); }
+.markdown-canvas-container .whim-comment-active { background: rgba(255, 196, 0, 0.42); }
+.markdown-canvas-container .whim-comment-resolved {
+  background: rgba(120, 120, 130, 0.12);
+  border-bottom-color: rgba(120, 120, 130, 0.4);
+}
+.markdown-canvas-container.md-theme-dark .whim-comment {
+  background: rgba(255, 196, 0, 0.14);
+  border-bottom-color: rgba(240, 190, 60, 0.5);
+}
+.markdown-canvas-container.md-theme-dark .whim-comment-active { background: rgba(255, 196, 0, 0.3); }
+
+/* Selection toolbar */
+.md-selection-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: #2c2c34;
+  color: #fff;
+  border-radius: 8px;
+  padding: 3px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.28);
+}
+.md-selection-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: transparent;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: var(--fs-caption);
+  cursor: pointer;
+}
+.md-selection-btn:hover { background: rgba(255, 255, 255, 0.14); }
+
+/* Comment popover / composer */
+.md-comment-popover {
+  width: 300px;
+  max-width: 80vw;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.markdown-canvas-container.md-theme-dark .md-comment-popover,
+body.dark .md-comment-popover {
+  background: #26262c;
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #e1e1e6;
+}
+.md-comment-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.md-comment-quote-inline {
+  font-size: var(--fs-caption);
+  color: #8a6d00;
+  font-style: italic;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.md-comment-header-actions { display: flex; gap: 2px; flex-shrink: 0; }
+.md-comment-icon {
+  background: transparent;
+  border: none;
+  border-radius: 5px;
+  padding: 4px;
+  cursor: pointer;
+  color: inherit;
+  opacity: 0.65;
+}
+.md-comment-icon:hover { opacity: 1; background: rgba(0, 0, 0, 0.06); }
+.md-comment-quote {
+  font-size: var(--fs-caption);
+  color: #8a6d00;
+  background: rgba(255, 196, 0, 0.12);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-style: italic;
+}
+.md-comment-list { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto; }
+.md-comment-item {
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: 8px;
+  padding: 6px 9px;
+}
+body.dark .md-comment-item { background: rgba(255, 255, 255, 0.05); }
+.md-comment-body { font-size: var(--fs-body); white-space: pre-wrap; word-break: break-word; }
+.md-comment-meta { font-size: var(--fs-meta); opacity: 0.5; margin-top: 3px; }
+.md-comment-input {
+  width: 100%;
+  min-height: 52px;
+  resize: vertical;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 8px;
+  padding: 7px 9px;
+  font: inherit;
+  font-size: var(--fs-body);
+  background: transparent;
+  color: inherit;
+}
+.md-comment-input:focus { outline: none; border-color: #7c66dc; }
+.md-comment-actions { display: flex; justify-content: flex-end; gap: 6px; }
+.md-comment-btn-ghost,
+.md-comment-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 6px;
+  padding: 5px 11px;
+  font-size: var(--fs-caption);
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+.md-comment-btn-ghost { background: transparent; color: inherit; opacity: 0.7; }
+.md-comment-btn-ghost:hover { opacity: 1; background: rgba(0, 0, 0, 0.05); }
+.md-comment-btn-primary { background: #7c66dc; color: #fff; }
+.md-comment-btn-primary:disabled { opacity: 0.45; cursor: default; }
+
 /* ── Canvas Voice Recorder ───────────────────────────── */
 
 .canvas-voice-recorder {
