@@ -47,11 +47,11 @@ export function getCliShimPath(realCliPath: string): string | null {
   if (!realCliPath) return null;
 
   const userData = app.getPath('userData');
-  const shimDir = path.join(userData, 'cli-shim');
+  const shimDir = path.win32.join(userData, 'cli-shim');
   // The SDK only treats `.js` files as JavaScript that needs to be run via
   // Node; `.mjs` is spawned directly (EFTYPE on Windows). Keep the `.js`
   // extension and use CJS syntax in `buildShimContent`.
-  const shimPath = path.join(shimDir, 'cli-electron-shim.js');
+  const shimPath = path.win32.join(shimDir, 'cli-electron-shim.js');
 
   try {
     fs.mkdirSync(shimDir, { recursive: true });
