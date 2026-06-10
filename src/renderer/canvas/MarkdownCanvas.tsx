@@ -352,7 +352,7 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
       setContent(newBody);
       contentRef.current = newBody;
       if (editorModeRef.current === 'rendered') {
-        editorRef.current?.replaceAll(newBody);
+        editorRef.current?.replaceAll(newBody, { animate: true });
       }
       markDirtyAndSave();
     }, [markDirtyAndSave]);
@@ -496,7 +496,7 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
           if (pendingSaveRef.current) { clearTimeout(pendingSaveRef.current); pendingSaveRef.current = null; }
           setContent(diskBody);
           contentRef.current = diskBody;
-          editorRef.current?.replaceAll(diskBody);
+          editorRef.current?.replaceAll(diskBody, { animate: true });
           lastSavedRef.current = fullDisk;
           onDirtyChange(false);
           return;
@@ -507,7 +507,7 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
         if (pendingSaveRef.current) { clearTimeout(pendingSaveRef.current); pendingSaveRef.current = null; }
         setContent(merged);
         contentRef.current = merged;
-        editorRef.current?.replaceAll(merged);
+        editorRef.current?.replaceAll(merged, { animate: true });
 
         const fullMerged = buildFull(merged, diskThreads);
         if (fullMerged !== fullDisk) {

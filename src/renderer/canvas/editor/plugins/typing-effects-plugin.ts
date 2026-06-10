@@ -12,7 +12,8 @@ const EXPIRE_TYPING_EFFECTS = 'whim-expire-typing-effects';
 const INSERT_EFFECT_MS = 520;
 const PULSE_EFFECT_MS = 620;
 const FADE_EFFECT_MS = 560;
-const MAX_INSERT_CHARS = 40;
+const MAX_INSERT_CHARS = 160;
+const MAX_INSERT_EFFECTS = 12;
 const MAX_FADE_CHARS = 2;
 const objectReplacementChar = '\uFFFC';
 const emojiPattern = /\p{Extended_Pictographic}/u;
@@ -146,6 +147,54 @@ function buildSet(doc: ProseNode, effects: readonly TypingEffect[]): DecorationS
   return DecorationSet.create(doc, decorations);
 }
 
+function addInsertEffect(
+  effects: TypingEffect[],
+  doc: ProseNode,
+  from: number,
+  to: number,
+  now: number,
+): void {
+  if (effects.length >= MAX_INSERT_EFFECTS) return;
+  if (from >= to) return;
+
+  const text = doc.textBetween(from, to, '', objectReplacementChar);
+  if (!shouldAnimateText(text, MAX_INSERT_CHARS)) return;
+  if (hasCodeContext(doc, from, to)) return;
+
+  const pulse = text === '.';
+  effects.push({
+    id: createEffectId('insert'),
+    kind: 'insert',
+    from,
+    to,
+    pulse,
+    expiresAt: now + (pulse ? PULSE_EFFECT_MS : INSERT_EFFECT_MS),
+  });
+}
+
+function collectInsertEffectsForRange(
+  effects: TypingEffect[],
+  doc: ProseNode,
+  from: number,
+  to: number,
+  now: number,
+): void {
+  if (isSingleTextblockRange(doc, from, to)) {
+    addInsertEffect(effects, doc, from, to, now);
+    return;
+  }
+
+  doc.nodesBetween(from, to, (node, pos) => {
+    if (effects.length >= MAX_INSERT_EFFECTS) return false;
+    if (!node.isTextblock) return undefined;
+
+    const blockFrom = Math.max(from, pos + 1);
+    const blockTo = Math.min(to, pos + node.nodeSize - 1);
+    addInsertEffect(effects, doc, blockFrom, blockTo, now);
+    return false;
+  });
+}
+
 function mapEffect(effect: TypingEffect, tr: Transaction, doc: ProseNode): TypingEffect | null {
   if (!tr.docChanged) return effect;
 
@@ -179,20 +228,7 @@ function collectInsertionEffects(
       if (seenRanges.has(key)) return;
       seenRanges.add(key);
 
-      if (!isSingleTextblockRange(doc, from, to)) return;
-      const text = doc.textBetween(from, to, '', objectReplacementChar);
-      if (!shouldAnimateText(text, MAX_INSERT_CHARS)) return;
-      if (hasCodeContext(doc, from, to)) return;
-
-      const pulse = text === '.';
-      effects.push({
-        id: createEffectId('insert'),
-        kind: 'insert',
-        from,
-        to,
-        pulse,
-        expiresAt: now + (pulse ? PULSE_EFFECT_MS : INSERT_EFFECT_MS),
-      });
+      collectInsertEffectsForRange(effects, doc, from, to, now);
     });
   });
 

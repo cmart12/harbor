@@ -11,6 +11,7 @@ import {
   defaultValueCtx,
   editorViewCtx,
   editorViewOptionsCtx,
+  parserCtx,
 } from '@milkdown/kit/core';
 import { commonmark, toggleStrongCommand, toggleEmphasisCommand, toggleInlineCodeCommand } from '@milkdown/kit/preset/commonmark';
 import { gfm, toggleStrikethroughCommand } from '@milkdown/kit/preset/gfm';
@@ -35,6 +36,7 @@ import { SUPPRESS_TYPING_EFFECTS, typingEffectsPlugin } from './plugins/typing-e
 import type { CanvasDecoration, CanvasPresence, CommentThread, CommentTrigger, TextAnchor } from '../types';
 import type { Rect, SelectionInfo, MentionQuery, FormatMark } from './geometry';
 import type { EditorState } from '@milkdown/kit/prose/state';
+import type { Node as ProseNode } from '@milkdown/kit/prose/model';
 
 const MARK_COMMANDS = {
   strong: toggleStrongCommand,
@@ -51,8 +53,8 @@ const MARK_COMMANDS = {
 export interface MilkdownEditorHandle {
   isReady(): boolean;
   getMarkdown(): string;
-  replaceAll(markdown: string): void;
-  insertMarkdown(markdown: string, inline?: boolean): void;
+  replaceAll(markdown: string, options?: ReplaceAllOptions): void;
+  insertMarkdown(markdown: string, inline?: boolean, options?: ReplaceAllOptions): void;
   getSelectedText(): string;
   /** Quote + content-addressable anchor for the current selection (null if collapsed). */
   getSelectionAnchor(): { quote: string; anchor: TextAnchor } | null;
@@ -61,6 +63,10 @@ export interface MilkdownEditorHandle {
   /** Toggle an inline formatting mark over the current selection. */
   toggleMark(mark: FormatMark): void;
   focus(): void;
+}
+
+export interface ReplaceAllOptions {
+  animate?: boolean;
 }
 
 export interface MilkdownEditorProps {
@@ -142,6 +148,17 @@ function domRangeRect(view: EditorView, from: number, to: number): Rect | null {
 /** Best available rect for a selection: true highlight box, else PM endpoints. */
 function selectionRect(view: EditorView, from: number, to: number): Rect | null {
   return domRangeRect(view, from, to) ?? rectFromRange(view, from, to);
+}
+
+function replaceChangedRange(view: EditorView, nextDoc: ProseNode): void {
+  const { state } = view;
+  const start = state.doc.content.findDiffStart(nextDoc.content);
+  if (start === null) return;
+
+  const end = state.doc.content.findDiffEnd(nextDoc.content);
+  if (!end) return;
+
+  view.dispatch(state.tr.replace(start, end.a, nextDoc.slice(start, end.b)));
 }
 
 const MilkdownInner = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
@@ -316,14 +333,21 @@ const MilkdownInner = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
       () => ({
         isReady: () => !!get(),
         getMarkdown: () => get()?.action(getMarkdown()) ?? '',
-        replaceAll: (markdown: string) => {
+        replaceAll: (markdown: string, options?: ReplaceAllOptions) => {
           const ed = get();
           if (!ed) return;
           ed.action((ctx) => {
             const view = ctx.get(editorViewCtx);
-            view.dispatch(view.state.tr.setMeta(SUPPRESS_TYPING_EFFECTS, true));
+            const animate = options?.animate === true;
+            if (!animate) view.dispatch(view.state.tr.setMeta(SUPPRESS_TYPING_EFFECTS, true));
             try {
-              replaceAll(markdown)(ctx);
+              if (animate) {
+                const nextDoc = ctx.get(parserCtx)(markdown);
+                if (!nextDoc) return;
+                replaceChangedRange(view, nextDoc);
+              } else {
+                replaceAll(markdown)(ctx);
+              }
               // Record the editor's own serialization of the new doc — that's the
               // exact string the debounced markdownUpdated echo will carry.
               try {
@@ -332,18 +356,19 @@ const MilkdownInner = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
                 pendingEchoRef.current = markdown;
               }
             } finally {
-              view.dispatch(view.state.tr.setMeta(SUPPRESS_TYPING_EFFECTS, false));
+              if (!animate) view.dispatch(view.state.tr.setMeta(SUPPRESS_TYPING_EFFECTS, false));
             }
           });
         },
-        insertMarkdown: (markdown: string, inline?: boolean) => {
+        insertMarkdown: (markdown: string, inline?: boolean, options?: ReplaceAllOptions) => {
           get()?.action((ctx) => {
             const view = ctx.get(editorViewCtx);
-            view.dispatch(view.state.tr.setMeta(SUPPRESS_TYPING_EFFECTS, true));
+            const animate = options?.animate === true;
+            if (!animate) view.dispatch(view.state.tr.setMeta(SUPPRESS_TYPING_EFFECTS, true));
             try {
               insert(markdown, inline)(ctx);
             } finally {
-              view.dispatch(view.state.tr.setMeta(SUPPRESS_TYPING_EFFECTS, false));
+              if (!animate) view.dispatch(view.state.tr.setMeta(SUPPRESS_TYPING_EFFECTS, false));
             }
           });
         },
