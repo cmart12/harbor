@@ -36,6 +36,7 @@ import { presencePlugin, SET_PRESENCE } from './plugins/presence-plugin';
 import { SUPPRESS_TYPING_EFFECTS, typingEffectsPlugin } from './plugins/typing-effects-plugin';
 import type { CanvasDecoration, CanvasPresence, CanvasThreadAgentStatus, CommentThread, CommentTrigger, TextAnchor } from '../types';
 import type { Rect, SelectionInfo, MentionQuery, FormatMark } from './geometry';
+import { detectMentionBeforeCaret } from './mentions';
 import type { EditorState } from '@milkdown/kit/prose/state';
 import type { Node as ProseNode } from '@milkdown/kit/prose/model';
 
@@ -103,12 +104,11 @@ function detectMention(state: EditorState): { from: number; to: number; query: s
   const $from = sel.$from;
   if (!$from.parent.isTextblock) return null;
   const textBefore = $from.parent.textBetween(0, $from.parentOffset, undefined, '\uFFFC');
-  const m = /(^|\s)@([\w-]*)$/.exec(textBefore);
-  if (!m) return null;
-  const query = m[2];
+  const mention = detectMentionBeforeCaret(textBefore, textBefore.length);
+  if (!mention) return null;
   const to = $from.pos;
-  const from = to - query.length - 1; // include the '@'
-  return { from, to, query };
+  const from = to - (mention.to - mention.from);
+  return { from, to, query: mention.query };
 }
 
 function rectFromRange(view: EditorView, from: number, to: number): Rect | null {

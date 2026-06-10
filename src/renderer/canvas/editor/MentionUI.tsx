@@ -2,12 +2,7 @@ import React, { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import type { Rect } from './geometry';
 import { useAnchoredPosition } from './floating';
-
-export interface MentionCandidate {
-  handle: string;
-  emoji?: string;
-  model?: string;
-}
+import type { MentionCandidate } from './mentions';
 
 /**
  * `@`-mention suggestion popup. Selection/keyboard state is owned by the host

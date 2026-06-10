@@ -1,7 +1,60 @@
 import { ipcMain } from 'electron';
-import { isInitialized, getSpace } from '../database';
+import { isInitialized, getSpace, assignSpaceFolder } from '../database';
 import { getConfigValue } from '../config';
 import { notifyAllWindows } from '../notify';
+import { initSpaceCanvas, resolveSpaceFolder, sanitizePageName } from '../workspace';
+import * as fs from 'fs';
+import * as path from 'path';
+
+interface CommentLaunchTarget {
+  launchSpaceId: string;
+  folder: string;
+  documentPath?: string;
+  documentDisplayName?: string;
+  documentLabel?: string;
+}
+
+function resolveCommentLaunchTarget(spaceId: string, workspace: string): CommentLaunchTarget | { error: string } {
+  let launchSpaceId = spaceId;
+  let realSpaceId = spaceId;
+  let pageName: string | null = null;
+
+  if (spaceId.startsWith('__page__')) {
+    const rest = spaceId.slice('__page__'.length);
+    const slashIdx = rest.indexOf('/');
+    if (slashIdx <= 0) return { error: 'invalid_page_id' };
+    realSpaceId = rest.slice(0, slashIdx);
+    try {
+      pageName = decodeURIComponent(rest.slice(slashIdx + 1));
+    } catch {
+      return { error: 'invalid_page_id' };
+    }
+    launchSpaceId = spaceId;
+  }
+
+  const space = getSpace(realSpaceId);
+  if (!space) return { error: 'space_not_found' };
+
+  let folder = space.folder;
+  if (!folder) {
+    folder = initSpaceCanvas(workspace, realSpaceId, space.description, space.body);
+    assignSpaceFolder(realSpaceId, folder);
+  }
+
+  if (!pageName) return { launchSpaceId, folder };
+
+  const slug = sanitizePageName(pageName);
+  if (!slug) return { error: 'invalid_page_id' };
+  const documentPath = path.join(resolveSpaceFolder(workspace, folder), `${slug}.md`);
+  if (!fs.existsSync(documentPath)) return { error: 'page_not_found' };
+  return {
+    launchSpaceId,
+    folder,
+    documentPath,
+    documentDisplayName: `${slug}.md`,
+    documentLabel: 'child page document',
+  };
+}
 
 export function registerAgentHandlers(): void {
   ipcMain.handle('agent:launch', async (_event, spaceId: string, selectedText: string, anchor: any, options?: { repo?: string; model?: string }) => {
@@ -19,8 +72,8 @@ export function registerAgentHandlers(): void {
     const workspace = getConfigValue('workspace');
     if (!workspace || !isInitialized()) return { error: 'no_workspace' };
 
-    const space = getSpace(spaceId);
-    if (!space || !space.folder) return { error: 'space_not_found' };
+    const target = resolveCommentLaunchTarget(spaceId, workspace);
+    if ('error' in target) return { error: target.error };
 
     const allPersonas = getConfigValue('personas') || [];
     const persona = allPersonas.find(p => p.handle === personaHandle);
@@ -28,7 +81,8 @@ export function registerAgentHandlers(): void {
 
     // Route to CCA (Copilot Coding Agent) if persona is configured for PR-based cloud execution
     if (persona.runLocation === 'cca') {
-      const prompt = `${persona.instructions}\n\nComment: "${commentBody}"\nOn text: "${quotedText}"`;
+      const documentPath = target.documentPath ? path.relative(workspace, target.documentPath) : path.join(target.folder, 'canvas.md');
+      const prompt = `${persona.instructions}\n\nDocument: ${documentPath}\nComment: "${commentBody}"\nOn text: "${quotedText}"`;
       const { getWorkspaceRepo, getGitHubToken, launchCloudAgentWithFallback } = await import('../cloud-agent');
       const repoInfo = await getWorkspaceRepo(workspace);
       if (!repoInfo) return { error: 'Could not determine repository from workspace.' };
@@ -51,7 +105,7 @@ export function registerAgentHandlers(): void {
         : `Cloud job ${result.jobId}`;
       const { createAgentSession } = await import('../database');
       createAgentSession({
-        id: agentId, session_id: result.sessionId, space_id: spaceId,
+        id: agentId, session_id: result.sessionId, space_id: target.launchSpaceId,
         prompt: commentBody, status: 'running', summary,
         working_dir: workspace, source: 'cca' as any, persona_handle: persona.handle,
         quoted_text: quotedText || null, run_location: 'cloud',
@@ -66,7 +120,11 @@ export function registerAgentHandlers(): void {
     }
 
     const { launchCommentAgent } = await import('../agent-service');
-    return launchCommentAgent(spaceId, commentBody, quotedText, anchor, persona, threadId, workspace, space.folder);
+    return launchCommentAgent(target.launchSpaceId, commentBody, quotedText, anchor, persona, threadId, workspace, target.folder, {
+      documentPath: target.documentPath,
+      documentDisplayName: target.documentDisplayName,
+      documentLabel: target.documentLabel,
+    });
   });
 
   ipcMain.handle('agent:list', async (_event, spaceId: string) => {

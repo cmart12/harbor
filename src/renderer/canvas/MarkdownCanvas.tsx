@@ -19,7 +19,8 @@ import type {
 } from './types';
 import { splitComments, joinComments, extractMentions, newThreadId } from './editor/comments';
 import { SelectionToolbar, CommentComposer, CommentPopover } from './editor/CommentUI';
-import { MentionPopup, type MentionCandidate } from './editor/MentionUI';
+import { MentionPopup } from './editor/MentionUI';
+import { filterMentionCandidates, type MentionCandidate } from './editor/mentions';
 import type { Rect, SelectionInfo, MentionQuery, FormatMark } from './editor/geometry';
 import { FrontmatterEditor } from './FrontmatterEditor';
 import { VoiceRecorderButton, type VoiceRecordingResult } from './VoiceRecorderButton';
@@ -244,6 +245,11 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
 
     const personasRef = useRef(personas);
     personasRef.current = personas;
+
+    const agentMentionCandidates: MentionCandidate[] = useMemo(
+      () => personas.map(p => ({ handle: p.handle, emoji: p.emoji, model: p.model })),
+      [personas],
+    );
 
     useEffect(() => {
       let cancelled = false;
@@ -696,12 +702,8 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
     // ── Mention suggestions ────────────────────────────────
     const mentionCandidates: MentionCandidate[] = useMemo(() => {
       if (!mentionQuery) return [];
-      const q = mentionQuery.query.toLowerCase();
-      return personas
-        .filter(p => p.handle.toLowerCase().includes(q))
-        .slice(0, 8)
-        .map(p => ({ handle: p.handle, emoji: p.emoji, model: p.model }));
-    }, [mentionQuery, personas]);
+      return filterMentionCandidates(agentMentionCandidates, mentionQuery.query);
+    }, [agentMentionCandidates, mentionQuery]);
 
     const mentionCandidatesRef = useRef(mentionCandidates);
     mentionCandidatesRef.current = mentionCandidates;
@@ -965,6 +967,7 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
               <CommentComposer
                 rect={composer.rect}
                 quote={composer.quote}
+                mentionCandidates={agentMentionCandidates}
                 onSubmit={handleComposerSubmit}
                 onCancel={() => setComposer(null)}
               />
@@ -973,7 +976,7 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
               <CommentPopover
                 thread={activeThread}
                 rect={activeComment.rect}
-                roster={personas.map(p => p.handle)}
+                mentionCandidates={agentMentionCandidates}
                 agentStatus={activeThreadStatus}
                 agentInteractions={activeThreadInteractions}
                 onApprovalRespond={(requestId, approved) => {

@@ -13,6 +13,21 @@ import * as path from 'path';
 
 const CANVAS_FILE = 'canvas.md';
 
+function parseSyntheticPageId(spaceId: string): { realSpaceId: string; pageName: string } | null {
+  if (!spaceId.startsWith('__page__')) return null;
+  const rest = spaceId.slice('__page__'.length);
+  const slashIdx = rest.indexOf('/');
+  if (slashIdx <= 0) return null;
+  try {
+    return {
+      realSpaceId: rest.slice(0, slashIdx),
+      pageName: decodeURIComponent(rest.slice(slashIdx + 1)),
+    };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Track the last content the editor read/wrote for each space.
  * Used to detect if an agent modified the file between editor saves.
@@ -74,23 +89,19 @@ export function registerCanvasHandlers(): void {
     }
 
     // Route page reads to page files
-    if (spaceId.startsWith('__page__')) {
-      const rest = spaceId.slice('__page__'.length);
-      const slashIdx = rest.indexOf('/');
-      if (slashIdx > 0) {
-        const realSpaceId = rest.slice(0, slashIdx);
-        const pageName = rest.slice(slashIdx + 1);
-        const space = getSpace(realSpaceId);
-        if (!space) return { content: '', error: 'not_found' };
-        let folder = space.folder;
-        if (!folder) {
-          folder = initSpaceCanvas(workspace, realSpaceId, space.description, space.body);
-          assignSpaceFolder(realSpaceId, folder);
-        }
-        const result = readPage(workspace, folder, pageName);
-        if ('error' in result) return { content: '', error: result.error };
-        return { content: result.content };
+    const pageTarget = parseSyntheticPageId(spaceId);
+    if (pageTarget) {
+      const { realSpaceId, pageName } = pageTarget;
+      const space = getSpace(realSpaceId);
+      if (!space) return { content: '', error: 'not_found' };
+      let folder = space.folder;
+      if (!folder) {
+        folder = initSpaceCanvas(workspace, realSpaceId, space.description, space.body);
+        assignSpaceFolder(realSpaceId, folder);
       }
+      const result = readPage(workspace, folder, pageName);
+      if ('error' in result) return { content: '', error: result.error };
+      return { content: result.content };
     }
 
     const space = getSpace(spaceId);
@@ -158,23 +169,19 @@ export function registerCanvasHandlers(): void {
     }
 
     // Route page autosaves to the page file
-    if (spaceId.startsWith('__page__')) {
-      const rest = spaceId.slice('__page__'.length);
-      const slashIdx = rest.indexOf('/');
-      if (slashIdx > 0) {
-        const realSpaceId = rest.slice(0, slashIdx);
-        const pageName = rest.slice(slashIdx + 1);
-        const space = getSpace(realSpaceId);
-        if (!space) return { error: 'not_found' };
-        let folder = space.folder;
-        if (!folder) {
-          folder = initSpaceCanvas(workspace, realSpaceId, space.description, space.body);
-          assignSpaceFolder(realSpaceId, folder);
-        }
-        const result = writePage(workspace, folder, pageName, content);
-        if ('error' in result) return { error: result.error };
-        return { success: true };
+    const pageTarget = parseSyntheticPageId(spaceId);
+    if (pageTarget) {
+      const { realSpaceId, pageName } = pageTarget;
+      const space = getSpace(realSpaceId);
+      if (!space) return { error: 'not_found' };
+      let folder = space.folder;
+      if (!folder) {
+        folder = initSpaceCanvas(workspace, realSpaceId, space.description, space.body);
+        assignSpaceFolder(realSpaceId, folder);
       }
+      const result = writePage(workspace, folder, pageName, content);
+      if ('error' in result) return { error: result.error };
+      return { success: true };
     }
 
     const space = getSpace(spaceId);
@@ -224,23 +231,19 @@ export function registerCanvasHandlers(): void {
     }
 
     // Route page closes to page files
-    if (spaceId.startsWith('__page__')) {
-      const rest = spaceId.slice('__page__'.length);
-      const slashIdx = rest.indexOf('/');
-      if (slashIdx > 0) {
-        const realSpaceId = rest.slice(0, slashIdx);
-        const pageName = rest.slice(slashIdx + 1);
-        const space = getSpace(realSpaceId);
-        if (!space) return;
-        let folder = space.folder;
-        if (!folder) {
-          folder = initSpaceCanvas(workspace, realSpaceId, space.description, space.body);
-          assignSpaceFolder(realSpaceId, folder);
-        }
-        writePage(workspace, folder, pageName, content);
-        scheduleAutoCommit(workspace);
-        return;
+    const pageTarget = parseSyntheticPageId(spaceId);
+    if (pageTarget) {
+      const { realSpaceId, pageName } = pageTarget;
+      const space = getSpace(realSpaceId);
+      if (!space) return;
+      let folder = space.folder;
+      if (!folder) {
+        folder = initSpaceCanvas(workspace, realSpaceId, space.description, space.body);
+        assignSpaceFolder(realSpaceId, folder);
       }
+      writePage(workspace, folder, pageName, content);
+      scheduleAutoCommit(workspace);
+      return;
     }
 
     // Stop watching — user is leaving this canvas
@@ -527,14 +530,10 @@ function resolveCanvasBaseDir(workspace: string, spaceId: string): string | null
     return path.dirname(filePath);
   }
 
-  if (spaceId.startsWith('__page__')) {
-    const rest = spaceId.slice('__page__'.length);
-    const slashIdx = rest.indexOf('/');
-    if (slashIdx > 0) {
-      const realSpaceId = rest.slice(0, slashIdx);
-      const space = getSpace(realSpaceId);
-      if (space?.folder) return resolveSpaceFolder(workspace, space.folder);
-    }
+  const pageTarget = parseSyntheticPageId(spaceId);
+  if (pageTarget) {
+    const space = getSpace(pageTarget.realSpaceId);
+    if (space?.folder) return resolveSpaceFolder(workspace, space.folder);
   }
 
   if (spaceId.startsWith('__skill__')) {

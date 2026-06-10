@@ -44,6 +44,8 @@ export interface CommentAgentContext {
   anchor: { prefix?: string; suffix?: string };
   canvasHashBefore: string;
   canvasPath: string;
+  documentDisplayName?: string;
+  documentLabel?: string;
 }
 
 export interface AgentRecord {

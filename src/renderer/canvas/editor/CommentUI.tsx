@@ -1,9 +1,11 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Bold, Italic, Strikethrough, Code, MessageSquarePlus, GitFork, FileOutput, Check, Trash2, CornerDownLeft } from 'lucide-react';
 import type { CanvasAgentInteraction, CanvasThreadAgentStatus, CommentThread } from '../types';
 import type { Rect, FormatMark } from './geometry';
 import { useAnchoredPosition } from './floating';
+import { MentionPopup } from './MentionUI';
+import { detectMentionBeforeCaret, filterMentionCandidates, type MentionCandidate, type TextMentionQuery } from './mentions';
 import { ApprovalTile } from '../../chat/tiles/ApprovalTile';
 import { UserInputTile } from '../../chat/tiles/UserInputTile';
 import { ElicitationTile } from '../../chat/tiles/ElicitationTile';
@@ -23,6 +25,222 @@ function formatTime(iso: string): string {
   } catch {
     return '';
   }
+}
+
+const CARET_STYLE_PROPS = [
+  'boxSizing',
+  'width',
+  'paddingTop',
+  'paddingRight',
+  'paddingBottom',
+  'paddingLeft',
+  'borderTopWidth',
+  'borderRightWidth',
+  'borderBottomWidth',
+  'borderLeftWidth',
+  'fontFamily',
+  'fontSize',
+  'fontStyle',
+  'fontVariant',
+  'fontWeight',
+  'letterSpacing',
+  'lineHeight',
+  'textTransform',
+  'textIndent',
+  'textRendering',
+  'wordSpacing',
+] as const;
+
+type TextareaMentionQuery = TextMentionQuery & { rect: Rect };
+
+function rectFromTextarea(textarea: HTMLTextAreaElement): Rect {
+  const rect = textarea.getBoundingClientRect();
+  return {
+    left: rect.left,
+    top: rect.top,
+    right: rect.right,
+    bottom: rect.bottom,
+    width: rect.width,
+    height: rect.height,
+  };
+}
+
+function textareaCaretRect(textarea: HTMLTextAreaElement, caret: number): Rect | null {
+  if (typeof document === 'undefined' || typeof window === 'undefined') return null;
+  const style = window.getComputedStyle(textarea);
+  const mirror = document.createElement('div');
+  mirror.setAttribute('aria-hidden', 'true');
+  mirror.style.position = 'absolute';
+  mirror.style.visibility = 'hidden';
+  mirror.style.whiteSpace = 'pre-wrap';
+  mirror.style.wordWrap = 'break-word';
+  mirror.style.overflow = 'hidden';
+  mirror.style.top = '0';
+  mirror.style.left = '-9999px';
+  mirror.style.minHeight = '0';
+  for (const prop of CARET_STYLE_PROPS) {
+    mirror.style[prop] = style[prop];
+  }
+
+  const before = textarea.value.slice(0, caret);
+  mirror.textContent = before.endsWith('\n') ? `${before} ` : before;
+  const marker = document.createElement('span');
+  marker.textContent = '\u200b';
+  mirror.appendChild(marker);
+  document.body.appendChild(mirror);
+
+  try {
+    const textareaRect = textarea.getBoundingClientRect();
+    const mirrorRect = mirror.getBoundingClientRect();
+    const markerRect = marker.getBoundingClientRect();
+    const lineHeight = Number.parseFloat(style.lineHeight) || Number.parseFloat(style.fontSize) || 16;
+    const left = textareaRect.left + (markerRect.left - mirrorRect.left) - textarea.scrollLeft;
+    const top = textareaRect.top + (markerRect.top - mirrorRect.top) - textarea.scrollTop;
+    return {
+      left,
+      top,
+      right: left,
+      bottom: top + lineHeight,
+      width: 0,
+      height: lineHeight,
+    };
+  } finally {
+    mirror.remove();
+  }
+}
+
+function CommentMentionTextarea({
+  value,
+  mentionCandidates,
+  placeholder,
+  onChange,
+  onSubmit,
+  onCancel,
+  autoFocus,
+}: {
+  value: string;
+  mentionCandidates: readonly MentionCandidate[];
+  placeholder: string;
+  onChange: (value: string) => void;
+  onSubmit: () => void;
+  onCancel: () => void;
+  autoFocus?: boolean;
+}) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [mentionQuery, setMentionQuery] = useState<TextareaMentionQuery | null>(null);
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  useEffect(() => {
+    if (autoFocus) textareaRef.current?.focus();
+  }, [autoFocus]);
+
+  const refreshMention = useCallback((textarea: HTMLTextAreaElement, nextValue = value) => {
+    const caret = textarea.selectionStart ?? nextValue.length;
+    const query = detectMentionBeforeCaret(nextValue, caret);
+    if (!query) {
+      setMentionQuery(null);
+      setActiveIndex(0);
+      return;
+    }
+    setMentionQuery({
+      ...query,
+      rect: textareaCaretRect(textarea, query.from) ?? rectFromTextarea(textarea),
+    });
+    setActiveIndex(0);
+  }, [value]);
+
+  const candidates = useMemo(
+    () => mentionQuery ? filterMentionCandidates(mentionCandidates, mentionQuery.query) : [],
+    [mentionCandidates, mentionQuery],
+  );
+  const candidatesRef = useRef(candidates);
+  candidatesRef.current = candidates;
+  const activeIndexRef = useRef(activeIndex);
+  activeIndexRef.current = activeIndex;
+
+  useEffect(() => {
+    if (activeIndex >= candidates.length) {
+      setActiveIndex(Math.max(0, candidates.length - 1));
+    }
+  }, [activeIndex, candidates.length]);
+
+  const applyMention = useCallback((handle: string) => {
+    const textarea = textareaRef.current;
+    const query = mentionQuery;
+    if (!textarea || !query) return;
+    const inserted = `@${handle} `;
+    const nextValue = value.slice(0, query.from) + inserted + value.slice(query.to);
+    const nextCaret = query.from + inserted.length;
+    onChange(nextValue);
+    setMentionQuery(null);
+    setActiveIndex(0);
+    requestAnimationFrame(() => {
+      textarea.focus();
+      textarea.setSelectionRange(nextCaret, nextCaret);
+    });
+  }, [mentionQuery, onChange, value]);
+
+  return (
+    <>
+      <textarea
+        ref={textareaRef}
+        className="md-comment-input"
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => {
+          onChange(e.target.value);
+          refreshMention(e.currentTarget, e.target.value);
+        }}
+        onClick={(e) => refreshMention(e.currentTarget)}
+        onSelect={(e) => refreshMention(e.currentTarget)}
+        onKeyUp={(e) => {
+          if (e.key === 'Escape' || e.key === 'Enter' || e.key === 'Tab') return;
+          refreshMention(e.currentTarget);
+        }}
+        onKeyDown={(e) => {
+          if (mentionQuery) {
+            const list = candidatesRef.current;
+            if (e.key === 'Escape') {
+              e.preventDefault();
+              e.stopPropagation();
+              setMentionQuery(null);
+              return;
+            }
+            if (list.length > 0 && e.key === 'ArrowDown') {
+              e.preventDefault();
+              e.stopPropagation();
+              setActiveIndex(i => Math.min(i + 1, list.length - 1));
+              return;
+            }
+            if (list.length > 0 && e.key === 'ArrowUp') {
+              e.preventDefault();
+              e.stopPropagation();
+              setActiveIndex(i => Math.max(i - 1, 0));
+              return;
+            }
+            if (list.length > 0 && (e.key === 'Enter' || e.key === 'Tab')) {
+              e.preventDefault();
+              e.stopPropagation();
+              const candidate = list[activeIndexRef.current];
+              if (candidate) applyMention(candidate.handle);
+              return;
+            }
+          }
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); onSubmit(); }
+          if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
+        }}
+      />
+      {mentionQuery && candidates.length > 0 && (
+        <MentionPopup
+          rect={mentionQuery.rect}
+          candidates={candidates}
+          activeIndex={activeIndex}
+          onSelect={applyMention}
+          onHover={setActiveIndex}
+        />
+      )}
+    </>
+  );
 }
 
 /** Floating toolbar shown over a text selection. */
@@ -79,18 +297,18 @@ export function SelectionToolbar({
 export function CommentComposer({
   rect,
   quote,
+  mentionCandidates,
   onSubmit,
   onCancel,
 }: {
   rect: Rect;
   quote: string;
+  mentionCandidates: readonly MentionCandidate[];
   onSubmit: (body: string) => void;
   onCancel: () => void;
 }) {
   const [body, setBody] = useState('');
-  const inputRef = useRef<HTMLTextAreaElement>(null);
   const { ref, style } = useAnchoredPosition(rect, { placement: 'below', align: 'start', gap: 6 });
-  useEffect(() => { inputRef.current?.focus(); }, []);
 
   const submit = () => {
     const t = body.trim();
@@ -101,16 +319,14 @@ export function CommentComposer({
     <Floating>
       <div ref={ref} className="md-comment-popover" style={style} onMouseDown={(e) => e.stopPropagation()}>
         <div className="md-comment-quote">{quote.length > 120 ? quote.slice(0, 120) + '…' : quote}</div>
-        <textarea
-          ref={inputRef}
-          className="md-comment-input"
-          placeholder="Add a comment…  (@mention an agent to deploy it)"
+        <CommentMentionTextarea
           value={body}
-          onChange={(e) => setBody(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submit(); }
-            if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
-          }}
+          mentionCandidates={mentionCandidates}
+          placeholder="Add a comment…  (@mention an agent to deploy it)"
+          onChange={setBody}
+          onSubmit={submit}
+          onCancel={onCancel}
+          autoFocus
         />
         <div className="md-comment-actions">
           <button className="md-comment-btn-ghost" onClick={onCancel}>Cancel</button>
@@ -127,7 +343,7 @@ export function CommentComposer({
 export function CommentPopover({
   thread,
   rect,
-  roster,
+  mentionCandidates,
   agentStatus,
   agentInteractions,
   onApprovalRespond,
@@ -141,7 +357,7 @@ export function CommentPopover({
 }: {
   thread: CommentThread;
   rect: Rect;
-  roster: readonly string[];
+  mentionCandidates: readonly MentionCandidate[];
   agentStatus?: CanvasThreadAgentStatus | null;
   agentInteractions?: readonly CanvasAgentInteraction[];
   onApprovalRespond?: (requestId: string, approved: boolean) => void;
@@ -159,7 +375,6 @@ export function CommentPopover({
 }) {
   const [body, setBody] = useState('');
   const { ref, style } = useAnchoredPosition(rect, { placement: 'below', align: 'start', gap: 6 });
-  void roster;
   const interactions = agentInteractions ?? [];
 
   const submit = () => {
@@ -264,15 +479,13 @@ export function CommentPopover({
             })}
           </div>
         )}
-        <textarea
-          className="md-comment-input"
-          placeholder="Reply…  (@mention to deploy an agent)"
+        <CommentMentionTextarea
           value={body}
-          onChange={(e) => setBody(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submit(); }
-            if (e.key === 'Escape') { e.preventDefault(); onClose(); }
-          }}
+          mentionCandidates={mentionCandidates}
+          placeholder="Reply…  (@mention to deploy an agent)"
+          onChange={setBody}
+          onSubmit={submit}
+          onCancel={onClose}
         />
         <div className="md-comment-actions">
           <button className="md-comment-btn-ghost" onClick={onClose}>Close</button>

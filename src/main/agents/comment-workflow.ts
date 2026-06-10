@@ -23,6 +23,12 @@ let broker: InteractionBroker;
 // Keep a reference to setupAgentEventListeners from sdk-runner
 let setupListeners: (session: any, record: AgentRecord) => void;
 
+export interface CommentAgentDocumentTarget {
+  documentPath?: string;
+  documentDisplayName?: string;
+  documentLabel?: string;
+}
+
 export function initCommentWorkflow(deps: {
   registry: AgentRegistry;
   notifier: AgentNotifier;
@@ -47,6 +53,7 @@ export async function launchCommentAgent(
   threadId: string | null,
   workspaceRoot: string,
   intentFolder: string,
+  documentTarget?: CommentAgentDocumentTarget,
 ): Promise<{ agentId: string; sessionId: string } | { error: string }> {
   const client = getCopilotClient();
   if (!client) {
@@ -55,7 +62,9 @@ export async function launchCommentAgent(
 
   const agentId = uuid();
   const workingDir = path.join(workspaceRoot, intentFolder);
-  const canvasPath = path.join(workingDir, 'canvas.md');
+  const canvasPath = documentTarget?.documentPath ?? path.join(workingDir, 'canvas.md');
+  const documentDisplayName = documentTarget?.documentDisplayName ?? 'canvas.md';
+  const documentLabel = documentTarget?.documentLabel ?? 'canvas document';
   const isCloudSandbox = persona.runLocation === 'cloud';
 
   // Snapshot canvas hash for change detection
@@ -90,6 +99,8 @@ export async function launchCommentAgent(
       anchor,
       canvasHashBefore,
       canvasPath,
+      documentDisplayName,
+      documentLabel,
     },
   };
 
@@ -152,13 +163,13 @@ export async function launchCommentAgent(
 
     const systemPrompt = `${persona.instructions}
 
-You are responding to a comment on a canvas document. The user wrote:
+You are responding to a comment on a ${documentLabel}. The user wrote:
 
 Comment: "${commentBody}"
 On this text: "${quotedText}"
 
-The full canvas document is available as canvas.md in the working directory.
-If you make changes to the document, clearly describe what you changed.${cliToolsPrompt}`;
+The full ${documentLabel} is available as ${documentDisplayName} in the working directory.
+If you make changes to ${documentDisplayName}, clearly describe what you changed.${cliToolsPrompt}`;
 
     // Resolve cloud session options for cloud personas
     let cloudOpts: { repository?: { owner: string; name: string } } | undefined;
@@ -282,7 +293,7 @@ If you make changes to the document, clearly describe what you changed.${cliTool
         if (!launchStillWanted()) return undefined;
         return session.send({
           prompt: commentBody,
-          attachments: [{ type: 'file' as const, path: canvasPath, displayName: 'canvas.md' }],
+          attachments: [{ type: 'file' as const, path: canvasPath, displayName: documentDisplayName }],
         });
       })
       .then((messageId: any) => {
@@ -333,18 +344,27 @@ export function handleCommentAgentCompletion(record: AgentRecord): void {
     spaceId: record.spaceId,
   });
 
-  // Detect if agent modified canvas.md (for reply message only —
-  // the file watcher + sdk-runner fallback handle the actual content push)
+  // Detect if the agent modified the target document. Main canvases rely on
+  // their file watcher; child pages need a completion-time push because they
+  // don't have a watcher.
   let documentChanged = false;
+  let newContent = '';
   try {
-    const newContent = fs.readFileSync(ctx.canvasPath, 'utf-8');
+    newContent = fs.readFileSync(ctx.canvasPath, 'utf-8');
     const currentHash = crypto.createHash('md5').update(newContent).digest('hex');
     documentChanged = ctx.canvasHashBefore !== '' && currentHash !== ctx.canvasHashBefore;
   } catch { /* non-fatal */ }
 
+  if (documentChanged && record.spaceId.startsWith('__page__')) {
+    notifier.notifyRenderer('canvas:content-updated', {
+      spaceId: record.spaceId,
+      content: newContent,
+    });
+  }
+
   // Send reply to renderer
   const replyBody = documentChanged
-    ? `[bot] I've made changes to the document. Ready for your review.`
+    ? `[bot] I've made changes to the ${ctx.documentLabel ?? 'document'}. Ready for your review.`
     : `[bot] ${record.summary}`;
 
   notifier.notifyRenderer('agent:reply-ready', {
