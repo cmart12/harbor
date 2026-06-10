@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseFrontmatter, serializeFrontmatter, hasFrontmatter, tryParseFrontmatter } from './frontmatter';
+import { parseFrontmatter, serializeFrontmatter, hasFrontmatter, hasDisplayableFrontmatter, tryParseFrontmatter } from './frontmatter';
 
 describe('frontmatter', () => {
   describe('parseFrontmatter', () => {
@@ -118,6 +118,49 @@ describe('frontmatter', () => {
 
     it('returns false for content with only one delimiter', () => {
       expect(hasFrontmatter('---\nNot real frontmatter')).toBe(false);
+    });
+  });
+
+  describe('hasDisplayableFrontmatter', () => {
+    it('returns false for empty frontmatter', () => {
+      expect(hasDisplayableFrontmatter({})).toBe(false);
+    });
+
+    it('returns false when only managed skills key is present', () => {
+      expect(hasDisplayableFrontmatter({ skills: ['missed-messages'] })).toBe(false);
+    });
+
+    it('returns true when a name is set', () => {
+      expect(hasDisplayableFrontmatter({ name: 'pdf-processing' })).toBe(true);
+    });
+
+    it('returns false when name and description are empty or whitespace', () => {
+      expect(hasDisplayableFrontmatter({ name: '', description: '   ' })).toBe(false);
+    });
+
+    it('ignores an empty description', () => {
+      expect(hasDisplayableFrontmatter({ description: '' })).toBe(false);
+    });
+
+    it('returns true for non-managed extra keys with values', () => {
+      expect(hasDisplayableFrontmatter({ tags: ['a', 'b'] })).toBe(true);
+    });
+
+    it('returns false for an empty extra array', () => {
+      expect(hasDisplayableFrontmatter({ tags: [] })).toBe(false);
+    });
+
+    it('ignores null and undefined values', () => {
+      expect(hasDisplayableFrontmatter({ name: null, description: undefined })).toBe(false);
+    });
+
+    it('treats numbers and booleans as displayable', () => {
+      expect(hasDisplayableFrontmatter({ version: 0 })).toBe(true);
+      expect(hasDisplayableFrontmatter({ enabled: false })).toBe(true);
+    });
+
+    it('shows the editor for a skill alongside managed skills', () => {
+      expect(hasDisplayableFrontmatter({ name: 'demo', description: '', skills: ['x'] })).toBe(true);
     });
   });
 });

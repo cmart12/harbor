@@ -1,4 +1,5 @@
 export {
+  hasDisplayableFrontmatter,
   hasFrontmatter,
   parseFrontmatter,
   serializeFrontmatter,

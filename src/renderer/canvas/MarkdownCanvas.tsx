@@ -26,7 +26,7 @@ import { FrontmatterEditor } from './FrontmatterEditor';
 import { VoiceRecorderButton, type VoiceRecordingResult } from './VoiceRecorderButton';
 import { SpaceLinkPicker, type SpaceResult } from './SpaceLinkPicker';
 import { merge3 } from '../../shared/text-merge';
-import { serializeFrontmatter, tryParseFrontmatter } from '../../shared/frontmatter';
+import { hasDisplayableFrontmatter, serializeFrontmatter, tryParseFrontmatter } from '../../shared/frontmatter';
 
 declare const whimAPI: {
   writeCanvas(spaceId: string, content: string): Promise<void>;
@@ -150,6 +150,10 @@ function formatAttachmentRef(filename: string, relativePath: string, mimeType: s
 export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasProps>(
   function MarkdownCanvas({ spaceId, initialContent, initialFrontmatter, theme, personas: initialPersonas, agentPresence: initialPresence, agentThreadStatuses: initialAgentThreadStatuses, agentInteractions: initialAgentInteractions, decorations: initialDecorations, onDirtyChange, onSaveStatus, onAgentMentioned, onInlineMention, onForkSelection, onExtractToPage }, ref) {
     const hasFrontmatter = initialFrontmatter !== undefined;
+    // Round-trip frontmatter on save whenever it's present (`hasFrontmatter`), but only
+    // surface the editor UI when there's something meaningful to edit — so spaces whose
+    // only frontmatter is linked skills (or none) don't show a "Properties" box.
+    const showFrontmatterEditor = initialFrontmatter !== undefined && hasDisplayableFrontmatter(initialFrontmatter);
 
     // Split the embedded comments block out of the editor body once at mount.
     const initialSplit = useMemo(() => splitComments(initialContent), [initialContent]);
@@ -893,7 +897,7 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
         )}
         {editorMode === 'rendered' ? (
           <>
-            {hasFrontmatter && (
+            {showFrontmatterEditor && (
               <FrontmatterEditor
                 frontmatter={frontmatter}
                 onChange={handleFrontmatterChange}

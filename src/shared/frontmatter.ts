@@ -77,3 +77,22 @@ export function serializeFrontmatter<T extends Record<string, unknown>>(
 export function hasFrontmatter(content: string): boolean {
   return FRONTMATTER_RE.test(content);
 }
+
+/** Frontmatter keys managed by other UI (e.g. linked skill chips) — not shown in the editor. */
+const MANAGED_FRONTMATTER_KEYS = new Set(['skills']);
+
+/**
+ * Whether a frontmatter object has any content worth surfacing in the frontmatter editor.
+ * Managed keys (e.g. linked `skills`) and empty values are ignored, so a space whose only
+ * frontmatter is linked skills (or none at all) won't surface the editor.
+ */
+export function hasDisplayableFrontmatter(frontmatter: Record<string, unknown>): boolean {
+  return Object.keys(frontmatter).some((key) => {
+    if (MANAGED_FRONTMATTER_KEYS.has(key)) return false;
+    const value = frontmatter[key];
+    if (value === undefined || value === null) return false;
+    if (typeof value === 'string') return value.trim().length > 0;
+    if (Array.isArray(value)) return value.length > 0;
+    return true;
+  });
+}
