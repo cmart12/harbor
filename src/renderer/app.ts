@@ -5129,6 +5129,7 @@ async function unarchiveIntent(id: string): Promise<void> {
 import { mountCanvas, unmountCanvas, getCanvasContent, saveCanvas as saveCanvasEditor, updateCanvasPresence, updateCanvasAgentThreadStatuses, updateCanvasAgentInteractions, updateCanvasDecorations, updateCanvasAgentUsers, addCanvasCommentReply, toggleCanvasMode, getCanvasEditorMode, replaceCanvasContent, appendCanvasLink, replaceCanvasText, getCanvasSelectedText } from './canvas/mount.tsx';
 import { mountCanvasWorkerPanel, unmountCanvasWorkerPanel, isCanvasChatPaneOpen, closeCanvasChatPane } from './canvas/worker-panel-mount.tsx';
 import type { CanvasAgentInteraction, CanvasPresence, CanvasUser, CanvasDecoration, CanvasThreadAgentStatus } from './canvas/types';
+import type { MentionEvent } from './canvas/MarkdownCanvas';
 
 const canvasView = document.getElementById('canvas-view') as HTMLDivElement;
 const canvasBack = document.getElementById('canvas-back') as HTMLButtonElement;
@@ -5177,6 +5178,40 @@ let canvasChatPaneOpen = false;
 let canvasMountGen = 0;
 let titleBeforeEdit = '';
 let canvasLinkedSkillIds: string[] = [];
+
+function pageCanvasSpaceId(spaceId: string, pageName: string): string {
+  return `__page__${spaceId}/${encodeURIComponent(pageName)}`;
+}
+
+function currentCanvasAgentSpaceId(): string | null {
+  if (canvasSpaceId) return canvasSpaceId;
+  if (canvasPageSpaceId && canvasPageName) return pageCanvasSpaceId(canvasPageSpaceId, canvasPageName);
+  return null;
+}
+
+function launchMentionedAgents(targetSpaceId: string, event: MentionEvent): void {
+  for (const handle of event.handles) {
+    whimAPI.launchCommentAgent(
+      targetSpaceId,
+      event.commentBody,
+      event.quote,
+      event.anchor,
+      handle,
+      event.threadId,
+    );
+  }
+}
+
+function launchInlineMention(targetSpaceId: string, handle: string, lineMarkdown: string): void {
+  whimAPI.launchCommentAgent(
+    targetSpaceId,
+    lineMarkdown,
+    lineMarkdown,
+    {},
+    handle,
+    null,
+  );
+}
 
 function startEditingTitle(): void {
   titleBeforeEdit = canvasTitle.textContent || '';
@@ -5701,27 +5736,9 @@ async function openCanvas(spaceId: string, expanded = false): Promise<void> {
     onSaveStatus: (status: string) => {
       canvasSaveStatus.textContent = status;
     },
-    onAgentMentioned: (event) => {
-      for (const handle of event.handles) {
-        whimAPI.launchCommentAgent(
-          spaceId,
-          event.commentBody,
-          event.quote,
-          event.anchor,
-          handle,
-          event.threadId,
-        );
-      }
-    },
+    onAgentMentioned: (event) => launchMentionedAgents(spaceId, event),
     onInlineMention: (handle, lineMarkdown) => {
-      whimAPI.launchCommentAgent(
-        spaceId,
-        lineMarkdown,
-        lineMarkdown,
-        {},
-        handle,
-        null,
-      );
+      launchInlineMention(spaceId, handle, lineMarkdown);
     },
     onForkSelection: async (selectedText) => {
       const space = await whimAPI.create({ body: selectedText });
@@ -5759,6 +5776,7 @@ async function openPage(spaceId: string, pageName: string): Promise<void> {
   canvasSkillId = null;
   canvasPageSpaceId = spaceId;
   canvasPageName = pageName;
+  const pageSpaceId = pageCanvasSpaceId(spaceId, pageName);
 
   canvasTitle.textContent = pageName;
   canvasTitle.contentEditable = 'false';
@@ -5773,20 +5791,29 @@ async function openPage(spaceId: string, pageName: string): Promise<void> {
   updateCanvasMenuContext(false);
   canvasView.classList.remove('hidden');
 
-  const result = await whimAPI.readPage(spaceId, pageName);
+  const [result, canvasPersonas] = await Promise.all([
+    whimAPI.readPage(spaceId, pageName),
+    whimAPI.listPersonas().then(p => p || []),
+  ]);
   if (result.error) return;
 
   mountCanvas(canvasRoot, {
-    spaceId: `__page__${spaceId}/${pageName}`,
+    spaceId: pageSpaceId,
     content: result.content || '',
     theme: getResolvedTheme(),
-    personas: [],
+    personas: canvasPersonas,
+    agentThreadStatuses: Array.from(canvasThreadAgentStatuses.values()),
+    agentInteractions: Array.from(canvasAgentInteractions.values()),
     onDirtyChange: (dirty: boolean) => {
       canvasDirty = dirty;
       canvasSaveBtn.classList.toggle('hidden', !dirty);
     },
     onSaveStatus: (status: string) => {
       canvasSaveStatus.textContent = status;
+    },
+    onAgentMentioned: (event) => launchMentionedAgents(pageSpaceId, event),
+    onInlineMention: (handle, lineMarkdown) => {
+      launchInlineMention(pageSpaceId, handle, lineMarkdown);
     },
   });
 }
@@ -6132,27 +6159,9 @@ async function exitPreview(): Promise<void> {
     onSaveStatus: (status: string) => {
       canvasSaveStatus.textContent = status;
     },
-    onAgentMentioned: (event) => {
-      for (const handle of event.handles) {
-        whimAPI.launchCommentAgent(
-          spaceId,
-          event.commentBody,
-          event.quote,
-          event.anchor,
-          handle,
-          event.threadId,
-        );
-      }
-    },
+    onAgentMentioned: (event) => launchMentionedAgents(spaceId, event),
     onInlineMention: (handle, lineMarkdown) => {
-      whimAPI.launchCommentAgent(
-        spaceId,
-        lineMarkdown,
-        lineMarkdown,
-        {},
-        handle,
-        null,
-      );
+      launchInlineMention(spaceId, handle, lineMarkdown);
     },
     onForkSelection: async (selectedText) => {
       const space = await whimAPI.create({ body: selectedText });
@@ -6427,7 +6436,9 @@ function canvasInteractionKey(kind: CanvasAgentInteraction['kind'], requestId: s
 }
 
 function shouldTrackCanvasInteraction(agentId: string, spaceId?: string, threadId?: string | null): boolean {
-  if (spaceId && spaceId !== canvasSpaceId) return false;
+  const activeSpaceId = currentCanvasAgentSpaceId();
+  if (!activeSpaceId) return false;
+  if (spaceId && spaceId !== activeSpaceId) return false;
   return !!threadId || commentThreadByAgent.has(agentId);
 }
 
@@ -6458,7 +6469,8 @@ function markCanvasAgentInteractionResolved(
 }
 
 whimAPI.onAgentPresenceStarted((data) => {
-  if (data.spaceId !== canvasSpaceId) return;
+  const activeSpaceId = currentCanvasAgentSpaceId();
+  if (!activeSpaceId || data.spaceId !== activeSpaceId) return;
   const cursor = data.threadId
     ? { threadId: data.threadId }
     : (data.anchor?.prefix || data.anchor?.suffix ? data.anchor : undefined);
@@ -6488,12 +6500,14 @@ whimAPI.onAgentPresenceEnded((data) => {
 });
 
 whimAPI.onAgentReplyReady((data) => {
-  if (data.spaceId !== canvasSpaceId) return;
+  const activeSpaceId = currentCanvasAgentSpaceId();
+  if (!activeSpaceId || data.spaceId !== activeSpaceId) return;
   if (data.threadId) addCanvasCommentReply(data.threadId, data.body);
 });
 
 whimAPI.onCanvasContentUpdated((data) => {
-  if (data.spaceId !== canvasSpaceId) return;
+  const activeSpaceId = currentCanvasAgentSpaceId();
+  if (!activeSpaceId || data.spaceId !== activeSpaceId) return;
   replaceCanvasContent(data.content);
 });
 
@@ -6537,7 +6551,7 @@ function pickDecorationText(agent: { selectedText: string; quotedText?: string }
 
 /** Rebuild CanvasDecoration[] from the tracking map and push to canvas. */
 function syncCanvasDecorations(): void {
-  if (!canvasSpaceId) return;
+  if (!currentCanvasAgentSpaceId()) return;
 
   const decorations: CanvasDecoration[] = [];
   for (const entry of agentDecorationMap.values()) {
@@ -6557,9 +6571,10 @@ function syncCanvasDecorations(): void {
 
 /** Refresh agent decorations from the current canvas's agent list. */
 async function refreshAgentDecorations(): Promise<void> {
-  if (!canvasSpaceId) return;
+  const activeSpaceId = currentCanvasAgentSpaceId();
+  if (!activeSpaceId) return;
   try {
-    const agents = await whimAPI.listAgents(canvasSpaceId);
+    const agents = await whimAPI.listAgents(activeSpaceId);
     // Remove stale entries
     const activeIds = new Set(agents.map((a: any) => a.agentId));
     for (const id of agentDecorationMap.keys()) {
@@ -6605,8 +6620,11 @@ whimAPI.onAgentStatusChanged((data: any) => {
 
   // Update presence status badge so collaborators see live agent state next
   // to the cursor in the document.
-  updateAgentPresenceStatus(data.agentId, data.status);
-  updateCommentThreadAgentStatus(data.agentId, data.status, data.threadId);
+  const activeAgentSpaceId = currentCanvasAgentSpaceId();
+  if (!data.spaceId || data.spaceId === activeAgentSpaceId) {
+    updateAgentPresenceStatus(data.agentId, data.status);
+    updateCommentThreadAgentStatus(data.agentId, data.status, data.threadId);
+  }
 
   // If the agent serving the app-level remote URL completed or failed, clear
   // stale state so the next click on the remote button reconciles.
@@ -6620,7 +6638,7 @@ whimAPI.onAgentStatusChanged((data: any) => {
   }
 
   // Update agent activity decorations on canvas (skip comment-thread agents — presence handles those)
-  if (canvasSpaceId && !commentThreadAgents.has(data.agentId)) {
+  if (currentCanvasAgentSpaceId() && !commentThreadAgents.has(data.agentId)) {
     if (data.status === 'completed' || data.status === 'failed') {
       // Flash terminal color for 2s, then remove
       const existing = agentDecorationMap.get(data.agentId);
@@ -6667,7 +6685,7 @@ whimAPI.onAgentApprovalNeeded((data: any) => {
   }
 
   // Update decoration to waiting-approval color (skip comment-thread agents)
-  if (canvasSpaceId && !commentThreadAgents.has(data.agentId)) {
+  if (currentCanvasAgentSpaceId() && !commentThreadAgents.has(data.agentId)) {
     refreshAgentDecorations();
   }
 });
