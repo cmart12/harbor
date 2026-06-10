@@ -13,6 +13,31 @@ import { initCommentWorkflow } from './agents/comment-workflow';
 
 export type { AgentStatus } from './agents/agent-registry';
 
+type AgentListSnapshot = {
+  agentId: string;
+  sessionId: string;
+  status: import('./agents/agent-registry').AgentStatus;
+  summary: string;
+  selectedText: string;
+  quotedText: string;
+  anchor: AgentAnchor;
+  spaceId: string;
+  createdAt: string;
+  pendingApprovalId: string | null;
+  pendingPermissionKind: string | null;
+  pendingIntention: string | null;
+  pendingPath: string | null;
+  source: 'sdk' | 'cli' | 'cca';
+  personaHandle: string | null;
+  yoloMode: boolean;
+  sandboxed: boolean;
+  runLocation: 'local' | 'cloud';
+};
+
+function fallbackAnchor(quote: string): AgentAnchor {
+  return { quote, prefix: '', suffix: '' };
+}
+
 // ── Shared state ───────────────────────────────────────
 const registry = new AgentRegistry();
 const notifier = new AgentNotifier();
@@ -303,40 +328,47 @@ export async function abortAgent(agentId: string): Promise<void> {
   if (!record) return;
 
   try {
+    record.aborted = true;
     broker.clearPendingInteractions(record);
-    await record.session.abort();
+    if (record.session) {
+      await record.session.abort();
+    }
     record.status = 'failed';
     record.summary = 'Aborted by user';
     persistence.updateStatus(record);
     notifier.notifyRenderer('agent:status-changed', {
-      agentId, status: 'failed', summary: record.summary,
+      agentId,
+      status: 'failed',
+      summary: record.summary,
+      spaceId: record.spaceId,
+      threadId: record.commentContext?.threadId,
     });
   } catch {
     // ignore
   }
 }
 
+export function forgetAgent(agentId: string): void {
+  const record = registry.get(agentId);
+  if (record) {
+    record.aborted = true;
+    broker.clearPendingInteractions(record);
+    notifier.notifyRenderer('agent:presence-ended', { agentId, spaceId: record.spaceId });
+  }
+  registry.delete(agentId);
+}
+
 // ── Query functions ────────────────────────────────────
 
-export function listAgents(spaceId: string): Array<{ agentId: string; sessionId: string; status: import('./agents/agent-registry').AgentStatus; summary: string; selectedText: string; quotedText: string; anchor: AgentAnchor }> {
-  return Array.from(registry.values())
-    .filter(a => a.spaceId === spaceId)
-    .map(a => ({
-      agentId: a.agentId,
-      sessionId: a.sessionId,
-      status: a.status,
-      summary: a.summary,
-      selectedText: a.selectedText,
-      quotedText: a.commentContext?.quotedText ?? '',
-      anchor: a.anchor,
-    }));
+export function listAgents(spaceId: string): AgentListSnapshot[] {
+  return listAllAgents().filter(a => a.spaceId === spaceId && a.spaceId !== '__workspace__');
 }
 
 export function getAgentSessionId(agentId: string): string | null {
   return registry.get(agentId)?.sessionId ?? null;
 }
 
-export function listAllAgents(): Array<{ agentId: string; sessionId: string; status: import('./agents/agent-registry').AgentStatus; summary: string; selectedText: string; quotedText: string; spaceId: string; createdAt: string; pendingApprovalId: string | null; pendingPermissionKind: string | null; pendingIntention: string | null; pendingPath: string | null; source: 'sdk' | 'cli' | 'cca'; personaHandle: string | null; yoloMode: boolean; sandboxed: boolean; runLocation: 'local' | 'cloud' }> {
+export function listAllAgents(): AgentListSnapshot[] {
   // Read persisted sessions from DB (sorted newest first)
   let persisted: AgentSession[] = [];
   try {
@@ -345,7 +377,7 @@ export function listAllAgents(): Array<{ agentId: string; sessionId: string; sta
 
   // Build result: overlay live in-memory state on top of DB records
   const seen = new Set<string>();
-  const result: Array<{ agentId: string; sessionId: string; status: import('./agents/agent-registry').AgentStatus; summary: string; selectedText: string; quotedText: string; spaceId: string; createdAt: string; pendingApprovalId: string | null; pendingPermissionKind: string | null; pendingIntention: string | null; pendingPath: string | null; source: 'sdk' | 'cli' | 'cca'; personaHandle: string | null; yoloMode: boolean; sandboxed: boolean; runLocation: 'local' | 'cloud' }> = [];
+  const result: AgentListSnapshot[] = [];
 
   for (const row of persisted) {
     seen.add(row.id);
@@ -358,6 +390,7 @@ export function listAllAgents(): Array<{ agentId: string; sessionId: string; sta
       summary: live?.summary ?? row.summary,
       selectedText: live?.selectedText ?? row.prompt,
       quotedText: live?.commentContext?.quotedText ?? row.quoted_text ?? '',
+      anchor: live?.anchor ?? fallbackAnchor(row.quoted_text ?? row.prompt ?? ''),
       spaceId: live?.spaceId ?? row.space_id ?? '__workspace__',
       createdAt: row.created_at,
       pendingApprovalId: live?.pendingApprovalId ?? null,
@@ -383,6 +416,7 @@ export function listAllAgents(): Array<{ agentId: string; sessionId: string; sta
         summary: a.summary,
         selectedText: a.selectedText,
         quotedText: a.commentContext?.quotedText ?? '',
+        anchor: a.anchor,
         spaceId: a.spaceId,
         createdAt: '',
         pendingApprovalId: a.pendingApprovalId,

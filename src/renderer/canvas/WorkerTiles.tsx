@@ -55,6 +55,7 @@ declare const whimAPI: {
   onAgentSandboxBlocked(callback: (data: SandboxBlockInfo) => void): void;
   onAgentSandboxResolved(callback: (data: { agentId: string; requestId: string; decision: string }) => void): void;
   approveAgent(agentId: string, requestId: string, approved: boolean): Promise<void>;
+  deleteAgentSession(agentId: string): Promise<{ ok?: boolean; error?: string }>;
   resolveSandboxBlock(agentId: string, requestId: string, decision: 'allow-once' | 'allow-for-session' | 'disable'): Promise<{ ok?: boolean; error?: string }>;
   /** Cross-window: ask main window to open the sandbox section of the
    *  persona editor for the given handle. Wired by main/preload.ts +
@@ -272,6 +273,26 @@ export function WorkerTiles({ spaceId, onSelectAgent, selectedAgentId }: WorkerT
     });
   }, []);
 
+  const handleDeleteAgent = useCallback(async (agentId: string) => {
+    setAgents(prev => prev.filter(agent => agent.agentId !== agentId));
+    setApprovals(prev => {
+      const next = new Map(prev);
+      next.delete(agentId);
+      return next;
+    });
+    setSandboxBlocks(prev => {
+      const next = new Map(prev);
+      next.delete(agentId);
+      return next;
+    });
+    try {
+      const result = await whimAPI.deleteAgentSession(agentId);
+      if (result?.error) loadAgents();
+    } catch {
+      loadAgents();
+    }
+  }, [loadAgents]);
+
   /** Resolve a multi-block incident with a single decision.  Staged fan-out:
    *  the first requestId carries the real decision (which triggers at most
    *  one `disableSandboxForSession` flip in the runtime), and the rest dismiss
@@ -348,6 +369,18 @@ export function WorkerTiles({ spaceId, onSelectAgent, selectedAgentId }: WorkerT
                   </div>
                 )}
               </div>
+              <button
+                type="button"
+                className="worker-tile-delete"
+                title="Delete worker"
+                aria-label="Delete worker"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void handleDeleteAgent(agent.agentId);
+                }}
+              >
+                ×
+              </button>
             </div>
             {/* Sandbox-block incidents render as sibling pills in the same
                 horizontal row as the parent agent tile so multi-block agents

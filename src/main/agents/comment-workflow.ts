@@ -56,6 +56,7 @@ export async function launchCommentAgent(
   const agentId = uuid();
   const workingDir = path.join(workspaceRoot, intentFolder);
   const canvasPath = path.join(workingDir, 'canvas.md');
+  const isCloudSandbox = persona.runLocation === 'cloud';
 
   // Snapshot canvas hash for change detection
   let canvasHashBefore = '';
@@ -63,6 +64,68 @@ export async function launchCommentAgent(
     const canvasContent = fs.readFileSync(canvasPath, 'utf-8');
     canvasHashBefore = crypto.createHash('md5').update(canvasContent).digest('hex');
   } catch { /* file may not exist yet */ }
+
+  const now = new Date().toISOString();
+  const record: AgentRecord = {
+    agentId,
+    sessionId: agentId,
+    phase: 'starting',
+    spaceId,
+    selectedText: commentBody,
+    anchor: { quote: quotedText, prefix: anchor.prefix || '', suffix: anchor.suffix || '' },
+    status: 'running',
+    pendingApprovalId: null,
+    pendingPermissionKind: null,
+    pendingApprovals: new Map(),
+    summary: 'Starting...',
+    runLocation: isCloudSandbox ? 'cloud' : 'local',
+    ...(persona.yolo ? { yoloMode: true } : {}),
+    personaHandle: persona.handle,
+    commentContext: {
+      threadId,
+      personaHandle: persona.handle,
+      personaName: persona.handle,
+      commentBody,
+      quotedText,
+      anchor,
+      canvasHashBefore,
+      canvasPath,
+    },
+  };
+
+  registry.set(agentId, record);
+  try {
+    persistence.createAgentSessionRecord({
+      id: agentId,
+      session_id: agentId,
+      space_id: spaceId,
+      prompt: commentBody,
+      status: 'running',
+      summary: 'Starting...',
+      working_dir: workingDir,
+      source: 'sdk',
+      persona_handle: persona.handle,
+      quoted_text: quotedText || null,
+      run_location: isCloudSandbox ? 'cloud' : 'local',
+      created_at: now,
+      updated_at: now,
+    });
+  } catch (err: any) {
+    registry.delete(agentId);
+    return { error: err.message || 'Failed to create agent record' };
+  }
+  notifier.notifyRenderer('agent:status-changed', {
+    agentId,
+    status: 'running',
+    summary: 'Starting...',
+    spaceId,
+    threadId,
+  });
+  if (persona.yolo) {
+    notifier.notifyRenderer('agent:yolo-changed', { agentId, enabled: true });
+  }
+
+  const launchStillWanted = () => !record.aborted && registry.get(agentId) === record;
 
   try {
     const cliToolsPrompt = buildCliToolsPrompt();
@@ -74,8 +137,10 @@ export async function launchCommentAgent(
       persona,
       registry,
       broker,
+      customToolsContext: { agentId, broker, registry },
     });
     const { isSandboxed, sandboxConfigs, mcpServers, customTools, sandboxState, hooks, enforcementMode } = sandboxSetup;
+    if (sandboxState) record.sandbox = sandboxState;
     // Permission-handler routing:
     //   - both     → path-aware sandbox handler (host-side path checks +
     //                bubble-up dialog for out-of-scope writes)
@@ -96,7 +161,6 @@ The full canvas document is available as canvas.md in the working directory.
 If you make changes to the document, clearly describe what you changed.${cliToolsPrompt}`;
 
     // Resolve cloud session options for cloud personas
-    const isCloudSandbox = persona.runLocation === 'cloud';
     let cloudOpts: { repository?: { owner: string; name: string } } | undefined;
     if (isCloudSandbox) {
       try {
@@ -104,6 +168,7 @@ If you make changes to the document, clearly describe what you changed.${cliTool
         cloudOpts = repoInfo ? { repository: { owner: repoInfo.owner, name: repoInfo.repo } } : {};
       } catch { cloudOpts = {}; }
     }
+    if (!launchStillWanted()) return { error: 'Agent launch cancelled' };
 
     const session = await client.createSession({
       workingDirectory: workingDir,
@@ -131,6 +196,10 @@ If you make changes to the document, clearly describe what you changed.${cliTool
           : `\n${systemPrompt}`,
       },
     });
+    if (!launchStillWanted()) {
+      try { await (session as any).abort?.(); } catch { /* best-effort */ }
+      return { error: 'Agent launch cancelled' };
+    }
 
     // The runtime does NOT auto-load sandbox enforcement from configDir. We
     // must explicitly push the sandboxConfig via options.update so MXC
@@ -148,7 +217,7 @@ If you make changes to the document, clearly describe what you changed.${cliTool
             `aborting launch to avoid running unsandboxed.`,
           );
           try { await (session as any).abort?.(); } catch { /* best-effort */ }
-          return { error: 'Failed to apply sandbox configuration (runtime rejected the update)' };
+          throw new Error('runtime rejected the update');
         }
         console.log(`[sandbox] applied runtime sandbox enforcement for comment agent ${agentId}`);
       } catch (err: any) {
@@ -157,61 +226,20 @@ If you make changes to the document, clearly describe what you changed.${cliTool
           `aborting launch to avoid running unsandboxed.`,
         );
         try { await (session as any).abort?.(); } catch { /* best-effort */ }
-        return { error: `Failed to apply sandbox configuration: ${err?.message ?? 'unknown error'}` };
+        throw new Error(`Failed to apply sandbox configuration: ${err?.message ?? 'unknown error'}`);
       }
+    }
+    if (!launchStillWanted()) {
+      try { await (session as any).abort?.(); } catch { /* best-effort */ }
+      return { error: 'Agent launch cancelled' };
     }
 
     const sessionId = (session as any).sessionId || agentId;
-    const now = new Date().toISOString();
-
-    const record: AgentRecord = {
-      agentId,
-      sessionId,
-      session,
-      spaceId,
-      selectedText: commentBody,
-      anchor: { quote: quotedText, prefix: anchor.prefix || '', suffix: anchor.suffix || '' },
-      status: 'running',
-      pendingApprovalId: null,
-      pendingPermissionKind: null,
-      pendingApprovals: new Map(),
-      summary: 'Starting...',
-      runLocation: isCloudSandbox ? 'cloud' : 'local',
-      ...(sandboxState ? { sandbox: sandboxState } : {}),
-      ...(persona.yolo ? { yoloMode: true } : {}),
-      personaHandle: persona.handle,
-      commentContext: {
-        threadId,
-        personaHandle: persona.handle,
-        personaName: persona.handle,
-        commentBody,
-        quotedText,
-        anchor,
-        canvasHashBefore,
-        canvasPath,
-      },
-    };
-    registry.set(agentId, record);
-
-    if (persona.yolo) {
-      notifier.notifyRenderer('agent:yolo-changed', { agentId, enabled: true });
-    }
-
-    persistence.createAgentSessionRecord({
-      id: agentId,
-      session_id: sessionId,
-      space_id: spaceId,
-      prompt: commentBody,
-      status: 'running',
-      summary: 'Starting...',
-      working_dir: workingDir,
-      source: 'sdk',
-      persona_handle: persona.handle,
-      quoted_text: quotedText || null,
-      run_location: isCloudSandbox ? 'cloud' : 'local',
-      created_at: now,
-      updated_at: now,
-    });
+    record.sessionId = sessionId;
+    record.session = session;
+    record.phase = 'active';
+    persistence.updateSessionId(agentId, sessionId);
+    persistence.updateStatus(record);
 
     setupListeners(session, record);
 
@@ -232,6 +260,13 @@ If you make changes to the document, clearly describe what you changed.${cliTool
       anchor,
       ...(threadId ? { threadId } : {}),
     });
+    notifier.notifyRenderer('agent:status-changed', {
+      agentId,
+      status: 'running',
+      summary: record.summary,
+      spaceId,
+      threadId,
+    });
 
     // Cloud sessions: wait for the remote worker's `session.start` event
     // before sending — otherwise the runtime silently swallows the prompt
@@ -243,14 +278,19 @@ If you make changes to the document, clearly describe what you changed.${cliTool
       ? waitForCloudSessionStart(session, agentId)
       : Promise.resolve();
     readyPromise
-      .then(() => session.send({
-        prompt: commentBody,
-        attachments: [{ type: 'file' as const, path: canvasPath, displayName: 'canvas.md' }],
-      }))
+      .then(() => {
+        if (!launchStillWanted()) return undefined;
+        return session.send({
+          prompt: commentBody,
+          attachments: [{ type: 'file' as const, path: canvasPath, displayName: 'canvas.md' }],
+        });
+      })
       .then((messageId: any) => {
+        if (messageId === undefined) return;
         console.log(`[sdk-send] comment-agent agent=${agentId.slice(0, 8)} session.send resolved messageId=${messageId ?? '<undefined>'}`);
       })
       .catch((err: any) => {
+        if (!launchStillWanted()) return;
         console.error(`[sdk-send] comment-agent agent=${agentId.slice(0, 8)} session.send REJECTED:`, err?.message ?? err);
         record.status = 'failed';
         record.summary = `Error: ${err.message || 'Unknown'}`;
@@ -266,6 +306,19 @@ If you make changes to the document, clearly describe what you changed.${cliTool
 
     return { agentId, sessionId };
   } catch (err: any) {
+    if (!record.aborted) {
+      record.status = 'failed';
+      record.summary = `Error: ${err.message || 'Unknown'}`;
+      persistence.updateStatus(record);
+      notifier.notifyRenderer('agent:status-changed', {
+        agentId,
+        status: 'failed',
+        summary: record.summary,
+        spaceId,
+        threadId,
+      });
+      notifier.notifyRenderer('agent:presence-ended', { agentId, spaceId });
+    }
     return { error: err.message || 'Failed to launch comment agent' };
   }
 }

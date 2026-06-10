@@ -714,6 +714,9 @@ export async function sendChatMessage(
   }
 
   try {
+    if (!record.session) {
+      return { error: 'Agent is still starting; try again when it is active' };
+    }
     const normalizedAttachments = attachments?.map(a => ({
       ...a,
       displayName: a.displayName ?? path.basename(a.path),
@@ -750,6 +753,10 @@ export async function disableSandboxForSession(agentId: string): Promise<void> {
   }
   if (record.sandbox.state === 'off') {
     console.log(`[agent-service] disableSandboxForSession: already off for ${agentId}`);
+    return;
+  }
+  if (!record.session) {
+    console.warn(`[agent-service] disableSandboxForSession: session not active for ${agentId}`);
     return;
   }
 
@@ -1128,6 +1135,9 @@ export async function setAgentModel(agentId: string, model: string): Promise<{ e
   }
 
   try {
+    if (!record.session) {
+      return { error: 'Agent is still starting; try again when it is active' };
+    }
     await record.session.setModel(model);
     return {};
   } catch (err: any) {
@@ -1174,6 +1184,14 @@ export async function getAgentHistory(agentId: string): Promise<{ events: any[];
   const restarted = record.restarted === true;
 
   try {
+    if (!record.session) {
+      const transcript = persistence.listChatEvents(agentId);
+      if (transcript.length > 0) {
+        const events = transcript.map(toSdkEventShape);
+        return { events, transcript: true, ...(restarted ? { restarted: true } : {}) };
+      }
+      return { events: [], ...(restarted ? { restarted: true } : {}) };
+    }
     const events = await record.session.getEvents();
     return { events: events || [], ...(restarted ? { restarted: true } : {}) };
   } catch (err: any) {
@@ -1636,6 +1654,7 @@ function installSubagentSubscription(session: CopilotSession, record: AgentRecor
 export async function enableRemoteControl(agentId: string): Promise<{ enabled: boolean; remoteSteerable: boolean; url?: string } | { error: string }> {
   const record = registry.get(agentId);
   if (!record) return { error: 'Agent not found' };
+  if (!record.session) return { error: 'Agent is still starting; try again when it is active' };
 
   try {
     const result = await record.session.rpc.remote.enable({ mode: 'on' });
@@ -1662,6 +1681,7 @@ export async function enableRemoteControl(agentId: string): Promise<{ enabled: b
 export async function disableRemoteControl(agentId: string): Promise<{ ok: true } | { error: string }> {
   const record = registry.get(agentId);
   if (!record) return { error: 'Agent not found' };
+  if (!record.session) return { error: 'Agent is still starting; try again when it is active' };
 
   try {
     await record.session.rpc.remote.disable();
@@ -1706,6 +1726,7 @@ export async function resetRemoteControl(
 ): Promise<{ enabled: boolean; remoteSteerable: boolean; url?: string; changed: boolean } | { error: string }> {
   const record = registry.get(agentId);
   if (!record) return { error: 'Agent not found' };
+  if (!record.session) return { error: 'Agent is still starting; try again when it is active' };
 
   const oldUrl = record.remote?.url;
 

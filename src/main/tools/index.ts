@@ -41,7 +41,7 @@ export function getCustomTools(context?: CustomToolsContext): Tool<any>[] {
   const tools: Tool<any>[] = [webFetchTool];
   if (!context) return tools;
 
-  tools.push(createAskUserTool(context.agentId, context.broker));
+  tools.push(createAskUserTool(context.agentId, context.broker, context.registry));
 
   if (hasWhimToolContext(context)) {
     const whimContext: WhimToolContext = {

@@ -59,6 +59,63 @@ export type CanvasPresence = {
   status?: string;
 };
 
+export type CanvasThreadAgentStatus = {
+  threadId: string;
+  agentId: string;
+  status: 'starting' | 'active' | 'waiting' | 'completed' | 'failed';
+  label: string;
+};
+
+export type CanvasAgentInteraction =
+  | {
+      kind: 'approval';
+      agentId: string;
+      requestId: string;
+      permissionKind: string;
+      intention?: string;
+      path?: string;
+      responded?: boolean;
+      approved?: boolean;
+    }
+  | {
+      kind: 'user_input';
+      agentId: string;
+      requestId: string;
+      question: string;
+      choices?: string[];
+      allowFreeform?: boolean;
+      responded?: boolean;
+      answer?: string;
+      wasFreeform?: boolean;
+    }
+  | {
+      kind: 'elicitation';
+      agentId: string;
+      requestId: string;
+      message: string;
+      requestedSchema?: any;
+      mode?: 'form' | 'url';
+      elicitationSource?: string;
+      responded?: boolean;
+      action?: 'accept' | 'decline' | 'cancel';
+      content?: Record<string, any>;
+    }
+  | {
+      kind: 'sandbox_block';
+      agentId: string;
+      requestId: string;
+      source: 'permission' | 'pre-tool' | 'post-tool-shell';
+      blockKind: 'read' | 'write' | 'shell' | 'mcp' | 'url' | 'web-fetch';
+      toolName?: string;
+      target: string;
+      intention?: string;
+      allowedDecisions?: Array<'allow-once' | 'allow-for-session' | 'disable'>;
+      layer?: string;
+      personaHandle?: string;
+      responded?: boolean;
+      decision?: 'allow-once' | 'allow-for-session' | 'disable';
+    };
+
 /** Host-provided regex highlight. Not serialized back to markdown. */
 export type CanvasDecoration = {
   backgroundColor?: string;

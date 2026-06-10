@@ -197,6 +197,8 @@ interface WhimAPI {
   launchAgent(spaceId: string, selectedText: string, anchor: any, options?: { repo?: string; model?: string }): Promise<any>;
   launchCommentAgent(spaceId: string, commentBody: string, quotedText: string, anchor: any, personaHandle: string, threadId: string | null): Promise<{ agentId?: string; sessionId?: string; error?: string }>;
   approveAgent(agentId: string, requestId: string, approved: boolean): Promise<void>;
+  respondUserInput(agentId: string, requestId: string, answer: string, wasFreeform: boolean): Promise<void>;
+  respondElicitation(agentId: string, requestId: string, action: 'accept' | 'decline' | 'cancel', content?: Record<string, unknown>): Promise<void>;
   abortAgent(agentId: string): Promise<void>;
   hideWindow(): void;
   expandWindow(): void;
@@ -233,6 +235,11 @@ interface WhimAPI {
   onRecallHint(callback: (spaceId: string, match: RecallMatch) => void): void;
   onAgentStatusChanged(callback: (data: any) => void): void;
   onAgentApprovalNeeded(callback: (data: any) => void): void;
+  onAgentApprovalResolved(callback: (data: { agentId: string; requestId: string; approved: boolean; spaceId?: string; threadId?: string | null }) => void): void;
+  onAgentUserInputRequested(callback: (data: { agentId: string; requestId: string; question: string; choices?: string[]; allowFreeform?: boolean; spaceId?: string; threadId?: string | null }) => void): void;
+  onAgentUserInputResolved(callback: (data: { agentId: string; requestId: string; answer: string; wasFreeform: boolean; spaceId?: string; threadId?: string | null }) => void): void;
+  onAgentElicitationRequested(callback: (data: { agentId: string; requestId: string; message: string; requestedSchema?: any; mode?: 'form' | 'url'; elicitationSource?: string; spaceId?: string; threadId?: string | null }) => void): void;
+  onAgentElicitationResolved(callback: (data: { agentId: string; requestId: string; action: 'accept' | 'decline' | 'cancel'; content?: Record<string, unknown>; spaceId?: string; threadId?: string | null }) => void): void;
   onAgentSandboxBlocked(callback: (data: {
     agentId: string;
     requestId: string;
@@ -244,8 +251,10 @@ interface WhimAPI {
     allowedDecisions?: Array<'allow-once' | 'allow-for-session' | 'disable'>;
     layer?: string;
     personaHandle?: string;
+    spaceId?: string;
+    threadId?: string | null;
   }) => void): void;
-  onAgentSandboxResolved(callback: (data: { agentId: string; requestId: string; decision: string }) => void): void;
+  onAgentSandboxResolved(callback: (data: { agentId: string; requestId: string; decision: 'allow-once' | 'allow-for-session' | 'disable'; spaceId?: string; threadId?: string | null }) => void): void;
   onAgentCompleted(callback: (data: any) => void): void;
   onAgentYoloChanged(callback: (data: { agentId: string; enabled: boolean }) => void): void;
   onAgentRemoteChanged(callback: (data: { agentId: string; enabled: boolean; remoteSteerable: boolean; url?: string }) => void): void;
@@ -5117,9 +5126,9 @@ async function unarchiveIntent(id: string): Promise<void> {
 (window as any).unarchiveIntent = unarchiveIntent;
 
 // ── Canvas view ─────────────────────────────────────────
-import { mountCanvas, unmountCanvas, getCanvasContent, saveCanvas as saveCanvasEditor, updateCanvasPresence, updateCanvasDecorations, updateCanvasAgentUsers, addCanvasCommentReply, toggleCanvasMode, getCanvasEditorMode, replaceCanvasContent, appendCanvasLink, replaceCanvasText, getCanvasSelectedText } from './canvas/mount.tsx';
+import { mountCanvas, unmountCanvas, getCanvasContent, saveCanvas as saveCanvasEditor, updateCanvasPresence, updateCanvasAgentThreadStatuses, updateCanvasAgentInteractions, updateCanvasDecorations, updateCanvasAgentUsers, addCanvasCommentReply, toggleCanvasMode, getCanvasEditorMode, replaceCanvasContent, appendCanvasLink, replaceCanvasText, getCanvasSelectedText } from './canvas/mount.tsx';
 import { mountCanvasWorkerPanel, unmountCanvasWorkerPanel, isCanvasChatPaneOpen, closeCanvasChatPane } from './canvas/worker-panel-mount.tsx';
-import type { CanvasPresence, CanvasUser, CanvasDecoration } from './canvas/types';
+import type { CanvasAgentInteraction, CanvasPresence, CanvasUser, CanvasDecoration, CanvasThreadAgentStatus } from './canvas/types';
 
 const canvasView = document.getElementById('canvas-view') as HTMLDivElement;
 const canvasBack = document.getElementById('canvas-back') as HTMLButtonElement;
@@ -5683,6 +5692,8 @@ async function openCanvas(spaceId: string, expanded = false): Promise<void> {
     content: result.content || '',
     theme: currentTheme,
     personas: canvasPersonas,
+    agentThreadStatuses: Array.from(canvasThreadAgentStatuses.values()),
+    agentInteractions: Array.from(canvasAgentInteractions.values()),
     onDirtyChange: (dirty: boolean) => {
       canvasDirty = dirty;
       canvasSaveBtn.classList.toggle('hidden', !dirty);
@@ -6081,6 +6092,8 @@ async function enterPreview(commit: FolderCommit): Promise<void> {
     spaceId,
     content: result.content,
     theme: currentTheme,
+    agentThreadStatuses: Array.from(canvasThreadAgentStatuses.values()),
+    agentInteractions: Array.from(canvasAgentInteractions.values()),
     onDirtyChange: () => {},   // no-op: preview edits are not tracked
     onSaveStatus: () => {},    // no-op: preview edits are not saved
   });
@@ -6110,6 +6123,8 @@ async function exitPreview(): Promise<void> {
     content: savedContent || '',
     theme: currentTheme,
     personas: canvasPersonas,
+    agentThreadStatuses: Array.from(canvasThreadAgentStatuses.values()),
+    agentInteractions: Array.from(canvasAgentInteractions.values()),
     onDirtyChange: (dirty: boolean) => {
       canvasDirty = dirty;
       canvasSaveBtn.classList.toggle('hidden', !dirty);
@@ -6297,6 +6312,10 @@ const canvasAgentUserMap = new Map<string, CanvasUser>();
 // Agents anchored to a comment thread — presence handles their busy state,
 // so the text-decoration system should skip them.
 const commentThreadAgents = new Set<string>();
+const commentThreadByAgent = new Map<string, string>();
+const canvasAgentRawStatus = new Map<string, string>();
+const canvasThreadAgentStatuses = new Map<string, CanvasThreadAgentStatus>();
+const canvasAgentInteractions = new Map<string, CanvasAgentInteraction>();
 
 const AGENT_PRESENCE_COLORS = [
   '#6366f1', // indigo
@@ -6343,12 +6362,110 @@ function syncCanvasPresence(): void {
   updateCanvasAgentUsers(Array.from(canvasAgentUserMap.values()));
 }
 
+function hasPendingCanvasInteraction(agentId: string): boolean {
+  for (const interaction of canvasAgentInteractions.values()) {
+    if (interaction.agentId === agentId && !interaction.responded) return true;
+  }
+  return false;
+}
+
+function threadStatusForAgent(agentId: string, status: string): CanvasThreadAgentStatus['status'] {
+  if (status === 'failed' || status === 'cancelled') return 'failed';
+  if (status === 'completed') return 'completed';
+  if (status === 'waiting-approval' || hasPendingCanvasInteraction(agentId)) return 'waiting';
+  return canvasAgentPresence.has(agentId) ? 'active' : 'starting';
+}
+
+function threadStatusLabel(status: CanvasThreadAgentStatus['status']): string {
+  switch (status) {
+    case 'starting': return 'Agent starting...';
+    case 'active': return 'Agent working in this thread';
+    case 'waiting': return 'Agent waiting for you';
+    case 'completed': return 'Agent completed';
+    case 'failed': return 'Agent failed';
+  }
+}
+
+function syncCanvasAgentThreadStatuses(): void {
+  updateCanvasAgentThreadStatuses(Array.from(canvasThreadAgentStatuses.values()));
+  updateCanvasAgentInteractions(Array.from(canvasAgentInteractions.values()));
+}
+
+function updateCommentThreadAgentStatus(agentId: string, rawStatus?: string, explicitThreadId?: string | null): void {
+  const threadId = explicitThreadId ?? commentThreadByAgent.get(agentId);
+  if (!threadId) return;
+  commentThreadAgents.add(agentId);
+  commentThreadByAgent.set(agentId, threadId);
+  if (rawStatus) canvasAgentRawStatus.set(agentId, rawStatus);
+  const status = threadStatusForAgent(agentId, canvasAgentRawStatus.get(agentId) ?? 'running');
+  canvasThreadAgentStatuses.set(threadId, {
+    threadId,
+    agentId,
+    status,
+    label: threadStatusLabel(status),
+  });
+  syncCanvasAgentThreadStatuses();
+}
+
+function clearCommentThreadAgent(agentId: string): void {
+  const threadId = commentThreadByAgent.get(agentId);
+  if (threadId) {
+    const existing = canvasThreadAgentStatuses.get(threadId);
+    if (existing?.agentId === agentId) canvasThreadAgentStatuses.delete(threadId);
+  }
+  commentThreadAgents.delete(agentId);
+  commentThreadByAgent.delete(agentId);
+  canvasAgentRawStatus.delete(agentId);
+  for (const [key, interaction] of canvasAgentInteractions.entries()) {
+    if (interaction.agentId === agentId) canvasAgentInteractions.delete(key);
+  }
+  syncCanvasAgentThreadStatuses();
+}
+
+function canvasInteractionKey(kind: CanvasAgentInteraction['kind'], requestId: string): string {
+  return `${kind}:${requestId}`;
+}
+
+function shouldTrackCanvasInteraction(agentId: string, spaceId?: string, threadId?: string | null): boolean {
+  if (spaceId && spaceId !== canvasSpaceId) return false;
+  return !!threadId || commentThreadByAgent.has(agentId);
+}
+
+function upsertCanvasAgentInteraction(interaction: CanvasAgentInteraction, threadId?: string | null): void {
+  if (threadId) {
+    commentThreadAgents.add(interaction.agentId);
+    commentThreadByAgent.set(interaction.agentId, threadId);
+  }
+  canvasAgentInteractions.set(canvasInteractionKey(interaction.kind, interaction.requestId), interaction);
+  updateCommentThreadAgentStatus(interaction.agentId, 'waiting-approval', threadId);
+}
+
+function markCanvasAgentInteractionResolved(
+  kind: CanvasAgentInteraction['kind'],
+  agentId: string,
+  requestId: string,
+  patch: Partial<CanvasAgentInteraction>,
+): void {
+  const key = canvasInteractionKey(kind, requestId);
+  const existing = canvasAgentInteractions.get(key);
+  if (existing) {
+    canvasAgentInteractions.set(key, { ...existing, ...patch, responded: true } as CanvasAgentInteraction);
+  }
+  if (!hasPendingCanvasInteraction(agentId) && canvasAgentRawStatus.get(agentId) === 'waiting-approval') {
+    canvasAgentRawStatus.set(agentId, 'running');
+  }
+  updateCommentThreadAgentStatus(agentId);
+}
+
 whimAPI.onAgentPresenceStarted((data) => {
   if (data.spaceId !== canvasSpaceId) return;
   const cursor = data.threadId
     ? { threadId: data.threadId }
     : (data.anchor?.prefix || data.anchor?.suffix ? data.anchor : undefined);
-  if (data.threadId) commentThreadAgents.add(data.agentId);
+  if (data.threadId) {
+    commentThreadAgents.add(data.agentId);
+    commentThreadByAgent.set(data.agentId, data.threadId);
+  }
   canvasAgentPresence.set(data.agentId, {
     userId: data.agentId,
     color: agentColor(data.persona.handle),
@@ -6360,13 +6477,13 @@ whimAPI.onAgentPresenceStarted((data) => {
     username: data.persona.handle,
   });
   syncCanvasPresence();
+  if (data.threadId) updateCommentThreadAgentStatus(data.agentId, 'running', data.threadId);
 });
 
 whimAPI.onAgentPresenceEnded((data) => {
-  if (!canvasAgentPresence.has(data.agentId)) return;
   canvasAgentPresence.delete(data.agentId);
   canvasAgentUserMap.delete(data.agentId);
-  commentThreadAgents.delete(data.agentId);
+  clearCommentThreadAgent(data.agentId);
   syncCanvasPresence();
 });
 
@@ -6489,6 +6606,7 @@ whimAPI.onAgentStatusChanged((data: any) => {
   // Update presence status badge so collaborators see live agent state next
   // to the cursor in the document.
   updateAgentPresenceStatus(data.agentId, data.status);
+  updateCommentThreadAgentStatus(data.agentId, data.status, data.threadId);
 
   // If the agent serving the app-level remote URL completed or failed, clear
   // stale state so the next click on the remote button reconciles.
@@ -6537,11 +6655,64 @@ whimAPI.onAgentApprovalNeeded((data: any) => {
   // the presence badge directly so the "Needs approval" label appears next to
   // the cursor in the canvas.
   updateAgentPresenceStatus(data.agentId, 'waiting-approval');
+  if (shouldTrackCanvasInteraction(data.agentId, data.spaceId, data.threadId)) {
+    upsertCanvasAgentInteraction({
+      kind: 'approval',
+      agentId: data.agentId,
+      requestId: data.requestId,
+      permissionKind: data.permissionKind || 'permission',
+      intention: data.intention,
+      path: data.path,
+    }, data.threadId);
+  }
 
   // Update decoration to waiting-approval color (skip comment-thread agents)
   if (canvasSpaceId && !commentThreadAgents.has(data.agentId)) {
     refreshAgentDecorations();
   }
+});
+
+whimAPI.onAgentApprovalResolved((data) => {
+  markCanvasAgentInteractionResolved('approval', data.agentId, data.requestId, { approved: data.approved });
+});
+
+whimAPI.onAgentUserInputRequested((data) => {
+  if (!shouldTrackCanvasInteraction(data.agentId, data.spaceId, data.threadId)) return;
+  upsertCanvasAgentInteraction({
+    kind: 'user_input',
+    agentId: data.agentId,
+    requestId: data.requestId,
+    question: data.question,
+    choices: data.choices,
+    allowFreeform: data.allowFreeform,
+  }, data.threadId);
+});
+
+whimAPI.onAgentUserInputResolved((data) => {
+  markCanvasAgentInteractionResolved('user_input', data.agentId, data.requestId, {
+    answer: data.answer,
+    wasFreeform: data.wasFreeform,
+  });
+});
+
+whimAPI.onAgentElicitationRequested((data) => {
+  if (!shouldTrackCanvasInteraction(data.agentId, data.spaceId, data.threadId)) return;
+  upsertCanvasAgentInteraction({
+    kind: 'elicitation',
+    agentId: data.agentId,
+    requestId: data.requestId,
+    message: data.message,
+    requestedSchema: data.requestedSchema,
+    mode: data.mode,
+    elicitationSource: data.elicitationSource,
+  }, data.threadId);
+});
+
+whimAPI.onAgentElicitationResolved((data) => {
+  markCanvasAgentInteractionResolved('elicitation', data.agentId, data.requestId, {
+    action: data.action,
+    content: data.content,
+  });
 });
 
 whimAPI.onAgentCompleted(() => {
@@ -6611,11 +6782,27 @@ async function openPersonaEditorForSandbox(personaHandle: string): Promise<void>
 
 whimAPI.onAgentSandboxBlocked((data: any) => {
   agentStore.setSandboxBlock(data);
+  if (shouldTrackCanvasInteraction(data.agentId, data.spaceId, data.threadId)) {
+    upsertCanvasAgentInteraction({
+      kind: 'sandbox_block',
+      agentId: data.agentId,
+      requestId: data.requestId,
+      source: data.source,
+      blockKind: data.kind,
+      toolName: data.toolName,
+      target: data.target,
+      intention: data.intention,
+      allowedDecisions: data.allowedDecisions,
+      layer: data.layer,
+      personaHandle: data.personaHandle,
+    }, data.threadId);
+  }
   updateWorkersBadge();
 });
 
-whimAPI.onAgentSandboxResolved((data: { agentId: string; requestId: string; decision: string }) => {
+whimAPI.onAgentSandboxResolved((data: { agentId: string; requestId: string; decision: 'allow-once' | 'allow-for-session' | 'disable'; spaceId?: string; threadId?: string | null }) => {
   agentStore.clearSandboxBlock(data.agentId, data.requestId);
+  markCanvasAgentInteractionResolved('sandbox_block', data.agentId, data.requestId, { decision: data.decision });
   updateWorkersBadge();
 });
 
@@ -7242,6 +7429,11 @@ if (isCanvasMode) {
     canvasAgentPresence.clear();
     canvasAgentUserMap.clear();
     commentThreadAgents.clear();
+    commentThreadByAgent.clear();
+    canvasAgentRawStatus.clear();
+    canvasThreadAgentStatuses.clear();
+    canvasAgentInteractions.clear();
+    syncCanvasAgentThreadStatuses();
   }
 
   // Listen for target to load (from main process)

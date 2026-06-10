@@ -51,6 +51,7 @@ export interface AgentListAllItem extends AgentListItem {
   source: 'sdk' | 'cli' | 'cca';
   personaHandle: string | null;
   yoloMode: boolean;
+  sandboxed: boolean;
   quotedText: string;
   /**
    * Where the agent's runtime executes.  Cloud sessions survive across app
@@ -458,8 +459,13 @@ export interface IpcEvents {
   'workspace:committed': void;
   'workspace:changed': { path: string | null };
   'workspace:git-sync-changed': GitSyncStatus;
-  'agent:status-changed': { agentId: string; status: string; summary?: string };
-  'agent:approval-needed': { agentId: string; requestId: string; permissionKind: string; intention?: string; path?: string };
+  'agent:status-changed': { agentId: string; status: string; summary?: string; spaceId?: string; threadId?: string | null };
+  'agent:approval-needed': { agentId: string; requestId: string; permissionKind: string; intention?: string; path?: string; spaceId?: string; threadId?: string | null };
+  'agent:approval-resolved': { agentId: string; requestId: string; approved: boolean; spaceId?: string; threadId?: string | null };
+  'agent:user-input-requested': { agentId: string; requestId: string; question: string; choices?: string[]; allowFreeform?: boolean; spaceId?: string; threadId?: string | null };
+  'agent:user-input-resolved': { agentId: string; requestId: string; answer: string; wasFreeform: boolean; spaceId?: string; threadId?: string | null };
+  'agent:elicitation-requested': { agentId: string; requestId: string; message: string; requestedSchema?: ElicitationSchema; mode?: 'form' | 'url'; elicitationSource?: string; spaceId?: string; threadId?: string | null };
+  'agent:elicitation-resolved': { agentId: string; requestId: string; action: 'accept' | 'decline' | 'cancel'; content?: Record<string, ElicitationFieldValue>; spaceId?: string; threadId?: string | null };
   'agent:sandbox-blocked': {
     agentId: string;
     requestId: string;
@@ -473,6 +479,8 @@ export interface IpcEvents {
     /** Handle of the persona that launched this agent. Used by the renderer
      *  to open the persona editor on "Edit sandbox config". */
     personaHandle?: string;
+    spaceId?: string;
+    threadId?: string | null;
   };
   /** Companion to `agent:sandbox-blocked`. Broadcast to ALL renderer windows
    *  on resolution so any window that rendered the block panel can dismiss it
@@ -481,6 +489,8 @@ export interface IpcEvents {
     agentId: string;
     requestId: string;
     decision: 'allow-once' | 'allow-for-session' | 'disable';
+    spaceId?: string;
+    threadId?: string | null;
   };
   'agent:completed': { agentId: string; summary: string };
   'agent:yolo-changed': { agentId: string; enabled: boolean };

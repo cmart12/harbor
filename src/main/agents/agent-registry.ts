@@ -49,7 +49,9 @@ export interface CommentAgentContext {
 export interface AgentRecord {
   agentId: string;
   sessionId: string;
-  session: CopilotSession;
+  session?: CopilotSession;
+  phase?: 'starting' | 'active';
+  aborted?: boolean;
   spaceId: string;
   selectedText: string;
   anchor: AgentAnchor;

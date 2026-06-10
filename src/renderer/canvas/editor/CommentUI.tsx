@@ -1,9 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Bold, Italic, Strikethrough, Code, MessageSquarePlus, GitFork, FileOutput, Check, Trash2, CornerDownLeft } from 'lucide-react';
-import type { CommentThread } from '../types';
+import type { CanvasAgentInteraction, CanvasThreadAgentStatus, CommentThread } from '../types';
 import type { Rect, FormatMark } from './geometry';
 import { useAnchoredPosition } from './floating';
+import { ApprovalTile } from '../../chat/tiles/ApprovalTile';
+import { UserInputTile } from '../../chat/tiles/UserInputTile';
+import { ElicitationTile } from '../../chat/tiles/ElicitationTile';
+import { SandboxBlockTile } from '../../chat/tiles/SandboxBlockTile';
 
 /** Render floating UI on document.body so it escapes the app's backdrop-filter
  *  containing block (which otherwise breaks position: fixed coordinates). */
@@ -124,6 +128,12 @@ export function CommentPopover({
   thread,
   rect,
   roster,
+  agentStatus,
+  agentInteractions,
+  onApprovalRespond,
+  onUserInputRespond,
+  onElicitationRespond,
+  onSandboxResolve,
   onReply,
   onResolve,
   onDelete,
@@ -132,6 +142,16 @@ export function CommentPopover({
   thread: CommentThread;
   rect: Rect;
   roster: readonly string[];
+  agentStatus?: CanvasThreadAgentStatus | null;
+  agentInteractions?: readonly CanvasAgentInteraction[];
+  onApprovalRespond?: (requestId: string, approved: boolean) => void;
+  onUserInputRespond?: (requestId: string, answer: string, wasFreeform: boolean) => void;
+  onElicitationRespond?: (requestId: string, action: 'accept' | 'decline' | 'cancel', content?: Record<string, unknown>) => void;
+  onSandboxResolve?: (
+    agentId: string,
+    requestId: string,
+    decision: 'allow-once' | 'allow-for-session' | 'disable',
+  ) => void;
   onReply: (body: string) => void;
   onResolve: () => void;
   onDelete: () => void;
@@ -140,6 +160,7 @@ export function CommentPopover({
   const [body, setBody] = useState('');
   const { ref, style } = useAnchoredPosition(rect, { placement: 'below', align: 'start', gap: 6 });
   void roster;
+  const interactions = agentInteractions ?? [];
 
   const submit = () => {
     const t = body.trim();
@@ -168,6 +189,81 @@ export function CommentPopover({
             </div>
           ))}
         </div>
+        {agentStatus && (
+          <div className={`md-comment-agent-status md-comment-agent-status-${agentStatus.status}`}>
+            <span className="md-comment-agent-dot" />
+            <span>{agentStatus.label}</span>
+          </div>
+        )}
+        {interactions.length > 0 && (
+          <div className="md-comment-agent-interactions">
+            {interactions.map((interaction) => {
+              if (interaction.kind === 'approval') {
+                return (
+                  <ApprovalTile
+                    key={`${interaction.kind}:${interaction.requestId}`}
+                    requestId={interaction.requestId}
+                    permissionKind={interaction.permissionKind}
+                    intention={interaction.intention}
+                    path={interaction.path}
+                    responded={!!interaction.responded}
+                    approved={interaction.approved}
+                    onRespond={(requestId, approved) => onApprovalRespond?.(requestId, approved)}
+                  />
+                );
+              }
+              if (interaction.kind === 'user_input') {
+                return (
+                  <UserInputTile
+                    key={`${interaction.kind}:${interaction.requestId}`}
+                    requestId={interaction.requestId}
+                    question={interaction.question}
+                    choices={interaction.choices}
+                    allowFreeform={interaction.allowFreeform}
+                    responded={!!interaction.responded}
+                    answer={interaction.answer}
+                    wasFreeform={interaction.wasFreeform}
+                    onRespond={(requestId, answer, wasFreeform) => onUserInputRespond?.(requestId, answer, wasFreeform)}
+                  />
+                );
+              }
+              if (interaction.kind === 'elicitation') {
+                return (
+                  <ElicitationTile
+                    key={`${interaction.kind}:${interaction.requestId}`}
+                    requestId={interaction.requestId}
+                    message={interaction.message}
+                    requestedSchema={interaction.requestedSchema}
+                    mode={interaction.mode}
+                    elicitationSource={interaction.elicitationSource}
+                    responded={!!interaction.responded}
+                    action={interaction.action}
+                    content={interaction.content}
+                    onRespond={(requestId, action, content) => onElicitationRespond?.(requestId, action, content)}
+                  />
+                );
+              }
+              return (
+                <SandboxBlockTile
+                  key={`${interaction.kind}:${interaction.requestId}`}
+                  requestId={interaction.requestId}
+                  agentId={interaction.agentId}
+                  source={interaction.source}
+                  kind={interaction.blockKind}
+                  toolName={interaction.toolName}
+                  target={interaction.target}
+                  intention={interaction.intention}
+                  allowedDecisions={interaction.allowedDecisions}
+                  layer={interaction.layer}
+                  personaHandle={interaction.personaHandle}
+                  responded={!!interaction.responded}
+                  decision={interaction.decision}
+                  onResolve={(agentId, requestId, decision) => onSandboxResolve?.(agentId, requestId, decision)}
+                />
+              );
+            })}
+          </div>
+        )}
         <textarea
           className="md-comment-input"
           placeholder="Reply…  (@mention to deploy an agent)"
