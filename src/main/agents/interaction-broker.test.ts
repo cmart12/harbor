@@ -124,6 +124,42 @@ describe('InteractionBroker', () => {
         approved: true,
       });
     });
+
+    it('propagates comment thread context for approval request and resolution', async () => {
+      const record = makeRecord({
+        commentContext: {
+          threadId: 'thread-1',
+          personaHandle: 'agent',
+          personaName: 'agent',
+          commentBody: 'please edit',
+          quotedText: 'quoted',
+          anchor: {},
+          canvasHashBefore: '',
+          canvasPath: '/tmp/canvas.md',
+        },
+      });
+      const handler = broker.createPermissionHandler((sid) => sid === 'session-1' ? record : undefined);
+
+      const promise = handler({ kind: 'file_edit', toolCallId: 'req-thread' }, { sessionId: 'session-1' });
+
+      expect(notifier.notifyRenderer).toHaveBeenCalledWith('agent:approval-needed', expect.objectContaining({
+        agentId: 'agent-1',
+        requestId: 'req-thread',
+        spaceId: 'space-1',
+        threadId: 'thread-1',
+      }));
+
+      broker.approveAgent('agent-1', 'req-thread', true);
+      await promise;
+
+      expect(notifier.notifyRenderer).toHaveBeenCalledWith('agent:approval-resolved', expect.objectContaining({
+        agentId: 'agent-1',
+        requestId: 'req-thread',
+        approved: true,
+        spaceId: 'space-1',
+        threadId: 'thread-1',
+      }));
+    });
   });
 
   describe('yolo mode', () => {
@@ -184,7 +220,18 @@ describe('InteractionBroker', () => {
 
   describe('respondToUserInput', () => {
     it('resolves pending user input callback', async () => {
-      const record = makeRecord();
+      const record = makeRecord({
+        commentContext: {
+          threadId: 'thread-input',
+          personaHandle: 'agent',
+          personaName: 'agent',
+          commentBody: 'question',
+          quotedText: 'quoted',
+          anchor: {},
+          canvasHashBefore: '',
+          canvasPath: '/tmp/canvas.md',
+        },
+      });
       const handler = broker.createUserInputHandler((sid) => sid === 'session-1' ? record : undefined);
 
       const promise = handler(
@@ -199,11 +246,25 @@ describe('InteractionBroker', () => {
       );
       expect(call).toBeDefined();
       const requestId = (call![1] as any).requestId;
+      expect(notifier.notifyRenderer).toHaveBeenCalledWith('agent:user-input-requested', expect.objectContaining({
+        agentId: 'agent-1',
+        requestId,
+        spaceId: 'space-1',
+        threadId: 'thread-input',
+      }));
 
       broker.respondToUserInput('agent-1', requestId, 'blue', false);
 
       const result = await promise;
       expect(result).toEqual({ answer: 'blue', wasFreeform: false });
+      expect(notifier.notifyRenderer).toHaveBeenCalledWith('agent:user-input-resolved', expect.objectContaining({
+        agentId: 'agent-1',
+        requestId,
+        answer: 'blue',
+        wasFreeform: false,
+        spaceId: 'space-1',
+        threadId: 'thread-input',
+      }));
     });
 
     it('is a no-op for unknown requestId', () => {
@@ -225,7 +286,18 @@ describe('InteractionBroker', () => {
 
   describe('respondToElicitation', () => {
     it('resolves pending elicitation callback with action and content', async () => {
-      const record = makeRecord();
+      const record = makeRecord({
+        commentContext: {
+          threadId: 'thread-elicit',
+          personaHandle: 'agent',
+          personaName: 'agent',
+          commentBody: 'form',
+          quotedText: 'quoted',
+          anchor: {},
+          canvasHashBefore: '',
+          canvasPath: '/tmp/canvas.md',
+        },
+      });
       const handler = broker.createElicitationHandler((sid) => sid === 'session-1' ? record : undefined);
 
       const promise = handler({
@@ -241,12 +313,25 @@ describe('InteractionBroker', () => {
       );
       expect(call).toBeDefined();
       const requestId = (call![1] as any).requestId;
+      expect(notifier.notifyRenderer).toHaveBeenCalledWith('agent:elicitation-requested', expect.objectContaining({
+        agentId: 'agent-1',
+        requestId,
+        spaceId: 'space-1',
+        threadId: 'thread-elicit',
+      }));
 
       broker.respondToElicitation('agent-1', requestId, 'accept', { name: 'test' });
 
       const result = await promise;
       expect(result.action).toBe('accept');
       expect(result.content).toEqual({ name: 'test' });
+      expect(notifier.notifyRenderer).toHaveBeenCalledWith('agent:elicitation-resolved', expect.objectContaining({
+        agentId: 'agent-1',
+        requestId,
+        action: 'accept',
+        spaceId: 'space-1',
+        threadId: 'thread-elicit',
+      }));
     });
 
     it('resolves with cancel when declined', async () => {
@@ -573,7 +658,7 @@ describe('InteractionBroker', () => {
         (c: any[]) => c[0] === 'agent:sandbox-resolved',
       );
       expect(resolvedCalls.length).toBe(1);
-      expect(resolvedCalls[0][1]).toEqual({
+      expect(resolvedCalls[0][1]).toMatchObject({
         agentId: 'agent-1',
         requestId,
         decision: 'disable',

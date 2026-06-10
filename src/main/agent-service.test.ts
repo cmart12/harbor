@@ -547,6 +547,44 @@ describe('launchCommentAgent', () => {
     );
   });
 
+  it('persists a visible worker before createSession resolves', async () => {
+    enableMockClient();
+    let resolveSession!: (session: typeof mockSession) => void;
+    mockClient.createSession.mockReturnValueOnce(new Promise(resolve => {
+      resolveSession = resolve;
+    }));
+
+    const launchPromise = launchCommentAgent('space-1', 'fix this', 'quoted text', {}, persona, 'thread-4', '/ws', 'folder');
+
+    expect(createAgentSession).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'comment-agent-1',
+      session_id: 'comment-agent-1',
+      prompt: 'fix this',
+      summary: 'Starting...',
+      space_id: 'space-1',
+    }));
+
+    resolveSession(mockSession);
+    await launchPromise;
+  });
+
+  it('does not send the prompt if aborted while createSession is pending', async () => {
+    enableMockClient();
+    let resolveSession!: (session: typeof mockSession) => void;
+    mockClient.createSession.mockReturnValueOnce(new Promise(resolve => {
+      resolveSession = resolve;
+    }));
+
+    const launchPromise = launchCommentAgent('space-1', 'fix this', 'quoted text', {}, persona, 'thread-5', '/ws', 'folder');
+    await abortAgent('comment-agent-1');
+    resolveSession(mockSession);
+    const result = await launchPromise;
+
+    expect(result).toEqual({ error: 'Agent launch cancelled' });
+    expect(mockSession.abort).toHaveBeenCalled();
+    expect(mockSession.send).not.toHaveBeenCalled();
+  });
+
   it('sends the comment body as the prompt', async () => {
     enableMockClient();
     await launchCommentAgent('space-1', 'fix this', 'quoted text', {}, persona, null, '/ws', 'folder');
@@ -755,6 +793,41 @@ describe('listAgents', () => {
   it('returns empty array for unknown spaceId', () => {
     const result = listAgents('unknown');
     expect(result).toEqual([]);
+  });
+
+  it('returns persisted rows for a space before a live session is active', () => {
+    vi.mocked(listAgentSessions).mockReturnValueOnce([
+      {
+        id: 'persisted-agent',
+        session_id: 'pending-session',
+        space_id: 'space-persisted',
+        prompt: 'comment body',
+        status: 'running',
+        summary: 'Starting...',
+        working_dir: '/ws/folder',
+        source: 'sdk',
+        persona_handle: 'agent',
+        quoted_text: 'quoted text',
+        run_location: 'local',
+        created_at: '2025-01-01T00:00:00.000Z',
+        updated_at: '2025-01-01T00:00:00.000Z',
+      },
+    ]);
+
+    const agents = listAgents('space-persisted');
+
+    expect(agents).toHaveLength(1);
+    expect(agents[0]).toMatchObject({
+      agentId: 'persisted-agent',
+      sessionId: 'pending-session',
+      status: 'running',
+      summary: 'Starting...',
+      selectedText: 'comment body',
+      quotedText: 'quoted text',
+      spaceId: 'space-persisted',
+      pendingApprovalId: null,
+      source: 'sdk',
+    });
   });
 });
 

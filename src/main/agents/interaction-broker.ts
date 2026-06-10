@@ -25,6 +25,12 @@ interface UserInputResponse {
   wasFreeform: boolean;
 }
 
+interface AgentInteractionContext {
+  agentId: string;
+  spaceId?: string;
+  commentContext?: { threadId: string | null };
+}
+
 /** Source of a sandbox block emitted to the renderer. */
 export type SandboxBlockSource = 'permission' | 'pre-tool' | 'post-tool-shell';
 
@@ -59,6 +65,8 @@ export interface SandboxBlockRequest {
    * persona editor for the correct entry.
    */
   personaHandle?: string;
+  spaceId?: string;
+  threadId?: string | null;
 }
 
 export type SandboxResolutionDecision = 'allow-once' | 'allow-for-session' | 'disable';
@@ -73,6 +81,7 @@ export class InteractionBroker {
   private elicitationCallbacks = new Map<string, (result: ElicitationResult) => void>();
   /** Pending sandbox-block resolutions, keyed by requestId. */
   private sandboxBlockCallbacks = new Map<string, (resolution: SandboxResolution) => void>();
+  private interactionContexts = new Map<string, { agentId: string; spaceId?: string; threadId?: string | null }>();
 
   constructor(
     private notifier: AgentNotifier,
@@ -92,9 +101,16 @@ export class InteractionBroker {
       requestId,
       agentId: record.agentId,
       ...(record.personaHandle ? { personaHandle: record.personaHandle } : {}),
+      spaceId: record.spaceId,
+      threadId: record.commentContext?.threadId,
     };
     record.status = 'waiting-approval';
     this.persistence.updateStatus(record);
+    this.interactionContexts.set(requestId, {
+      agentId: record.agentId,
+      spaceId: record.spaceId,
+      threadId: record.commentContext?.threadId,
+    });
 
     this.notifier.notifyRenderer('agent:sandbox-blocked', payload);
     this.notifier.notifyRenderer(`chat:event:${record.agentId}`, {
@@ -124,8 +140,10 @@ export class InteractionBroker {
   /** Renderer-driven response to a sandbox block. */
   resolveSandboxBlock(_agentId: string, requestId: string, decision: SandboxResolutionDecision): void {
     const cb = this.sandboxBlockCallbacks.get(requestId);
+    const context = this.interactionContexts.get(requestId);
     if (cb) {
       this.sandboxBlockCallbacks.delete(requestId);
+      this.interactionContexts.delete(requestId);
       cb({ decision });
     } else {
       console.warn(`[InteractionBroker] No sandbox-block callback for requestId=${requestId}`);
@@ -134,9 +152,11 @@ export class InteractionBroker {
     // block panel (canvas + main app) can dismiss it. Without this, resolving
     // from one window leaves an orphaned panel in the other.
     this.notifier.notifyRenderer('agent:sandbox-resolved', {
-      agentId: _agentId,
+      agentId: context?.agentId ?? _agentId,
       requestId,
       decision,
+      spaceId: context?.spaceId,
+      threadId: context?.threadId,
     });
     this.notifier.notifyRenderer(`chat:event:${_agentId}`, {
       type: 'sandbox.resolved',
@@ -438,6 +458,11 @@ export class InteractionBroker {
       record.pendingApprovalId = requestId;
       record.pendingPermissionKind = request.kind || null;
       record.pendingApprovals.set(requestId, { permissionKind: request.kind || null, intention, path });
+      this.interactionContexts.set(requestId, {
+        agentId: record.agentId,
+        spaceId: record.spaceId,
+        threadId: record.commentContext?.threadId,
+      });
       this.persistence.updateStatus(record);
 
       this.notifier.notifyRenderer('agent:approval-needed', {
@@ -446,6 +471,8 @@ export class InteractionBroker {
         permissionKind: request.kind,
         intention,
         path,
+        spaceId: record.spaceId,
+        threadId: record.commentContext?.threadId,
       });
 
       this.notifier.notifyRenderer(`chat:event:${record.agentId}`, {
@@ -495,7 +522,7 @@ export class InteractionBroker {
     return async (request: UserInputRequest, invocation: { sessionId: string }): Promise<UserInputResponse> => {
       const record = findRecord(invocation.sessionId);
       if (!record) return { answer: '', wasFreeform: true };
-      return this.requestUserInput(record.agentId, request);
+      return this.requestUserInput(record, request);
     };
   }
 
@@ -505,13 +532,25 @@ export class InteractionBroker {
    * user responds. Used by both the SDK's onUserInputRequest callback and the
    * custom ask_user tool.
    */
-  async requestUserInput(agentId: string, request: UserInputRequest): Promise<UserInputResponse> {
+  async requestUserInput(agentOrRecord: string | AgentInteractionContext, request: UserInputRequest): Promise<UserInputResponse> {
+    const agentId = typeof agentOrRecord === 'string' ? agentOrRecord : agentOrRecord.agentId;
+    const context = typeof agentOrRecord === 'string'
+      ? { agentId }
+      : { agentId, spaceId: agentOrRecord.spaceId, threadId: agentOrRecord.commentContext?.threadId };
     const requestId = crypto.randomUUID();
+    this.interactionContexts.set(requestId, context);
 
     this.notifier.notifyRenderer(`chat:event:${agentId}`, {
       type: 'user_input.requested',
       requestId,
       agentId,
+      question: request.question,
+      choices: request.choices,
+      allowFreeform: request.allowFreeform,
+    });
+    this.notifier.notifyRenderer('agent:user-input-requested', {
+      ...context,
+      requestId,
       question: request.question,
       choices: request.choices,
       allowFreeform: request.allowFreeform,
@@ -544,6 +583,21 @@ export class InteractionBroker {
         mode: context.mode,
         elicitationSource: context.elicitationSource,
       });
+      this.interactionContexts.set(requestId, {
+        agentId: record.agentId,
+        spaceId: record.spaceId,
+        threadId: record.commentContext?.threadId,
+      });
+      this.notifier.notifyRenderer('agent:elicitation-requested', {
+        agentId: record.agentId,
+        requestId,
+        message: context.message,
+        requestedSchema: context.requestedSchema,
+        mode: context.mode,
+        elicitationSource: context.elicitationSource,
+        spaceId: record.spaceId,
+        threadId: record.commentContext?.threadId,
+      });
 
       this.notifier.showElicitationNotification({
         agentId: record.agentId,
@@ -559,6 +613,7 @@ export class InteractionBroker {
 
   approveAgent(agentId: string, requestId: string, approved: boolean): void {
     const cb = this.approvalCallbacks.get(requestId);
+    const context = this.interactionContexts.get(requestId);
     if (cb) {
       this.approvalCallbacks.delete(requestId);
       cb(approved);
@@ -571,10 +626,26 @@ export class InteractionBroker {
       requestId,
       approved,
     });
+    this.notifier.notifyRenderer('agent:approval-resolved', {
+      agentId: context?.agentId ?? agentId,
+      requestId,
+      approved,
+      spaceId: context?.spaceId,
+      threadId: context?.threadId,
+    });
+    this.notifier.notifyRenderer('agent:status-changed', {
+      agentId: context?.agentId ?? agentId,
+      status: 'running',
+      summary: approved ? 'Permission approved' : 'Permission denied',
+      spaceId: context?.spaceId,
+      threadId: context?.threadId,
+    });
+    this.interactionContexts.delete(requestId);
   }
 
   respondToUserInput(agentId: string, requestId: string, answer: string, wasFreeform: boolean): void {
     const cb = this.userInputCallbacks.get(requestId);
+    const context = this.interactionContexts.get(requestId);
     if (cb) {
       this.userInputCallbacks.delete(requestId);
       cb({ answer, wasFreeform });
@@ -585,10 +656,20 @@ export class InteractionBroker {
       answer,
       wasFreeform,
     });
+    this.notifier.notifyRenderer('agent:user-input-resolved', {
+      agentId: context?.agentId ?? agentId,
+      requestId,
+      answer,
+      wasFreeform,
+      spaceId: context?.spaceId,
+      threadId: context?.threadId,
+    });
+    this.interactionContexts.delete(requestId);
   }
 
   respondToElicitation(agentId: string, requestId: string, action: 'accept' | 'decline' | 'cancel', content?: Record<string, unknown>): void {
     const cb = this.elicitationCallbacks.get(requestId);
+    const context = this.interactionContexts.get(requestId);
     if (cb) {
       this.elicitationCallbacks.delete(requestId);
       cb({ action, content: content as ElicitationResult['content'] });
@@ -599,6 +680,15 @@ export class InteractionBroker {
       action,
       content,
     });
+    this.notifier.notifyRenderer('agent:elicitation-resolved', {
+      agentId: context?.agentId ?? agentId,
+      requestId,
+      action,
+      content,
+      spaceId: context?.spaceId,
+      threadId: context?.threadId,
+    });
+    this.interactionContexts.delete(requestId);
   }
 
   /** Deny and clean up all pending approval callbacks for a given agent. */

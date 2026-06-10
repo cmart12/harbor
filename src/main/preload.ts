@@ -207,6 +207,11 @@ export interface WhimAPI {
   // ── Agent events ─────────────────────────────────────────
   onAgentStatusChanged(callback: (data: IpcEventPayload<'agent:status-changed'>) => void): void;
   onAgentApprovalNeeded(callback: (data: IpcEventPayload<'agent:approval-needed'>) => void): void;
+  onAgentApprovalResolved(callback: (data: IpcEventPayload<'agent:approval-resolved'>) => void): void;
+  onAgentUserInputRequested(callback: (data: IpcEventPayload<'agent:user-input-requested'>) => void): void;
+  onAgentUserInputResolved(callback: (data: IpcEventPayload<'agent:user-input-resolved'>) => void): void;
+  onAgentElicitationRequested(callback: (data: IpcEventPayload<'agent:elicitation-requested'>) => void): void;
+  onAgentElicitationResolved(callback: (data: IpcEventPayload<'agent:elicitation-resolved'>) => void): void;
   onAgentSandboxBlocked(callback: (data: IpcEventPayload<'agent:sandbox-blocked'>) => void): void;
   onAgentSandboxResolved(callback: (data: IpcEventPayload<'agent:sandbox-resolved'>) => void): void;
   onAgentCompleted(callback: (data: IpcEventPayload<'agent:completed'>) => void): void;
@@ -515,6 +520,21 @@ const api: WhimAPI = {
   },
   onAgentApprovalNeeded: (callback) => {
     ipcRenderer.on('agent:approval-needed', (_event: unknown, data: IpcEventPayload<'agent:approval-needed'>) => callback(data));
+  },
+  onAgentApprovalResolved: (callback) => {
+    ipcRenderer.on('agent:approval-resolved', (_event: unknown, data: IpcEventPayload<'agent:approval-resolved'>) => callback(data));
+  },
+  onAgentUserInputRequested: (callback) => {
+    ipcRenderer.on('agent:user-input-requested', (_event: unknown, data: IpcEventPayload<'agent:user-input-requested'>) => callback(data));
+  },
+  onAgentUserInputResolved: (callback) => {
+    ipcRenderer.on('agent:user-input-resolved', (_event: unknown, data: IpcEventPayload<'agent:user-input-resolved'>) => callback(data));
+  },
+  onAgentElicitationRequested: (callback) => {
+    ipcRenderer.on('agent:elicitation-requested', (_event: unknown, data: IpcEventPayload<'agent:elicitation-requested'>) => callback(data));
+  },
+  onAgentElicitationResolved: (callback) => {
+    ipcRenderer.on('agent:elicitation-resolved', (_event: unknown, data: IpcEventPayload<'agent:elicitation-resolved'>) => callback(data));
   },
   onAgentSandboxBlocked: (callback) => {
     ipcRenderer.on('agent:sandbox-blocked', (_event: unknown, data: IpcEventPayload<'agent:sandbox-blocked'>) => callback(data));

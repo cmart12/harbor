@@ -1,7 +1,7 @@
 import React from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { MarkdownCanvas, type MarkdownCanvasHandle, type AgentPersona, type MentionEvent } from './MarkdownCanvas';
-import type { CanvasPresence, CanvasUser, CanvasDecoration } from './types';
+import type { CanvasAgentInteraction, CanvasPresence, CanvasUser, CanvasDecoration, CanvasThreadAgentStatus } from './types';
 
 let root: Root | null = null;
 let canvasRef: React.RefObject<MarkdownCanvasHandle | null> = React.createRef();
@@ -13,6 +13,8 @@ export interface MountCanvasOptions {
   theme: 'light' | 'dark';
   personas?: AgentPersona[];
   agentPresence?: CanvasPresence[];
+  agentThreadStatuses?: CanvasThreadAgentStatus[];
+  agentInteractions?: readonly CanvasAgentInteraction[];
   onDirtyChange: (dirty: boolean) => void;
   onSaveStatus: (status: string) => void;
   onAgentMentioned?: (event: MentionEvent) => void;
@@ -37,6 +39,8 @@ export function mountCanvas(container: HTMLElement, options: MountCanvasOptions)
       theme={options.theme}
       personas={options.personas}
       agentPresence={options.agentPresence}
+      agentThreadStatuses={options.agentThreadStatuses}
+      agentInteractions={options.agentInteractions}
       onDirtyChange={options.onDirtyChange}
       onSaveStatus={options.onSaveStatus}
       onAgentMentioned={options.onAgentMentioned}
@@ -69,6 +73,14 @@ export async function saveCanvas(): Promise<void> {
 
 export function updateCanvasPresence(presence: CanvasPresence[]): void {
   canvasRef.current?.updatePresence(presence);
+}
+
+export function updateCanvasAgentThreadStatuses(statuses: CanvasThreadAgentStatus[]): void {
+  canvasRef.current?.updateAgentThreadStatuses(statuses);
+}
+
+export function updateCanvasAgentInteractions(interactions: readonly CanvasAgentInteraction[]): void {
+  canvasRef.current?.updateAgentInteractions(interactions);
 }
 
 export function updateCanvasPersonas(personas: AgentPersona[]): void {

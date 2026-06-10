@@ -3,7 +3,7 @@ import { Decoration, DecorationSet } from '@milkdown/kit/prose/view';
 import type { EditorState } from '@milkdown/kit/prose/state';
 import type { Node as ProseNode } from '@milkdown/kit/prose/model';
 import { $prose } from '@milkdown/kit/utils';
-import type { CommentThread } from '../../types';
+import type { CanvasThreadAgentStatus, CommentThread } from '../../types';
 import { flattenDoc, resolveThreadRange } from '../anchor';
 
 export const commentPluginKey = new PluginKey('whim-comments');
@@ -17,6 +17,7 @@ export interface CommentRange {
 
 export interface CommentPluginState {
   threads: CommentThread[];
+  agentStatuses: CanvasThreadAgentStatus[];
   ranges: CommentRange[];
   activeId: string | null;
   set: DecorationSet;
@@ -24,6 +25,7 @@ export interface CommentPluginState {
 
 export const SET_THREADS = 'whim-set-threads';
 export const SET_ACTIVE = 'whim-set-active';
+export const SET_AGENT_THREAD_STATUSES = 'whim-set-agent-thread-statuses';
 
 function resolveRanges(doc: ProseNode, threads: CommentThread[]): CommentRange[] {
   if (threads.length === 0) return [];
@@ -36,12 +38,22 @@ function resolveRanges(doc: ProseNode, threads: CommentThread[]): CommentRange[]
   return ranges;
 }
 
-function buildSet(doc: ProseNode, ranges: CommentRange[], activeId: string | null): DecorationSet {
+function buildSet(
+  doc: ProseNode,
+  ranges: CommentRange[],
+  activeId: string | null,
+  agentStatuses: CanvasThreadAgentStatus[],
+): DecorationSet {
   if (ranges.length === 0) return DecorationSet.empty;
+  const statusByThread = new Map(agentStatuses.map(s => [s.threadId, s.status]));
   const decos = ranges.map((r) => {
     const classes = ['whim-comment'];
     if (r.resolved) classes.push('whim-comment-resolved');
     if (r.threadId === activeId) classes.push('whim-comment-active');
+    const agentStatus = statusByThread.get(r.threadId);
+    if (agentStatus) {
+      classes.push('whim-comment-agent', `whim-comment-agent-${agentStatus}`);
+    }
     return Decoration.inline(
       r.from,
       r.to,
@@ -76,6 +88,7 @@ export const commentPlugin = $prose(() => {
     state: {
       init: (_config, _state) => ({
         threads: [],
+        agentStatuses: [],
         ranges: [],
         activeId: null,
         set: DecorationSet.empty,
@@ -83,14 +96,16 @@ export const commentPlugin = $prose(() => {
       apply(tr, value, _oldState, newState): CommentPluginState {
         const setThreads = tr.getMeta(SET_THREADS) as CommentThread[] | undefined;
         const activeMeta = tr.getMeta(SET_ACTIVE) as { id: string | null } | undefined;
+        const agentStatusMeta = tr.getMeta(SET_AGENT_THREAD_STATUSES) as CanvasThreadAgentStatus[] | undefined;
 
         if (setThreads) {
           const ranges = resolveRanges(newState.doc, setThreads);
           return {
             threads: setThreads,
+            agentStatuses: value.agentStatuses,
             ranges,
             activeId: value.activeId,
-            set: buildSet(newState.doc, ranges, value.activeId),
+            set: buildSet(newState.doc, ranges, value.activeId, value.agentStatuses),
           };
         }
 
@@ -98,7 +113,15 @@ export const commentPlugin = $prose(() => {
           return {
             ...value,
             activeId: activeMeta.id,
-            set: buildSet(newState.doc, value.ranges, activeMeta.id),
+            set: buildSet(newState.doc, value.ranges, activeMeta.id, value.agentStatuses),
+          };
+        }
+
+        if (agentStatusMeta) {
+          return {
+            ...value,
+            agentStatuses: agentStatusMeta,
+            set: buildSet(newState.doc, value.ranges, value.activeId, agentStatusMeta),
           };
         }
 
@@ -107,7 +130,7 @@ export const commentPlugin = $prose(() => {
           return {
             ...value,
             ranges,
-            set: buildSet(newState.doc, ranges, value.activeId),
+            set: buildSet(newState.doc, ranges, value.activeId, value.agentStatuses),
           };
         }
 

@@ -1,6 +1,12 @@
 import { defineTool } from '@github/copilot-sdk';
 import type { InteractionBroker } from '../agents/interaction-broker';
 
+interface AskUserRegistryRecord {
+  agentId: string;
+  spaceId?: string;
+  commentContext?: { threadId: string | null };
+}
+
 interface AskUserArgs {
   question: string;
   choices?: string[];
@@ -12,7 +18,11 @@ interface AskUserArgs {
  * The tool lets the agent ask the user a question and wait for a response,
  * presented via the UserInputTile in the chat UI.
  */
-export function createAskUserTool(agentId: string, broker: InteractionBroker) {
+export function createAskUserTool(
+  agentId: string,
+  broker: InteractionBroker,
+  registry?: { get(agentId: string): AskUserRegistryRecord | undefined },
+) {
   return defineTool<AskUserArgs>('ask_user', {
     description: [
       'Ask the user a question and wait for their response.',
@@ -56,7 +66,7 @@ export function createAskUserTool(agentId: string, broker: InteractionBroker) {
       }
 
       try {
-        const response = await broker.requestUserInput(agentId, {
+        const response = await broker.requestUserInput(registry?.get(agentId) ?? agentId, {
           question,
           choices,
           allowFreeform,

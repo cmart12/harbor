@@ -11,7 +11,9 @@ import { MilkdownEditor, type MilkdownEditorHandle } from './editor/MilkdownEdit
 import type {
   CanvasUser,
   CanvasPresence,
+  CanvasAgentInteraction,
   CanvasDecoration,
+  CanvasThreadAgentStatus,
   CommentThread,
   CommentTrigger,
 } from './types';
@@ -41,6 +43,10 @@ declare const whimAPI: {
   openPageWindow(target: { kind: 'page'; spaceId: string; page: string; title: string }): void;
   openExternal(url: string): Promise<{ ok: true }>;
   openLink(spaceId: string, url: string): Promise<{ action: string; error?: string }>;
+  approveAgent(agentId: string, requestId: string, approved: boolean): Promise<void>;
+  respondToUserInput(agentId: string, requestId: string, answer: string, wasFreeform: boolean): Promise<void>;
+  respondToElicitation(agentId: string, requestId: string, action: 'accept' | 'decline' | 'cancel', content?: Record<string, unknown>): Promise<void>;
+  resolveSandboxBlock(agentId: string, requestId: string, decision: 'allow-once' | 'allow-for-session' | 'disable'): Promise<void>;
 };
 
 /** Route a whim:// resource click to the matching window opener. */
@@ -84,6 +90,8 @@ export interface MarkdownCanvasProps {
   theme: 'light' | 'dark';
   personas?: AgentPersona[];
   agentPresence?: CanvasPresence[];
+  agentThreadStatuses?: CanvasThreadAgentStatus[];
+  agentInteractions?: readonly CanvasAgentInteraction[];
   decorations?: readonly CanvasDecoration[];
   onDirtyChange: (dirty: boolean) => void;
   onSaveStatus: (status: string) => void;
@@ -99,6 +107,8 @@ export interface MarkdownCanvasHandle {
   getEditorMode(): EditorMode;
   toggleMode(): { mode: EditorMode; error?: string };
   updatePresence(presence: CanvasPresence[]): void;
+  updateAgentThreadStatuses(statuses: CanvasThreadAgentStatus[]): void;
+  updateAgentInteractions(interactions: readonly CanvasAgentInteraction[]): void;
   updatePersonas(personas: AgentPersona[]): void;
   updateDecorations(decorations: readonly CanvasDecoration[]): void;
   updateAgentUsers(users: CanvasUser[]): void;
@@ -166,7 +176,7 @@ function formatAttachmentRef(filename: string, relativePath: string, mimeType: s
 }
 
 export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasProps>(
-  function MarkdownCanvas({ spaceId, initialContent, initialFrontmatter, theme, personas: initialPersonas, agentPresence: initialPresence, decorations: initialDecorations, onDirtyChange, onSaveStatus, onAgentMentioned, onInlineMention, onForkSelection, onExtractToPage }, ref) {
+  function MarkdownCanvas({ spaceId, initialContent, initialFrontmatter, theme, personas: initialPersonas, agentPresence: initialPresence, agentThreadStatuses: initialAgentThreadStatuses, agentInteractions: initialAgentInteractions, decorations: initialDecorations, onDirtyChange, onSaveStatus, onAgentMentioned, onInlineMention, onForkSelection, onExtractToPage }, ref) {
     const hasFrontmatter = initialFrontmatter !== undefined;
 
     // Split the embedded comments block out of the editor body once at mount.
@@ -214,6 +224,8 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
     const [isDragging, setIsDragging] = useState(false);
     const [personas, setPersonas] = useState<AgentPersona[]>(initialPersonas || []);
     const [presence, setPresence] = useState<CanvasPresence[]>(initialPresence || []);
+    const [agentThreadStatuses, setAgentThreadStatuses] = useState<CanvasThreadAgentStatus[]>(initialAgentThreadStatuses || []);
+    const [agentInteractions, setAgentInteractions] = useState<readonly CanvasAgentInteraction[]>(initialAgentInteractions || []);
     const [isTranscribing, setIsTranscribing] = useState(false);
     const [decorations, setDecorations] = useState<readonly CanvasDecoration[]>(initialDecorations || []);
     const [agentUsers, setAgentUsers] = useState<CanvasUser[]>([]);
@@ -434,6 +446,8 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
       getEditorMode: () => editorModeRef.current,
       toggleMode: () => handleToggleMode(),
       updatePresence: (nextPresence: CanvasPresence[]) => setPresence(nextPresence),
+      updateAgentThreadStatuses: (nextStatuses: CanvasThreadAgentStatus[]) => setAgentThreadStatuses(nextStatuses),
+      updateAgentInteractions: (nextInteractions: readonly CanvasAgentInteraction[]) => setAgentInteractions(nextInteractions),
       updatePersonas: (nextPersonas: AgentPersona[]) => setPersonas(nextPersonas),
       updateDecorations: (nextDecorations: readonly CanvasDecoration[]) => setDecorations(nextDecorations),
       updateAgentUsers: (nextUsers: CanvasUser[]) => setAgentUsers(nextUsers),
@@ -882,6 +896,12 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
     }, [editorMode]);
 
     const activeThread = activeComment ? threads.find(t => t.id === activeComment.id) ?? null : null;
+    const activeThreadStatus = activeThread
+      ? agentThreadStatuses.find(s => s.threadId === activeThread.id) ?? null
+      : null;
+    const activeThreadInteractions = activeThread
+      ? agentInteractions.filter(i => i.agentId === activeThreadStatus?.agentId)
+      : [];
 
     return (
       <div
@@ -907,6 +927,7 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
                 onContentChanged={onEditorContentChanged}
                 decorations={decorations}
                 presence={presence}
+                commentAgentStatuses={agentThreadStatuses}
                 commentThreads={threads}
                 activeCommentId={activeComment?.id ?? null}
                 commentTrigger={commentTrigger}
@@ -953,6 +974,23 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
                 thread={activeThread}
                 rect={activeComment.rect}
                 roster={personas.map(p => p.handle)}
+                agentStatus={activeThreadStatus}
+                agentInteractions={activeThreadInteractions}
+                onApprovalRespond={(requestId, approved) => {
+                  const agentId = activeThreadStatus?.agentId;
+                  if (agentId) void whimAPI.approveAgent(agentId, requestId, approved);
+                }}
+                onUserInputRespond={(requestId, answer, wasFreeform) => {
+                  const agentId = activeThreadStatus?.agentId;
+                  if (agentId) void whimAPI.respondToUserInput(agentId, requestId, answer, wasFreeform);
+                }}
+                onElicitationRespond={(requestId, action, content) => {
+                  const agentId = activeThreadStatus?.agentId;
+                  if (agentId) void whimAPI.respondToElicitation(agentId, requestId, action, content);
+                }}
+                onSandboxResolve={(agentId, requestId, decision) => {
+                  void whimAPI.resolveSandboxBlock(agentId, requestId, decision);
+                }}
                 onReply={handleReply}
                 onResolve={handleResolve}
                 onDelete={handleDeleteThread}

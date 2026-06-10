@@ -28,12 +28,13 @@ import {
   commentThreadAt,
   SET_THREADS,
   SET_ACTIVE,
+  SET_AGENT_THREAD_STATUSES,
 } from './plugins/comment-plugin';
 import { computeAnchor } from './anchor';
 import { createImageNodeView, createImagePasteHandler, type ImageSrcResolver, type ImageUploader } from './plugins/image-view';
 import { presencePlugin, SET_PRESENCE } from './plugins/presence-plugin';
 import { SUPPRESS_TYPING_EFFECTS, typingEffectsPlugin } from './plugins/typing-effects-plugin';
-import type { CanvasDecoration, CanvasPresence, CommentThread, CommentTrigger, TextAnchor } from '../types';
+import type { CanvasDecoration, CanvasPresence, CanvasThreadAgentStatus, CommentThread, CommentTrigger, TextAnchor } from '../types';
 import type { Rect, SelectionInfo, MentionQuery, FormatMark } from './geometry';
 import type { EditorState } from '@milkdown/kit/prose/state';
 import type { Node as ProseNode } from '@milkdown/kit/prose/model';
@@ -78,6 +79,7 @@ export interface MilkdownEditorProps {
   decorations?: readonly CanvasDecoration[];
   presence?: readonly CanvasPresence[];
   commentThreads?: readonly CommentThread[];
+  commentAgentStatuses?: readonly CanvasThreadAgentStatus[];
   activeCommentId?: string | null;
   commentTrigger?: CommentTrigger;
   /** Resolve workspace-relative image srcs into displayable URLs. */
@@ -163,7 +165,7 @@ function replaceChangedRange(view: EditorView, nextDoc: ProseNode): void {
 
 const MilkdownInner = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
   function MilkdownInner(
-    { initialContent, onContentChanged, onFocus, onBlur, decorations, presence, commentThreads, activeCommentId, commentTrigger, resolveImageSrc, uploadFile, onCommentActivate, onSelectionChange, onMentionQuery, onLinkClick },
+    { initialContent, onContentChanged, onFocus, onBlur, decorations, presence, commentThreads, commentAgentStatuses, activeCommentId, commentTrigger, resolveImageSrc, uploadFile, onCommentActivate, onSelectionChange, onMentionQuery, onLinkClick },
     ref,
   ) {
     // Latest callbacks via refs so the editor factory (created once) never goes stale.
@@ -327,6 +329,11 @@ const MilkdownInner = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
     useEffect(() => {
       if (!loading) dispatchMeta(SET_ACTIVE, { id: activeCommentId ?? null });
     }, [loading, dispatchMeta, activeCommentId]);
+
+    // Sync transient thread-linked agent status highlights.
+    useEffect(() => {
+      if (!loading) dispatchMeta(SET_AGENT_THREAD_STATUSES, (commentAgentStatuses ?? []) as CanvasThreadAgentStatus[]);
+    }, [loading, dispatchMeta, commentAgentStatuses]);
 
     useImperativeHandle(
       ref,

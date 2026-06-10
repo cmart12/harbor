@@ -200,10 +200,11 @@ export function registerAgentHandlers(): void {
   });
 
   ipcMain.handle('agent:delete-session', async (_event, agentId: string) => {
-    const { abortAgent } = await import('../agent-service');
+    const { abortAgent, forgetAgent } = await import('../agent-service');
     try { await abortAgent(agentId); } catch { /* already stopped */ }
     const { deleteAgentSession } = await import('../database');
     deleteAgentSession(agentId);
+    forgetAgent(agentId);
     return { ok: true };
   });
 

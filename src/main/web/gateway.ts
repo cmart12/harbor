@@ -73,10 +73,11 @@ const HANDLERS: Record<WebRemoteCommandChannel, Handler> = {
     await abortAgent(expectString(args, 0, 'agentId'));
   },
   'agent:delete-session': async (args) => {
-    const { abortAgent } = await import('../agent-service');
+    const { abortAgent, forgetAgent } = await import('../agent-service');
     const agentId = expectString(args, 0, 'agentId');
     try { await abortAgent(agentId); } catch { /* already stopped */ }
     deleteAgentSession(agentId);
+    forgetAgent(agentId);
     return { ok: true };
   },
   'chat:send-message': async (args) => {
