@@ -4661,6 +4661,94 @@ body.dark .skill-picker-desc {
   50% { box-shadow: 0 0 0 2px rgba(124, 102, 220, 0.25); }
 }
 
+/* Documint-inspired typing effects */
+.markdown-canvas-container .whim-typing-highlight {
+  border-radius: 2px;
+  animation: whim-typing-highlight 520ms ease-out both;
+}
+.markdown-canvas-container .whim-typing-pulse {
+  position: relative;
+}
+.markdown-canvas-container .whim-typing-pulse::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 52%;
+  width: 0.45em;
+  height: 0.45em;
+  border: 1.5px solid rgba(124, 102, 220, 0.72);
+  border-radius: 999px;
+  pointer-events: none;
+  transform: translate(-50%, -50%) scale(0.45);
+  animation: whim-typing-pulse 620ms ease-out both;
+}
+.markdown-canvas-container .whim-typing-fade {
+  display: inline-block;
+  width: 0;
+  overflow: visible;
+  color: rgba(124, 102, 220, 0.82);
+  pointer-events: none;
+  user-select: none;
+  vertical-align: baseline;
+  animation: whim-typing-fade 560ms ease-out both;
+}
+
+@keyframes whim-typing-highlight {
+  0% {
+    color: #7c66dc;
+    background-color: rgba(124, 102, 220, 0.16);
+    text-shadow: 0 0 8px rgba(124, 102, 220, 0.35);
+  }
+  100% {
+    color: inherit;
+    background-color: transparent;
+    text-shadow: none;
+  }
+}
+@keyframes whim-typing-pulse {
+  0% {
+    opacity: 0.8;
+    transform: translate(-50%, -50%) scale(0.45);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(2.7);
+  }
+}
+@keyframes whim-typing-fade {
+  0% {
+    opacity: 0.78;
+    filter: blur(0);
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    filter: blur(1px);
+    transform: translateY(-0.25em);
+  }
+}
+
+.markdown-canvas-container.md-theme-dark .whim-typing-pulse::after {
+  border-color: rgba(169, 155, 240, 0.78);
+}
+.markdown-canvas-container.md-theme-dark .whim-typing-fade {
+  color: rgba(169, 155, 240, 0.86);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .markdown-canvas-container .whim-typing-highlight {
+    animation: none;
+    color: inherit;
+    background-color: transparent;
+    text-shadow: none;
+  }
+  .markdown-canvas-container .whim-typing-pulse::after,
+  .markdown-canvas-container .whim-typing-fade {
+    display: none;
+    animation: none;
+  }
+}
+
 /* Comment highlights */
 .markdown-canvas-container .whim-comment {
   background: rgba(255, 196, 0, 0.18);

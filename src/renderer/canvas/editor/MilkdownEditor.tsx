@@ -31,6 +31,7 @@ import {
 import { computeAnchor } from './anchor';
 import { createImageNodeView, createImagePasteHandler, type ImageSrcResolver, type ImageUploader } from './plugins/image-view';
 import { presencePlugin, SET_PRESENCE } from './plugins/presence-plugin';
+import { SUPPRESS_TYPING_EFFECTS, typingEffectsPlugin } from './plugins/typing-effects-plugin';
 import type { CanvasDecoration, CanvasPresence, CommentThread, CommentTrigger, TextAnchor } from '../types';
 import type { Rect, SelectionInfo, MentionQuery, FormatMark } from './geometry';
 import type { EditorState } from '@milkdown/kit/prose/state';
@@ -271,6 +272,7 @@ const MilkdownInner = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
         .use(clipboard)
         .use(history)
         .use(cursor)
+        .use(typingEffectsPlugin)
         .use(hostDecorationPlugin)
         .use(commentPlugin)
         .use(presencePlugin);
@@ -318,18 +320,32 @@ const MilkdownInner = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
           const ed = get();
           if (!ed) return;
           ed.action((ctx) => {
-            replaceAll(markdown)(ctx);
-            // Record the editor's own serialization of the new doc — that's the
-            // exact string the debounced markdownUpdated echo will carry.
+            const view = ctx.get(editorViewCtx);
+            view.dispatch(view.state.tr.setMeta(SUPPRESS_TYPING_EFFECTS, true));
             try {
-              pendingEchoRef.current = getMarkdown()(ctx);
-            } catch {
-              pendingEchoRef.current = markdown;
+              replaceAll(markdown)(ctx);
+              // Record the editor's own serialization of the new doc — that's the
+              // exact string the debounced markdownUpdated echo will carry.
+              try {
+                pendingEchoRef.current = getMarkdown()(ctx);
+              } catch {
+                pendingEchoRef.current = markdown;
+              }
+            } finally {
+              view.dispatch(view.state.tr.setMeta(SUPPRESS_TYPING_EFFECTS, false));
             }
           });
         },
         insertMarkdown: (markdown: string, inline?: boolean) => {
-          get()?.action(insert(markdown, inline));
+          get()?.action((ctx) => {
+            const view = ctx.get(editorViewCtx);
+            view.dispatch(view.state.tr.setMeta(SUPPRESS_TYPING_EFFECTS, true));
+            try {
+              insert(markdown, inline)(ctx);
+            } finally {
+              view.dispatch(view.state.tr.setMeta(SUPPRESS_TYPING_EFFECTS, false));
+            }
+          });
         },
         getSelectedText: () => {
           const ed = get();
