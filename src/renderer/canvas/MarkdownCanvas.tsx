@@ -25,6 +25,7 @@ import { FrontmatterEditor } from './FrontmatterEditor';
 import { VoiceRecorderButton, type VoiceRecordingResult } from './VoiceRecorderButton';
 import { SpaceLinkPicker, type SpaceResult } from './SpaceLinkPicker';
 import { merge3 } from '../../shared/text-merge';
+import { serializeFrontmatter, tryParseFrontmatter } from '../../shared/frontmatter';
 
 declare const whimAPI: {
   writeCanvas(spaceId: string, content: string): Promise<void>;
@@ -113,6 +114,7 @@ export interface MarkdownCanvasHandle {
   updateDecorations(decorations: readonly CanvasDecoration[]): void;
   updateAgentUsers(users: CanvasUser[]): void;
   addCommentReply(threadId: string, body: string): void;
+  updateFrontmatter(frontmatter: Record<string, unknown>): void;
   replaceContent(content: string): void;
   appendLink(label: string, url: string): void;
   replaceText(search: string, replacement: string): void;
@@ -121,49 +123,18 @@ export interface MarkdownCanvasHandle {
 
 const AUTOSAVE_DELAY_MS = 2000;
 
-const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
-
 const VOICE_PLACEHOLDER = '🎤 *[Recording transcription…]*';
 
 type EditorMode = 'rendered' | 'raw';
 
 /** Serialize frontmatter + body into a markdown string with YAML block. */
 function serializeFm(fm: Record<string, unknown>, body: string): string {
-  const keys = Object.keys(fm).filter(k => fm[k] !== undefined && fm[k] !== null);
-  if (keys.length === 0) return body;
-
-  const lines = keys.map(k => {
-    const v = fm[k];
-    if (typeof v === 'string') return `${k}: ${v}`;
-    return `${k}: ${JSON.stringify(v)}`;
-  });
-  return `---\n${lines.join('\n')}\n---\n${body}`;
+  return serializeFrontmatter(fm, body);
 }
 
 /** Try to parse frontmatter from raw markdown. Returns null if YAML is invalid. */
 function tryParseFm(raw: string): { frontmatter: Record<string, unknown>; body: string } | null {
-  const match = raw.match(FRONTMATTER_RE);
-  if (!match) return { frontmatter: {}, body: raw };
-
-  try {
-    const fm: Record<string, unknown> = {};
-    const yamlBlock = match[1];
-    for (const line of yamlBlock.split('\n')) {
-      const colonIdx = line.indexOf(':');
-      if (colonIdx > 0) {
-        const key = line.slice(0, colonIdx).trim();
-        const value = line.slice(colonIdx + 1).trim();
-        try {
-          fm[key] = JSON.parse(value);
-        } catch {
-          fm[key] = value;
-        }
-      }
-    }
-    return { frontmatter: fm, body: match[2] };
-  } catch {
-    return null;
-  }
+  return tryParseFrontmatter(raw);
 }
 
 function formatAttachmentRef(filename: string, relativePath: string, mimeType: string): string {
@@ -386,6 +357,12 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
     const handleFrontmatterChange = useCallback((updated: Record<string, unknown>) => {
       setFrontmatter(updated);
       frontmatterRef.current = updated;
+      if (editorModeRef.current === 'raw') {
+        const parsed = tryParseFm(rawContentRef.current);
+        const nextRaw = serializeFm(updated, parsed?.body ?? rawContentRef.current);
+        setRawContent(nextRaw);
+        rawContentRef.current = nextRaw;
+      }
       markDirtyAndSave();
     }, [markDirtyAndSave]);
 
@@ -460,19 +437,20 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
         );
         updateThreads(next);
       },
+      updateFrontmatter: handleFrontmatterChange,
       replaceContent: (newDiskContent: string) => {
         // Strip frontmatter first for frontmatter-backed canvases, so the
         // comments split + merge operate on the body region (not the YAML block).
         let region = newDiskContent;
         if (hasFrontmatterRef.current) {
-          const m = newDiskContent.match(FRONTMATTER_RE);
-          if (m) {
-            const parsed = tryParseFm(newDiskContent);
-            if (parsed) {
-              setFrontmatter(parsed.frontmatter);
-              frontmatterRef.current = parsed.frontmatter;
-              region = parsed.body;
-            }
+          const parsed = tryParseFm(newDiskContent);
+          if (parsed) {
+            setFrontmatter(parsed.frontmatter);
+            frontmatterRef.current = parsed.frontmatter;
+            region = parsed.body;
+          } else {
+            setFrontmatter({});
+            frontmatterRef.current = {};
           }
         }
         const { body: diskBody, threads: diskThreads } = splitComments(region);
@@ -553,7 +531,7 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
         const sel = window.getSelection();
         return sel ? sel.toString() : '';
       },
-    }), [saveNow, applyProgrammaticContent, updateThreads, scheduleSave, buildFull, stripFm, onDirtyChange, getFullContent, handleToggleMode]);
+    }), [saveNow, applyProgrammaticContent, updateThreads, scheduleSave, buildFull, stripFm, onDirtyChange, getFullContent, handleToggleMode, handleFrontmatterChange]);
 
     // Cmd+S handler
     useEffect(() => {

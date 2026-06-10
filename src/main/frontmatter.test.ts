@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseFrontmatter, serializeFrontmatter, hasFrontmatter } from './frontmatter';
+import { parseFrontmatter, serializeFrontmatter, hasFrontmatter, tryParseFrontmatter } from './frontmatter';
 
 describe('frontmatter', () => {
   describe('parseFrontmatter', () => {
@@ -30,6 +30,13 @@ describe('frontmatter', () => {
       expect(result.frontmatter.name).toBe('test');
       expect(result.frontmatter.tags).toEqual(['a', 'b']);
       expect(result.body).toBe('Body');
+    });
+
+    it('parses linked skill arrays', () => {
+      const content = `---\nskills:\n  - missed-messages\n---\n# Missed Messages\n`;
+      const result = parseFrontmatter(content);
+      expect(result.frontmatter.skills).toEqual(['missed-messages']);
+      expect(result.body).toBe('# Missed Messages\n');
     });
 
     it('handles invalid YAML gracefully', () => {
@@ -83,6 +90,20 @@ describe('frontmatter', () => {
       expect(parsed.frontmatter.name).toBe('pdf-processing');
       expect(parsed.frontmatter.description).toBe('Extract text from PDFs');
       expect(parsed.body).toBe(body);
+    });
+
+    it('roundtrips array fields', () => {
+      const serialized = serializeFrontmatter({ skills: ['missed-messages'] }, '# Missed Messages\n');
+      const parsed = parseFrontmatter(serialized);
+      expect(parsed.frontmatter.skills).toEqual(['missed-messages']);
+      expect(parsed.body).toBe('# Missed Messages\n');
+    });
+  });
+
+  describe('tryParseFrontmatter', () => {
+    it('returns null for invalid YAML frontmatter', () => {
+      const content = `---\n: broken: yaml: [unclosed\n---\nBody`;
+      expect(tryParseFrontmatter(content)).toBeNull();
     });
   });
 

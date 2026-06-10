@@ -14,6 +14,7 @@ import {
   keyboardEventToAccelerator,
   modifierEventToAccelerator,
 } from './lib/hotkeys';
+import { parseFrontmatter } from '../shared/frontmatter';
 
 interface RecurrenceResult {
   should_recur: boolean;
@@ -3380,29 +3381,7 @@ async function openSkillEditor(skillId: string): Promise<void> {
 }
 
 async function saveSkillFromCanvas(skillId: string, content: string): Promise<void> {
-  // Parse frontmatter using the same regex the main process uses
-  const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
-  let frontmatter: Record<string, unknown> = {};
-  let body = content;
-
-  if (fmMatch) {
-    // Parse YAML key-value pairs, preserving non-string values
-    for (const line of fmMatch[1].split('\n')) {
-      const colonIdx = line.indexOf(':');
-      if (colonIdx > 0) {
-        const key = line.slice(0, colonIdx).trim();
-        const value = line.slice(colonIdx + 1).trim();
-        // Try to parse as JSON for arrays, booleans, numbers
-        try {
-          frontmatter[key] = JSON.parse(value);
-        } catch {
-          frontmatter[key] = value;
-        }
-      }
-    }
-    body = fmMatch[2];
-  }
-
+  const { frontmatter, body } = parseFrontmatter<Record<string, unknown>>(content);
   await whimAPI.writeSkill(skillId, frontmatter, body);
 }
 
@@ -5126,7 +5105,7 @@ async function unarchiveIntent(id: string): Promise<void> {
 (window as any).unarchiveIntent = unarchiveIntent;
 
 // ── Canvas view ─────────────────────────────────────────
-import { mountCanvas, unmountCanvas, getCanvasContent, saveCanvas as saveCanvasEditor, updateCanvasPresence, updateCanvasAgentThreadStatuses, updateCanvasAgentInteractions, updateCanvasDecorations, updateCanvasAgentUsers, addCanvasCommentReply, toggleCanvasMode, getCanvasEditorMode, replaceCanvasContent, appendCanvasLink, replaceCanvasText, getCanvasSelectedText } from './canvas/mount.tsx';
+import { mountCanvas, unmountCanvas, getCanvasContent, saveCanvas as saveCanvasEditor, updateCanvasPresence, updateCanvasAgentThreadStatuses, updateCanvasAgentInteractions, updateCanvasDecorations, updateCanvasAgentUsers, addCanvasCommentReply, updateCanvasFrontmatter, toggleCanvasMode, getCanvasEditorMode, replaceCanvasContent, appendCanvasLink, replaceCanvasText, getCanvasSelectedText } from './canvas/mount.tsx';
 import { mountCanvasWorkerPanel, unmountCanvasWorkerPanel, isCanvasChatPaneOpen, closeCanvasChatPane } from './canvas/worker-panel-mount.tsx';
 import type { CanvasAgentInteraction, CanvasPresence, CanvasUser, CanvasDecoration, CanvasThreadAgentStatus } from './canvas/types';
 
@@ -5348,20 +5327,9 @@ canvasSaveAsSkill.addEventListener('click', async () => {
   }
 
   // Parse frontmatter from canvas content if present, otherwise wrap content as skill body
-  const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
-  let frontmatter: Record<string, unknown> = { name, description: '' };
-  let body = content;
-  if (fmMatch) {
-    for (const line of fmMatch[1].split('\n')) {
-      const colonIdx = line.indexOf(':');
-      if (colonIdx > 0) {
-        const key = line.slice(0, colonIdx).trim();
-        const value = line.slice(colonIdx + 1).trim();
-        try { frontmatter[key] = JSON.parse(value); } catch { frontmatter[key] = value; }
-      }
-    }
-    body = fmMatch[2];
-  }
+  const parsed = parseFrontmatter<Record<string, unknown>>(content);
+  const frontmatter: Record<string, unknown> = { name, description: '', ...parsed.frontmatter };
+  const body = parsed.body;
   frontmatter.name = name;
 
   await whimAPI.writeSkill(result.id, frontmatter, body);
@@ -5373,33 +5341,12 @@ canvasSaveAsSkill.addEventListener('click', async () => {
 
 /** Parse the `skills` array from canvas frontmatter (YAML). */
 function parseLinkedSkillIds(content: string): string[] {
-  const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
-  if (!fmMatch) return [];
-  try {
-    // Look for skills: [...] in the YAML block
-    const yamlBlock = fmMatch[1];
-    const skillsMatch = yamlBlock.match(/^skills:\s*$/m);
-    if (skillsMatch) {
-      // Multi-line array form: skills:\n  - id1\n  - id2
-      const lines = yamlBlock.split('\n');
-      const idx = lines.findIndex(l => /^skills:\s*$/.test(l));
-      const ids: string[] = [];
-      for (let i = idx + 1; i < lines.length; i++) {
-        const m = lines[i].match(/^\s+-\s+(.+)$/);
-        if (m) ids.push(m[1].replace(/^['"]|['"]$/g, ''));
-        else break;
-      }
-      return ids;
-    }
-    // Inline form: skills: [id1, id2] or skills: ['id1', 'id2']
-    const inlineMatch = yamlBlock.match(/^skills:\s*\[([^\]]*)\]/m);
-    if (inlineMatch) {
-      return inlineMatch[1].split(',')
-        .map(s => s.trim().replace(/^['"]|['"]$/g, ''))
-        .filter(Boolean);
-    }
-  } catch { /* ignore parse errors */ }
-  return [];
+  const { frontmatter } = parseFrontmatter<{ skills?: unknown }>(content);
+  const skills = frontmatter.skills;
+  if (Array.isArray(skills)) {
+    return skills.filter((skill): skill is string => typeof skill === 'string' && skill.length > 0);
+  }
+  return typeof skills === 'string' && skills.length > 0 ? [skills] : [];
 }
 
 /** Update the `skills` frontmatter in canvas content and save. */
@@ -5407,47 +5354,15 @@ async function updateCanvasLinkedSkills(skillIds: string[]): Promise<void> {
   if (!canvasSpaceId) return;
 
   const content = getCanvasContent();
-  const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
-  let yamlBlock = '';
-  let body = content;
-
-  if (fmMatch) {
-    yamlBlock = fmMatch[1];
-    body = fmMatch[2];
-  }
-
-  // Remove existing skills field from YAML
-  const lines = yamlBlock.split('\n').filter(l => l.trim().length > 0);
-  const cleaned: string[] = [];
-  let skipItems = false;
-  for (const line of lines) {
-    if (/^skills:/.test(line)) {
-      skipItems = true;
-      continue;
-    }
-    if (skipItems && /^\s+-/.test(line)) continue;
-    skipItems = false;
-    cleaned.push(line);
-  }
-
-  // Add the updated skills field
+  const { frontmatter } = parseFrontmatter<Record<string, unknown>>(content);
+  const updatedFrontmatter = { ...frontmatter };
   if (skillIds.length > 0) {
-    cleaned.push(`skills:`);
-    for (const id of skillIds) {
-      cleaned.push(`  - ${id}`);
-    }
-  }
-
-  // Rebuild content
-  let newContent: string;
-  if (cleaned.length > 0) {
-    newContent = `---\n${cleaned.join('\n')}\n---\n${body}`;
+    updatedFrontmatter.skills = skillIds;
   } else {
-    newContent = body;
+    delete updatedFrontmatter.skills;
   }
 
-  // Update the editor content and save
-  replaceCanvasContent(newContent);
+  updateCanvasFrontmatter(updatedFrontmatter);
   canvasLinkedSkillIds = skillIds;
   renderSkillChips();
 }
@@ -5683,13 +5598,15 @@ async function openCanvas(spaceId: string, expanded = false): Promise<void> {
   }
 
   // Parse linked skills from canvas frontmatter and render chips
+  const parsedCanvas = parseFrontmatter<Record<string, unknown>>(result.content || '');
   canvasLinkedSkillIds = parseLinkedSkillIds(result.content || '');
   renderSkillChips();
 
   // Mount Documint editor
   mountCanvas(canvasRoot, {
     spaceId,
-    content: result.content || '',
+    content: parsedCanvas.body,
+    frontmatter: parsedCanvas.frontmatter,
     theme: currentTheme,
     personas: canvasPersonas,
     agentThreadStatuses: Array.from(canvasThreadAgentStatuses.values()),
@@ -6088,9 +6005,11 @@ async function enterPreview(commit: FolderCommit): Promise<void> {
   const spaceId = canvasSpaceId!;
   await unmountCanvas();
   const currentTheme = getResolvedTheme();
+  const parsedPreview = parseFrontmatter<Record<string, unknown>>(result.content);
   mountCanvas(canvasRoot, {
     spaceId,
-    content: result.content,
+    content: parsedPreview.body,
+    frontmatter: parsedPreview.frontmatter,
     theme: currentTheme,
     agentThreadStatuses: Array.from(canvasThreadAgentStatuses.values()),
     agentInteractions: Array.from(canvasAgentInteractions.values()),
@@ -6118,9 +6037,11 @@ async function exitPreview(): Promise<void> {
   await unmountCanvas();
   const currentTheme = getResolvedTheme();
   const canvasPersonas = await whimAPI.listPersonas().then(p => p || []);
+  const parsedSaved = parseFrontmatter<Record<string, unknown>>(savedContent || '');
   mountCanvas(canvasRoot, {
     spaceId,
-    content: savedContent || '',
+    content: parsedSaved.body,
+    frontmatter: parsedSaved.frontmatter,
     theme: currentTheme,
     personas: canvasPersonas,
     agentThreadStatuses: Array.from(canvasThreadAgentStatuses.values()),

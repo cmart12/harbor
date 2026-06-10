@@ -103,6 +103,10 @@ export function addCanvasCommentReply(threadId: string, body: string): void {
   canvasRef.current?.addCommentReply(threadId, body);
 }
 
+export function updateCanvasFrontmatter(frontmatter: Record<string, unknown>): void {
+  canvasRef.current?.updateFrontmatter(frontmatter);
+}
+
 export function toggleCanvasMode(): { mode: string; error?: string } {
   return canvasRef.current?.toggleMode() ?? { mode: 'rendered' };
 }
