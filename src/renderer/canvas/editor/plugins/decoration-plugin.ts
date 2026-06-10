@@ -3,6 +3,7 @@ import { Decoration, DecorationSet } from '@milkdown/kit/prose/view';
 import type { Node as ProseNode } from '@milkdown/kit/prose/model';
 import { $prose } from '@milkdown/kit/utils';
 import type { CanvasDecoration } from '../../types';
+import { safePluginApply } from './plugin-utils';
 
 export const decorationPluginKey = new PluginKey('whim-host-decorations');
 
@@ -61,14 +62,16 @@ export const hostDecorationPlugin = $prose(() => {
     state: {
       init: (_config, state) => ({ decorations: [], set: buildDecorationSet(state.doc, []) }),
       apply(tr, value, _oldState, newState): DecoState {
-        const meta = tr.getMeta(decorationPluginKey) as CanvasDecoration[] | undefined;
-        if (meta) {
-          return { decorations: meta, set: buildDecorationSet(newState.doc, meta) };
-        }
-        if (tr.docChanged && value.decorations.length > 0) {
-          return { decorations: value.decorations, set: buildDecorationSet(newState.doc, value.decorations) };
-        }
-        return value;
+        return safePluginApply('host-decorations', value, () => {
+          const meta = tr.getMeta(decorationPluginKey) as CanvasDecoration[] | undefined;
+          if (meta) {
+            return { decorations: meta, set: buildDecorationSet(newState.doc, meta) };
+          }
+          if (tr.docChanged && value.decorations.length > 0) {
+            return { decorations: value.decorations, set: buildDecorationSet(newState.doc, value.decorations) };
+          }
+          return value;
+        });
       },
     },
     props: {

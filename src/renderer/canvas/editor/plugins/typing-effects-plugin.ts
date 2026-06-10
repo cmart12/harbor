@@ -336,19 +336,31 @@ export const typingEffectsPlugin = $prose(() => {
           };
         }
 
-        const mapped = value.effects
-          .filter((effect) => !expired.has(effect.id))
-          .map((effect) => mapEffect(effect, tr, newState.doc))
-          .filter((effect): effect is TypingEffect => effect !== null);
-        const effects = tr.docChanged
-          ? [...mapped, ...collectNewEffects(tr, oldState, newState)]
-          : mapped;
+        try {
+          const mapped = value.effects
+            .filter((effect) => !expired.has(effect.id))
+            .map((effect) => mapEffect(effect, tr, newState.doc))
+            .filter((effect): effect is TypingEffect => effect !== null);
+          const effects = tr.docChanged
+            ? [...mapped, ...collectNewEffects(tr, oldState, newState)]
+            : mapped;
 
-        return {
-          effects,
-          set: buildSet(newState.doc, effects),
-          suppressNextDocChange,
-        };
+          return {
+            effects,
+            set: buildSet(newState.doc, effects),
+            suppressNextDocChange,
+          };
+        } catch (err) {
+          // Typing effects are purely cosmetic. This plugin's `apply` runs inside the
+          // ProseMirror transaction pipeline, so an uncaught throw here would break text
+          // entry, selection, and autosave. Fail safe to "no effects" instead.
+          console.error('[canvas editor] typing-effects apply failed:', err);
+          return {
+            effects: [],
+            set: DecorationSet.empty,
+            suppressNextDocChange,
+          };
+        }
       },
     },
     props: {

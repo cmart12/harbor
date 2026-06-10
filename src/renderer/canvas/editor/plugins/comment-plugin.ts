@@ -5,6 +5,7 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model';
 import { $prose } from '@milkdown/kit/utils';
 import type { CanvasThreadAgentStatus, CommentThread } from '../../types';
 import { flattenDoc, resolveThreadRange } from '../anchor';
+import { safePluginApply } from './plugin-utils';
 
 export const commentPluginKey = new PluginKey('whim-comments');
 
@@ -94,47 +95,49 @@ export const commentPlugin = $prose(() => {
         set: DecorationSet.empty,
       }),
       apply(tr, value, _oldState, newState): CommentPluginState {
-        const setThreads = tr.getMeta(SET_THREADS) as CommentThread[] | undefined;
-        const activeMeta = tr.getMeta(SET_ACTIVE) as { id: string | null } | undefined;
-        const agentStatusMeta = tr.getMeta(SET_AGENT_THREAD_STATUSES) as CanvasThreadAgentStatus[] | undefined;
+        return safePluginApply('comments', value, () => {
+          const setThreads = tr.getMeta(SET_THREADS) as CommentThread[] | undefined;
+          const activeMeta = tr.getMeta(SET_ACTIVE) as { id: string | null } | undefined;
+          const agentStatusMeta = tr.getMeta(SET_AGENT_THREAD_STATUSES) as CanvasThreadAgentStatus[] | undefined;
 
-        if (setThreads) {
-          const ranges = resolveRanges(newState.doc, setThreads);
-          return {
-            threads: setThreads,
-            agentStatuses: value.agentStatuses,
-            ranges,
-            activeId: value.activeId,
-            set: buildSet(newState.doc, ranges, value.activeId, value.agentStatuses),
-          };
-        }
+          if (setThreads) {
+            const ranges = resolveRanges(newState.doc, setThreads);
+            return {
+              threads: setThreads,
+              agentStatuses: value.agentStatuses,
+              ranges,
+              activeId: value.activeId,
+              set: buildSet(newState.doc, ranges, value.activeId, value.agentStatuses),
+            };
+          }
 
-        if (activeMeta) {
-          return {
-            ...value,
-            activeId: activeMeta.id,
-            set: buildSet(newState.doc, value.ranges, activeMeta.id, value.agentStatuses),
-          };
-        }
+          if (activeMeta) {
+            return {
+              ...value,
+              activeId: activeMeta.id,
+              set: buildSet(newState.doc, value.ranges, activeMeta.id, value.agentStatuses),
+            };
+          }
 
-        if (agentStatusMeta) {
-          return {
-            ...value,
-            agentStatuses: agentStatusMeta,
-            set: buildSet(newState.doc, value.ranges, value.activeId, agentStatusMeta),
-          };
-        }
+          if (agentStatusMeta) {
+            return {
+              ...value,
+              agentStatuses: agentStatusMeta,
+              set: buildSet(newState.doc, value.ranges, value.activeId, agentStatusMeta),
+            };
+          }
 
-        if (tr.docChanged && value.threads.length > 0) {
-          const ranges = resolveRanges(newState.doc, value.threads);
-          return {
-            ...value,
-            ranges,
-            set: buildSet(newState.doc, ranges, value.activeId, value.agentStatuses),
-          };
-        }
+          if (tr.docChanged && value.threads.length > 0) {
+            const ranges = resolveRanges(newState.doc, value.threads);
+            return {
+              ...value,
+              ranges,
+              set: buildSet(newState.doc, ranges, value.activeId, value.agentStatuses),
+            };
+          }
 
-        return value;
+          return value;
+        });
       },
     },
     props: {

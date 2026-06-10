@@ -4,6 +4,7 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model';
 import { $prose } from '@milkdown/kit/utils';
 import type { CanvasPresence } from '../../types';
 import { resolveCaretAnchor } from '../anchor';
+import { safePluginApply } from './plugin-utils';
 
 export const presencePluginKey = new PluginKey('whim-presence');
 export const SET_PRESENCE = 'whim-set-presence';
@@ -57,14 +58,16 @@ export const presencePlugin = $prose(() => {
     state: {
       init: () => ({ presence: [], set: DecorationSet.empty }),
       apply(tr, value, _oldState, newState): PresenceState {
-        const meta = tr.getMeta(SET_PRESENCE) as CanvasPresence[] | undefined;
-        if (meta) {
-          return { presence: meta, set: buildSet(newState.doc, meta) };
-        }
-        if (tr.docChanged && value.presence.length > 0) {
-          return { presence: value.presence, set: buildSet(newState.doc, value.presence) };
-        }
-        return value;
+        return safePluginApply('presence', value, () => {
+          const meta = tr.getMeta(SET_PRESENCE) as CanvasPresence[] | undefined;
+          if (meta) {
+            return { presence: meta, set: buildSet(newState.doc, meta) };
+          }
+          if (tr.docChanged && value.presence.length > 0) {
+            return { presence: value.presence, set: buildSet(newState.doc, value.presence) };
+          }
+          return value;
+        });
       },
     },
     props: {

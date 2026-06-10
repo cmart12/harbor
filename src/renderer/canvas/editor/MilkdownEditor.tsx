@@ -48,6 +48,31 @@ const MARK_COMMANDS = {
 } as const;
 
 /**
+ * Run a Milkdown listener / DOM-event callback with error isolation.
+ *
+ * This matters most for `selectionUpdated`, which runs *inside* the ProseMirror transaction
+ * `apply`: an uncaught throw there propagates out of `EditorState.apply`, aborting the whole
+ * transaction. The practical effect is catastrophic and exactly the reported symptom cluster
+ * — the edit is dropped, typing effects never run, autosave's debounce is never scheduled,
+ * and the selection toolbar never updates. Because the caret moves on almost every edit, a
+ * selection callback that throws on some doc/selection edge case bricks the editor for the
+ * whole session.
+ *
+ * `markdownUpdated` (debounced) and the focus/blur + DOM handlers are wrapped for the same
+ * defensive reason: these callbacks reach into `textBetween`, `selectionRect`, comment/
+ * mention detection and host callbacks, any of which can throw on an unexpected input.
+ * Swallow + log so one bad event can never disable these core canvas features.
+ */
+function runIsolated<T>(where: string, fn: () => T): T | undefined {
+  try {
+    return fn();
+  } catch (err) {
+    console.error(`[canvas editor] ${where} callback failed:`, err);
+    return undefined;
+  }
+}
+
+/**
  * Imperative surface the canvas wrapper drives. The editor is *uncontrolled*:
  * it is created once from `initialContent`; subsequent edits flow OUT through
  * `onContentChanged`, and host-initiated updates flow IN through these methods.
@@ -214,7 +239,7 @@ const MilkdownInner = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
             handlePaste: createImagePasteHandler(uploadFileRef),
             handleDOMEvents: {
               ...prev.handleDOMEvents,
-              click: (_view, event) => {
+              click: (_view, event) => runIsolated('linkClick', () => {
                 const target = event.target as HTMLElement | null;
                 const a = target?.closest?.('a') as HTMLAnchorElement | null;
                 if (!a) return false;
@@ -223,8 +248,8 @@ const MilkdownInner = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
                 event.preventDefault();
                 onLinkClickRef.current?.(href);
                 return true;
-              },
-              mouseover: (view, event) => {
+              }) ?? false,
+              mouseover: (view, event) => runIsolated('commentHover', () => {
                 if (commentTriggerRef.current !== 'hover-or-caret') return false;
                 const target = event.target as HTMLElement | null;
                 const el = target?.closest?.('.whim-comment') as HTMLElement | null;
@@ -237,21 +262,21 @@ const MilkdownInner = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
                   onCommentActivateRef.current?.(range.threadId, rect);
                 }
                 return false;
-              },
+              }) ?? false,
             },
           }));
           const l = ctx.get(listenerCtx);
-          l.markdownUpdated((_ctx, markdown) => {
+          l.markdownUpdated((_ctx, markdown) => runIsolated('markdownUpdated', () => {
             if (pendingEchoRef.current !== null) {
               const expected = pendingEchoRef.current;
               pendingEchoRef.current = null;
               if (markdown === expected) return; // swallow the programmatic echo
             }
             onChangeRef.current(markdown);
-          });
-          l.focus(() => onFocusRef.current?.());
-          l.blur(() => onBlurRef.current?.());
-          l.selectionUpdated((sctx, selection) => {
+          }));
+          l.focus(() => runIsolated('focus', () => onFocusRef.current?.()));
+          l.blur(() => runIsolated('blur', () => onBlurRef.current?.()));
+          l.selectionUpdated((sctx, selection) => runIsolated('selectionUpdated', () => {
             const view = sctx.get(editorViewCtx);
             const { from, to, empty } = selection;
             if (!empty) {
@@ -283,7 +308,7 @@ const MilkdownInner = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
             } else {
               onMentionQueryRef.current?.(null);
             }
-          });
+          }));
         })
         .use(commonmark)
         .use(gfm)

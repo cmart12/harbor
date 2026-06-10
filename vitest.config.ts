@@ -4,7 +4,7 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    include: ['src/**/*.test.ts'],
+    include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
     coverage: {
       include: ['src/main/**/*.ts'],
       exclude: ['src/main/main.ts', 'src/main/preload.ts'],
