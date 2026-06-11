@@ -22,11 +22,11 @@ if [ ! -f "$ENTITLEMENTS" ]; then
   exit 0
 fi
 
-# Patch Info.plist so macOS shows "Copilot Intent" in Privacy & Security
+# Patch Info.plist so macOS shows "whim" in Privacy & Security
 echo "[codesign] Patching Info.plist..."
-/usr/libexec/PlistBuddy -c "Set :CFBundleName 'Copilot Intent'" "$PLIST" 2>/dev/null
-/usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName 'Copilot Whim'" "$PLIST" 2>/dev/null || \
-  /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string 'Copilot Whim'" "$PLIST"
+/usr/libexec/PlistBuddy -c "Set :CFBundleName 'whim'" "$PLIST" 2>/dev/null
+/usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName 'whim'" "$PLIST" 2>/dev/null || \
+  /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string 'whim'" "$PLIST"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier 'com.copilot.tokens'" "$PLIST" 2>/dev/null
 
 echo "[codesign] Signing Electron.app with microphone entitlement..."
