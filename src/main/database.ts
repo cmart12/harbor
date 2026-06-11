@@ -174,6 +174,7 @@ function createSchema(database: Database.Database): void {
       source TEXT NOT NULL DEFAULT 'sdk',
       persona_handle TEXT,
       quoted_text TEXT,
+      comment_thread_id TEXT,
       run_location TEXT NOT NULL DEFAULT 'local',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
@@ -553,18 +554,20 @@ export function createAgentSession(session: AgentSession): void {
     source: session.source,
     persona_handle: session.persona_handle,
     quoted_text: session.quoted_text,
+    comment_thread_id: session.comment_thread_id ?? null,
     run_location: session.run_location,
     created_at: session.created_at,
     updated_at: session.updated_at,
   });
 
   db.prepare(
-    `INSERT INTO agent_sessions (id, session_id, space_id, prompt, status, summary, working_dir, source, persona_handle, quoted_text, run_location, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO agent_sessions (id, session_id, space_id, prompt, status, summary, working_dir, source, persona_handle, quoted_text, comment_thread_id, run_location, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     session.id, session.session_id, session.space_id, session.prompt,
     session.status, session.summary, session.working_dir, session.source,
-    session.persona_handle, session.quoted_text, session.run_location ?? 'local',
+    session.persona_handle, session.quoted_text, session.comment_thread_id ?? null,
+    session.run_location ?? 'local',
     session.created_at, session.updated_at,
   );
 }
@@ -584,14 +587,14 @@ export function updateAgentSessionStatus(id: string, status: string, summary?: s
 
 export function getAgentSession(id: string): AgentSession | null {
   return db.prepare(
-    `SELECT id, session_id, space_id, prompt, status, summary, working_dir, source, persona_handle, quoted_text, run_location, created_at, updated_at
+    `SELECT id, session_id, space_id, prompt, status, summary, working_dir, source, persona_handle, quoted_text, comment_thread_id, run_location, created_at, updated_at
      FROM agent_sessions WHERE id = ?`
   ).get(id) as AgentSession | undefined ?? null;
 }
 
 export function listAgentSessions(): AgentSession[] {
   return db.prepare(
-    `SELECT id, session_id, space_id, prompt, status, summary, working_dir, source, persona_handle, quoted_text, run_location, created_at, updated_at
+    `SELECT id, session_id, space_id, prompt, status, summary, working_dir, source, persona_handle, quoted_text, comment_thread_id, run_location, created_at, updated_at
      FROM agent_sessions ORDER BY created_at DESC`
   ).all() as AgentSession[];
 }

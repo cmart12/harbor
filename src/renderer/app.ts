@@ -184,6 +184,7 @@ interface WhimAPI {
   summarizeTitle(canvasContent: string): Promise<{ title: string | null }>;
   pasteFile(spaceId: string, filename: string, dataArray: number[]): Promise<{ success?: boolean; relativePath?: string; filename?: string; error?: string }>;
   openSpaceFolder(spaceId: string): Promise<void>;
+  getCanvasAgentState(spaceId: string): Promise<CanvasAgentStateSnapshot[]>;
   listAgents(spaceId: string): Promise<any[]>;
   quickLaunchAgent(prompt: string, personaHandle?: string): Promise<{ agentId?: string; sessionId?: string; error?: string }>;
   listAllAgents(): Promise<any[]>;
@@ -353,7 +354,7 @@ import {
 } from './state/ipc-bridge';
 import { mountLists } from './views/mount.tsx';
 import type { WhimAPI as PreloadWhimAPI } from '../main/preload';
-import type { Skill as SharedSkill } from '../shared/types';
+import type { Skill as SharedSkill, CanvasAgentStateSnapshot } from '../shared/types';
 
 // The local `interface WhimAPI` declared near the top of this file shadows the
 // preload's structural type; the IPC bridge accepts the preload version. Cast
@@ -5598,6 +5599,10 @@ async function openCanvas(spaceId: string, expanded = false): Promise<void> {
   canvasPageSpaceId = null;
   canvasPageName = null;
   canvasLinkedSkillIds = [];
+  // Clear any comment-thread agent state carried over from a previously-open
+  // canvas so this document's editor mounts with a clean slate; the authoritative
+  // state is rehydrated from the main process after mount.
+  resetCanvasAgentMaps();
   canvasSkillChips.classList.add('hidden');
   canvasSkillPicker.classList.add('hidden');
   canvasTitle.textContent = space.description;
@@ -5637,7 +5642,7 @@ async function openCanvas(spaceId: string, expanded = false): Promise<void> {
   canvasLinkedSkillIds = parseLinkedSkillIds(result.content || '');
   renderSkillChips();
 
-  // Mount Documint editor
+  // Mount the canvas editor
   mountCanvas(canvasRoot, {
     spaceId,
     content: parsedCanvas.body,
@@ -5686,6 +5691,11 @@ async function openCanvas(spaceId: string, expanded = false): Promise<void> {
 
   // Load initial agent activity decorations
   refreshAgentDecorations();
+
+  // Rehydrate comment-thread agents so the canvas shows any that are still
+  // alive/working (or failed and needing redeploy) after navigation, a pop-out,
+  // or an app restart.
+  void rehydrateCanvasAgents(spaceId);
 }
 
 async function openPage(spaceId: string, pageName: string): Promise<void> {
@@ -5694,6 +5704,8 @@ async function openPage(spaceId: string, pageName: string): Promise<void> {
   canvasPageSpaceId = spaceId;
   canvasPageName = pageName;
   const pageSpaceId = pageCanvasSpaceId(spaceId, pageName);
+  // Clean slate before mount; rehydrated from main after mount.
+  resetCanvasAgentMaps();
 
   canvasTitle.textContent = pageName;
   canvasTitle.contentEditable = 'false';
@@ -5733,6 +5745,8 @@ async function openPage(spaceId: string, pageName: string): Promise<void> {
       launchInlineMention(pageSpaceId, handle, lineMarkdown);
     },
   });
+
+  void rehydrateCanvasAgents(pageSpaceId);
 }
 
 async function openWorkspaceFile(filePath: string, title: string): Promise<void> {
@@ -6319,6 +6333,78 @@ function threadStatusLabel(status: CanvasThreadAgentStatus['status']): string {
 function syncCanvasAgentThreadStatuses(): void {
   updateCanvasAgentThreadStatuses(Array.from(canvasThreadAgentStatuses.values()));
   updateCanvasAgentInteractions(Array.from(canvasAgentInteractions.values()));
+}
+
+/** Drop all in-memory comment-thread agent state. Used when switching canvases
+ *  and as the first step of rehydration so a fresh canvas never inherits the
+ *  previously-open document's agents. Pure data reset — callers sync as needed. */
+function resetCanvasAgentMaps(): void {
+  canvasAgentPresence.clear();
+  canvasAgentUserMap.clear();
+  commentThreadAgents.clear();
+  commentThreadByAgent.clear();
+  canvasAgentRawStatus.clear();
+  canvasThreadAgentStatuses.clear();
+  canvasAgentInteractions.clear();
+}
+
+/**
+ * Rebuild the canvas's live agent state from the main process so a (re)mounted
+ * canvas shows its comment-thread agents as still alive — after in-app
+ * navigation, opening a pop-out window, or an app restart. The main-process
+ * snapshot is authoritative: it overlays the live registry on persisted
+ * sessions, so cloud agents that survived a restart appear active while local
+ * agents whose process is gone appear failed ("needs redeploy").
+ */
+async function rehydrateCanvasAgents(spaceId: string): Promise<void> {
+  let snapshot: CanvasAgentStateSnapshot[];
+  try {
+    snapshot = await whimAPI.getCanvasAgentState(spaceId);
+  } catch {
+    return;
+  }
+  // Bail if the user navigated to a different canvas while we were fetching.
+  if (currentCanvasAgentSpaceId() !== spaceId) return;
+
+  resetCanvasAgentMaps();
+
+  for (const agent of snapshot) {
+    const { agentId, threadId, personaHandle, status } = agent;
+    commentThreadAgents.add(agentId);
+    commentThreadByAgent.set(agentId, threadId);
+    canvasAgentRawStatus.set(
+      agentId,
+      status === 'waiting' ? 'waiting-approval' : status === 'failed' ? 'failed' : 'running',
+    );
+
+    canvasThreadAgentStatuses.set(threadId, {
+      threadId,
+      agentId,
+      status,
+      label: threadStatusLabel(status),
+    });
+
+    // Show a live presence cursor only for agents that are still alive.
+    if (status === 'starting' || status === 'active' || status === 'waiting') {
+      canvasAgentPresence.set(agentId, {
+        userId: agentId,
+        color: agentColor(personaHandle),
+        cursor: { threadId },
+        status: presenceStatusLabel(status === 'waiting' ? 'waiting-approval' : 'running'),
+      });
+      canvasAgentUserMap.set(agentId, { id: agentId, username: personaHandle });
+    }
+
+    for (const interaction of agent.pendingInteractions) {
+      canvasAgentInteractions.set(
+        canvasInteractionKey(interaction.kind, interaction.requestId),
+        interaction as CanvasAgentInteraction,
+      );
+    }
+  }
+
+  syncCanvasPresence();
+  syncCanvasAgentThreadStatuses();
 }
 
 function updateCommentThreadAgentStatus(agentId: string, rawStatus?: string, explicitThreadId?: string | null): void {
@@ -7365,13 +7451,7 @@ if (isCanvasMode) {
       await whimAPI.closeCanvas(canvasSpaceId, finalContent);
       canvasSpaceId = null;
     }
-    canvasAgentPresence.clear();
-    canvasAgentUserMap.clear();
-    commentThreadAgents.clear();
-    commentThreadByAgent.clear();
-    canvasAgentRawStatus.clear();
-    canvasThreadAgentStatuses.clear();
-    canvasAgentInteractions.clear();
+    resetCanvasAgentMaps();
     syncCanvasAgentThreadStatuses();
   }
 

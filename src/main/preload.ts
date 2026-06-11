@@ -11,7 +11,7 @@ import type {
   WebRemoteState,
 } from '../shared/ipc-contract';
 import type { ChatEvent } from '../shared/chat-types';
-import type { AgentAnchor, RecurrenceResult, RecallMatch, Skill, SkillContent, SkillScheduleFrequency, CanvasTarget, UpdateState } from '../shared/types';
+import type { AgentAnchor, RecurrenceResult, RecallMatch, Skill, SkillContent, SkillScheduleFrequency, CanvasTarget, UpdateState, CanvasAgentStateSnapshot } from '../shared/types';
 
 const { contextBridge, ipcRenderer } = require('electron');
 
@@ -114,6 +114,8 @@ export interface WhimAPI {
   pasteFile(spaceId: string, filename: string, dataArray: number[]): Promise<IpcCommandResult<'canvas:paste-file'>>;
   readFile(spaceId: string, relativePath: string): Promise<{ data?: number[]; mimeType?: string; error?: string }>;
   openSpaceFolder(spaceId: string): Promise<void>;
+  /** Live state of comment-thread agents in a space, for rehydrating a (re)mounted canvas. */
+  getCanvasAgentState(spaceId: string): Promise<CanvasAgentStateSnapshot[]>;
 
   // ── Agent ────────────────────────────────────────────────
   launchAgent(spaceId: string, selectedText: string, anchor: AgentAnchor, options?: { repo?: string; model?: string }): Promise<IpcCommandResult<'agent:launch'>>;
@@ -349,6 +351,8 @@ const api: WhimAPI = {
     ipcRenderer.invoke('canvas:read-file', spaceId, relativePath),
   openSpaceFolder: (spaceId) =>
     ipcRenderer.invoke('canvas:open-folder', spaceId),
+  getCanvasAgentState: (spaceId) =>
+    ipcRenderer.invoke('canvas:get-agent-state', spaceId),
 
   // ── Agent ────────────────────────────────────────────────
   launchAgent: (spaceId, selectedText, anchor, options?) =>

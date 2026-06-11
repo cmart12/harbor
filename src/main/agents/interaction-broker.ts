@@ -4,6 +4,7 @@ import * as crypto from 'crypto';
 import type { AgentNotifier } from './agent-notifier';
 import type { AgentPersistence } from './agent-persistence';
 import type { AgentRecord } from './agent-registry';
+import type { PendingCanvasInteraction } from '../../shared/types';
 import {
   checkPathScope,
   normalizePath,
@@ -82,6 +83,14 @@ export class InteractionBroker {
   /** Pending sandbox-block resolutions, keyed by requestId. */
   private sandboxBlockCallbacks = new Map<string, (resolution: SandboxResolution) => void>();
   private interactionContexts = new Map<string, { agentId: string; spaceId?: string; threadId?: string | null }>();
+  /**
+   * Full payloads for interactions still awaiting the user, keyed by requestId.
+   * Only populated for comment-thread agents (those with a threadId), since
+   * that's the only state a canvas needs to rehydrate.  Entries are removed when
+   * the interaction resolves or the agent is torn down.  Lets the main process
+   * hand a fresh canvas a complete snapshot of in-flight prompts.
+   */
+  private pendingCanvasInteractions = new Map<string, PendingCanvasInteraction>();
 
   constructor(
     private notifier: AgentNotifier,
@@ -111,6 +120,21 @@ export class InteractionBroker {
       spaceId: record.spaceId,
       threadId: record.commentContext?.threadId,
     });
+    if (record.commentContext?.threadId) {
+      this.pendingCanvasInteractions.set(requestId, {
+        kind: 'sandbox_block',
+        agentId: record.agentId,
+        requestId,
+        source: req.source,
+        blockKind: req.kind,
+        toolName: req.toolName,
+        target: req.target,
+        intention: req.intention,
+        allowedDecisions: req.allowedDecisions,
+        layer: req.layer,
+        ...(record.personaHandle ? { personaHandle: record.personaHandle } : {}),
+      });
+    }
 
     this.notifier.notifyRenderer('agent:sandbox-blocked', payload);
     this.notifier.notifyRenderer(`chat:event:${record.agentId}`, {
@@ -144,6 +168,7 @@ export class InteractionBroker {
     if (cb) {
       this.sandboxBlockCallbacks.delete(requestId);
       this.interactionContexts.delete(requestId);
+      this.pendingCanvasInteractions.delete(requestId);
       cb({ decision });
     } else {
       console.warn(`[InteractionBroker] No sandbox-block callback for requestId=${requestId}`);
@@ -463,6 +488,16 @@ export class InteractionBroker {
         spaceId: record.spaceId,
         threadId: record.commentContext?.threadId,
       });
+      if (record.commentContext?.threadId) {
+        this.pendingCanvasInteractions.set(requestId, {
+          kind: 'approval',
+          agentId: record.agentId,
+          requestId,
+          permissionKind: request.kind || 'permission',
+          intention,
+          path,
+        });
+      }
       this.persistence.updateStatus(record);
 
       this.notifier.notifyRenderer('agent:approval-needed', {
@@ -539,6 +574,17 @@ export class InteractionBroker {
       : { agentId, spaceId: agentOrRecord.spaceId, threadId: agentOrRecord.commentContext?.threadId };
     const requestId = crypto.randomUUID();
     this.interactionContexts.set(requestId, context);
+    const userInputThreadId = (context as { threadId?: string | null }).threadId;
+    if (userInputThreadId) {
+      this.pendingCanvasInteractions.set(requestId, {
+        kind: 'user_input',
+        agentId,
+        requestId,
+        question: request.question,
+        choices: request.choices,
+        allowFreeform: request.allowFreeform,
+      });
+    }
 
     this.notifier.notifyRenderer(`chat:event:${agentId}`, {
       type: 'user_input.requested',
@@ -588,6 +634,17 @@ export class InteractionBroker {
         spaceId: record.spaceId,
         threadId: record.commentContext?.threadId,
       });
+      if (record.commentContext?.threadId) {
+        this.pendingCanvasInteractions.set(requestId, {
+          kind: 'elicitation',
+          agentId: record.agentId,
+          requestId,
+          message: context.message,
+          requestedSchema: context.requestedSchema,
+          mode: context.mode,
+          elicitationSource: context.elicitationSource,
+        });
+      }
       this.notifier.notifyRenderer('agent:elicitation-requested', {
         agentId: record.agentId,
         requestId,
@@ -641,6 +698,7 @@ export class InteractionBroker {
       threadId: context?.threadId,
     });
     this.interactionContexts.delete(requestId);
+    this.pendingCanvasInteractions.delete(requestId);
   }
 
   respondToUserInput(agentId: string, requestId: string, answer: string, wasFreeform: boolean): void {
@@ -665,6 +723,7 @@ export class InteractionBroker {
       threadId: context?.threadId,
     });
     this.interactionContexts.delete(requestId);
+    this.pendingCanvasInteractions.delete(requestId);
   }
 
   respondToElicitation(agentId: string, requestId: string, action: 'accept' | 'decline' | 'cancel', content?: Record<string, unknown>): void {
@@ -689,6 +748,7 @@ export class InteractionBroker {
       threadId: context?.threadId,
     });
     this.interactionContexts.delete(requestId);
+    this.pendingCanvasInteractions.delete(requestId);
   }
 
   /** Deny and clean up all pending approval callbacks for a given agent. */
@@ -699,6 +759,7 @@ export class InteractionBroker {
         this.approvalCallbacks.delete(requestId);
         cb(false);
       }
+      this.pendingCanvasInteractions.delete(requestId);
     }
     record.pendingApprovals.clear();
     record.pendingApprovalId = null;
@@ -729,5 +790,23 @@ export class InteractionBroker {
       cb({ decision: 'allow-once' });
       this.sandboxBlockCallbacks.delete(requestId);
     }
+
+    // Drop any retained canvas-interaction snapshots for this agent.
+    for (const [requestId, interaction] of this.pendingCanvasInteractions.entries()) {
+      if (interaction.agentId === record.agentId) this.pendingCanvasInteractions.delete(requestId);
+    }
+  }
+
+  /**
+   * Snapshot the interactions still awaiting the user for a given agent.
+   * Used by `canvas:get-agent-state` so a freshly mounted canvas can rehydrate
+   * in-flight approvals/prompts that were emitted while it wasn't listening.
+   */
+  snapshotPendingInteractions(agentId: string): PendingCanvasInteraction[] {
+    const out: PendingCanvasInteraction[] = [];
+    for (const interaction of this.pendingCanvasInteractions.values()) {
+      if (interaction.agentId === agentId) out.push(interaction);
+    }
+    return out;
   }
 }

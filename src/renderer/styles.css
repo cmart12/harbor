@@ -4661,7 +4661,7 @@ body.dark .skill-picker-desc {
   50% { box-shadow: 0 0 0 2px rgba(124, 102, 220, 0.25); }
 }
 
-/* Documint-inspired typing effects */
+/* Canvas typing effects */
 .markdown-canvas-container .whim-typing-highlight {
   border-radius: 2px;
   animation: whim-typing-highlight 520ms ease-out both;

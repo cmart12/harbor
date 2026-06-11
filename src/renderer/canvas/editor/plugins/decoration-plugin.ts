@@ -9,8 +9,8 @@ export const decorationPluginKey = new PluginKey('whim-host-decorations');
 
 /**
  * Build an inline DecorationSet by scanning the document's text blocks for each
- * host-provided regex pattern. Mirrors documint's `decorations` prop: regex
- * highlight that is presentation-only and never serialized to markdown.
+ * host-provided regex pattern. Mirrors the previous editor's `decorations` prop:
+ * regex highlight that is presentation-only and never serialized to markdown.
  */
 function buildDecorationSet(doc: ProseNode, decorations: CanvasDecoration[]): DecorationSet {
   if (decorations.length === 0) return DecorationSet.empty;

@@ -194,11 +194,12 @@ function applyEvent(db: Database.Database, event: LogEvent): void {
       const source = d.source === 'cloud' ? 'cca' : (d.source ?? 'sdk');
       const runLocation = d.run_location === 'cloud' ? 'cloud' : 'local';
       db.prepare(
-        `INSERT OR REPLACE INTO agent_sessions (id, session_id, space_id, prompt, status, summary, working_dir, source, persona_handle, run_location, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT OR REPLACE INTO agent_sessions (id, session_id, space_id, prompt, status, summary, working_dir, source, persona_handle, quoted_text, comment_thread_id, run_location, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(
         d.id, d.session_id, d.space_id ?? null, d.prompt, d.status ?? 'running',
         d.summary ?? '', d.working_dir ?? null, source, d.persona_handle ?? null,
+        d.quoted_text ?? null, d.comment_thread_id ?? null,
         runLocation, d.created_at, d.updated_at,
       );
       break;
@@ -377,12 +378,13 @@ function applyEvent(db: Database.Database, event: LogEvent): void {
       if (Array.isArray(d.agent_sessions)) {
         for (const a of d.agent_sessions) {
           db.prepare(
-            `INSERT OR REPLACE INTO agent_sessions (id, session_id, space_id, prompt, status, summary, working_dir, source, persona_handle, quoted_text, run_location, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            `INSERT OR REPLACE INTO agent_sessions (id, session_id, space_id, prompt, status, summary, working_dir, source, persona_handle, quoted_text, comment_thread_id, run_location, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
           ).run(
             a.id, a.session_id, a.space_id ?? null, a.prompt,
             a.status ?? 'completed', a.summary ?? '', a.working_dir ?? null,
             a.source ?? 'sdk', a.persona_handle ?? null, a.quoted_text ?? null,
+            a.comment_thread_id ?? null,
             a.run_location === 'cloud' ? 'cloud' : 'local',
             a.created_at, a.updated_at,
           );

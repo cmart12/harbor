@@ -799,6 +799,35 @@ export async function disableSandboxForSession(agentId: string): Promise<void> {
   }
 }
 
+/**
+ * Reconstruct a minimal {@link CommentAgentContext} from a persisted session so
+ * a resumed/restarted comment agent keeps routing live events (status, presence,
+ * replies, interactions) to its canvas comment thread.  Only `comment_thread_id`,
+ * `persona_handle`, `quoted_text`, and `prompt` survive persistence; the anchor
+ * prefix/suffix and pre-edit canvas hash are not persisted, so anchor is left
+ * empty and `canvasHashBefore` is '' (which disables completion-time change
+ * detection — the reply falls back to the agent summary, which is correct after
+ * a restart). Returns `undefined` for non-comment agents.
+ */
+function commentContextFromPersisted(
+  persisted: import('../../shared/types').AgentSession,
+  workingDir: string,
+): import('./agent-registry').CommentAgentContext | undefined {
+  if (!persisted.comment_thread_id) return undefined;
+  return {
+    threadId: persisted.comment_thread_id,
+    personaHandle: persisted.persona_handle ?? '',
+    personaName: persisted.persona_handle ?? '',
+    commentBody: persisted.prompt,
+    quotedText: persisted.quoted_text ?? '',
+    anchor: {},
+    canvasHashBefore: '',
+    canvasPath: path.join(workingDir, 'canvas.md'),
+    documentDisplayName: 'canvas.md',
+    documentLabel: 'canvas document',
+  };
+}
+
 /** Attempt to resume a historical agent by restoring its SDK session.
  *  Returns 'resumed' if the original session was restored, 'restarted' if a
  *  new session was created because the original expired, or false on failure. */
@@ -878,6 +907,9 @@ async function resumeAgentSession(agentId: string): Promise<'resumed' | 'restart
       summary: persisted.summary || 'Resumed',
       runLocation: isCloud ? 'cloud' : 'local',
       ...(persisted.persona_handle ? { personaHandle: persisted.persona_handle } : {}),
+      ...(commentContextFromPersisted(persisted, workingDir)
+        ? { commentContext: commentContextFromPersisted(persisted, workingDir) }
+        : {}),
     };
     registry.set(agentId, record);
 
@@ -1110,6 +1142,9 @@ async function restartExpiredSession(
       // never had a cloud counterpart.
       runLocation: 'local',
       ...(persisted.persona_handle ? { personaHandle: persisted.persona_handle } : {}),
+      ...(commentContextFromPersisted(persisted, workingDir)
+        ? { commentContext: commentContextFromPersisted(persisted, workingDir) }
+        : {}),
     };
     registry.set(agentId, record);
 

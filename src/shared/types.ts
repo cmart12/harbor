@@ -40,6 +40,13 @@ export interface AgentSession {
   persona_handle: string | null;
   quoted_text: string | null;
   /**
+   * For agents launched from a canvas comment, the id of the comment thread
+   * they're bound to.  Persisted so the thread↔agent link survives navigation,
+   * pop-out windows, and app restarts — the renderer rehydrates a canvas's live
+   * agents from this on mount.  `null`/absent for non-comment agents.
+   */
+  comment_thread_id?: string | null;
+  /**
    * Where the agent's runtime executes.  `'local'` is the default and
    * indicates a session whose worker dies when this app process exits.
    * `'cloud'` indicates a session whose worker continues to run remotely
@@ -50,6 +57,73 @@ export interface AgentSession {
   run_location: 'local' | 'cloud';
   created_at: string;
   updated_at: string;
+}
+
+/**
+ * A canvas comment-thread agent interaction that is currently awaiting the
+ * user (approval, question, elicitation, or sandbox block).  Captured by the
+ * interaction broker so a freshly mounted canvas — after navigation, opening a
+ * pop-out window, or app restart — can rehydrate the pending prompt instead of
+ * losing it.  Mirrors the renderer's `CanvasAgentInteraction` union shape minus
+ * the resolved fields (these are, by definition, unresolved).
+ */
+export type PendingCanvasInteraction =
+  | {
+      kind: 'approval';
+      agentId: string;
+      requestId: string;
+      permissionKind: string;
+      intention?: string;
+      path?: string;
+    }
+  | {
+      kind: 'user_input';
+      agentId: string;
+      requestId: string;
+      question: string;
+      choices?: string[];
+      allowFreeform?: boolean;
+    }
+  | {
+      kind: 'elicitation';
+      agentId: string;
+      requestId: string;
+      message: string;
+      requestedSchema?: unknown;
+      mode?: 'form' | 'url';
+      elicitationSource?: string;
+    }
+  | {
+      kind: 'sandbox_block';
+      agentId: string;
+      requestId: string;
+      source: 'permission' | 'pre-tool' | 'post-tool-shell';
+      blockKind: 'read' | 'write' | 'shell' | 'mcp' | 'url' | 'web-fetch';
+      toolName?: string;
+      target: string;
+      intention?: string;
+      allowedDecisions?: Array<'allow-once' | 'allow-for-session' | 'disable'>;
+      layer?: string;
+      personaHandle?: string;
+    };
+
+/**
+ * Snapshot of a single comment-thread agent's live state for a canvas, returned
+ * by the `canvas:get-agent-state` IPC so the renderer can rehydrate presence,
+ * thread status, and pending interactions when a canvas (re)mounts.
+ */
+export interface CanvasAgentStateSnapshot {
+  agentId: string;
+  threadId: string;
+  personaHandle: string;
+  /** Stable presence color derived from the persona handle. */
+  color?: string;
+  /** Coarse liveness used to label the thread: cloud agents that survived a
+   *  restart are 'active'; local agents whose process is gone are 'failed'. */
+  status: 'starting' | 'active' | 'waiting' | 'completed' | 'failed';
+  /** Content-addressable text anchor for the presence cursor, when known. */
+  presenceAnchor?: { prefix?: string; suffix?: string };
+  pendingInteractions: PendingCanvasInteraction[];
 }
 
 /**

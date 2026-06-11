@@ -132,7 +132,7 @@ export interface AppConfig {
   webRemoteToken: string;
   webRemoteBindAddresses: string[];
   hotkeys: Partial<HotkeyConfig>;   // user hotkey overrides (missing keys fall back to DEFAULT_HOTKEYS)
-  commentTrigger: 'hover-or-caret' | 'caret'; // how Documint surfaces comment threads
+  commentTrigger: 'hover-or-caret' | 'caret'; // how the canvas surfaces comment threads
 }
 
 const CONFIG_PATH = path.join(app.getPath('userData'), 'config.json');

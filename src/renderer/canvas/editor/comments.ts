@@ -1,8 +1,12 @@
 import type { CommentThread } from '../types';
 
-const COMMENTS_START = ':::documint-comments';
-// Matches the fenced comments directive block wherever it appears in the body.
-const COMMENTS_BLOCK_RE = /:::documint-comments[ \t]*\r?\n([\s\S]*?)\r?\n:::[ \t]*\r?\n?/;
+const COMMENTS_START = ':::whim-comments';
+// Legacy marker written by the pre-Milkdown editor. Still read for backward
+// compatibility; rewritten to COMMENTS_START on the next save.
+const LEGACY_COMMENTS_START = ':::documint-comments';
+// Matches the fenced comments directive block wherever it appears in the body,
+// accepting both the current and legacy markers.
+const COMMENTS_BLOCK_RE = /:::(?:whim|documint)-comments[ \t]*\r?\n([\s\S]*?)\r?\n:::[ \t]*\r?\n?/;
 
 export interface SplitContent {
   body: string;
@@ -10,13 +14,16 @@ export interface SplitContent {
 }
 
 /**
- * Separate the editor body from the embedded `:::documint-comments` block.
+ * Separate the editor body from the embedded `:::whim-comments` block.
  * The block is kept out of the WYSIWYG editor (which can't parse the directive)
- * and round-tripped on save by {@link joinComments}. Format is unchanged from
- * documint for backward compatibility with existing documents.
+ * and round-tripped on save by {@link joinComments}. The legacy
+ * `:::documint-comments` marker is still recognized for backward compatibility
+ * and is upgraded to `:::whim-comments` the next time the document is saved.
  */
 export function splitComments(content: string): SplitContent {
-  if (!content.includes(COMMENTS_START)) return { body: content, threads: [] };
+  if (!content.includes(COMMENTS_START) && !content.includes(LEGACY_COMMENTS_START)) {
+    return { body: content, threads: [] };
+  }
 
   const match = content.match(COMMENTS_BLOCK_RE);
   if (!match) return { body: content, threads: [] };
@@ -55,7 +62,7 @@ export function extractMentions(body: string, knownHandles: readonly string[]): 
 }
 
 let threadCounter = 0;
-/** Generate a stable-enough thread id (matches documint's loose id shape). */
+/** Generate a stable-enough thread id. */
 export function newThreadId(): string {
   threadCounter += 1;
   return `c-${Date.now().toString(36)}-${threadCounter.toString(36)}`;

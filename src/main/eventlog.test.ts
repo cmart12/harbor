@@ -64,6 +64,7 @@ function createSchema(db: Database.Database): void {
       source TEXT NOT NULL DEFAULT 'sdk',
       persona_handle TEXT,
       quoted_text TEXT,
+      comment_thread_id TEXT,
       run_location TEXT NOT NULL DEFAULT 'local',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
@@ -865,6 +866,43 @@ describe('replayLog', () => {
       replayLog(logRoot, db);
       const sess = db.prepare('SELECT * FROM agent_sessions WHERE id = ?').get('as4') as any;
       expect(sess.run_location).toBe('cloud');
+    });
+
+    it('persists comment_thread_id and quoted_text when present on the event', () => {
+      writeLog([{
+        ts: '2024-01-01T00:00:00.000Z',
+        op: 'agent_session.created',
+        data: {
+          id: 'as5', session_id: 'sid-5', prompt: 'Comment event', status: 'running',
+          summary: '', working_dir: '/ws',
+          persona_handle: 'reviewer',
+          quoted_text: 'the quick brown fox',
+          comment_thread_id: 'c-thread-1',
+          created_at: '2024-01-01T00:00:00.000Z',
+          updated_at: '2024-01-01T00:00:00.000Z',
+        },
+      }]);
+
+      replayLog(logRoot, db);
+      const sess = db.prepare('SELECT * FROM agent_sessions WHERE id = ?').get('as5') as any;
+      expect(sess.quoted_text).toBe('the quick brown fox');
+      expect(sess.comment_thread_id).toBe('c-thread-1');
+    });
+
+    it('defaults comment_thread_id to null when missing (back-compat)', () => {
+      writeLog([{
+        ts: '2024-01-01T00:00:00.000Z',
+        op: 'agent_session.created',
+        data: {
+          id: 'as6', session_id: 'sid-6', prompt: 'No thread', status: 'running',
+          created_at: '2024-01-01T00:00:00.000Z',
+          updated_at: '2024-01-01T00:00:00.000Z',
+        },
+      }]);
+
+      replayLog(logRoot, db);
+      const sess = db.prepare('SELECT * FROM agent_sessions WHERE id = ?').get('as6') as any;
+      expect(sess.comment_thread_id).toBeNull();
     });
   });
 

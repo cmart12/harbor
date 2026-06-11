@@ -105,7 +105,7 @@ Runs `whisper-tiny.en` locally via `@huggingface/transformers`. Pre-loaded on st
 
 ### canvas/MarkdownCanvas.tsx — Markdown Editor
 
-Milkdown (ProseMirror + remark) wrapper: auto-save, file attachments, @mention agent deployment, agent presence indicators, and multi-line comment threads. The Milkdown integration lives under `canvas/editor/` (the editor component plus custom ProseMirror plugins for comments, mentions, presence, and decorations). Comments are stored inline in the markdown via a `:::documint-comments` block for backward compatibility.
+Milkdown (ProseMirror + remark) wrapper: auto-save, file attachments, @mention agent deployment, agent presence indicators, and multi-line comment threads. The Milkdown integration lives under `canvas/editor/` (the editor component plus custom ProseMirror plugins for comments, mentions, presence, and decorations). Comments are stored inline in the markdown via a `:::whim-comments` block (the legacy `:::documint-comments` marker is still read and upgraded on the next save).
 
 ### chat/ — Agent Chat UI
 

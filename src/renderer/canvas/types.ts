@@ -1,7 +1,7 @@
-// Local canvas editor types. These replace the types previously imported from
-// `@patniko/documint`. They are intentionally framework-agnostic so the rest of
-// the app (app.ts, mount.tsx) depends on the canvas contract, not on the editor
-// implementation underneath (now Milkdown / ProseMirror).
+// Local canvas editor types. These replace the types previously provided by the
+// pre-Milkdown editor library. They are intentionally framework-agnostic so the
+// rest of the app (app.ts, mount.tsx) depends on the canvas contract, not on the
+// editor implementation underneath (now Milkdown / ProseMirror).
 
 export const ANCHOR_KINDS = ['text', 'code', 'tableCell'] as const;
 export type AnchorKind = (typeof ANCHOR_KINDS)[number];

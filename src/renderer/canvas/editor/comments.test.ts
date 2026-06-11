@@ -16,8 +16,8 @@ describe('comments serialization', () => {
     expect(threads).toEqual([]);
   });
 
-  it('splits out an embedded :::documint-comments block', () => {
-    const content = `# Doc\n\nBody text.\n\n:::documint-comments\n${JSON.stringify([thread], null, 2)}\n:::\n`;
+  it('splits out an embedded :::whim-comments block', () => {
+    const content = `# Doc\n\nBody text.\n\n:::whim-comments\n${JSON.stringify([thread], null, 2)}\n:::\n`;
     const { body, threads } = splitComments(content);
     expect(body).toBe('# Doc\n\nBody text.');
     expect(threads).toHaveLength(1);
@@ -32,18 +32,34 @@ describe('comments serialization', () => {
   it('round-trips body + threads through join -> split', () => {
     const body = '# Doc\n\nBody text with detail.';
     const joined = joinComments(body, [thread]);
-    expect(joined).toContain(':::documint-comments');
+    expect(joined).toContain(':::whim-comments');
     const back = splitComments(joined);
     expect(back.body).toBe(body);
     expect(back.threads).toEqual([thread]);
   });
 
-  it('preserves the documint marker for backward compatibility', () => {
-    expect(joinComments('x', [thread])).toContain(':::documint-comments');
+  it('writes the whim-comments marker on save', () => {
+    expect(joinComments('x', [thread])).toContain(':::whim-comments');
+  });
+
+  it('still reads a legacy :::documint-comments block', () => {
+    const content = `# Doc\n\nBody text.\n\n:::documint-comments\n${JSON.stringify([thread], null, 2)}\n:::\n`;
+    const { body, threads } = splitComments(content);
+    expect(body).toBe('# Doc\n\nBody text.');
+    expect(threads).toHaveLength(1);
+    expect(threads[0].id).toBe('c-1');
+  });
+
+  it('upgrades a legacy block to the whim-comments marker on the next save', () => {
+    const legacy = `# Doc\n\nBody.\n\n:::documint-comments\n${JSON.stringify([thread], null, 2)}\n:::\n`;
+    const { body, threads } = splitComments(legacy);
+    const rejoined = joinComments(body, threads);
+    expect(rejoined).toContain(':::whim-comments');
+    expect(rejoined).not.toContain(':::documint-comments');
   });
 
   it('leaves malformed comment blocks inline rather than dropping data', () => {
-    const content = '# Doc\n\n:::documint-comments\n{ not valid json\n:::\n';
+    const content = '# Doc\n\n:::whim-comments\n{ not valid json\n:::\n';
     const { body, threads } = splitComments(content);
     expect(threads).toEqual([]);
     expect(body).toBe(content);

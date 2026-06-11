@@ -16,7 +16,7 @@ export interface FlatDoc {
  * Flatten a document to plain text with a per-character position map. Text
  * blocks are separated by '\n'. This lets us resolve content-addressable
  * anchors (quote + prefix/suffix) back to ProseMirror ranges, self-repairing
- * after edits the way documint's quote matching did.
+ * after edits the way the previous editor's quote matching did.
  */
 export function flattenDoc(doc: ProseNode): FlatDoc {
   let text = '';

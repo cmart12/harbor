@@ -117,6 +117,7 @@ export async function launchCommentAgent(
       source: 'sdk',
       persona_handle: persona.handle,
       quoted_text: quotedText || null,
+      comment_thread_id: threadId,
       run_location: isCloudSandbox ? 'cloud' : 'local',
       created_at: now,
       updated_at: now,

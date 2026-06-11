@@ -483,6 +483,36 @@ describe('database', () => {
       expect(getAgentSession('nonexistent')).toBeNull();
     });
 
+    it('persists and reads back comment_thread_id for comment-thread agents', () => {
+      const session = makeAgentSession({
+        id: 'as-thread',
+        session_id: 'sid-thread',
+        space_id: 'space-1',
+        persona_handle: 'reviewer',
+        quoted_text: 'the quick brown fox',
+        comment_thread_id: 'c-thread-42',
+      });
+      createAgentSession(session);
+
+      expect(appendEvent).toHaveBeenCalledWith(
+        expect.any(String),
+        'agent_session.created',
+        expect.objectContaining({ id: 'as-thread', comment_thread_id: 'c-thread-42' }),
+      );
+
+      const fetched = getAgentSession('as-thread');
+      expect(fetched!.comment_thread_id).toBe('c-thread-42');
+      expect(fetched!.quoted_text).toBe('the quick brown fox');
+
+      const listed = listAgentSessions().find(s => s.id === 'as-thread');
+      expect(listed!.comment_thread_id).toBe('c-thread-42');
+    });
+
+    it('defaults comment_thread_id to null for non-comment agents', () => {
+      createAgentSession(makeAgentSession({ id: 'as-nothread', session_id: 'sid-nothread' }));
+      expect(getAgentSession('as-nothread')!.comment_thread_id).toBeNull();
+    });
+
     it('updateAgentSessionStatus updates status without summary', () => {
       const session = makeAgentSession({ id: 'as-2' });
       createAgentSession(session);

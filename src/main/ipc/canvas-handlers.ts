@@ -298,7 +298,7 @@ export function registerCanvasHandlers(): void {
     return { path: absPath, mimeType };
   });
 
-  // ── Read file from space folder (for documint storage) ──
+  // ── Read file from space folder (for canvas storage) ──
   ipcMain.handle('canvas:read-file', (_event, spaceId: string, relativePath: string) => {
     const workspace = getConfigValue('workspace');
     if (!workspace || !isInitialized()) return { error: 'no_workspace' };
@@ -520,6 +520,15 @@ export function registerCanvasHandlers(): void {
     // Non-.md file or not in workspace — open with OS default
     shell.openPath(filePath);
     return { action: 'external' as const };
+  });
+
+  // ── Rehydrate live comment-thread agents for a (re)mounted canvas ──
+  // Returns the current state of every agent bound to a comment thread in this
+  // space so the renderer can restore presence cursors, thread status, and
+  // pending interactions after navigation, a pop-out, or an app restart.
+  ipcMain.handle('canvas:get-agent-state', async (_event, spaceId: string) => {
+    const { getCanvasAgentState } = await import('../agent-service');
+    return getCanvasAgentState(spaceId);
   });
 }
 

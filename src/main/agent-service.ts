@@ -1,6 +1,7 @@
-import { AgentAnchor, AgentSession, CanvasAgent } from '../shared/types';
+import { AgentAnchor, AgentSession, CanvasAgent, CanvasAgentStateSnapshot } from '../shared/types';
 import { SubagentTracker } from './subagent-service';
 import { AgentRegistry } from './agents/agent-registry';
+import type { AgentRecord } from './agents/agent-registry';
 import { AgentNotifier } from './agents/agent-notifier';
 import { AgentPersistence } from './agents/agent-persistence';
 import { InteractionBroker } from './agents/interaction-broker';
@@ -488,4 +489,79 @@ export function reconcileStaleAgents(): void {
       } catch { /* non-fatal */ }
     }
   }
+}
+
+/** Coarse thread status for a *live* comment agent, mirroring the renderer's
+ *  threadStatusForAgent so rehydrated and live state agree. */
+function liveThreadStatus(record: AgentRecord): CanvasAgentStateSnapshot['status'] {
+  if (record.status === 'failed') return 'failed';
+  if (record.status === 'completed') return 'completed';
+  if (record.status === 'waiting-approval' || broker.snapshotPendingInteractions(record.agentId).length > 0) {
+    return 'waiting';
+  }
+  return record.phase === 'active' ? 'active' : 'starting';
+}
+
+/**
+ * Snapshot the live + persisted state of every comment-thread agent bound to a
+ * space, so a freshly mounted canvas — after in-app navigation, opening a
+ * pop-out window, or an app restart — can rehydrate presence cursors, thread
+ * status, and pending interactions instead of showing a dead canvas.
+ *
+ * One representative agent is returned per thread (the most recently created),
+ * so a thread that was retried surfaces its latest attempt.  Status mapping:
+ *   - a live agent still working            → active / waiting / starting
+ *   - a cloud agent that survived a restart → active (it keeps running remotely
+ *                                             and is resumable on click)
+ *   - a local agent whose process is gone   → failed ("needs redeploy")
+ *   - a completed agent                     → omitted (its reply is already
+ *                                             persisted in the thread)
+ *
+ * Pending interactions are only present for agents still live in this process
+ * (the broker holds them in memory); after a restart the array is empty.
+ */
+export function getCanvasAgentState(spaceId: string): CanvasAgentStateSnapshot[] {
+  let persisted: AgentSession[] = [];
+  try {
+    persisted = persistence.listSessions();
+  } catch {
+    return [];
+  }
+
+  // listSessions() is newest-first — keep the first (newest) row per thread.
+  const byThread = new Map<string, AgentSession>();
+  for (const row of persisted) {
+    if (row.space_id !== spaceId) continue;
+    if (!row.comment_thread_id) continue;
+    if (!byThread.has(row.comment_thread_id)) byThread.set(row.comment_thread_id, row);
+  }
+
+  const out: CanvasAgentStateSnapshot[] = [];
+  for (const [threadId, row] of byThread) {
+    const live = registry.get(row.id);
+    let status: CanvasAgentStateSnapshot['status'];
+    let presenceAnchor: { prefix?: string; suffix?: string } | undefined;
+
+    if (live) {
+      status = liveThreadStatus(live);
+      presenceAnchor = live.commentContext?.anchor;
+    } else if (row.run_location === 'cloud' && (row.status === 'running' || row.status === 'waiting-approval')) {
+      status = 'active';
+    } else if (row.status === 'completed') {
+      continue; // reply already in the thread; no live badge needed
+    } else {
+      status = 'failed'; // local agent lost to a restart, or a genuine failure
+    }
+    if (status === 'completed') continue;
+
+    out.push({
+      agentId: row.id,
+      threadId,
+      personaHandle: (live?.commentContext?.personaHandle ?? row.persona_handle) ?? '',
+      status,
+      ...(presenceAnchor ? { presenceAnchor } : {}),
+      pendingInteractions: broker.snapshotPendingInteractions(row.id),
+    });
+  }
+  return out;
 }

@@ -146,6 +146,7 @@ import {
   getRemoteState,
   resetRemoteControl,
   reconcileStaleAgents,
+  getCanvasAgentState,
   __resetAppRemoteForTests,
 } from './agent-service';
 import { getCopilotClient } from './ai';
@@ -2008,5 +2009,68 @@ describe('reconcileStaleAgents', () => {
 
     const calls = vi.mocked(updateAgentSessionStatus).mock.calls.filter(c => c[0] === 'already-done');
     expect(calls).toHaveLength(0);
+  });
+});
+
+describe('getCanvasAgentState', () => {
+  const SPACE = 'space-canvas-state';
+
+  function session(overrides: Partial<import('../shared/types').AgentSession>): import('../shared/types').AgentSession {
+    const now = new Date().toISOString();
+    return {
+      id: 'id', session_id: 'sid', space_id: SPACE, prompt: 'comment body',
+      status: 'running', summary: '', working_dir: '/ws', source: 'sdk',
+      persona_handle: 'reviewer', quoted_text: 'quoted', comment_thread_id: 'c1',
+      run_location: 'local', created_at: now, updated_at: now,
+      ...overrides,
+    };
+  }
+
+  it('maps a cloud agent that survived a restart to active', () => {
+    vi.mocked(listAgentSessions).mockReturnValue([
+      session({ id: 'a-cloud', comment_thread_id: 'c-cloud', run_location: 'cloud', status: 'running' }),
+    ]);
+    const state = getCanvasAgentState(SPACE);
+    expect(state).toHaveLength(1);
+    expect(state[0]).toMatchObject({ agentId: 'a-cloud', threadId: 'c-cloud', status: 'active', personaHandle: 'reviewer' });
+    expect(state[0].pendingInteractions).toEqual([]);
+  });
+
+  it('maps a local agent lost to a restart to failed (needs redeploy)', () => {
+    // After reconcile a lost local agent is "failed" in the DB; even if it were
+    // still "running", a local agent with no live process maps to failed.
+    vi.mocked(listAgentSessions).mockReturnValue([
+      session({ id: 'a-local', comment_thread_id: 'c-local', run_location: 'local', status: 'failed' }),
+    ]);
+    const state = getCanvasAgentState(SPACE);
+    expect(state).toHaveLength(1);
+    expect(state[0]).toMatchObject({ agentId: 'a-local', threadId: 'c-local', status: 'failed' });
+  });
+
+  it('omits completed agents (their reply is already persisted in the thread)', () => {
+    vi.mocked(listAgentSessions).mockReturnValue([
+      session({ id: 'a-done', comment_thread_id: 'c-done', status: 'completed' }),
+    ]);
+    expect(getCanvasAgentState(SPACE)).toEqual([]);
+  });
+
+  it('ignores sessions without a comment thread or in another space', () => {
+    vi.mocked(listAgentSessions).mockReturnValue([
+      session({ id: 'a-nothread', comment_thread_id: null }),
+      session({ id: 'a-otherspace', space_id: 'different-space', comment_thread_id: 'c-other' }),
+    ]);
+    expect(getCanvasAgentState(SPACE)).toEqual([]);
+  });
+
+  it('returns one representative (newest) agent per thread', () => {
+    // listSessions() is newest-first; the first row for a thread wins.
+    vi.mocked(listAgentSessions).mockReturnValue([
+      session({ id: 'a-new', comment_thread_id: 'c-retry', run_location: 'cloud', status: 'running', created_at: '2026-02-01T00:00:00Z' }),
+      session({ id: 'a-old', comment_thread_id: 'c-retry', status: 'failed', created_at: '2026-01-01T00:00:00Z' }),
+    ]);
+    const state = getCanvasAgentState(SPACE);
+    expect(state).toHaveLength(1);
+    expect(state[0].agentId).toBe('a-new');
+    expect(state[0].status).toBe('active');
   });
 });

@@ -9,7 +9,7 @@ const ABSOLUTE_SRC = /^(https?:|data:|blob:|whim:)/i;
  * Custom node view for markdown images. Absolute/data/blob URLs render directly;
  * workspace-relative paths (e.g. `attachments/foo.png`) are resolved through the
  * host storage bridge into object URLs so on-disk attachments display — the role
- * documint's `storage.readFile` used to serve.
+ * the previous editor's `storage.readFile` used to serve.
  */
 export function createImageNodeView(resolverRef: { current?: ImageSrcResolver }) {
   return (node: ProseNode): NodeView => {
