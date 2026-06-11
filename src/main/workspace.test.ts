@@ -25,6 +25,9 @@ import {
   archiveSpaceFolder,
   deleteSpaceFolder,
   getGitSyncStatus,
+  parseRepoNameFromRemote,
+  getDefaultProfileName,
+  invalidateProfileNameCache,
 } from './workspace';
 
 let tmpDir: string;
@@ -509,5 +512,55 @@ describe('getGitSyncStatus', () => {
     expect(result.available).toBe(false);
     expect(result.unavailableReason).toBe('no-upstream');
     expect(result.branch).toBe('main');
+  });
+});
+
+// ── Profile name resolution ─────────────────────────────
+
+describe('parseRepoNameFromRemote', () => {
+  it('parses https remotes with .git suffix', () => {
+    expect(parseRepoNameFromRemote('https://github.com/patniko/whim.git')).toBe('whim');
+  });
+
+  it('parses https remotes without .git', () => {
+    expect(parseRepoNameFromRemote('https://github.com/patniko/whim')).toBe('whim');
+  });
+
+  it('parses scp-like ssh remotes', () => {
+    expect(parseRepoNameFromRemote('git@github.com:patniko/whim.git')).toBe('whim');
+  });
+
+  it('parses ssh:// remotes', () => {
+    expect(parseRepoNameFromRemote('ssh://git@github.com/acme/my-repo.git')).toBe('my-repo');
+  });
+
+  it('handles trailing slashes', () => {
+    expect(parseRepoNameFromRemote('https://example.com/group/sub/repo/')).toBe('repo');
+  });
+
+  it('parses local path remotes', () => {
+    expect(parseRepoNameFromRemote('/Users/me/code/local-repo')).toBe('local-repo');
+  });
+
+  it('returns null for empty input', () => {
+    expect(parseRepoNameFromRemote('')).toBeNull();
+    expect(parseRepoNameFromRemote('   ')).toBeNull();
+  });
+});
+
+describe('getDefaultProfileName', () => {
+  afterEach(() => invalidateProfileNameCache());
+
+  it('falls back to the folder basename when not a git repo', async () => {
+    const name = await getDefaultProfileName(tmpDir);
+    expect(name).toBe(path.basename(tmpDir));
+  });
+
+  it('uses the git remote repo name when an origin is set', async () => {
+    const { execSync } = await import('child_process');
+    execSync('git init', { cwd: tmpDir });
+    execSync('git remote add origin https://github.com/acme/cool-project.git', { cwd: tmpDir });
+    const name = await getDefaultProfileName(tmpDir);
+    expect(name).toBe('cool-project');
   });
 });

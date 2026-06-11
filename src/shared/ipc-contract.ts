@@ -214,11 +214,26 @@ export interface HotkeyConfig {
   canvasNewPage: string;
   popOutWindow: string;
   toggleSearch: string;
+  switchProfile: string;
   close: string;
   navigateUp: string;
   navigateDown: string;
   openSubmit: string;
   stopRecording: string;
+}
+
+/** A workspace profile as resolved for the renderer (includes computed displayName). */
+export interface ResolvedProfile {
+  id: string;
+  path: string;
+  name: string | null;     // user override (null = using default)
+  displayName: string;     // override, else git remote repo name, else folder name
+  tint: string | null;     // hex color or null
+}
+
+export interface ProfilesState {
+  profiles: ResolvedProfile[];
+  activeProfileId: string | null;
 }
 
 export interface CloudJobResult {
@@ -313,6 +328,14 @@ export interface IpcCommands {
   // ── Workspace / Shell ────────────────────────────────────
   'workspace:select': { args: []; result: { selected: boolean; path: string | null } };
   'workspace:clear': { args: []; result: { ok: true } };
+
+  // ── Workspace profiles ───────────────────────────────────
+  'profiles:list': { args: []; result: ProfilesState };
+  'profiles:add': { args: []; result: { added: boolean; profileId: string | null } };
+  'profiles:activate': { args: [id: string]; result: { ok: boolean; error?: string } };
+  'profiles:cycle': { args: []; result: { ok: boolean; profileId?: string } };
+  'profiles:update': { args: [id: string, patch: { name?: string | null; tint?: string | null }]; result: { ok: boolean } };
+  'profiles:remove': { args: [id: string]; result: { ok: boolean } };
   'shell:openPath': { args: [folderPath: string]; result: string };
   'shell:openExternal': { args: [url: string]; result: { ok: true } };
 
@@ -458,6 +481,7 @@ export interface IpcEvents {
   'window:toggle': void;
   'workspace:committed': void;
   'workspace:changed': { path: string | null };
+  'profiles:changed': ProfilesState;
   'workspace:git-sync-changed': GitSyncStatus;
   'agent:status-changed': { agentId: string; status: string; summary?: string; spaceId?: string; threadId?: string | null };
   'agent:approval-needed': { agentId: string; requestId: string; permissionKind: string; intention?: string; path?: string; spaceId?: string; threadId?: string | null };

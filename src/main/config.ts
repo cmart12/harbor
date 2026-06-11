@@ -66,6 +66,7 @@ export interface HotkeyConfig {
   canvasNewPage: string;       // Canvas: create new page
   popOutWindow: string;        // Main: pop out in new window
   toggleSearch: string;        // Main: toggle search mode
+  switchProfile: string;       // Main: cycle to next workspace profile
   close: string;               // Navigation: close/back
   navigateUp: string;          // Navigation: move selection up
   navigateDown: string;        // Navigation: move selection down
@@ -79,6 +80,7 @@ export const DEFAULT_HOTKEYS: HotkeyConfig = {
   canvasNewPage: 'CommandOrControl+Shift+N',
   popOutWindow: 'CommandOrControl+Enter',
   toggleSearch: 'Shift+Tab',
+  switchProfile: 'CommandOrControl+Shift+P',
   close: 'Escape',
   navigateUp: 'ArrowUp',
   navigateDown: 'ArrowDown',
@@ -92,6 +94,7 @@ export const HOTKEY_LABELS: Record<keyof HotkeyConfig, string> = {
   canvasNewPage: 'New Page (Canvas)',
   popOutWindow: 'Pop Out in New Window',
   toggleSearch: 'Toggle Search',
+  switchProfile: 'Switch Profile',
   close: 'Close / Back',
   navigateUp: 'Navigate Up',
   navigateDown: 'Navigate Down',
@@ -102,9 +105,16 @@ export const HOTKEY_LABELS: Record<keyof HotkeyConfig, string> = {
 export const HOTKEY_CATEGORIES: Record<string, (keyof HotkeyConfig)[]> = {
   'Global': ['toggleWindow'],
   'Canvas': ['canvasPinToTop', 'canvasNewPage'],
-  'Actions': ['popOutWindow', 'toggleSearch'],
+  'Actions': ['popOutWindow', 'toggleSearch', 'switchProfile'],
   'Navigation': ['close', 'navigateUp', 'navigateDown', 'openSubmit', 'stopRecording'],
 };
+
+export interface WorkspaceProfile {
+  id: string;            // stable identifier
+  path: string;          // workspace directory (git repo root)
+  name: string | null;   // user override for the display name; null = use resolved default
+  tint: string | null;   // hex color (e.g. "#7c66dc") applied as a subtle UI tint; null = none
+}
 
 export interface AppConfig {
   workspace: string | null;
@@ -133,6 +143,8 @@ export interface AppConfig {
   webRemoteBindAddresses: string[];
   hotkeys: Partial<HotkeyConfig>;   // user hotkey overrides (missing keys fall back to DEFAULT_HOTKEYS)
   commentTrigger: 'hover-or-caret' | 'caret'; // how the canvas surfaces comment threads
+  profiles: WorkspaceProfile[];     // saved workspace profiles (work / personal / …)
+  activeProfileId: string | null;   // id of the currently-open profile in `profiles`
 }
 
 const CONFIG_PATH = path.join(app.getPath('userData'), 'config.json');
@@ -311,6 +323,8 @@ const DEFAULT_CONFIG: AppConfig = {
   webRemoteBindAddresses: [],
   hotkeys: {},
   commentTrigger: 'caret',
+  profiles: [],
+  activeProfileId: null,
 };
 
 let config: AppConfig = { ...DEFAULT_CONFIG };
@@ -432,7 +446,44 @@ export function loadConfig(): AppConfig {
   config.webRemotePort = normalizeWebRemotePort(config.webRemotePort);
   config.webRemoteBindAddresses = normalizeWebRemoteBindAddresses(config.webRemoteBindAddresses);
   ensureWebRemoteToken();
+  migrateProfiles();
   return config;
+}
+
+/**
+ * Reconcile the profiles list with the legacy single-workspace field.
+ *
+ * - Seeds a first profile from `config.workspace` for installs that predate
+ *   profiles (so existing users keep their workspace as "profile 1").
+ * - Guarantees `activeProfileId` points at a real profile when any exist.
+ * - Keeps `config.workspace` mirrored to the active profile's path so the
+ *   large body of code that reads `getConfigValue('workspace')` is unaffected.
+ */
+function migrateProfiles(): void {
+  // Clone so we never mutate the shared DEFAULT_CONFIG.profiles array reference
+  // (a shallow `{ ...DEFAULT_CONFIG }` in loadConfig would otherwise alias it).
+  config.profiles = Array.isArray(config.profiles) ? config.profiles.slice() : [];
+
+  if (config.profiles.length === 0 && config.workspace) {
+    const profile: WorkspaceProfile = {
+      id: generateProfileId(),
+      path: config.workspace,
+      name: null,
+      tint: null,
+    };
+    config.profiles = [profile];
+    config.activeProfileId = profile.id;
+  }
+
+  if (config.profiles.length > 0) {
+    if (!config.activeProfileId || !config.profiles.some((p) => p.id === config.activeProfileId)) {
+      config.activeProfileId = config.profiles[0].id;
+    }
+    const active = config.profiles.find((p) => p.id === config.activeProfileId);
+    if (active) config.workspace = active.path;
+  } else {
+    config.activeProfileId = null;
+  }
 }
 
 export function saveConfig(): void {
@@ -487,4 +538,99 @@ export function setSessionId(spaceId: string, sessionId: string): void {
 export function removeSession(spaceId: string): void {
   delete config.sessions[spaceId];
   saveConfig();
+}
+
+// ── Workspace profiles ──────────────────────────────────
+
+export function generateProfileId(): string {
+  return randomBytes(9).toString('base64url');
+}
+
+/** Normalize a path for equality checks across separators / trailing slashes. */
+function normalizeProfilePath(p: string): string {
+  return path.resolve(p);
+}
+
+export function getProfiles(): WorkspaceProfile[] {
+  return config.profiles;
+}
+
+export function getActiveProfileId(): string | null {
+  return config.activeProfileId;
+}
+
+export function getActiveProfile(): WorkspaceProfile | null {
+  return config.profiles.find((p) => p.id === config.activeProfileId) ?? null;
+}
+
+export function getProfileById(id: string): WorkspaceProfile | null {
+  return config.profiles.find((p) => p.id === id) ?? null;
+}
+
+/** Find an existing profile for `dir`, or create one. Returns the profile. */
+export function upsertProfileForPath(dir: string): WorkspaceProfile {
+  const target = normalizeProfilePath(dir);
+  const existing = config.profiles.find((p) => normalizeProfilePath(p.path) === target);
+  if (existing) return existing;
+  const profile: WorkspaceProfile = { id: generateProfileId(), path: dir, name: null, tint: null };
+  config.profiles.push(profile);
+  saveConfig();
+  return profile;
+}
+
+/** Update the name/tint override of a profile. Returns the updated profile or null. */
+export function updateProfile(
+  id: string,
+  patch: { name?: string | null; tint?: string | null },
+): WorkspaceProfile | null {
+  const profile = config.profiles.find((p) => p.id === id);
+  if (!profile) return null;
+  if ('name' in patch) {
+    const trimmed = (patch.name ?? '').trim();
+    profile.name = trimmed.length > 0 ? trimmed : null;
+  }
+  if ('tint' in patch) {
+    profile.tint = patch.tint || null;
+  }
+  saveConfig();
+  return profile;
+}
+
+/** Remove a profile. If it was active, the active id is cleared. */
+export function removeProfileById(id: string): void {
+  config.profiles = config.profiles.filter((p) => p.id !== id);
+  if (config.activeProfileId === id) {
+    config.activeProfileId = null;
+  }
+  saveConfig();
+}
+
+/**
+ * Mark a profile active and mirror its path into `config.workspace`.
+ * Pass `null` to clear the active profile (fresh-start state).
+ * Returns the now-active profile, or null when cleared / not found.
+ */
+export function setActiveProfile(id: string | null): WorkspaceProfile | null {
+  if (id === null) {
+    config.activeProfileId = null;
+    saveConfig();
+    return null;
+  }
+  const profile = config.profiles.find((p) => p.id === id);
+  if (!profile) {
+    saveConfig();
+    return null;
+  }
+  config.activeProfileId = profile.id;
+  config.workspace = profile.path;
+  saveConfig();
+  return profile;
+}
+
+/** The profile whose order follows the active one, wrapping around. Null if <2 profiles. */
+export function getNextProfile(): WorkspaceProfile | null {
+  if (config.profiles.length < 2) return null;
+  const idx = config.profiles.findIndex((p) => p.id === config.activeProfileId);
+  const nextIdx = idx < 0 ? 0 : (idx + 1) % config.profiles.length;
+  return config.profiles[nextIdx];
 }

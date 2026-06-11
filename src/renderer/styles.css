@@ -9816,3 +9816,179 @@ body.dark .canvas-chat-pane {
   border-radius: 2px;
   transition: width 0.3s ease;
 }
+
+/* ── Workspace profile tint ─────────────────────────────── */
+/* A subtle, theme-safe wash layered over the frosted panel. `background-image`
+   paints above the panel's background-color but below content, so it tints the
+   whole side panel without touching text legibility. */
+body.has-profile-tint #app {
+  background-image: linear-gradient(
+    color-mix(in srgb, var(--profile-tint) 9%, transparent),
+    color-mix(in srgb, var(--profile-tint) 9%, transparent)
+  );
+}
+body.dark.has-profile-tint #app {
+  background-image: linear-gradient(
+    color-mix(in srgb, var(--profile-tint) 16%, transparent),
+    color-mix(in srgb, var(--profile-tint) 16%, transparent)
+  );
+}
+
+/* ── Profile footer (bottom brand bar) ──────────────────── */
+.profile-footer {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  background: transparent;
+  cursor: pointer;
+  user-select: none;
+  text-align: left;
+  -webkit-app-region: no-drag;
+  transition: background 0.15s ease;
+}
+.profile-footer:hover { background: rgba(0, 0, 0, 0.04); }
+.profile-footer.hidden { display: none; }
+
+.profile-mark {
+  width: 12px;
+  height: 12px;
+  border-radius: 4px;
+  flex: none;
+  background: #7c66dc;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+.profile-wordmark {
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: var(--fs-label);
+  font-weight: 500;
+  color: rgba(0, 0, 0, 0.75);
+  letter-spacing: 0.02em;
+}
+.profile-name {
+  font-size: var(--fs-caption);
+  color: rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.profile-name::before {
+  content: '·';
+  margin-right: 6px;
+  opacity: 0.5;
+}
+
+@keyframes profile-switched-pulse {
+  0% { background: color-mix(in srgb, var(--profile-tint, #7c66dc) 22%, transparent); }
+  100% { background: transparent; }
+}
+.profile-footer.profile-switched { animation: profile-switched-pulse 0.5s ease-out; }
+
+body.dark .profile-footer { border-top-color: rgba(255, 255, 255, 0.07); }
+body.dark .profile-footer:hover { background: rgba(255, 255, 255, 0.05); }
+body.dark .profile-wordmark { color: rgba(255, 255, 255, 0.82); }
+body.dark .profile-name { color: rgba(255, 255, 255, 0.5); }
+body.dark .profile-mark { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.15); }
+
+/* ── Profile settings rows ──────────────────────────────── */
+.profiles-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 6px 0;
+}
+.profile-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: var(--btn-radius);
+  background: rgba(0, 0, 0, 0.015);
+}
+.profile-row.active {
+  border-color: color-mix(in srgb, #7c66dc 45%, rgba(0, 0, 0, 0.08));
+  background: rgba(124, 102, 220, 0.05);
+}
+.profile-swatch {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background: #7c66dc;
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.1s ease;
+}
+.profile-swatch:hover { transform: scale(1.08); }
+.profile-swatch:active { transform: scale(0.94); }
+.profile-swatch.no-tint {
+  background-image:
+    linear-gradient(45deg, rgba(0,0,0,0.12) 25%, transparent 25%, transparent 75%, rgba(0,0,0,0.12) 75%),
+    linear-gradient(45deg, rgba(0,0,0,0.12) 25%, transparent 25%, transparent 75%, rgba(0,0,0,0.12) 75%);
+  background-size: 8px 8px;
+  background-position: 0 0, 4px 4px;
+  background-color: #fff;
+}
+.profile-name-input {
+  flex: 1;
+  min-width: 0;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: var(--btn-radius);
+  padding: 4px 8px;
+  font-size: var(--fs-label);
+  color: rgba(0, 0, 0, 0.85);
+}
+.profile-name-input:focus { outline: none; border-color: #7c66dc; }
+.profile-path {
+  flex: none;
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: none;
+  border: none;
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', monospace;
+  font-size: var(--fs-meta);
+  color: rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+}
+.profile-path:hover { color: #7c66dc; text-decoration: underline; }
+.profile-active-badge {
+  flex: none;
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  color: #7c66dc;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(124, 102, 220, 0.1);
+}
+.profile-remove-btn {
+  flex: none;
+  background: none;
+  border: none;
+  color: rgba(0, 0, 0, 0.35);
+  font-size: var(--fs-label);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: var(--btn-radius);
+  transition: all 0.15s ease;
+}
+.profile-remove-btn:hover { color: #d9534f; background: rgba(217, 83, 79, 0.1); }
+
+body.dark .profile-row { border-color: rgba(255, 255, 255, 0.08); background: rgba(255, 255, 255, 0.02); }
+body.dark .profile-row.active { border-color: rgba(165, 148, 232, 0.5); background: rgba(165, 148, 232, 0.08); }
+body.dark .profile-name-input { background: rgba(255, 255, 255, 0.06); border-color: rgba(255, 255, 255, 0.1); color: rgba(255, 255, 255, 0.85); }
+body.dark .profile-name-input:focus { border-color: #a594e8; }
+body.dark .profile-path { color: rgba(255, 255, 255, 0.4); }
+body.dark .profile-path:hover { color: #a594e8; }
+body.dark .profile-active-badge { color: #a594e8; background: rgba(165, 148, 232, 0.14); }
+body.dark .profile-swatch { border-color: rgba(255, 255, 255, 0.15); }
+body.dark .profile-swatch.no-tint { background-color: #2a2a3e; }
+body.dark .profile-remove-btn { color: rgba(255, 255, 255, 0.35); }
+body.dark .profile-remove-btn:hover { color: #ff6b6b; background: rgba(255, 107, 107, 0.12); }

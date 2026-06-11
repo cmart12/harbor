@@ -9,7 +9,7 @@ vi.mock('electron', () => ({
   },
 }));
 
-import { loadConfig, getConfig, getConfigValue, setConfigValue, getSessionId, setSessionId, removeSession, saveConfig, DEFAULT_WEB_REMOTE_PORT, isTailscaleAddress } from './config';
+import { loadConfig, getConfig, getConfigValue, setConfigValue, getSessionId, setSessionId, removeSession, saveConfig, DEFAULT_WEB_REMOTE_PORT, isTailscaleAddress, DEFAULT_HOTKEYS, getProfiles, getActiveProfile, getActiveProfileId, getProfileById, upsertProfileForPath, updateProfile, removeProfileById, setActiveProfile, getNextProfile, generateProfileId } from './config';
 
 const CONFIG_PATH = path.join('/tmp/space-test-config', 'config.json');
 
@@ -203,6 +203,149 @@ describe('config', () => {
 
       const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
       expect(raw.sessions).toEqual(sessions);
+    });
+  });
+
+  describe('hotkeys', () => {
+    it('includes a switchProfile default accelerator', () => {
+      expect(DEFAULT_HOTKEYS.switchProfile).toBe('CommandOrControl+Shift+P');
+    });
+  });
+
+  describe('workspace profiles', () => {
+    beforeEach(() => {
+      // loadConfig() only resets in-memory state when a file exists; write an
+      // empty one so each profile test starts from clean defaults.
+      fs.writeFileSync(CONFIG_PATH, '{}');
+    });
+
+    it('defaults to an empty profile list with no active profile', () => {
+      const config = loadConfig();
+      expect(config.profiles).toEqual([]);
+      expect(config.activeProfileId).toBeNull();
+    });
+
+    it('migrates a legacy single workspace into a seeded profile', () => {
+      fs.writeFileSync(CONFIG_PATH, JSON.stringify({ workspace: '/legacy/repo' }));
+      const config = loadConfig();
+      expect(config.profiles).toHaveLength(1);
+      expect(config.profiles[0].path).toBe('/legacy/repo');
+      expect(config.profiles[0].name).toBeNull();
+      expect(config.profiles[0].tint).toBeNull();
+      expect(config.activeProfileId).toBe(config.profiles[0].id);
+      // Active path is mirrored back into `workspace`.
+      expect(config.workspace).toBe('/legacy/repo');
+    });
+
+    it('does not re-seed when profiles already exist', () => {
+      fs.writeFileSync(CONFIG_PATH, JSON.stringify({
+        workspace: '/work/repo',
+        profiles: [
+          { id: 'a', path: '/work/repo', name: 'Work', tint: '#7c66dc' },
+          { id: 'b', path: '/personal/repo', name: null, tint: null },
+        ],
+        activeProfileId: 'b',
+      }));
+      const config = loadConfig();
+      expect(config.profiles).toHaveLength(2);
+      expect(config.activeProfileId).toBe('b');
+      // workspace is reconciled to the active profile's path.
+      expect(config.workspace).toBe('/personal/repo');
+    });
+
+    it('reconciles an invalid activeProfileId to the first profile', () => {
+      fs.writeFileSync(CONFIG_PATH, JSON.stringify({
+        profiles: [{ id: 'a', path: '/repo-a', name: null, tint: null }],
+        activeProfileId: 'gone',
+      }));
+      const config = loadConfig();
+      expect(config.activeProfileId).toBe('a');
+      expect(config.workspace).toBe('/repo-a');
+    });
+
+    it('upserts a profile for a path and dedupes by resolved path', () => {
+      loadConfig();
+      const first = upsertProfileForPath('/repo/one');
+      const again = upsertProfileForPath('/repo/one');
+      expect(again.id).toBe(first.id);
+      expect(getProfiles()).toHaveLength(1);
+
+      const second = upsertProfileForPath('/repo/two');
+      expect(second.id).not.toBe(first.id);
+      expect(getProfiles()).toHaveLength(2);
+    });
+
+    it('updates a profile name override (blank clears it) and tint', () => {
+      loadConfig();
+      const p = upsertProfileForPath('/repo/x');
+      updateProfile(p.id, { name: 'Custom', tint: '#abcdef' });
+      expect(getProfileById(p.id)?.name).toBe('Custom');
+      expect(getProfileById(p.id)?.tint).toBe('#abcdef');
+
+      updateProfile(p.id, { name: '   ' });
+      expect(getProfileById(p.id)?.name).toBeNull();
+    });
+
+    it('activates a profile and mirrors its path into workspace', () => {
+      loadConfig();
+      const p = upsertProfileForPath('/repo/active');
+      setActiveProfile(p.id);
+      expect(getActiveProfileId()).toBe(p.id);
+      expect(getActiveProfile()?.id).toBe(p.id);
+      expect(getConfigValue('workspace')).toBe('/repo/active');
+    });
+
+    it('clears the active profile when passed null', () => {
+      loadConfig();
+      const p = upsertProfileForPath('/repo/active');
+      setActiveProfile(p.id);
+      setActiveProfile(null);
+      expect(getActiveProfileId()).toBeNull();
+      expect(getActiveProfile()).toBeNull();
+    });
+
+    it('cycles to the next profile, wrapping around', () => {
+      loadConfig();
+      const a = upsertProfileForPath('/repo/a');
+      const b = upsertProfileForPath('/repo/b');
+      setActiveProfile(a.id);
+      expect(getNextProfile()?.id).toBe(b.id);
+      setActiveProfile(b.id);
+      expect(getNextProfile()?.id).toBe(a.id);
+    });
+
+    it('has no next profile when fewer than two exist', () => {
+      loadConfig();
+      expect(getNextProfile()).toBeNull();
+      const a = upsertProfileForPath('/repo/solo');
+      setActiveProfile(a.id);
+      expect(getNextProfile()).toBeNull();
+    });
+
+    it('removing the active profile clears the active id', () => {
+      loadConfig();
+      const a = upsertProfileForPath('/repo/a');
+      setActiveProfile(a.id);
+      removeProfileById(a.id);
+      expect(getProfiles()).toHaveLength(0);
+      expect(getActiveProfileId()).toBeNull();
+    });
+
+    it('generates unique profile ids', () => {
+      const ids = new Set(Array.from({ length: 50 }, () => generateProfileId()));
+      expect(ids.size).toBe(50);
+    });
+
+    it('persists profiles + activeProfileId to disk', () => {
+      loadConfig();
+      const p = upsertProfileForPath('/repo/persist');
+      setActiveProfile(p.id);
+      updateProfile(p.id, { tint: '#123456' });
+
+      const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
+      expect(raw.profiles).toHaveLength(1);
+      expect(raw.profiles[0].tint).toBe('#123456');
+      expect(raw.activeProfileId).toBe(p.id);
     });
   });
 });

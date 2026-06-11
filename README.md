@@ -49,6 +49,7 @@ Agents can run **locally** via the Copilot SDK, or in the **cloud** via GitHub's
 
 ### 🎨 UI/UX
 - **Light/dark themes** with translucent, blurred backgrounds
+- **Workspace profiles** — split work and personal repos; click the whim logo at the bottom of the panel (or press `Ctrl/Cmd+Shift+P`) to switch, with a per-profile color tint so you always know which mode you're in
 - **Edge snapping** — drag the window to any screen edge; it snaps to position
 - **Pin mode** — pin the window to prevent auto-hide; enables free positioning and resizing
 - **Keyboard-first** — arrow keys navigate intents, Enter opens canvas, Escape goes back, Tab switches tabs
@@ -57,6 +58,7 @@ Agents can run **locally** via the Copilot SDK, or in the **cloud** via GitHub's
 ### 🔧 Settings
 - **AI model selection** — choose from available Copilot models
 - **Workspace directory** — select where intent data is stored
+- **Profiles** — keep separate repos (e.g. work and personal); each has an optional name (defaults to the git repo name) and a tap-to-generate color tint; switch via the logo or the `Switch Profile` hotkey
 - **Copilot CLI path** — auto-detected or manual override
 - **Agent personas** — define @mentionable personas with custom instructions and local/cloud execution
 - **MCP servers** — auto-discovered from `~/.copilot/` + user-added custom servers
@@ -86,7 +88,7 @@ src/
 │   ├── eventlog.ts            # Append-only event log (.whim/events.jsonl)
 │   ├── session.ts             # Copilot CLI discovery, terminal launch
 │   ├── voice.ts               # Local Whisper model (speech-to-text)
-│   ├── config.ts              # User config (theme, model, personas)
+│   ├── config.ts              # User config (theme, model, personas, profiles)
 │   ├── mcp.ts                 # MCP server discovery & management
 │   ├── web/                   # Optional LAN/Tailscale web server + RPC gateway
 │   ├── migration.ts           # Database migrations
@@ -150,6 +152,7 @@ npm run lint   # Lint with oxlint
 | Voice input | Press `Space` when input is empty → speak → press `Space` to stop |
 | Save | Press `Enter` |
 | Search intents | Press `Shift+Tab` to toggle search mode |
+| Switch profile | Click the whim logo (bottom of panel) or `Ctrl/Cmd+Shift+P` |
 | Open canvas | Click an intent or press `Enter` on selected |
 | Expand canvas | `Cmd+Enter` from the intent list |
 | Save canvas | `Cmd+S` in the editor |

@@ -3,13 +3,17 @@ import * as fs from 'fs';
 import { isInitialized, closeDatabase } from '../database';
 import { launchSession, getActiveSessionIntentIds } from '../session';
 import { transcribeAudio } from '../voice';
-import { getConfigValue, setConfigValue, getConfig } from '../config';
-import { initWorkspace, getDbPath, getLogRoot, getGitSyncStatus, gitFetchOrigin, gitPush, gitPull } from '../workspace';
+import {
+  getConfigValue, setConfigValue, getConfig,
+  getProfiles, getActiveProfileId, getProfileById, getNextProfile,
+  upsertProfileForPath, setActiveProfile, updateProfile, removeProfileById,
+} from '../config';
+import { initWorkspace, getDbPath, getLogRoot, getGitSyncStatus, gitFetchOrigin, gitPush, gitPull, getDefaultProfileName, invalidateProfileNameCache } from '../workspace';
 import { initDatabase, mergeSessionIds, syncCanvasContent } from '../database';
 import { compactOldSegments } from '../compaction';
 import { startSkillWatcher, stopSkillWatcher } from '../skill-watcher';
 import { destroySettingsWindow, destroyCanvasWindow } from '../window-manager';
-import type { GitSyncStatus } from '../../shared/ipc-contract';
+import type { GitSyncStatus, ProfilesState } from '../../shared/ipc-contract';
 
 // ── Git sync polling ────────────────────────────────────
 const GIT_SYNC_POLL_MS = 60_000;
@@ -64,91 +68,135 @@ function stopSyncPolling(): void {
   lastSyncStatus = null;
 }
 
-export function registerWorkspaceHandlers(): void {
-  // Workspace directory picker — initializes workspace + DB on selection
-  ipcMain.handle('workspace:select', async (event) => {
-    const win = BrowserWindow.fromWebContents(event.sender);
+// ── Workspace open / profile helpers ────────────────────
 
-    // Suppress blur-hide while dialog is open
+/**
+ * Tear down the current workspace and bring up `dir`: close the DB, re-init
+ * workspace + DB + watchers, sync canvases, schedule compaction, refresh
+ * pre-warmed popouts, broadcast `workspace:changed`, and (re)start git polling.
+ * Mirrors `dir` into `config.workspace`.
+ */
+function openWorkspace(dir: string): void {
+  // Close previous workspace cleanly
+  stopSkillWatcher();
+  closeDatabase();
+
+  setConfigValue('workspace', dir);
+
+  // Initialize workspace structure and DB
+  initWorkspace(dir);
+  initDatabase(getDbPath(dir), getLogRoot(dir));
+  mergeSessionIds(getConfig().sessions);
+  syncCanvasContent(dir);
+  startSkillWatcher(dir);
+
+  // Opportunistic compaction for the newly-opened workspace — deferred to idle
+  // so the switch UX feels instant. Cheap when nothing is cold.
+  setTimeout(() => {
+    try { compactOldSegments(getLogRoot(dir)); }
+    catch (err) { console.warn('[workspace] Compaction failed:', err); }
+  }, 5000).unref();
+
+  // Destroy any pre-warmed settings + canvas windows so their next opens
+  // cold-start fresh renderers with up-to-date workspace data.
+  destroySettingsWindow();
+  destroyCanvasWindow();
+
+  // Notify all windows to reload data
+  for (const w of BrowserWindow.getAllWindows()) {
+    w.webContents.send('workspace:changed', dir);
+  }
+
+  // Start git sync polling for the new workspace
+  startSyncPolling();
+}
+
+/** Resolve the renderer-facing profile list (with computed display names). */
+async function buildProfilesState(): Promise<ProfilesState> {
+  const profiles = getProfiles();
+  const resolved = await Promise.all(profiles.map(async (p) => ({
+    id: p.id,
+    path: p.path,
+    name: p.name,
+    displayName: p.name ?? await getDefaultProfileName(p.path),
+    tint: p.tint,
+  })));
+  return { profiles: resolved, activeProfileId: getActiveProfileId() };
+}
+
+async function broadcastProfilesChanged(): Promise<void> {
+  const state = await buildProfilesState();
+  for (const w of BrowserWindow.getAllWindows()) {
+    w.webContents.send('profiles:changed', state);
+  }
+}
+
+/**
+ * Show the directory picker, suppressing the main window's blur-hide while the
+ * native dialog is open and restoring it afterward. Returns the chosen path or
+ * null when canceled.
+ */
+async function pickDirectory(event: Electron.IpcMainInvokeEvent): Promise<string | null> {
+  const win = BrowserWindow.fromWebContents(event.sender);
+
+  // Suppress blur-hide while dialog is open
+  if (win) {
+    win.removeAllListeners('blur');
+  }
+
+  try {
+    const dialogOpts = {
+      title: 'Select Workspace Directory',
+      properties: ['openDirectory'] as Array<'openDirectory'>,
+      defaultPath: getConfigValue('workspace') || undefined,
+    };
+    const result = win
+      ? await dialog.showOpenDialog(win, dialogOpts)
+      : await dialog.showOpenDialog(dialogOpts);
+
+    if (!result.canceled && result.filePaths.length > 0) {
+      return result.filePaths[0];
+    }
+    return null;
+  } finally {
+    // Restore blur-hide behavior
     if (win) {
-      win.removeAllListeners('blur');
+      const restoreTs = Date.now();
+      win.on('blur', async () => {
+        if (Date.now() - restoreTs < 300) return;
+        try {
+          const shouldStay = await win.webContents.executeJavaScript(
+            `(function() {
+              var input = document.getElementById('description-input');
+              var hasInput = input && input.value.trim().length > 0;
+              var canvasOpen = !document.getElementById('canvas-view').classList.contains('hidden');
+              return hasInput || canvasOpen;
+            })()`
+          );
+          if (shouldStay) return;
+        } catch { /* hide on failure */ }
+        win.hide();
+      });
     }
+  }
+}
 
-    try {
-      const dialogOpts = {
-        title: 'Select Workspace Directory',
-        properties: ['openDirectory'] as Array<'openDirectory'>,
-        defaultPath: getConfigValue('workspace') || undefined,
-      };
-      // Pass the parent window so the picker is attached to it
-      // (sheet on macOS, modal on Windows/Linux) and can't end up
-      // hidden behind the settings window.
-      const result = win
-        ? await dialog.showOpenDialog(win, dialogOpts)
-        : await dialog.showOpenDialog(dialogOpts);
-
-      if (!result.canceled && result.filePaths.length > 0) {
-        const dir = result.filePaths[0];
-
-        // Close previous workspace cleanly
-        stopSkillWatcher();
-        closeDatabase();
-
-        setConfigValue('workspace', dir);
-
-        // Initialize workspace structure and DB
-        initWorkspace(dir);
-        initDatabase(getDbPath(dir), getLogRoot(dir));
-        mergeSessionIds(getConfig().sessions);
-        syncCanvasContent(dir);
-        startSkillWatcher(dir);
-
-        // Opportunistic compaction for the newly-opened workspace —
-        // deferred to idle so the switch UX feels instant. Cheap when
-        // nothing is cold.
-        setTimeout(() => {
-          try { compactOldSegments(getLogRoot(dir)); }
-          catch (err) { console.warn('[workspace] Compaction failed:', err); }
-        }, 5000).unref();
-
-        // Destroy any pre-warmed settings + canvas windows so their next
-        // opens cold-start fresh renderers with up-to-date workspace data
-        // (rather than reusing the hidden ones with stale state).
-        destroySettingsWindow();
-        destroyCanvasWindow();
-
-        // Notify all windows to reload data
-        for (const w of BrowserWindow.getAllWindows()) {
-          w.webContents.send('workspace:changed', dir);
-        }
-
-        // Start git sync polling for the new workspace
-        startSyncPolling();
-
-        return { selected: true, path: dir };
-      }
+export function registerWorkspaceHandlers(): void {
+  // Workspace directory picker — adds/activates a profile + initializes DB
+  ipcMain.handle('workspace:select', async (event) => {
+    const dir = await pickDirectory(event);
+    if (!dir) {
       return { selected: false, path: null };
-    } finally {
-      // Restore blur-hide behavior
-      if (win) {
-        const restoreTs = Date.now();
-        win.on('blur', async () => {
-          if (Date.now() - restoreTs < 300) return;
-          try {
-            const shouldStay = await win.webContents.executeJavaScript(
-              `(function() {
-                var input = document.getElementById('description-input');
-                var hasInput = input && input.value.trim().length > 0;
-                var canvasOpen = !document.getElementById('canvas-view').classList.contains('hidden');
-                return hasInput || canvasOpen;
-              })()`
-            );
-            if (shouldStay) return;
-          } catch { /* hide on failure */ }
-          win.hide();
-        });
-      }
     }
+
+    // Record (or reuse) a profile for this directory and make it active.
+    const profile = upsertProfileForPath(dir);
+    setActiveProfile(profile.id);
+
+    openWorkspace(dir);
+    await broadcastProfilesChanged();
+
+    return { selected: true, path: dir };
   });
 
   // Open a folder in the system file manager
@@ -184,12 +232,14 @@ export function registerWorkspaceHandlers(): void {
     return transcribeAudio(float32);
   });
 
-  // Clear workspace — returns app to fresh start state
-  ipcMain.handle('workspace:clear', () => {
+  // Clear workspace — returns app to fresh start state (keeps saved profiles,
+  // just deactivates the current one for this session).
+  ipcMain.handle('workspace:clear', async () => {
     stopSkillWatcher();
     stopSyncPolling();
     closeDatabase();
     setConfigValue('workspace', null);
+    setActiveProfile(null);
 
     // Destroy any pre-warmed settings + canvas windows so their next opens
     // cold-start (the cached renderers would point at the old DB).
@@ -200,7 +250,89 @@ export function registerWorkspaceHandlers(): void {
     for (const w of BrowserWindow.getAllWindows()) {
       w.webContents.send('workspace:changed', null);
     }
+    await broadcastProfilesChanged();
 
+    return { ok: true };
+  });
+
+  // ── Workspace profile handlers ─────────────────────────
+
+  ipcMain.handle('profiles:list', async () => {
+    return buildProfilesState();
+  });
+
+  // Pick a directory, add it as a profile, and switch to it.
+  ipcMain.handle('profiles:add', async (event) => {
+    const dir = await pickDirectory(event);
+    if (!dir) return { added: false, profileId: null };
+
+    const profile = upsertProfileForPath(dir);
+    setActiveProfile(profile.id);
+    openWorkspace(dir);
+    await broadcastProfilesChanged();
+    return { added: true, profileId: profile.id };
+  });
+
+  // Switch to an existing profile by id.
+  ipcMain.handle('profiles:activate', async (_event, id: string) => {
+    const profile = getProfileById(id);
+    if (!profile) return { ok: false, error: 'not_found' };
+    if (!fs.existsSync(profile.path)) return { ok: false, error: 'missing_path' };
+    if (getActiveProfileId() === id) return { ok: true };
+
+    setActiveProfile(id);
+    openWorkspace(profile.path);
+    await broadcastProfilesChanged();
+    return { ok: true };
+  });
+
+  // Cycle to the next profile in order (used by the logo + hotkey).
+  ipcMain.handle('profiles:cycle', async () => {
+    const next = getNextProfile();
+    if (!next) return { ok: false };
+    if (!fs.existsSync(next.path)) return { ok: false };
+
+    setActiveProfile(next.id);
+    openWorkspace(next.path);
+    await broadcastProfilesChanged();
+    return { ok: true, profileId: next.id };
+  });
+
+  // Update a profile's name override and/or tint color.
+  ipcMain.handle('profiles:update', async (_event, id: string, patch: { name?: string | null; tint?: string | null }) => {
+    const updated = updateProfile(id, patch || {});
+    if (!updated) return { ok: false };
+    if ('name' in (patch || {})) invalidateProfileNameCache(updated.path);
+    await broadcastProfilesChanged();
+    return { ok: true };
+  });
+
+  // Remove a profile. If it was active, switch to another or go fresh-start.
+  ipcMain.handle('profiles:remove', async (_event, id: string) => {
+    const wasActive = getActiveProfileId() === id;
+    removeProfileById(id);
+
+    if (wasActive) {
+      const remaining = getProfiles();
+      if (remaining.length > 0) {
+        setActiveProfile(remaining[0].id);
+        openWorkspace(remaining[0].path);
+      } else {
+        // No profiles left — fresh-start state.
+        stopSkillWatcher();
+        stopSyncPolling();
+        closeDatabase();
+        setConfigValue('workspace', null);
+        setActiveProfile(null);
+        destroySettingsWindow();
+        destroyCanvasWindow();
+        for (const w of BrowserWindow.getAllWindows()) {
+          w.webContents.send('workspace:changed', null);
+        }
+      }
+    }
+
+    await broadcastProfilesChanged();
     return { ok: true };
   });
 

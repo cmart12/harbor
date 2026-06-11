@@ -96,6 +96,15 @@ export interface WhimAPI {
   openPath(folderPath: string): Promise<IpcCommandResult<'shell:openPath'>>;
   openExternal(url: string): Promise<IpcCommandResult<'shell:openExternal'>>;
 
+  // ── Workspace profiles ───────────────────────────────────
+  listProfiles(): Promise<IpcCommandResult<'profiles:list'>>;
+  addProfile(): Promise<IpcCommandResult<'profiles:add'>>;
+  activateProfile(id: string): Promise<IpcCommandResult<'profiles:activate'>>;
+  cycleProfile(): Promise<IpcCommandResult<'profiles:cycle'>>;
+  updateProfile(id: string, patch: { name?: string | null; tint?: string | null }): Promise<IpcCommandResult<'profiles:update'>>;
+  removeProfile(id: string): Promise<IpcCommandResult<'profiles:remove'>>;
+  onProfilesChanged(callback: (state: IpcEventPayload<'profiles:changed'>) => void): void;
+
   // ── Git sync ────────────────────────────────────────────
   gitSyncStatus(): Promise<IpcCommandResult<'workspace:git-status'>>;
   gitPush(): Promise<IpcCommandResult<'workspace:git-push'>>;
@@ -327,6 +336,17 @@ const api: WhimAPI = {
   clearWorkspace: () => ipcRenderer.invoke('workspace:clear'),
   openPath: (folderPath) => ipcRenderer.invoke('shell:openPath', folderPath),
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
+
+  // ── Workspace profiles ───────────────────────────────────
+  listProfiles: () => ipcRenderer.invoke('profiles:list'),
+  addProfile: () => ipcRenderer.invoke('profiles:add'),
+  activateProfile: (id) => ipcRenderer.invoke('profiles:activate', id),
+  cycleProfile: () => ipcRenderer.invoke('profiles:cycle'),
+  updateProfile: (id, patch) => ipcRenderer.invoke('profiles:update', id, patch),
+  removeProfile: (id) => ipcRenderer.invoke('profiles:remove', id),
+  onProfilesChanged: (callback) => {
+    ipcRenderer.on('profiles:changed', (_event: unknown, state: any) => callback(state));
+  },
 
   // ── Git sync ────────────────────────────────────────────
   gitSyncStatus: () => ipcRenderer.invoke('workspace:git-status'),

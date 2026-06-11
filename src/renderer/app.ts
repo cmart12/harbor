@@ -14,7 +14,21 @@ import {
   keyboardEventToAccelerator,
   modifierEventToAccelerator,
 } from './lib/hotkeys';
+import { generateTintColor, isValidTint, hueOf } from './lib/tint';
 import { parseFrontmatter } from '../shared/frontmatter';
+
+interface ResolvedProfile {
+  id: string;
+  path: string;
+  name: string | null;
+  displayName: string;
+  tint: string | null;
+}
+
+interface ProfilesState {
+  profiles: ResolvedProfile[];
+  activeProfileId: string | null;
+}
 
 interface RecurrenceResult {
   should_recur: boolean;
@@ -169,6 +183,13 @@ interface WhimAPI {
   selectWorkspace(): Promise<{ selected: boolean; path: string | null }>;
   clearWorkspace(): Promise<{ ok: boolean }>;
   onWorkspaceChanged(callback: (path: string | null) => void): void;
+  listProfiles(): Promise<ProfilesState>;
+  addProfile(): Promise<{ added: boolean; profileId: string | null }>;
+  activateProfile(id: string): Promise<{ ok: boolean; error?: string }>;
+  cycleProfile(): Promise<{ ok: boolean; profileId?: string }>;
+  updateProfile(id: string, patch: { name?: string | null; tint?: string | null }): Promise<{ ok: boolean }>;
+  removeProfile(id: string): Promise<{ ok: boolean }>;
+  onProfilesChanged(callback: (state: ProfilesState) => void): void;
   gitSyncStatus(): Promise<{ available: boolean; branch: string | null; ahead: number; behind: number; unavailableReason?: string }>;
   gitPush(): Promise<{ ok: true } | { error: string }>;
   gitPull(): Promise<{ ok: true } | { error: string; conflict?: boolean }>;
@@ -3972,6 +3993,210 @@ workspacePathEl.addEventListener('click', () => {
   }
 });
 
+// ── Workspace profiles ──────────────────────────────────
+const profileFooter = document.getElementById('profile-footer') as HTMLButtonElement | null;
+const profileNameEl = document.getElementById('profile-name') as HTMLSpanElement | null;
+const profilesListEl = document.getElementById('profiles-list') as HTMLDivElement | null;
+const profileAddBtn = document.getElementById('profile-add-btn') as HTMLButtonElement | null;
+
+let profilesState: ProfilesState | null = null;
+
+/** Paint (or clear) the per-profile tint wash + accent. Safe with null/invalid values. */
+function applyProfileTint(tint: string | null): void {
+  const root = document.documentElement;
+  if (tint && isValidTint(tint)) {
+    root.style.setProperty('--profile-tint', tint);
+    document.body.classList.add('has-profile-tint');
+  } else {
+    root.style.removeProperty('--profile-tint');
+    document.body.classList.remove('has-profile-tint');
+  }
+}
+
+function getActiveProfile(): ResolvedProfile | null {
+  if (!profilesState) return null;
+  return profilesState.profiles.find(p => p.id === profilesState!.activeProfileId) ?? null;
+}
+
+/** Apply the active profile's tint to this window. */
+function applyActiveProfileTint(): void {
+  applyProfileTint(getActiveProfile()?.tint ?? null);
+}
+
+/** Footer brand bar (main window only): the active profile name + a tinted mark. */
+function renderProfileFooter(): void {
+  if (!profileFooter || !profileNameEl) return;
+  if (isCanvasMode || isSettingsMode) {
+    profileFooter.classList.add('hidden');
+    return;
+  }
+  const active = getActiveProfile();
+  if (!active) {
+    profileFooter.classList.add('hidden');
+    return;
+  }
+  profileNameEl.textContent = active.displayName;
+  const mark = profileFooter.querySelector('.profile-mark') as HTMLElement | null;
+  if (mark) mark.style.background = (active.tint && isValidTint(active.tint)) ? active.tint : '';
+  const count = profilesState?.profiles.length ?? 0;
+  profileFooter.title = count > 1 ? 'Switch profile' : 'Add another profile in Settings';
+  profileFooter.classList.remove('hidden');
+}
+
+/** Brief visual confirmation that the profile switched. */
+function pulseProfileFooter(): void {
+  if (!profileFooter) return;
+  profileFooter.classList.remove('profile-switched');
+  // Force reflow so re-adding the class restarts the animation.
+  void profileFooter.offsetWidth;
+  profileFooter.classList.add('profile-switched');
+}
+
+/** Logo/hotkey action: cycle to the next profile, or open Settings when there's nothing to cycle to. */
+async function cycleProfileFromUI(): Promise<void> {
+  const count = profilesState?.profiles.length ?? 0;
+  if (count < 2) {
+    if (!isSettingsMode && !isCanvasMode) showSettings();
+    return;
+  }
+  await whimAPI.cycleProfile();
+  // The profiles:changed broadcast updates footer + tint.
+}
+
+/** Settings → Profiles list. Renders an editable row per saved profile. */
+function renderProfilesSettings(): void {
+  if (!profilesListEl) return;
+  profilesListEl.innerHTML = '';
+  const state = profilesState;
+  if (!state || state.profiles.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'settings-hint';
+    empty.textContent = 'No profiles yet. Add one to get started.';
+    profilesListEl.appendChild(empty);
+    return;
+  }
+
+  for (const profile of state.profiles) {
+    const isActive = profile.id === state.activeProfileId;
+    const row = document.createElement('div');
+    row.className = 'profile-row' + (isActive ? ' active' : '');
+
+    // Tint swatch — tap to generate a new reasonable color (no palette picker).
+    const swatch = document.createElement('button');
+    swatch.type = 'button';
+    swatch.className = 'profile-swatch';
+    swatch.title = 'Tap to change the tint color';
+    const applySwatch = (tint: string | null) => {
+      swatch.style.background = (tint && isValidTint(tint)) ? tint : '';
+      swatch.classList.toggle('no-tint', !(tint && isValidTint(tint)));
+    };
+    applySwatch(profile.tint);
+    swatch.addEventListener('click', async () => {
+      const next = generateTintColor(profile.tint ? (hueOf(profile.tint) ?? undefined) : undefined);
+      profile.tint = next;
+      applySwatch(next);
+      if (isActive) applyProfileTint(next);
+      await whimAPI.updateProfile(profile.id, { tint: next });
+    });
+    row.appendChild(swatch);
+
+    // Name override — placeholder shows the resolved default (git repo / folder) name.
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.className = 'profile-name-input';
+    nameInput.value = profile.name ?? '';
+    nameInput.placeholder = profile.displayName;
+    nameInput.spellcheck = false;
+    const commitName = async () => {
+      const value = nameInput.value.trim();
+      const next = value.length > 0 ? value : null;
+      if (next === profile.name) return;
+      profile.name = next;
+      await whimAPI.updateProfile(profile.id, { name: next });
+    };
+    nameInput.addEventListener('blur', () => { void commitName(); });
+    nameInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); nameInput.blur(); }
+    });
+    row.appendChild(nameInput);
+
+    // Path (muted, click to open in the file manager).
+    const pathEl = document.createElement('button');
+    pathEl.type = 'button';
+    pathEl.className = 'profile-path';
+    const parts = profile.path.replace(/\\/g, '/').split('/');
+    pathEl.textContent = parts.length > 2 ? '…/' + parts.slice(-2).join('/') : profile.path;
+    pathEl.title = profile.path;
+    pathEl.addEventListener('click', () => { whimAPI.openPath(profile.path); });
+    row.appendChild(pathEl);
+
+    // Switch button / active badge.
+    if (isActive) {
+      const badge = document.createElement('span');
+      badge.className = 'profile-active-badge';
+      badge.textContent = 'Active';
+      row.appendChild(badge);
+    } else {
+      const switchBtn = document.createElement('button');
+      switchBtn.type = 'button';
+      switchBtn.className = 'workspace-btn';
+      switchBtn.textContent = 'Switch';
+      switchBtn.addEventListener('click', async () => {
+        const res = await whimAPI.activateProfile(profile.id);
+        if (!res.ok && res.error === 'missing_path') {
+          showStatus('Profile folder not found', true);
+        }
+      });
+      row.appendChild(switchBtn);
+    }
+
+    // Remove.
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'profile-remove-btn';
+    removeBtn.title = 'Remove profile';
+    removeBtn.textContent = '✕';
+    removeBtn.addEventListener('click', async () => {
+      await whimAPI.removeProfile(profile.id);
+    });
+    row.appendChild(removeBtn);
+
+    profilesListEl.appendChild(row);
+  }
+}
+
+/** Pull profile state from main and refresh the footer, tint, and settings list. */
+async function refreshProfiles(): Promise<void> {
+  try {
+    profilesState = await whimAPI.listProfiles();
+  } catch {
+    profilesState = { profiles: [], activeProfileId: null };
+  }
+  renderProfileFooter();
+  applyActiveProfileTint();
+  renderProfilesSettings();
+}
+
+function handleProfilesChanged(state: ProfilesState): void {
+  const prevActive = profilesState?.activeProfileId ?? null;
+  profilesState = state;
+  renderProfileFooter();
+  applyActiveProfileTint();
+  renderProfilesSettings();
+  if (state.activeProfileId && state.activeProfileId !== prevActive) {
+    pulseProfileFooter();
+  }
+}
+
+if (profileFooter) {
+  profileFooter.addEventListener('click', () => { void cycleProfileFromUI(); });
+}
+if (profileAddBtn) {
+  profileAddBtn.addEventListener('click', () => { void whimAPI.addProfile(); });
+}
+whimAPI.onProfilesChanged(handleProfilesChanged);
+void refreshProfiles();
+
 // ── CLI Path setting ────────────────────────────────────
 const cliPathInput = document.getElementById('cli-path-input') as HTMLInputElement;
 const cliPathClear = document.getElementById('cli-path-clear') as HTMLButtonElement;
@@ -6866,6 +7091,13 @@ document.addEventListener('keydown', (e) => {
         hideSettings();
       }
     }
+    return;
+  }
+
+  // Cycle workspace profiles (main window only — popouts close on switch).
+  if (!isCanvasMode && !isSettingsMode && matchesHotkey(e, 'switchProfile')) {
+    e.preventDefault();
+    void cycleProfileFromUI();
     return;
   }
 

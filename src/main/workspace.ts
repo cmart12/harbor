@@ -102,6 +102,57 @@ export function slugify(text: string, spaceId: string): string {
   return slug ? `${slug}-${idSuffix}` : idSuffix;
 }
 
+/**
+ * Parse a repository "name" from a git remote URL. Handles https, scp-like ssh
+ * (`git@host:owner/repo.git`), local paths, and a trailing `.git`.
+ * Returns null when nothing usable can be extracted.
+ *
+ *   https://github.com/patniko/whim.git  -> "whim"
+ *   git@github.com:patniko/whim.git      -> "whim"
+ *   /Users/me/code/my-repo/              -> "my-repo"
+ */
+export function parseRepoNameFromRemote(url: string): string | null {
+  if (!url) return null;
+  let s = url.trim();
+  if (!s) return null;
+  s = s.replace(/\/+$/, '');      // drop trailing slashes
+  s = s.replace(/\.git$/i, '');   // drop a trailing .git
+  const segments = s.split(/[/:]/).filter(Boolean);
+  const last = segments.pop();
+  return last ? last : null;
+}
+
+const profileNameCache = new Map<string, string>();
+
+/**
+ * Resolve the default display name for a workspace profile: the git remote
+ * repository name (`origin`) when available, otherwise the directory's
+ * basename. Results are memoized per path for the life of the process.
+ */
+export async function getDefaultProfileName(dir: string): Promise<string> {
+  const cached = profileNameCache.get(dir);
+  if (cached) return cached;
+
+  let name: string | null = null;
+  try {
+    const url = await runGitOutput(dir, ['remote', 'get-url', 'origin']);
+    name = parseRepoNameFromRemote(url);
+  } catch {
+    // Not a git repo, or no `origin` remote — fall back to the folder name.
+  }
+  if (!name) {
+    name = path.basename(dir.replace(/[/\\]+$/, '')) || dir;
+  }
+  profileNameCache.set(dir, name);
+  return name;
+}
+
+/** Drop cached default names (all, or one path). */
+export function invalidateProfileNameCache(dir?: string): void {
+  if (dir) profileNameCache.delete(dir);
+  else profileNameCache.clear();
+}
+
 /** Create a subfolder for a space inside the workspace. Returns the folder name (relative). */
 export function createSpaceFolder(workspaceRoot: string, spaceId: string, description: string): string {
   const folder = slugify(description, spaceId);

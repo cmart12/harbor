@@ -132,6 +132,12 @@
         <button id="git-sync-pull" class="git-sync-btn hidden" title="Pull changes from remote">↓ <span id="git-sync-behind-count">0</span></button>
         <button id="git-sync-push" class="git-sync-btn hidden" title="Push changes to remote">↑ <span id="git-sync-ahead-count">0</span></button>
       </div>
+
+      <button id="profile-footer" class="profile-footer hidden" type="button" title="Switch profile">
+        <span class="profile-mark" aria-hidden="true"></span>
+        <span class="profile-wordmark">whim</span>
+        <span id="profile-name" class="profile-name"></span>
+      </button>
     </div>
 
     <!-- Settings modal overlay -->
@@ -239,6 +245,13 @@
                 </div>
               </div>
               <div class="settings-hint">The working directory for Copilot CLI sessions.</div>
+            </div>
+
+            <div class="settings-group">
+              <div class="settings-group-title">Profiles</div>
+              <div class="settings-hint">Keep separate repos (e.g. work and personal) and switch between them from the whim logo at the bottom of the panel or with the Switch Profile hotkey. Each profile can carry its own color tint.</div>
+              <div id="profiles-list" class="profiles-list"></div>
+              <button id="profile-add-btn" class="persona-add-btn" type="button">+ Add Profile</button>
             </div>
 
             <div class="settings-group">

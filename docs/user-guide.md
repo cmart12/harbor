@@ -238,6 +238,16 @@ Select which Copilot model to use for AI refinement and agent sessions.
 ### Workspace
 Choose the directory where whim stores all data.
 
+### Profiles
+Keep separate repos — for example **work** and **personal** — and switch between them quickly. Each profile remembers its own workspace directory and can carry a color **tint** so you always know which mode you're in.
+
+- **Add Profile** — pick a folder; whim adds it as a profile and switches to it.
+- **Name** — defaults to the git remote repository name (falling back to the folder name). Type your own to override.
+- **Tint** — tap the color swatch to generate a new reasonable color (tuned to read well in light and dark). The active profile's tint washes subtly over the whole side panel.
+- **Switch** — activate any profile from the list, click the **whim logo** at the bottom of the side panel to cycle to the next one, or press the **Switch Profile** hotkey (`Cmd/Ctrl+Shift+P`).
+
+The active profile's name appears next to the whim logo at the bottom of the panel.
+
 ### Copilot CLI
 Auto-detected by default. Override with a custom path if needed.
 
@@ -268,6 +278,7 @@ Create @mentionable personas:
 | `Escape` | Close current view / Dismiss window |
 | `Space` (empty input) | Start/stop voice recording |
 | `Shift+Tab` | Toggle search mode |
+| `Cmd/Ctrl+Shift+P` | Switch workspace profile |
 | `↑ / ↓` | Navigate intent/agent list |
 | `← / →` | Switch between Spaces / Workers / Past tabs |
 | `Cmd+S` | Save canvas |
