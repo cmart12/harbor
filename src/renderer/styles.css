@@ -3358,6 +3358,11 @@ body.dark .skill-action:hover {
   gap: 4px;
 }
 
+.export-dest-path-row .persona-form-input {
+  flex: 1;
+  min-width: 0;
+}
+
 .persona-handle-prefix {
   font-size: var(--fs-body);
   font-weight: 600;
@@ -4251,6 +4256,58 @@ body.dark .canvas-menu-item:hover {
 
 body.dark .canvas-menu-separator {
   background: rgba(255, 255, 255, 0.08);
+}
+
+/* ── Canvas Share popover ────────────────────────────── */
+.canvas-share-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.canvas-share-dropdown {
+  min-width: 220px;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.canvas-menu-section-label {
+  padding: 6px 12px 2px;
+  font-size: var(--fs-label);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: rgba(0, 0, 0, 0.4);
+}
+
+.canvas-share-dest-format {
+  margin-left: auto;
+  padding: 1px 6px;
+  font-size: var(--fs-label);
+  font-weight: 600;
+  text-transform: uppercase;
+  color: rgba(0, 0, 0, 0.45);
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 4px;
+}
+
+.canvas-share-dest-empty {
+  padding: 4px 12px 8px;
+  font-size: var(--fs-label);
+  color: rgba(0, 0, 0, 0.4);
+  line-height: 1.4;
+}
+
+body.dark .canvas-menu-section-label {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+body.dark .canvas-share-dest-format {
+  color: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+body.dark .canvas-share-dest-empty {
+  color: rgba(255, 255, 255, 0.4);
 }
 
 /* ── Skill Chips (linked skills bar) ─────────────────── */

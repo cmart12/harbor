@@ -6,6 +6,7 @@ import { AgentNotifier } from './agents/agent-notifier';
 import { AgentPersistence } from './agents/agent-persistence';
 import { InteractionBroker } from './agents/interaction-broker';
 import { listAllRunningAgents, updateCanvasAgentStatus } from './database';
+import { subscribeWebRemoteEvents } from './web/event-hub';
 
 // Import runner modules
 import { initSdkRunner, setupAgentEventListeners } from './agents/sdk-runner';
@@ -436,8 +437,49 @@ export function listAllAgents(): AgentListSnapshot[] {
   return result;
 }
 
+/** Minimal worker shape consumed by the system tray menu. */
+export interface TrayWorker {
+  agentId: string;
+  status: import('./agents/agent-registry').AgentStatus;
+  summary: string;
+  selectedText: string;
+  source: 'sdk' | 'cli' | 'cca';
+  spaceId: string;
+}
+
+const ACTIVE_WORKER_STATUSES = new Set<string>(['running', 'waiting-approval']);
+
 /**
- * Mark any DB agent sessions still in "running" or "waiting-approval" state
+ * Active workers for the tray menu: only `running` / `waiting-approval`, and
+ * excluding internal workspace-level supervisors (`spaceId === '__workspace__'`)
+ * so the menu shows user-meaningful workers only.
+ */
+export function listTrayWorkers(): TrayWorker[] {
+  return listAllAgents()
+    .filter((a) => ACTIVE_WORKER_STATUSES.has(a.status) && a.spaceId !== '__workspace__')
+    .map((a) => ({
+      agentId: a.agentId,
+      status: a.status,
+      summary: a.summary,
+      selectedText: a.selectedText,
+      source: a.source,
+      spaceId: a.spaceId,
+    }));
+}
+
+/**
+ * Subscribe to changes that affect the active-worker list (status transitions
+ * and completions). Reuses the main-process event mirror in `web/event-hub`,
+ * which already carries `agent:status-changed` and `agent:completed`. Returns
+ * an unsubscribe function.
+ */
+export function onAgentListChanged(listener: () => void): () => void {
+  return subscribeWebRemoteEvents((event) => {
+    if (event.channel === 'agent:status-changed' || event.channel === 'agent:completed') {
+      listener();
+    }
+  });
+}
  * as "failed" when no corresponding live process exists.  This handles the
  * case where the app quit while agents were active — the in-memory registry
  * is lost on restart so these entries would otherwise stay stale forever.

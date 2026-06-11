@@ -5,6 +5,7 @@ import { registerSettingsHandlers } from './settings-handlers';
 import { registerChatHandlers } from './chat-handlers';
 import { registerWorkspaceHandlers } from './workspace-handlers';
 import { registerSkillHandlers } from './skill-handlers';
+import { registerExportHandlers } from './export-handlers';
 
 export function registerIpcHandlers(): void {
   registerSpaceHandlers();
@@ -14,6 +15,7 @@ export function registerIpcHandlers(): void {
   registerChatHandlers();
   registerWorkspaceHandlers();
   registerSkillHandlers();
+  registerExportHandlers();
 }
 
 // Re-export typed handler utilities

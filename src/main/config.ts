@@ -4,8 +4,10 @@ import * as os from 'os';
 import { randomBytes } from 'crypto';
 import { app } from 'electron';
 import { DEFAULT_SANDBOX_POLICY, type SandboxPolicy } from '../shared/ipc-contract';
+import type { ExportFormat, ExportDestination } from '../shared/types';
 
 export type { SandboxPolicy };
+export type { ExportFormat, ExportDestination };
 export { DEFAULT_SANDBOX_POLICY };
 
 export type SnapPosition = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'left-center' | 'right-center';
@@ -145,6 +147,7 @@ export interface AppConfig {
   commentTrigger: 'hover-or-caret' | 'caret'; // how the canvas surfaces comment threads
   profiles: WorkspaceProfile[];     // saved workspace profiles (work / personal / …)
   activeProfileId: string | null;   // id of the currently-open profile in `profiles`
+  exportDestinations: ExportDestination[]; // "push to folder" targets for canvas sharing
 }
 
 const CONFIG_PATH = path.join(app.getPath('userData'), 'config.json');
@@ -325,6 +328,7 @@ const DEFAULT_CONFIG: AppConfig = {
   commentTrigger: 'caret',
   profiles: [],
   activeProfileId: null,
+  exportDestinations: [],
 };
 
 let config: AppConfig = { ...DEFAULT_CONFIG };
@@ -634,3 +638,51 @@ export function getNextProfile(): WorkspaceProfile | null {
   const nextIdx = idx < 0 ? 0 : (idx + 1) % config.profiles.length;
   return config.profiles[nextIdx];
 }
+
+// ── Export destinations ─────────────────────────────────
+
+export function generateExportDestinationId(): string {
+  return randomBytes(9).toString('base64url');
+}
+
+export function getExportDestinations(): ExportDestination[] {
+  return config.exportDestinations || [];
+}
+
+/**
+ * Validate and normalize a raw list of export destinations (e.g. from the
+ * settings UI). Drops entries missing a label or path, clamps formats to the
+ * supported set, and preserves/generates stable ids. Capped at 32 entries.
+ */
+export function validateExportDestinations(value: unknown): ExportDestination[] {
+  if (!Array.isArray(value)) return [];
+  const valid: ExportDestination[] = [];
+  for (const raw of value) {
+    if (!raw || typeof raw !== 'object') continue;
+    const entry = raw as Record<string, unknown>;
+    const label = typeof entry.label === 'string' ? entry.label.trim() : '';
+    const destPath = typeof entry.path === 'string' ? entry.path.trim() : '';
+    if (!label || !destPath) continue;
+    const format = entry.defaultFormat;
+    const defaultFormat: ExportFormat =
+      format === 'pdf' || format === 'docx' || format === 'md' ? format : 'pdf';
+    const id = typeof entry.id === 'string' && entry.id.trim()
+      ? entry.id.trim()
+      : generateExportDestinationId();
+    valid.push({ id, label, path: destPath, defaultFormat });
+    if (valid.length >= 32) break;
+  }
+  return valid;
+}
+
+export function setExportDestinations(value: unknown): ExportDestination[] {
+  const validated = validateExportDestinations(value);
+  config.exportDestinations = validated;
+  saveConfig();
+  return validated;
+}
+
+export function getExportDestinationById(id: string): ExportDestination | null {
+  return (config.exportDestinations || []).find((d) => d.id === id) ?? null;
+}
+

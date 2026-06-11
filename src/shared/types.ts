@@ -213,6 +213,22 @@ export type CanvasTarget =
   | { kind: 'skill'; id: string; title: string }
   | { kind: 'page'; spaceId: string; page: string; title: string };
 
+// ── Canvas export / sharing ─────────────────────────────
+
+/** A format a canvas can be exported or shared as. */
+export type ExportFormat = 'pdf' | 'docx' | 'md';
+
+/**
+ * A "push to folder" target for canvas sharing. Points at a local folder that
+ * is typically synced by OneDrive/SharePoint or Google Drive desktop apps.
+ */
+export interface ExportDestination {
+  id: string;
+  label: string;
+  path: string;
+  defaultFormat: ExportFormat;
+}
+
 // ── Skills ──────────────────────────────────────────────
 
 export interface SkillFrontmatter {

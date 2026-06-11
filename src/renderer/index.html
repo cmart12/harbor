@@ -253,6 +253,13 @@
             </div>
 
             <div class="settings-group">
+              <div class="settings-group-title">Export Destinations</div>
+              <div class="settings-hint">Push a copy of a canvas (PDF, Word, or Markdown) into a folder for quick access and sharing. Point these at folders synced by OneDrive/SharePoint or Google Drive desktop apps and your exports show up in the cloud — and on your phone — automatically.</div>
+              <div id="export-destinations-list" class="personas-list"></div>
+              <button id="export-dest-add-btn" class="persona-add-btn" type="button">+ Add Destination</button>
+            </div>
+
+            <div class="settings-group">
               <div class="settings-group-title">Default Copilot CLI</div>
               <div class="settings-row">
                 <div class="cli-path-display">
@@ -349,6 +356,37 @@
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
             </button>
           </div>
+          <button id="canvas-pin-top" class="header-icon-btn canvas-pin-top-btn" title="Pin to Top" aria-label="Pin to Top">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>
+            <span class="canvas-menu-label" id="canvas-pin-label" style="display:none">Pin to Top</span>
+          </button>
+          <div class="canvas-share-wrap">
+            <button id="canvas-share-btn" class="header-icon-btn" title="Share canvas" aria-label="Share canvas">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" x2="12" y1="2" y2="15"/></svg>
+            </button>
+            <div id="canvas-share-dropdown" class="canvas-menu-dropdown canvas-share-dropdown hidden">
+              <div class="canvas-menu-section-label">Share via OS</div>
+              <button class="canvas-menu-item" data-share-format="pdf">
+                <span class="canvas-menu-icon">📄</span>
+                <span>PDF</span>
+              </button>
+              <button class="canvas-menu-item" data-share-format="docx">
+                <span class="canvas-menu-icon">📝</span>
+                <span>Word document</span>
+              </button>
+              <button class="canvas-menu-item" data-share-format="md">
+                <span class="canvas-menu-icon">⤓</span>
+                <span>Markdown</span>
+              </button>
+              <div class="canvas-menu-separator"></div>
+              <div class="canvas-menu-section-label">Save to folder</div>
+              <div id="canvas-share-destinations"></div>
+              <button class="canvas-menu-item" id="canvas-share-manage-dest">
+                <span class="canvas-menu-icon">⚙</span>
+                <span>Manage destinations…</span>
+              </button>
+            </div>
+          </div>
           <div class="canvas-menu-wrap">
             <button id="canvas-menu-btn" class="header-icon-btn canvas-menu-trigger" title="More actions">⋯</button>
             <div id="canvas-menu-dropdown" class="canvas-menu-dropdown hidden">
@@ -381,10 +419,6 @@
               <button id="canvas-open-folder" class="canvas-menu-item">
                 <span class="canvas-menu-icon">📁</span>
                 <span>Open Folder</span>
-              </button>
-              <button id="canvas-pin-top" class="canvas-menu-item canvas-pin-top-btn">
-                <span class="canvas-menu-icon">📌</span>
-                <span class="canvas-menu-label" id="canvas-pin-label">Pin to Top</span>
               </button>
             </div>
           </div>

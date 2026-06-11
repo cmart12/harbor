@@ -11,7 +11,7 @@ import type {
   WebRemoteState,
 } from '../shared/ipc-contract';
 import type { ChatEvent } from '../shared/chat-types';
-import type { AgentAnchor, RecurrenceResult, RecallMatch, Skill, SkillContent, SkillScheduleFrequency, CanvasTarget, UpdateState, CanvasAgentStateSnapshot } from '../shared/types';
+import type { AgentAnchor, RecurrenceResult, RecallMatch, Skill, SkillContent, SkillScheduleFrequency, CanvasTarget, UpdateState, CanvasAgentStateSnapshot, ExportFormat, ExportDestination } from '../shared/types';
 
 const { contextBridge, ipcRenderer } = require('electron');
 
@@ -125,6 +125,14 @@ export interface WhimAPI {
   openSpaceFolder(spaceId: string): Promise<void>;
   /** Live state of comment-thread agents in a space, for rehydrating a (re)mounted canvas. */
   getCanvasAgentState(spaceId: string): Promise<CanvasAgentStateSnapshot[]>;
+
+  // ── Canvas export / sharing ──────────────────────────────
+  exportCanvas(spaceId: string, format: ExportFormat): Promise<IpcCommandResult<'canvas:export'>>;
+  shareCanvas(spaceId: string, format: ExportFormat): Promise<IpcCommandResult<'canvas:share'>>;
+  exportCanvasToDestination(spaceId: string, destinationId: string, format?: ExportFormat): Promise<IpcCommandResult<'canvas:export-to-destination'>>;
+  listExportDestinations(): Promise<IpcCommandResult<'export-destinations:list'>>;
+  saveExportDestinations(destinations: ExportDestination[]): Promise<IpcCommandResult<'export-destinations:save'>>;
+  selectFolder(options?: { title?: string }): Promise<IpcCommandResult<'dialog:select-folder'>>;
 
   // ── Agent ────────────────────────────────────────────────
   launchAgent(spaceId: string, selectedText: string, anchor: AgentAnchor, options?: { repo?: string; model?: string }): Promise<IpcCommandResult<'agent:launch'>>;
@@ -373,6 +381,16 @@ const api: WhimAPI = {
     ipcRenderer.invoke('canvas:open-folder', spaceId),
   getCanvasAgentState: (spaceId) =>
     ipcRenderer.invoke('canvas:get-agent-state', spaceId),
+
+  // ── Canvas export / sharing ──────────────────────────────
+  exportCanvas: (spaceId, format) => ipcRenderer.invoke('canvas:export', spaceId, format),
+  shareCanvas: (spaceId, format) => ipcRenderer.invoke('canvas:share', spaceId, format),
+  exportCanvasToDestination: (spaceId, destinationId, format) =>
+    ipcRenderer.invoke('canvas:export-to-destination', spaceId, destinationId, format),
+  listExportDestinations: () => ipcRenderer.invoke('export-destinations:list'),
+  saveExportDestinations: (destinations) =>
+    ipcRenderer.invoke('export-destinations:save', destinations),
+  selectFolder: (options) => ipcRenderer.invoke('dialog:select-folder', options),
 
   // ── Agent ────────────────────────────────────────────────
   launchAgent: (spaceId, selectedText, anchor, options?) =>

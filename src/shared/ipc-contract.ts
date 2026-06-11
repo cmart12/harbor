@@ -5,7 +5,7 @@
  * This file is **types only** — no runtime code.
  */
 
-import type { Space, CreateSpaceInput, Attachment, AgentAnchor, AgentSession, LinkPreviewMeta, RecurrenceResult, RecallMatch, Skill, SkillContent, SkillScheduleFrequency, CanvasTarget, UpdateState } from './types';
+import type { Space, CreateSpaceInput, Attachment, AgentAnchor, AgentSession, LinkPreviewMeta, RecurrenceResult, RecallMatch, Skill, SkillContent, SkillScheduleFrequency, CanvasTarget, UpdateState, ExportFormat, ExportDestination } from './types';
 import type { ChatEvent, ElicitationSchema, ElicitationFieldValue } from './chat-types';
 import type { SubagentSummary, SubagentInfo } from './subagent-types';
 
@@ -364,6 +364,14 @@ export interface IpcCommands {
   'canvas:list-pages': { args: [spaceId: string]; result: { pages: string[]; error?: string } };
   'canvas:open-link': { args: [spaceId: string, url: string]; result: { action: 'canvas' | 'external' | 'none'; error?: string } };
   'canvas:read-file': { args: [spaceId: string, relativePath: string]; result: { data?: number[]; mimeType?: string; error?: string } };
+
+  // ── Canvas export / sharing ───────────────────────────────
+  'canvas:export': { args: [spaceId: string, format: ExportFormat]; result: { path: string } | { error: string } };
+  'canvas:share': { args: [spaceId: string, format: ExportFormat]; result: { ok: true; method: 'os-share' | 'reveal' } | { error: string } };
+  'canvas:export-to-destination': { args: [spaceId: string, destinationId: string, format?: ExportFormat]; result: { path: string } | { error: string } };
+  'export-destinations:list': { args: []; result: ExportDestination[] };
+  'export-destinations:save': { args: [destinations: ExportDestination[]]; result: { ok: true; destinations: ExportDestination[] } | { error: string } };
+  'dialog:select-folder': { args: [options?: { title?: string }]; result: { path: string } | { canceled: true } };
 
   // ── Agent ────────────────────────────────────────────────
   'agent:launch': {

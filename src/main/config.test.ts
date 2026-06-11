@@ -9,7 +9,7 @@ vi.mock('electron', () => ({
   },
 }));
 
-import { loadConfig, getConfig, getConfigValue, setConfigValue, getSessionId, setSessionId, removeSession, saveConfig, DEFAULT_WEB_REMOTE_PORT, isTailscaleAddress, DEFAULT_HOTKEYS, getProfiles, getActiveProfile, getActiveProfileId, getProfileById, upsertProfileForPath, updateProfile, removeProfileById, setActiveProfile, getNextProfile, generateProfileId } from './config';
+import { loadConfig, getConfig, getConfigValue, setConfigValue, getSessionId, setSessionId, removeSession, saveConfig, DEFAULT_WEB_REMOTE_PORT, isTailscaleAddress, DEFAULT_HOTKEYS, getProfiles, getActiveProfile, getActiveProfileId, getProfileById, upsertProfileForPath, updateProfile, removeProfileById, setActiveProfile, getNextProfile, generateProfileId, getExportDestinations, setExportDestinations, validateExportDestinations, getExportDestinationById, generateExportDestinationId } from './config';
 
 const CONFIG_PATH = path.join('/tmp/space-test-config', 'config.json');
 
@@ -346,6 +346,60 @@ describe('config', () => {
       expect(raw.profiles).toHaveLength(1);
       expect(raw.profiles[0].tint).toBe('#123456');
       expect(raw.activeProfileId).toBe(p.id);
+    });
+  });
+
+  describe('export destinations', () => {
+    beforeEach(() => {
+      loadConfig();
+    });
+
+    it('defaults to an empty list', () => {
+      expect(getExportDestinations()).toEqual([]);
+    });
+
+    it('validates and normalizes raw destinations', () => {
+      const result = validateExportDestinations([
+        { id: 'a', label: '  Work  ', path: '/sync/work', defaultFormat: 'docx' },
+        { label: 'No id', path: '/sync/x' },          // id generated, format defaults to pdf
+        { label: '', path: '/sync/y' },               // dropped: empty label
+        { label: 'No path', path: '   ' },            // dropped: empty path
+        { label: 'Bad format', path: '/p', defaultFormat: 'rtf' }, // format clamped to pdf
+        'not-an-object',                               // dropped
+      ]);
+      expect(result).toHaveLength(3);
+      expect(result[0]).toEqual({ id: 'a', label: 'Work', path: '/sync/work', defaultFormat: 'docx' });
+      expect(result[1].label).toBe('No id');
+      expect(result[1].defaultFormat).toBe('pdf');
+      expect(typeof result[1].id).toBe('string');
+      expect(result[1].id.length).toBeGreaterThan(0);
+      expect(result[2].defaultFormat).toBe('pdf');
+    });
+
+    it('returns an empty list for non-array input', () => {
+      expect(validateExportDestinations(null)).toEqual([]);
+      expect(validateExportDestinations({})).toEqual([]);
+    });
+
+    it('caps the list at 32 entries', () => {
+      const many = Array.from({ length: 40 }, (_, i) => ({ label: `d${i}`, path: `/p/${i}` }));
+      expect(validateExportDestinations(many)).toHaveLength(32);
+    });
+
+    it('persists destinations and looks them up by id', () => {
+      const saved = setExportDestinations([{ id: 'work', label: 'Work', path: '/sync/work', defaultFormat: 'pdf' }]);
+      expect(saved).toHaveLength(1);
+      expect(getExportDestinationById('work')?.path).toBe('/sync/work');
+      expect(getExportDestinationById('missing')).toBeNull();
+
+      const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
+      expect(raw.exportDestinations).toHaveLength(1);
+      expect(raw.exportDestinations[0].label).toBe('Work');
+    });
+
+    it('generates unique destination ids', () => {
+      const ids = new Set(Array.from({ length: 50 }, () => generateExportDestinationId()));
+      expect(ids.size).toBe(50);
     });
   });
 });

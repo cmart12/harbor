@@ -1,5 +1,7 @@
 import { BrowserWindow, screen, ipcMain, shell, app } from 'electron';
+import { EventEmitter } from 'events';
 import { getConfigValue, setConfigValue, type SnapPosition } from './config';
+import { getSpace } from './database';
 import * as fs from 'fs';
 import * as nodePath from 'path';
 
@@ -31,6 +33,13 @@ let canvasWindow: BrowserWindow | null = null;
 let canvasWindowAllowClose = false;
 const canvasWindows = new Set<BrowserWindow>();
 const canvasUserPinned = new WeakSet<BrowserWindow>();
+// Last `CanvasTarget`-like payload sent to each canvas window, keyed by
+// `win.id`. Used to label open canvases in the tray menu (canvas windows
+// don't set an OS/document title). Resolved lazily so labels stay fresh.
+const canvasTargets = new Map<number, CanvasTargetLike>();
+// Fires whenever the set of open/visible canvases — or a canvas's target —
+// changes, so the tray menu can rebuild. See `onCanvasWindowsChanged`.
+const canvasChangeEmitter = new EventEmitter();
 let settingsWindow: BrowserWindow | null = null;
 let settingsWindowAllowClose = false;
 let isExpanded = false;
@@ -61,6 +70,74 @@ function shouldBlurHide(): boolean {
 
 function shouldCanvasBeOnTop(win: BrowserWindow): boolean {
   return getConfigValue('pinned') || canvasUserPinned.has(win);
+}
+
+// ── Canvas target tracking (for the tray menu) ───────────
+// Canvas windows render different "targets" (a space, a page, a file, …) but
+// never set an OS/document title, so the main process tracks the last target
+// sent to each window and derives a human label on demand.
+
+type CanvasTargetLike = {
+  kind?: string;
+  id?: string;
+  title?: string;
+  page?: string;
+  spaceId?: string;
+  filePath?: string;
+};
+
+/** Send a load-target to a canvas window and remember it for tray labelling. */
+function sendCanvasTarget(win: BrowserWindow, target: CanvasTargetLike): void {
+  if (win.isDestroyed()) return;
+  canvasTargets.set(win.id, target);
+  win.webContents.send('canvas-window:load-target', target);
+  emitCanvasChange();
+}
+
+function emitCanvasChange(): void {
+  canvasChangeEmitter.emit('change');
+}
+
+/** Derive a human-readable label for a canvas window from its current target. */
+function resolveCanvasLabel(winId: number): string {
+  const target = canvasTargets.get(winId);
+  if (!target) return 'Canvas';
+  if (typeof target.title === 'string' && target.title.trim()) return target.title.trim();
+  if (target.kind === 'space' && target.id) {
+    try {
+      const space = getSpace(target.id);
+      if (space?.description?.trim()) return space.description.trim();
+    } catch { /* DB may not be ready */ }
+  }
+  if (target.kind === 'page' && target.page) return String(target.page);
+  return 'Canvas';
+}
+
+/** Currently *visible* canvas windows, with a label for each. Used by the tray. */
+export function getOpenCanvases(): { winId: number; label: string }[] {
+  const result: { winId: number; label: string }[] = [];
+  for (const win of canvasWindows) {
+    if (win.isDestroyed() || !win.isVisible()) continue;
+    result.push({ winId: win.id, label: resolveCanvasLabel(win.id) });
+  }
+  return result;
+}
+
+/** Show (if hidden) and focus the canvas window with the given id. */
+export function focusCanvasWindow(winId: number): void {
+  for (const win of canvasWindows) {
+    if (win.id === winId && !win.isDestroyed()) {
+      if (!win.isVisible()) win.show();
+      win.focus();
+      return;
+    }
+  }
+}
+
+/** Subscribe to canvas open/close/show/hide/target changes. Returns unsubscribe. */
+export function onCanvasWindowsChanged(cb: () => void): () => void {
+  canvasChangeEmitter.on('change', cb);
+  return () => { canvasChangeEmitter.off('change', cb); };
 }
 
 /** Apply the stacking policy to the main window and all canvas windows. */
@@ -346,7 +423,7 @@ export function registerWindowIpcHandlers(preloadPath: string): void {
       // — defer the load-target send until the renderer is ready.
       const reveal = () => {
         if (!canvasWindow || canvasWindow.isDestroyed()) return;
-        canvasWindow.webContents.send('canvas-window:load-target', target);
+        sendCanvasTarget(canvasWindow, target);
         if (!canvasWindow.isVisible()) canvasWindow.show();
         canvasWindow.focus();
       };
@@ -358,7 +435,7 @@ export function registerWindowIpcHandlers(preloadPath: string): void {
     } else {
       canvasWindow = createCanvasWindow(preloadPath, { isPrimary: true });
       canvasWindow.webContents.once('did-finish-load', () => {
-        canvasWindow?.webContents.send('canvas-window:load-target', target);
+        if (canvasWindow) sendCanvasTarget(canvasWindow, target);
         canvasWindow?.show();
         canvasWindow?.focus();
       });
@@ -393,7 +470,7 @@ export function registerWindowIpcHandlers(preloadPath: string): void {
     // Track as the "primary" canvas for default reuse
     canvasWindow = win;
     win.webContents.once('did-finish-load', () => {
-      win.webContents.send('canvas-window:load-target', target);
+      sendCanvasTarget(win, target);
       win.show();
     });
   });
@@ -561,7 +638,7 @@ export function isWorkspaceMdFile(filePath: string): boolean {
 /** Navigate a canvas window to a different space by sending a load-target event. */
 function navigateCanvasToSpace(win: BrowserWindow, spaceId: string): void {
   if (!win.isDestroyed()) {
-    win.webContents.send('canvas-window:load-target', { kind: 'space', id: spaceId, title: '' });
+    sendCanvasTarget(win, { kind: 'space', id: spaceId, title: '' });
   }
 }
 
@@ -570,7 +647,7 @@ function openPageInNewWindow(preloadPath: string, spaceId: string, page: string)
   const win = createCanvasWindow(preloadPath);
   const target = { kind: 'page' as const, spaceId, page, title: page };
   win.webContents.once('did-finish-load', () => {
-    win.webContents.send('canvas-window:load-target', target);
+    sendCanvasTarget(win, target);
     win.show();
   });
 }
@@ -581,7 +658,7 @@ export function openFileInNewWindow(filePath: string): void {
   const win = createCanvasWindow(storedPreloadPath);
   const target = { kind: 'file' as const, filePath, title };
   win.webContents.once('did-finish-load', () => {
-    win.webContents.send('canvas-window:load-target', target);
+    sendCanvasTarget(win, target);
     win.show();
   });
 }
@@ -761,6 +838,10 @@ function createCanvasWindow(preloadPath: string, options: { isPrimary?: boolean 
 
   canvasWindows.add(win);
 
+  // Keep the tray menu in sync as this canvas is shown/hidden.
+  win.on('show', emitCanvasChange);
+  win.on('hide', emitCanvasChange);
+
   // Primary canvas window: hide-on-close so the renderer stays warm for the
   // next open. The renderer flushes any unsaved edits before acking via the
   // `canvas-window:hide-ready` handler, which then calls win.hide() and
@@ -780,8 +861,10 @@ function createCanvasWindow(preloadPath: string, options: { isPrimary?: boolean 
 
   win.on('closed', () => {
     canvasWindows.delete(win);
+    canvasTargets.delete(win.id);
     if (canvasWindow === win) canvasWindow = null;
     mainWindow?.webContents.send('canvas-window:closed');
+    emitCanvasChange();
   });
 
   return win;

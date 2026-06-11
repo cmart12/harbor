@@ -206,6 +206,12 @@ interface WhimAPI {
   pasteFile(spaceId: string, filename: string, dataArray: number[]): Promise<{ success?: boolean; relativePath?: string; filename?: string; error?: string }>;
   openSpaceFolder(spaceId: string): Promise<void>;
   getCanvasAgentState(spaceId: string): Promise<CanvasAgentStateSnapshot[]>;
+  exportCanvas(spaceId: string, format: ExportFormat): Promise<{ path: string } | { error: string }>;
+  shareCanvas(spaceId: string, format: ExportFormat): Promise<{ ok: true; method: 'os-share' | 'reveal' } | { error: string }>;
+  exportCanvasToDestination(spaceId: string, destinationId: string, format?: ExportFormat): Promise<{ path: string } | { error: string }>;
+  listExportDestinations(): Promise<ExportDestination[]>;
+  saveExportDestinations(destinations: ExportDestination[]): Promise<{ ok: true; destinations: ExportDestination[] } | { error: string }>;
+  selectFolder(options?: { title?: string }): Promise<{ path: string } | { canceled: true }>;
   listAgents(spaceId: string): Promise<any[]>;
   quickLaunchAgent(prompt: string, personaHandle?: string): Promise<{ agentId?: string; sessionId?: string; error?: string }>;
   listAllAgents(): Promise<any[]>;
@@ -375,7 +381,7 @@ import {
 } from './state/ipc-bridge';
 import { mountLists } from './views/mount.tsx';
 import type { WhimAPI as PreloadWhimAPI } from '../main/preload';
-import type { Skill as SharedSkill, CanvasAgentStateSnapshot } from '../shared/types';
+import type { Skill as SharedSkill, CanvasAgentStateSnapshot, ExportFormat, ExportDestination } from '../shared/types';
 
 // The local `interface WhimAPI` declared near the top of this file shadows the
 // preload's structural type; the IPC bridge accepts the preload version. Cast
@@ -1970,6 +1976,178 @@ function showRuntimeForm(existing?: CliRuntime): void {
 }
 
 runtimeAddBtn.addEventListener('click', () => showRuntimeForm());
+
+// ── Export Destinations ─────────────────────────────────
+const exportDestinationsList = document.getElementById('export-destinations-list') as HTMLDivElement;
+const exportDestAddBtn = document.getElementById('export-dest-add-btn') as HTMLButtonElement;
+let exportDestinations: ExportDestination[] = [];
+
+const EXPORT_FORMAT_LABELS: Record<ExportFormat, string> = { pdf: 'PDF', docx: 'Word', md: 'Markdown' };
+
+async function loadExportDestinations(): Promise<void> {
+  exportDestinations = await whimAPI.listExportDestinations() || [];
+  renderExportDestinations();
+}
+
+function renderExportDestinations(): void {
+  const openForm = exportDestinationsList.querySelector('.persona-form');
+  exportDestinationsList.innerHTML = '';
+  for (const dest of exportDestinations) {
+    exportDestinationsList.appendChild(createExportDestCard(dest));
+  }
+  if (openForm) exportDestinationsList.appendChild(openForm);
+}
+
+function createExportDestCard(dest: ExportDestination): HTMLElement {
+  const card = document.createElement('div');
+  card.className = 'persona-card';
+
+  const info = document.createElement('div');
+  info.className = 'persona-card-info';
+
+  const label = document.createElement('div');
+  label.className = 'persona-card-handle';
+  label.textContent = `${dest.label} · ${EXPORT_FORMAT_LABELS[dest.defaultFormat]}`;
+
+  const pathEl = document.createElement('div');
+  pathEl.className = 'persona-card-instructions';
+  pathEl.textContent = dest.path;
+
+  info.appendChild(label);
+  info.appendChild(pathEl);
+
+  const actions = document.createElement('div');
+  actions.className = 'persona-card-actions';
+
+  const editBtn = document.createElement('button');
+  editBtn.className = 'persona-action-btn';
+  editBtn.textContent = '✎';
+  editBtn.title = 'Edit';
+  editBtn.addEventListener('click', () => showExportDestForm(dest));
+
+  const delBtn = document.createElement('button');
+  delBtn.className = 'persona-action-btn danger';
+  delBtn.textContent = '✕';
+  delBtn.title = 'Delete';
+  delBtn.addEventListener('click', async () => {
+    exportDestinations = exportDestinations.filter(d => d.id !== dest.id);
+    await whimAPI.saveExportDestinations(exportDestinations);
+    renderExportDestinations();
+  });
+
+  actions.appendChild(editBtn);
+  actions.appendChild(delBtn);
+
+  card.appendChild(info);
+  card.appendChild(actions);
+  return card;
+}
+
+function showExportDestForm(existing?: ExportDestination): void {
+  const prev = exportDestinationsList.querySelector('.persona-form');
+  if (prev) prev.remove();
+
+  const form = document.createElement('div');
+  form.className = 'persona-form';
+
+  const labelRow = document.createElement('div');
+  labelRow.className = 'persona-form-row';
+  const labelInput = document.createElement('input');
+  labelInput.type = 'text';
+  labelInput.className = 'persona-form-input';
+  labelInput.placeholder = 'Label (e.g. Work SharePoint)';
+  labelInput.value = existing?.label || '';
+  labelInput.maxLength = 50;
+  labelRow.appendChild(labelInput);
+
+  const pathRow = document.createElement('div');
+  pathRow.className = 'persona-form-row export-dest-path-row';
+  const pathInput = document.createElement('input');
+  pathInput.type = 'text';
+  pathInput.className = 'persona-form-input';
+  pathInput.placeholder = 'Folder path (e.g. ~/OneDrive/Shared)';
+  pathInput.value = existing?.path || '';
+  pathInput.spellcheck = false;
+  const browseBtn = document.createElement('button');
+  browseBtn.className = 'workspace-btn';
+  browseBtn.type = 'button';
+  browseBtn.textContent = 'Browse…';
+  browseBtn.addEventListener('click', async () => {
+    const result = await whimAPI.selectFolder({ title: 'Select export destination folder' });
+    if ('path' in result) pathInput.value = result.path;
+  });
+  pathRow.appendChild(pathInput);
+  pathRow.appendChild(browseBtn);
+
+  const formatRow = document.createElement('div');
+  formatRow.className = 'persona-form-row';
+  const formatSelect = document.createElement('select');
+  formatSelect.className = 'persona-form-input';
+  for (const fmt of ['pdf', 'docx', 'md'] as ExportFormat[]) {
+    const opt = document.createElement('option');
+    opt.value = fmt;
+    opt.textContent = `Default format: ${EXPORT_FORMAT_LABELS[fmt]}`;
+    if ((existing?.defaultFormat || 'pdf') === fmt) opt.selected = true;
+    formatSelect.appendChild(opt);
+  }
+  formatRow.appendChild(formatSelect);
+
+  const errorEl = document.createElement('div');
+  errorEl.className = 'persona-form-error hidden';
+
+  const btnRow = document.createElement('div');
+  btnRow.className = 'persona-form-actions';
+
+  const saveBtn = document.createElement('button');
+  saveBtn.className = 'persona-form-save';
+  saveBtn.textContent = existing ? 'Save' : 'Add';
+  saveBtn.addEventListener('click', async () => {
+    const label = labelInput.value.trim();
+    const destPath = pathInput.value.trim();
+    const defaultFormat = formatSelect.value as ExportFormat;
+    if (!label) {
+      errorEl.textContent = 'Label is required.';
+      errorEl.classList.remove('hidden');
+      return;
+    }
+    if (!destPath) {
+      errorEl.textContent = 'Folder path is required.';
+      errorEl.classList.remove('hidden');
+      return;
+    }
+
+    if (existing) {
+      exportDestinations = exportDestinations.map(d =>
+        d.id === existing.id ? { ...d, label, path: destPath, defaultFormat } : d);
+    } else {
+      exportDestinations.push({ id: crypto.randomUUID(), label, path: destPath, defaultFormat });
+    }
+
+    const result = await whimAPI.saveExportDestinations(exportDestinations);
+    if ('destinations' in result) exportDestinations = result.destinations;
+    form.remove();
+    renderExportDestinations();
+  });
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'persona-form-cancel';
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.addEventListener('click', () => form.remove());
+
+  btnRow.appendChild(saveBtn);
+  btnRow.appendChild(cancelBtn);
+
+  form.appendChild(labelRow);
+  form.appendChild(pathRow);
+  form.appendChild(formatRow);
+  form.appendChild(errorEl);
+  form.appendChild(btnRow);
+
+  exportDestinationsList.appendChild(form);
+  labelInput.focus();
+}
+
+exportDestAddBtn?.addEventListener('click', () => showExportDestForm());
 
 // ── MCP Servers ─────────────────────────────────────────
 const mcpDiscoveredList = document.getElementById('mcp-discovered-list') as HTMLDivElement;
@@ -5370,6 +5548,11 @@ const modeToggleRendered = document.getElementById('mode-toggle-rendered') as HT
 const modeToggleRaw = document.getElementById('mode-toggle-raw') as HTMLButtonElement;
 const canvasMenuBtn = document.getElementById('canvas-menu-btn') as HTMLButtonElement;
 const canvasMenuDropdown = document.getElementById('canvas-menu-dropdown') as HTMLDivElement;
+const canvasShareBtn = document.getElementById('canvas-share-btn') as HTMLButtonElement;
+const canvasShareWrap = canvasShareBtn?.closest('.canvas-share-wrap') as HTMLDivElement | null;
+const canvasShareDropdown = document.getElementById('canvas-share-dropdown') as HTMLDivElement;
+const canvasShareDestinations = document.getElementById('canvas-share-destinations') as HTMLDivElement;
+const canvasShareManageDest = document.getElementById('canvas-share-manage-dest') as HTMLButtonElement;
 const canvasMarkComplete = document.getElementById('canvas-mark-complete') as HTMLButtonElement;
 const canvasSaveAsSkill = document.getElementById('canvas-save-as-skill') as HTMLButtonElement;
 const canvasManageSkills = document.getElementById('canvas-manage-skills') as HTMLButtonElement;
@@ -5398,6 +5581,18 @@ function pageCanvasSpaceId(spaceId: string, pageName: string): string {
 function currentCanvasAgentSpaceId(): string | null {
   if (canvasSpaceId) return canvasSpaceId;
   if (canvasPageSpaceId && canvasPageName) return pageCanvasSpaceId(canvasPageSpaceId, canvasPageName);
+  return null;
+}
+
+/**
+ * The id the export engine should load for the currently-open canvas. Mirrors
+ * the canvas:read id scheme (real space, child page, or workspace .md file).
+ * Returns null for targets that can't be exported yet (e.g. skills).
+ */
+function currentCanvasExportId(): string | null {
+  if (canvasSpaceId) return canvasSpaceId;
+  if (canvasPageSpaceId && canvasPageName) return pageCanvasSpaceId(canvasPageSpaceId, canvasPageName);
+  if (canvasFilePath) return `__file__${encodeURIComponent(canvasFilePath)}`;
   return null;
 }
 
@@ -5513,6 +5708,121 @@ document.addEventListener('click', (e) => {
   }
 });
 
+// ── Canvas Share menu ───────────────────────────────────
+let shareInFlight = false;
+let shareStatusTimer: ReturnType<typeof setTimeout> | null = null;
+
+function flashCanvasStatus(msg: string): void {
+  canvasSaveStatus.textContent = msg;
+  if (shareStatusTimer) clearTimeout(shareStatusTimer);
+  shareStatusTimer = setTimeout(() => {
+    if (canvasSaveStatus.textContent === msg) canvasSaveStatus.textContent = '';
+    shareStatusTimer = null;
+  }, 3000);
+}
+
+function closeShareMenu(): void {
+  canvasShareDropdown?.classList.add('hidden');
+}
+
+function openShareMenu(): void {
+  void renderShareDestinations();
+  canvasShareDropdown.classList.remove('hidden');
+}
+
+function toggleShareMenu(): void {
+  if (canvasShareDropdown.classList.contains('hidden')) openShareMenu();
+  else closeShareMenu();
+}
+
+async function renderShareDestinations(): Promise<void> {
+  const destinations = await bridgeApi.listExportDestinations();
+  canvasShareDestinations.innerHTML = '';
+  if (!destinations || destinations.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'canvas-share-dest-empty';
+    empty.textContent = 'No folders yet. Add a synced folder (OneDrive, Google Drive…) in settings to push copies there.';
+    canvasShareDestinations.appendChild(empty);
+    return;
+  }
+  for (const dest of destinations) {
+    const btn = document.createElement('button');
+    btn.className = 'canvas-menu-item';
+    btn.innerHTML =
+      '<span class="canvas-menu-icon">📁</span>' +
+      '<span class="canvas-share-dest-label"></span>' +
+      '<span class="canvas-share-dest-format"></span>';
+    (btn.querySelector('.canvas-share-dest-label') as HTMLElement).textContent = dest.label;
+    (btn.querySelector('.canvas-share-dest-format') as HTMLElement).textContent = dest.defaultFormat;
+    btn.title = `Save ${dest.defaultFormat.toUpperCase()} to ${dest.path}`;
+    btn.addEventListener('click', () => saveCanvasToDestination(dest.id));
+    canvasShareDestinations.appendChild(btn);
+  }
+}
+
+async function shareCanvasAs(format: ExportFormat): Promise<void> {
+  closeShareMenu();
+  const id = currentCanvasExportId();
+  if (!id || shareInFlight) return;
+  shareInFlight = true;
+  flashCanvasStatus('Preparing share…');
+  try {
+    // Flush pending edits so the export reflects the latest content.
+    if (canvasDirty) { try { await saveCanvasEditor(); } catch { /* fall back to on-disk content */ } }
+    const result = await bridgeApi.shareCanvas(id, format);
+    if ('error' in result) {
+      flashCanvasStatus(`Share failed: ${result.error}`);
+    } else if (result.method === 'reveal') {
+      flashCanvasStatus('Exported — revealed in file manager');
+    } else {
+      // Native OS share sheet is open; nothing more to say.
+      canvasSaveStatus.textContent = '';
+    }
+  } finally {
+    shareInFlight = false;
+  }
+}
+
+async function saveCanvasToDestination(destinationId: string): Promise<void> {
+  closeShareMenu();
+  const id = currentCanvasExportId();
+  if (!id || shareInFlight) return;
+  shareInFlight = true;
+  flashCanvasStatus('Saving to folder…');
+  try {
+    // Flush pending edits so the export reflects the latest content.
+    if (canvasDirty) { try { await saveCanvasEditor(); } catch { /* fall back to on-disk content */ } }
+    const result = await bridgeApi.exportCanvasToDestination(id, destinationId);
+    flashCanvasStatus('error' in result ? `Save failed: ${result.error}` : 'Saved to folder');
+  } finally {
+    shareInFlight = false;
+  }
+}
+
+canvasShareBtn?.addEventListener('click', (e) => {
+  e.stopPropagation();
+  toggleShareMenu();
+});
+
+canvasShareDropdown?.querySelectorAll('[data-share-format]').forEach((el) => {
+  el.addEventListener('click', () => {
+    const format = (el as HTMLElement).dataset.shareFormat as ExportFormat;
+    void shareCanvasAs(format);
+  });
+});
+
+canvasShareManageDest?.addEventListener('click', () => {
+  closeShareMenu();
+  whimAPI.openSettingsWindow();
+});
+
+document.addEventListener('click', (e) => {
+  if (canvasShareDropdown && !canvasShareDropdown.classList.contains('hidden') &&
+      !(e.target as HTMLElement).closest('.canvas-share-wrap')) {
+    closeShareMenu();
+  }
+});
+
 function updateCanvasMenuContext(isSkill: boolean): void {
   // Items tagged data-context="space" are shown only for spaces
   canvasMenuDropdown.querySelectorAll('[data-context="space"]').forEach(el => {
@@ -5523,6 +5833,10 @@ function updateCanvasMenuContext(isSkill: boolean): void {
     el.classList.toggle('hidden', !isSkill);
   });
   canvasLaunchLabel.textContent = isSkill ? 'Launch as Space' : 'Start Session';
+
+  // Sharing isn't supported for skill templates yet — hide the share control.
+  canvasShareWrap?.classList.toggle('hidden', isSkill);
+  if (isSkill) closeShareMenu();
 
   // Skill-only header chrome: schedule indicator + launch button
   const skill = isSkill && canvasSkillId ? cachedSkills.find(s => s.id === canvasSkillId) : null;
@@ -7619,6 +7933,7 @@ if (isCanvasMode) {
     whimAPI.setCanvasAlwaysOnTop(next);
     canvasPinTopBtn.classList.toggle('active', next);
     canvasPinLabel.textContent = next ? 'Unpin from Top' : 'Pin to Top';
+    canvasPinTopBtn.title = next ? 'Unpin from Top' : 'Pin to Top';
   }
 
   canvasPinTopBtn.addEventListener('click', toggleCanvasOnTop);
@@ -7664,6 +7979,7 @@ if (isCanvasMode) {
   whimAPI.getCanvasAlwaysOnTop().then(pinned => {
     canvasPinTopBtn.classList.toggle('active', pinned);
     canvasPinLabel.textContent = pinned ? 'Unpin from Top' : 'Pin to Top';
+    canvasPinTopBtn.title = pinned ? 'Unpin from Top' : 'Pin to Top';
   });
 
   // Apply the stored theme and follow live changes from the main window
@@ -7798,6 +8114,7 @@ if (isSettingsMode) {
     loadCommentTriggerSetting(),
     loadPersonas(),
     loadRuntimes(),
+    loadExportDestinations(),
     loadCliPathInputSync(),
     loadMcpServers(),
     loadCliTools(),
