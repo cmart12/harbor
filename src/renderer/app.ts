@@ -3994,7 +3994,7 @@ workspacePathEl.addEventListener('click', () => {
 });
 
 // ── Workspace profiles ──────────────────────────────────
-const profileFooter = document.getElementById('profile-footer') as HTMLButtonElement | null;
+const brandLogo = document.getElementById('brand-logo') as HTMLElement | null;
 const profileNameEl = document.getElementById('profile-name') as HTMLSpanElement | null;
 const profilesListEl = document.getElementById('profiles-list') as HTMLDivElement | null;
 const profileAddBtn = document.getElementById('profile-add-btn') as HTMLButtonElement | null;
@@ -4023,44 +4023,51 @@ function applyActiveProfileTint(): void {
   applyProfileTint(getActiveProfile()?.tint ?? null);
 }
 
-/** Footer brand bar (main window only): the active profile name + a tinted mark. */
-function renderProfileFooter(): void {
-  if (!profileFooter || !profileNameEl) return;
-  if (isCanvasMode || isSettingsMode) {
-    profileFooter.classList.add('hidden');
-    return;
-  }
+/**
+ * Show the active profile next to the main "whim" logo as "whim (name)", with a
+ * small tinted dot when the profile has a tint. The logo cycles profiles on
+ * click when more than one exists.
+ */
+function renderProfileBrand(): void {
+  if (!brandLogo || !profileNameEl) return;
+  const mark = brandLogo.querySelector('.profile-mark') as HTMLElement | null;
   const active = getActiveProfile();
   if (!active) {
-    profileFooter.classList.add('hidden');
+    profileNameEl.textContent = '';
+    if (mark) mark.classList.add('hidden');
+    brandLogo.classList.remove('clickable');
+    brandLogo.removeAttribute('title');
     return;
   }
-  profileNameEl.textContent = active.displayName;
-  const mark = profileFooter.querySelector('.profile-mark') as HTMLElement | null;
-  if (mark) mark.style.background = (active.tint && isValidTint(active.tint)) ? active.tint : '';
-  const count = profilesState?.profiles.length ?? 0;
-  profileFooter.title = count > 1 ? 'Switch profile' : 'Add another profile in Settings';
-  profileFooter.classList.remove('hidden');
+  profileNameEl.textContent = `(${active.displayName})`;
+  if (mark) {
+    if (active.tint && isValidTint(active.tint)) {
+      mark.style.background = active.tint;
+      mark.classList.remove('hidden');
+    } else {
+      mark.classList.add('hidden');
+    }
+  }
+  const canCycle = (profilesState?.profiles.length ?? 0) > 1;
+  brandLogo.classList.toggle('clickable', canCycle);
+  brandLogo.title = canCycle ? 'Switch profile' : 'whim';
 }
 
 /** Brief visual confirmation that the profile switched. */
-function pulseProfileFooter(): void {
-  if (!profileFooter) return;
-  profileFooter.classList.remove('profile-switched');
+function pulseProfileBrand(): void {
+  if (!brandLogo) return;
+  brandLogo.classList.remove('profile-switched');
   // Force reflow so re-adding the class restarts the animation.
-  void profileFooter.offsetWidth;
-  profileFooter.classList.add('profile-switched');
+  void brandLogo.offsetWidth;
+  brandLogo.classList.add('profile-switched');
 }
 
-/** Logo/hotkey action: cycle to the next profile, or open Settings when there's nothing to cycle to. */
+/** Logo/hotkey action: cycle to the next profile (no-op with fewer than two). */
 async function cycleProfileFromUI(): Promise<void> {
   const count = profilesState?.profiles.length ?? 0;
-  if (count < 2) {
-    if (!isSettingsMode && !isCanvasMode) showSettings();
-    return;
-  }
+  if (count < 2) return;
   await whimAPI.cycleProfile();
-  // The profiles:changed broadcast updates footer + tint.
+  // The profiles:changed broadcast updates the logo + tint.
 }
 
 /** Settings → Profiles list. Renders an editable row per saved profile. */
@@ -4165,14 +4172,14 @@ function renderProfilesSettings(): void {
   }
 }
 
-/** Pull profile state from main and refresh the footer, tint, and settings list. */
+/** Pull profile state from main and refresh the logo, tint, and settings list. */
 async function refreshProfiles(): Promise<void> {
   try {
     profilesState = await whimAPI.listProfiles();
   } catch {
     profilesState = { profiles: [], activeProfileId: null };
   }
-  renderProfileFooter();
+  renderProfileBrand();
   applyActiveProfileTint();
   renderProfilesSettings();
 }
@@ -4180,16 +4187,16 @@ async function refreshProfiles(): Promise<void> {
 function handleProfilesChanged(state: ProfilesState): void {
   const prevActive = profilesState?.activeProfileId ?? null;
   profilesState = state;
-  renderProfileFooter();
+  renderProfileBrand();
   applyActiveProfileTint();
   renderProfilesSettings();
   if (state.activeProfileId && state.activeProfileId !== prevActive) {
-    pulseProfileFooter();
+    pulseProfileBrand();
   }
 }
 
-if (profileFooter) {
-  profileFooter.addEventListener('click', () => { void cycleProfileFromUI(); });
+if (brandLogo) {
+  brandLogo.addEventListener('click', () => { void cycleProfileFromUI(); });
 }
 if (profileAddBtn) {
   profileAddBtn.addEventListener('click', () => { void whimAPI.addProfile(); });
