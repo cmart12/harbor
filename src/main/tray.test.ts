@@ -95,7 +95,8 @@ describe('tray menu', () => {
 
   it('renders only base items when there are no workers or canvases', () => {
     createTray();
-    expect(labels()).toEqual(['Show/Hide', '---', '📱 Remote Control', '---', 'Quit']);
+    expect(labels()).toEqual(['📱 Remote Control', '---', 'Quit']);
+    expect(itemByLabelIncludes('Show/Hide')).toBeUndefined();
     expect(itemByLabelIncludes('Workers')).toBeUndefined();
     expect(itemByLabelIncludes('Canvases')).toBeUndefined();
   });
@@ -147,14 +148,11 @@ describe('tray menu', () => {
     expect(h.wm.focusCanvasWindow).toHaveBeenCalledWith(7);
   });
 
-  it('Show/Hide and tray click toggle the window', () => {
+  it('tray icon click toggles the window', () => {
     createTray();
-    (itemByLabelIncludes('Show/Hide')!.click as any)();
-    expect(h.wm.toggleWindow).toHaveBeenCalledTimes(1);
-
     expect(h.trayClickRef.current).toBeTruthy();
     h.trayClickRef.current!();
-    expect(h.wm.toggleWindow).toHaveBeenCalledTimes(2);
+    expect(h.wm.toggleWindow).toHaveBeenCalledTimes(1);
   });
 
   it('rebuildTrayMenu re-reads current worker/canvas state', () => {

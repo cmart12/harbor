@@ -44,14 +44,18 @@ function getIconPath(): string {
 
 function buildContextMenu(): Menu {
   const remoteEnabled = !!getConfigValue('remoteEnabled');
-  const template: MenuItemConstructorOptions[] = [
-    { label: 'Show/Hide', click: () => toggleWindow() },
-  ];
+  const template: MenuItemConstructorOptions[] = [];
+
+  // Insert a separator only between sections — never as the leading entry.
+  const pushSeparator = () => {
+    const last = template[template.length - 1];
+    if (last && last.type !== 'separator') template.push({ type: 'separator' });
+  };
 
   // ── Active workers ───────────────────────────────────
   const workers = listTrayWorkers();
   if (workers.length > 0) {
-    template.push({ type: 'separator' });
+    pushSeparator();
     template.push({ label: 'Workers', enabled: false });
     for (const worker of workers) {
       template.push({
@@ -71,7 +75,7 @@ function buildContextMenu(): Menu {
   // ── Open canvases ────────────────────────────────────
   const canvases = getOpenCanvases();
   if (canvases.length > 0) {
-    template.push({ type: 'separator' });
+    pushSeparator();
     template.push({ label: 'Canvases', enabled: false });
     for (const canvas of canvases) {
       template.push({
@@ -81,8 +85,8 @@ function buildContextMenu(): Menu {
     }
   }
 
+  pushSeparator();
   template.push(
-    { type: 'separator' },
     {
       label: remoteEnabled ? '📱 Remote Control ✓' : '📱 Remote Control',
       click: async () => {
