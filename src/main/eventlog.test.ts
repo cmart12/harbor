@@ -66,6 +66,7 @@ function createSchema(db: Database.Database): void {
       quoted_text TEXT,
       comment_thread_id TEXT,
       run_location TEXT NOT NULL DEFAULT 'local',
+      yolo_mode INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     )
@@ -903,6 +904,74 @@ describe('replayLog', () => {
       replayLog(logRoot, db);
       const sess = db.prepare('SELECT * FROM agent_sessions WHERE id = ?').get('as6') as any;
       expect(sess.comment_thread_id).toBeNull();
+    });
+
+    it('defaults yolo_mode to 0 when missing and persists 1 when set on the event', () => {
+      writeLog([
+        {
+          ts: '2024-01-01T00:00:00.000Z',
+          op: 'agent_session.created',
+          data: {
+            id: 'as-yolo-off', session_id: 'sid-yo', prompt: 'No yolo', status: 'running',
+            created_at: '2024-01-01T00:00:00.000Z', updated_at: '2024-01-01T00:00:00.000Z',
+          },
+        },
+        {
+          ts: '2024-01-01T00:00:00.000Z',
+          op: 'agent_session.created',
+          data: {
+            id: 'as-yolo-on', session_id: 'sid-yn', prompt: 'Yolo on', status: 'running',
+            yolo_mode: true,
+            created_at: '2024-01-01T00:00:00.000Z', updated_at: '2024-01-01T00:00:00.000Z',
+          },
+        },
+      ]);
+
+      replayLog(logRoot, db);
+      const off = db.prepare('SELECT * FROM agent_sessions WHERE id = ?').get('as-yolo-off') as any;
+      const on = db.prepare('SELECT * FROM agent_sessions WHERE id = ?').get('as-yolo-on') as any;
+      expect(off.yolo_mode).toBe(0);
+      expect(on.yolo_mode).toBe(1);
+    });
+  });
+
+  describe('agent_session.yolo', () => {
+    beforeEach(() => {
+      writeLog([{
+        ts: '2024-01-01T00:00:00.000Z',
+        op: 'agent_session.created',
+        data: {
+          id: 'asy1', session_id: 'sid-y', prompt: 'Toggle yolo', status: 'running',
+          created_at: '2024-01-01T00:00:00.000Z', updated_at: '2024-01-01T00:00:00.000Z',
+        },
+      }]);
+      replayLog(logRoot, db);
+    });
+
+    it('flips yolo_mode on and back off across replay', () => {
+      const base = fs.readFileSync(logPath, 'utf-8');
+      fs.writeFileSync(logPath, base + JSON.stringify({
+        ts: '2024-01-02T00:00:00.000Z',
+        op: 'agent_session.yolo',
+        data: { id: 'asy1', yolo_mode: true, updated_at: '2024-01-02T00:00:00.000Z' },
+      }) + '\n', 'utf-8');
+
+      db.exec('DELETE FROM agent_sessions');
+      replayLog(logRoot, db);
+      let sess = db.prepare('SELECT * FROM agent_sessions WHERE id = ?').get('asy1') as any;
+      expect(sess.yolo_mode).toBe(1);
+
+      const withOn = fs.readFileSync(logPath, 'utf-8');
+      fs.writeFileSync(logPath, withOn + JSON.stringify({
+        ts: '2024-01-03T00:00:00.000Z',
+        op: 'agent_session.yolo',
+        data: { id: 'asy1', yolo_mode: false, updated_at: '2024-01-03T00:00:00.000Z' },
+      }) + '\n', 'utf-8');
+
+      db.exec('DELETE FROM agent_sessions');
+      replayLog(logRoot, db);
+      sess = db.prepare('SELECT * FROM agent_sessions WHERE id = ?').get('asy1') as any;
+      expect(sess.yolo_mode).toBe(0);
     });
   });
 

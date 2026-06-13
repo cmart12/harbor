@@ -6744,9 +6744,10 @@ async function openAgentChat(agentId: string | undefined, agentPrompt: string, a
   // Look up pending approval info if agent is waiting
   const approval = agentId ? agentApprovals.get(agentId) : undefined;
 
-  // Look up sandbox state from the most recent agent list data
+  // Look up sandbox + yolo state from the most recent agent list data
   const agentData = renderedAgents?.find((a: any) => a.agentId === agentId);
   const sandboxed = (agentData as any)?.sandboxed === true;
+  const yolo = (agentData as any)?.yoloMode === true;
 
   mountChat(chatRoot, {
     agentId,
@@ -6755,6 +6756,7 @@ async function openAgentChat(agentId: string | undefined, agentPrompt: string, a
     agentSource,
     spaceId,
     sandboxed,
+    yolo,
     pendingApprovalId: approval?.requestId,
     pendingPermissionKind: approval?.permissionKind,
     onClose: () => closeAgentChat(),

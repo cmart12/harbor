@@ -4,6 +4,7 @@ import {
   createAgentSession as dbCreateAgentSession,
   updateAgentSessionStatus,
   updateAgentSessionId,
+  updateAgentSessionYolo,
   getAgentSession,
   listAgentSessions,
   appendAgentChatEvent,
@@ -38,6 +39,14 @@ export class AgentPersistence {
     if (record.ephemeral) return;
     try {
       updateAgentSessionStatus(record.agentId, record.status, record.summary);
+    } catch { /* non-fatal */ }
+  }
+
+  /** Persist the per-session yolo (auto-approve) flag. No-op for ephemeral agents. */
+  updateYolo(record: AgentRecord, enabled: boolean): void {
+    if (record.ephemeral) return;
+    try {
+      updateAgentSessionYolo(record.agentId, enabled);
     } catch { /* non-fatal */ }
   }
 

@@ -149,6 +149,8 @@
 
         <div class="settings-tabs">
           <button class="settings-tab-btn active" data-tab="general">General</button>
+          <button class="settings-tab-btn" data-tab="environment">Environment</button>
+          <button class="settings-tab-btn" data-tab="remote">Remote</button>
           <button class="settings-tab-btn" data-tab="tools">Tools</button>
           <button class="settings-tab-btn" data-tab="personas">Agents</button>
           <button class="settings-tab-btn" data-tab="hotkeys">Hotkeys</button>
@@ -177,15 +179,80 @@
                 </label>
               </div>
               <div class="settings-hint">When unchecked, the side pane stays visible like a normal window. Pinning makes all windows stay on top.</div>
-              <div class="settings-row">
-                <label class="settings-checkbox-label">
-                  <input type="checkbox" id="auto-remote-cb" />
-                  Auto-enable remote on all worker sessions
-                </label>
-              </div>
-              <div class="settings-hint">When checked, every new agent session will automatically have remote control enabled.</div>
             </div>
 
+            <div class="settings-group">
+              <div class="settings-group-title">Editor</div>
+              <div class="settings-row">
+                <label class="settings-checkbox-label">
+                  <input type="checkbox" id="comment-hover-cb" />
+                  Open comment threads on hover
+                </label>
+              </div>
+              <div class="settings-hint">When unchecked (default), comments only open when your cursor moves into a commented selection. Commented links and resource pills still respond to hover.</div>
+            </div>
+
+            <div class="settings-group">
+              <div class="settings-group-title">Export Destinations</div>
+              <div class="settings-hint">Push a copy of a canvas (PDF, Word, or Markdown) into a folder for quick access and sharing. Point these at folders synced by OneDrive/SharePoint or Google Drive desktop apps and your exports show up in the cloud — and on your phone — automatically.</div>
+              <div id="export-destinations-list" class="personas-list"></div>
+              <button id="export-dest-add-btn" class="persona-add-btn" type="button">+ Add Destination</button>
+            </div>
+          </div>
+
+          <div class="settings-tab-panel" data-tab="environment">
+            <div class="settings-group">
+              <div class="settings-group-title">Workspace</div>
+              <div class="settings-row">
+                <div class="workspace-display">
+                  <span id="workspace-path" class="workspace-path">Not set</span>
+                  <button id="workspace-btn" class="workspace-btn">Change</button>
+                  <button id="workspace-clear-btn" class="workspace-btn" title="Clear workspace (fresh start)">Clear</button>
+                </div>
+              </div>
+              <div class="settings-hint">The working directory for Copilot CLI sessions.</div>
+            </div>
+
+            <div class="settings-group">
+              <div class="settings-group-title">Profiles</div>
+              <div class="settings-hint">Keep separate repos (e.g. work and personal) and switch between them from the whim logo at the bottom of the panel or with the Switch Profile hotkey. Each profile can carry its own color tint.</div>
+              <div id="profiles-list" class="profiles-list"></div>
+              <button id="profile-add-btn" class="persona-add-btn" type="button">+ Add Profile</button>
+            </div>
+
+            <div class="settings-group">
+              <div class="settings-group-title">AI Model</div>
+              <div class="settings-row">
+                <select id="model-select">
+                  <option value="">Loading models...</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="settings-group">
+              <div class="settings-group-title">Default Copilot CLI</div>
+              <div class="settings-row">
+                <div class="cli-path-display">
+                  <input id="cli-path-input" class="cli-path-input" type="text" placeholder="Auto-detect" spellcheck="false" />
+                  <button id="cli-path-clear" class="workspace-btn cli-path-clear hidden" title="Reset to auto-detect">✕</button>
+                </div>
+              </div>
+              <div class="settings-hint">
+                Detected: <span id="cli-path-detected" class="cli-path-detected">—</span>
+              </div>
+              <div class="settings-hint" id="cli-mxc-status">MXC sandbox: <span id="cli-mxc-indicator">checking…</span></div>
+              <div class="settings-hint">Path to the Copilot CLI executable. Leave empty to auto-detect.</div>
+            </div>
+
+            <div class="settings-group">
+              <div class="settings-group-title">Additional Runtimes</div>
+              <div class="settings-hint">Register alternative CLI binaries for use with different agents.</div>
+              <div id="runtimes-list" class="personas-list"></div>
+              <button id="runtime-add-btn" class="persona-add-btn" type="button">+ Add Runtime</button>
+            </div>
+          </div>
+
+          <div class="settings-tab-panel" data-tab="remote">
             <div class="settings-group web-remote-settings">
               <div class="settings-group-title">Remote Web Access</div>
               <div class="settings-row">
@@ -214,71 +281,14 @@
             </div>
 
             <div class="settings-group">
-              <div class="settings-group-title">Editor</div>
+              <div class="settings-group-title">Worker Remote Control</div>
               <div class="settings-row">
                 <label class="settings-checkbox-label">
-                  <input type="checkbox" id="comment-hover-cb" />
-                  Open comment threads on hover
+                  <input type="checkbox" id="auto-remote-cb" />
+                  Auto-enable remote on all worker sessions
                 </label>
               </div>
-              <div class="settings-hint">When unchecked (default), comments only open when your cursor moves into a commented selection. Commented links and resource pills still respond to hover.</div>
-            </div>
-
-            <div class="settings-group">
-              <div class="settings-group-title">AI Model</div>
-              <div class="settings-row">
-                <select id="model-select">
-                  <option value="">Loading models...</option>
-                </select>
-              </div>
-            </div>
-
-            <div class="settings-group">
-              <div class="settings-group-title">Workspace</div>
-              <div class="settings-row">
-                <div class="workspace-display">
-                  <span id="workspace-path" class="workspace-path">Not set</span>
-                  <button id="workspace-btn" class="workspace-btn">Change</button>
-                  <button id="workspace-clear-btn" class="workspace-btn" title="Clear workspace (fresh start)">Clear</button>
-                </div>
-              </div>
-              <div class="settings-hint">The working directory for Copilot CLI sessions.</div>
-            </div>
-
-            <div class="settings-group">
-              <div class="settings-group-title">Profiles</div>
-              <div class="settings-hint">Keep separate repos (e.g. work and personal) and switch between them from the whim logo at the bottom of the panel or with the Switch Profile hotkey. Each profile can carry its own color tint.</div>
-              <div id="profiles-list" class="profiles-list"></div>
-              <button id="profile-add-btn" class="persona-add-btn" type="button">+ Add Profile</button>
-            </div>
-
-            <div class="settings-group">
-              <div class="settings-group-title">Export Destinations</div>
-              <div class="settings-hint">Push a copy of a canvas (PDF, Word, or Markdown) into a folder for quick access and sharing. Point these at folders synced by OneDrive/SharePoint or Google Drive desktop apps and your exports show up in the cloud — and on your phone — automatically.</div>
-              <div id="export-destinations-list" class="personas-list"></div>
-              <button id="export-dest-add-btn" class="persona-add-btn" type="button">+ Add Destination</button>
-            </div>
-
-            <div class="settings-group">
-              <div class="settings-group-title">Default Copilot CLI</div>
-              <div class="settings-row">
-                <div class="cli-path-display">
-                  <input id="cli-path-input" class="cli-path-input" type="text" placeholder="Auto-detect" spellcheck="false" />
-                  <button id="cli-path-clear" class="workspace-btn cli-path-clear hidden" title="Reset to auto-detect">✕</button>
-                </div>
-              </div>
-              <div class="settings-hint">
-                Detected: <span id="cli-path-detected" class="cli-path-detected">—</span>
-              </div>
-              <div class="settings-hint" id="cli-mxc-status">MXC sandbox: <span id="cli-mxc-indicator">checking…</span></div>
-              <div class="settings-hint">Path to the Copilot CLI executable. Leave empty to auto-detect.</div>
-            </div>
-
-            <div class="settings-group">
-              <div class="settings-group-title">Additional Runtimes</div>
-              <div class="settings-hint">Register alternative CLI binaries for use with different agents.</div>
-              <div id="runtimes-list" class="personas-list"></div>
-              <button id="runtime-add-btn" class="persona-add-btn" type="button">+ Add Runtime</button>
+              <div class="settings-hint">When checked, every new agent session will automatically have remote control enabled.</div>
             </div>
           </div>
 

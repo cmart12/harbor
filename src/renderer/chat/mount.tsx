@@ -11,6 +11,7 @@ export interface MountChatOptions {
   agentSource?: 'sdk' | 'cli' | 'cca';
   spaceId?: string;
   sandboxed?: boolean;
+  yolo?: boolean;
   pendingApprovalId?: string;
   pendingPermissionKind?: string;
   onClose: () => void;
@@ -32,6 +33,7 @@ export function mountChat(container: HTMLElement, options: MountChatOptions): vo
       agentSource={options.agentSource}
       spaceId={options.spaceId}
       sandboxed={options.sandboxed}
+      yolo={options.yolo}
       pendingApprovalId={options.pendingApprovalId}
       pendingPermissionKind={options.pendingPermissionKind}
       onClose={options.onClose}

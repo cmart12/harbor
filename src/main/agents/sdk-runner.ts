@@ -152,6 +152,7 @@ function createCustomToolsContext(agentId: string, enableWhimTools = false): Cus
 
       record.yoloMode = enabled;
       console.log(`[agent-service] yolo mode ${enabled ? 'enabled' : 'disabled'} for agent=${targetAgentId}`);
+      persistence.updateYolo(record, enabled);
       notifier.notifyRenderer('agent:yolo-changed', { agentId: targetAgentId, enabled });
 
       if (enabled && record.pendingApprovals.size > 0) {
@@ -501,6 +502,7 @@ export async function launchQuickAgent(
         persona_handle: persona?.handle ?? null,
         quoted_text: null,
         run_location: isCloudSandbox ? 'cloud' : 'local',
+        yolo_mode: record.yoloMode === true,
         created_at: now,
         updated_at: now,
       });
@@ -906,6 +908,7 @@ async function resumeAgentSession(agentId: string): Promise<'resumed' | 'restart
       pendingApprovals: new Map(),
       summary: persisted.summary || 'Resumed',
       runLocation: isCloud ? 'cloud' : 'local',
+      ...(persisted.yolo_mode ? { yoloMode: true } : {}),
       ...(persisted.persona_handle ? { personaHandle: persisted.persona_handle } : {}),
       ...(commentContextFromPersisted(persisted, workingDir)
         ? { commentContext: commentContextFromPersisted(persisted, workingDir) }
@@ -1141,6 +1144,7 @@ async function restartExpiredSession(
       // resume attempts don't try sessions.connect on a session that
       // never had a cloud counterpart.
       runLocation: 'local',
+      ...(persisted.yolo_mode ? { yoloMode: true } : {}),
       ...(persisted.persona_handle ? { personaHandle: persisted.persona_handle } : {}),
       ...(commentContextFromPersisted(persisted, workingDir)
         ? { commentContext: commentContextFromPersisted(persisted, workingDir) }

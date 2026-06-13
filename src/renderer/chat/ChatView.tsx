@@ -45,6 +45,7 @@ interface ChatViewProps {
   agentSource?: 'sdk' | 'cli' | 'cca';
   spaceId?: string;
   sandboxed?: boolean;
+  yolo?: boolean;
   pendingApprovalId?: string;
   pendingPermissionKind?: string;
   onClose: () => void;
@@ -373,7 +374,7 @@ function replayBufferedEvents(msgs: ChatMessage[], events: ChatEvent[]): ChatMes
   return result;
 }
 
-export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: initialStatus, agentSource, spaceId, sandboxed: initialSandboxed, pendingApprovalId, pendingPermissionKind, onClose, onOpenCli, onOpenCanvas }: ChatViewProps) {
+export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: initialStatus, agentSource, spaceId, sandboxed: initialSandboxed, yolo: initialYolo, pendingApprovalId, pendingPermissionKind, onClose, onOpenCli, onOpenCanvas }: ChatViewProps) {
   const [currentAgentId, setCurrentAgentId] = useState<string | null>(initialAgentId || null);
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     // For CLI sessions or sessions with history, don't seed — history will load
@@ -412,7 +413,7 @@ export function ChatView({ agentId: initialAgentId, agentPrompt, agentStatus: in
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   const [cwd, setCwd] = useState<string>('');
   const [overlayAgentId, setOverlayAgentId] = useState<string | null>(null);
-  const [yoloEnabled, setYoloEnabled] = useState(false);
+  const [yoloEnabled, setYoloEnabled] = useState(initialYolo ?? false);
   const [sandboxActive, setSandboxActive] = useState(initialSandboxed ?? false);
   const [sandboxDisabling, setSandboxDisabling] = useState(false);
   const [remoteState, setRemoteState] = useState<{ enabled: boolean; remoteSteerable: boolean; url?: string }>({ enabled: false, remoteSteerable: false });
