@@ -140,6 +140,26 @@ export function onCanvasWindowsChanged(cb: () => void): () => void {
   return () => { canvasChangeEmitter.off('change', cb); };
 }
 
+export interface OpenAgentChatData {
+  agentId: string;
+  agentPrompt: string;
+  agentStatus: string;
+  agentSource?: 'sdk' | 'cli' | 'cca';
+  spaceId?: string;
+}
+
+/**
+ * Reveal the main window (if hidden) and open the given agent's chat in it.
+ * Shared by the cross-window `main-window:open-agent-chat` IPC handler and the
+ * tray menu, so both behave identically.
+ */
+export function openAgentChatInMainWindow(data: OpenAgentChatData): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (!mainWindow.isVisible()) mainWindow.show();
+  mainWindow.focus();
+  mainWindow.webContents.send('main-window:open-agent-chat', data);
+}
+
 /** Apply the stacking policy to the main window and all canvas windows. */
 function applyStackingPolicy(): void {
   if (mainWindow && !mainWindow.isDestroyed() && !isExpanded) {
@@ -533,16 +553,8 @@ export function registerWindowIpcHandlers(preloadPath: string): void {
 
   // ── Cross-window agent chat ────────────────────────────
   // Canvas window requests opening an agent chat in the main panel
-  ipcMain.on('main-window:open-agent-chat', (_event, data: { agentId: string; agentPrompt: string; agentStatus: string; agentSource?: 'sdk' | 'cli'; spaceId?: string }) => {
-    if (!mainWindow || mainWindow.isDestroyed()) return;
-
-    // Show the main window if hidden
-    if (!mainWindow.isVisible()) {
-      mainWindow.show();
-    }
-    mainWindow.focus();
-
-    mainWindow.webContents.send('main-window:open-agent-chat', data);
+  ipcMain.on('main-window:open-agent-chat', (_event, data: OpenAgentChatData) => {
+    openAgentChatInMainWindow(data);
   });
 
   // Canvas window requests opening the persona sandbox editor in the main panel.
