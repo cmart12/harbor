@@ -1,3 +1,6 @@
+// Pin userData to a stable, productName-independent location. MUST be first so
+// the path is set before any module resolves app.getPath('userData') at load.
+import './app-paths';
 import { app, BrowserWindow, dialog, globalShortcut, session, protocol, net, systemPreferences } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';

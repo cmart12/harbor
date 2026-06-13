@@ -37,6 +37,11 @@ whim is an Electron app with a clear separation between the main process (Node.j
 - **Edge snapping**: detects nearest screen edge after drag, snaps to position
 - **Pin mode**: disables auto-hide, enables resizing, opens canvases in popout windows
 - **Canvas popout windows**: separate `BrowserWindow` for multi-monitor canvas editing
+- **Stable settings path**: `app-paths.ts` is imported *first* (before any module resolves `app.getPath('userData')` at load time) and pins `userData` to `<appData>/whim`. This makes the settings location independent of `productName`, so `config.json` persists across dev and packaged builds and past renames. Legacy installs that used a different `productName` (e.g. `Copilot Whim`) leave an orphaned config behind; it is **not** auto-migrated — copy it manually if needed: `cp "<appData>/Copilot Whim/config.json" "<appData>/whim/config.json"`.
+
+### Settings storage — `config.json`
+
+All app settings (theme, model, CLI path, workspace **profiles**, MCP servers, CLI tools, sandbox policy, web-remote, hotkeys, and **agent personas** including the per-persona `yolo` flag) are persisted as a single JSON file at `app.getPath('userData')/config.json` via `config.ts` (`loadConfig` / `saveConfig`). Because `userData` is pinned (see above), this resolves to `<appData>/whim/config.json` on every build.
 
 ### database.ts — Storage
 

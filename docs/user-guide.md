@@ -266,6 +266,17 @@ Create @mentionable personas:
 - **Model** — which AI model to use (or default)
 - **Run location** — 💻 Local, ☁️ Cloud, or 🤖 Copilot Cloud Agent
 
+### Where settings are stored
+Everything on this screen — theme, model, workspace and **profiles**, Copilot CLI path, MCP servers, CLI tools, keyboard shortcuts, and **agent personas** (including a persona's 🔥 yolo flag) — is saved to a single file that persists across restarts and updates:
+
+| OS | Location |
+|---|---|
+| macOS | `~/Library/Application Support/whim/config.json` |
+| Windows | `%APPDATA%\whim\config.json` |
+| Linux | `~/.config/whim/config.json` |
+
+This path is fixed for every build (development and installed), so your settings always load from the same place.
+
 ---
 
 ## Keyboard Shortcuts
