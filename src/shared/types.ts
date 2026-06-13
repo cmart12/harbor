@@ -55,6 +55,14 @@ export interface AgentSession {
    * Control.
    */
   run_location: 'local' | 'cloud';
+  /**
+   * Whether yolo mode (auto-approve all permission requests) was enabled on
+   * this session.  Persisted so a session that the user flipped into yolo mode
+   * keeps that setting across navigation, pop-out windows, and app restarts —
+   * the renderer and the resumed worker both rehydrate it from here.  Defaults
+   * to `false`.
+   */
+  yolo_mode?: boolean;
   created_at: string;
   updated_at: string;
 }

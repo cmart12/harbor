@@ -176,6 +176,7 @@ function createSchema(database: Database.Database): void {
       quoted_text TEXT,
       comment_thread_id TEXT,
       run_location TEXT NOT NULL DEFAULT 'local',
+      yolo_mode INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     )
@@ -556,18 +557,20 @@ export function createAgentSession(session: AgentSession): void {
     quoted_text: session.quoted_text,
     comment_thread_id: session.comment_thread_id ?? null,
     run_location: session.run_location,
+    yolo_mode: session.yolo_mode ?? false,
     created_at: session.created_at,
     updated_at: session.updated_at,
   });
 
   db.prepare(
-    `INSERT INTO agent_sessions (id, session_id, space_id, prompt, status, summary, working_dir, source, persona_handle, quoted_text, comment_thread_id, run_location, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO agent_sessions (id, session_id, space_id, prompt, status, summary, working_dir, source, persona_handle, quoted_text, comment_thread_id, run_location, yolo_mode, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     session.id, session.session_id, session.space_id, session.prompt,
     session.status, session.summary, session.working_dir, session.source,
     session.persona_handle, session.quoted_text, session.comment_thread_id ?? null,
     session.run_location ?? 'local',
+    session.yolo_mode ? 1 : 0,
     session.created_at, session.updated_at,
   );
 }
@@ -585,18 +588,29 @@ export function updateAgentSessionStatus(id: string, status: string, summary?: s
   }
 }
 
+/** Persist the per-session yolo (auto-approve) flag so it survives app restart. */
+export function updateAgentSessionYolo(id: string, enabled: boolean): void {
+  const now = new Date().toISOString();
+  appendEvent(logRoot, 'agent_session.yolo', { id, yolo_mode: enabled, updated_at: now });
+  db.prepare('UPDATE agent_sessions SET yolo_mode = ?, updated_at = ? WHERE id = ?')
+    .run(enabled ? 1 : 0, now, id);
+}
+
 export function getAgentSession(id: string): AgentSession | null {
-  return db.prepare(
-    `SELECT id, session_id, space_id, prompt, status, summary, working_dir, source, persona_handle, quoted_text, comment_thread_id, run_location, created_at, updated_at
+  const row = db.prepare(
+    `SELECT id, session_id, space_id, prompt, status, summary, working_dir, source, persona_handle, quoted_text, comment_thread_id, run_location, yolo_mode, created_at, updated_at
      FROM agent_sessions WHERE id = ?`
-  ).get(id) as AgentSession | undefined ?? null;
+  ).get(id) as (Omit<AgentSession, 'yolo_mode'> & { yolo_mode: number }) | undefined;
+  if (!row) return null;
+  return { ...row, yolo_mode: !!row.yolo_mode };
 }
 
 export function listAgentSessions(): AgentSession[] {
-  return db.prepare(
-    `SELECT id, session_id, space_id, prompt, status, summary, working_dir, source, persona_handle, quoted_text, comment_thread_id, run_location, created_at, updated_at
+  const rows = db.prepare(
+    `SELECT id, session_id, space_id, prompt, status, summary, working_dir, source, persona_handle, quoted_text, comment_thread_id, run_location, yolo_mode, created_at, updated_at
      FROM agent_sessions ORDER BY created_at DESC`
-  ).all() as AgentSession[];
+  ).all() as Array<Omit<AgentSession, 'yolo_mode'> & { yolo_mode: number }>;
+  return rows.map((r) => ({ ...r, yolo_mode: !!r.yolo_mode }));
 }
 
 /** Update the session_id for an agent across both tables (e.g. after session recreation). */

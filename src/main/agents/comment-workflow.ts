@@ -119,6 +119,7 @@ export async function launchCommentAgent(
       quoted_text: quotedText || null,
       comment_thread_id: threadId,
       run_location: isCloudSandbox ? 'cloud' : 'local',
+      yolo_mode: record.yoloMode === true,
       created_at: now,
       updated_at: now,
     });

@@ -284,6 +284,7 @@ export function setAgentYolo(agentId: string, enabled: boolean): { ok: true } | 
 
   record.yoloMode = enabled;
   console.log(`[agent-service] yolo mode ${enabled ? 'enabled' : 'disabled'} for agent=${agentId}`);
+  persistence.updateYolo(record, enabled);
   notifier.notifyRenderer('agent:yolo-changed', { agentId, enabled });
 
   // When enabling, auto-approve any pending permission requests
@@ -401,7 +402,7 @@ export function listAllAgents(): AgentListSnapshot[] {
       pendingPath: pendingApproval?.path ?? null,
       source: row.source ?? 'sdk',
       personaHandle: row.persona_handle ?? null,
-      yoloMode: live?.yoloMode ?? false,
+      yoloMode: live?.yoloMode ?? row.yolo_mode ?? false,
       sandboxed: live?.sandbox?.state === 'on',
       runLocation: row.run_location ?? 'local',
     });
@@ -480,6 +481,9 @@ export function onAgentListChanged(listener: () => void): () => void {
     }
   });
 }
+
+/**
+ * Mark any DB agent sessions still in "running" or "waiting-approval" state
  * as "failed" when no corresponding live process exists.  This handles the
  * case where the app quit while agents were active — the in-memory registry
  * is lost on restart so these entries would otherwise stay stale forever.
