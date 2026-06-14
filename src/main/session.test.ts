@@ -38,7 +38,7 @@ vi.mock('./workspace', () => ({
   createSpaceFolder: vi.fn(),
 }));
 
-import { resolveCopilotCliPath, invalidateCliPath, checkCopilotCli, launchSession, parseCliVersion, compareVersions, getCopilotCliVersion, checkCliCompatibility, resolveCmdToJs, isCliMxcCapable, invalidateMxcCapability, findLatestSelfUpdatedCli, MIN_CLI_VERSION } from './session';
+import { resolveCopilotCliPath, invalidateCliPath, checkCopilotCli, launchSession, parseCliVersion, compareVersions, getCopilotCliVersion, checkCliCompatibility, resolveCmdToJs, isCliMxcCapable, invalidateMxcCapability, findLatestSelfUpdatedCli, probeCliVersion, resolveAutoDetectedCliPath, MIN_CLI_VERSION } from './session';
 import { getConfigValue } from './config';
 
 const mockGetConfigValue = vi.mocked(getConfigValue);
@@ -476,6 +476,60 @@ describe('session', () => {
       invalidateCliPath();
       mockExecSync.mockReturnValue(Buffer.from('GitHub Copilot CLI 1.0.40.\n'));
       expect(getCopilotCliVersion()).toBe('1.0.40');
+    });
+  });
+
+  // ── probeCliVersion ──────────────────────────────────
+
+  describe('probeCliVersion', () => {
+    it('parses the version from --version output', () => {
+      mockExecSync.mockReturnValue(Buffer.from('GitHub Copilot CLI 1.0.62.\n'));
+      expect(probeCliVersion('/opt/homebrew/bin/copilot')).toBe('1.0.62');
+    });
+
+    it('runs .js entries via the current Node/Electron binary', () => {
+      mockExecSync.mockReturnValue(Buffer.from('GitHub Copilot CLI 1.0.56-2.\n'));
+      expect(probeCliVersion('/bundled/index.js')).toBe('1.0.56');
+      expect(mockExecSync).toHaveBeenCalledWith(
+        expect.stringContaining(process.execPath),
+        expect.any(Object),
+      );
+    });
+
+    it('returns null when the probe fails', () => {
+      mockExecSync.mockImplementation(() => { throw new Error('spawn failed'); });
+      expect(probeCliVersion('/missing/copilot')).toBeNull();
+    });
+  });
+
+  // ── resolveAutoDetectedCliPath ───────────────────────
+
+  describe('resolveAutoDetectedCliPath', () => {
+    const originalPlatform = process.platform;
+    const originalEnv = { ...process.env };
+
+    afterEach(() => {
+      Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+      process.env = { ...originalEnv };
+    });
+
+    it('prefers the newest self-updated CLI over PATH lookups', () => {
+      Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
+      process.env.HOME = '/Users/test';
+      delete process.env.COPILOT_CACHE_HOME;
+      delete process.env.COPILOT_HOME;
+      const base = `/Users/test/.copilot/pkg/darwin-${process.arch}`;
+      mockExistsSync.mockImplementation((p: unknown) => {
+        const s = String(p);
+        if (s === base) return true;
+        return s.endsWith('index.js') || s.endsWith('app.js');
+      });
+      mockReaddirSync.mockImplementation((p: unknown) => (String(p) === base ? ['1.0.60', '1.0.62'] : []));
+      mockStatSync.mockReturnValue({ isDirectory: () => true });
+
+      expect(resolveAutoDetectedCliPath()).toBe(`${base}/1.0.62/index.js`);
+      // Self-update is filesystem-only — no `which` spawn needed.
+      expect(mockExecSync).not.toHaveBeenCalled();
     });
   });
 

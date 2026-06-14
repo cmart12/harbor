@@ -248,8 +248,15 @@ Keep separate repos — for example **work** and **personal** — and switch bet
 
 The active profile's name appears next to the whim logo at the bottom of the panel.
 
-### Copilot CLI
-Auto-detected by default. Override with a custom path if needed.
+### Copilot Runtime
+whim ships with a **bundled** Copilot CLI and uses it by default — nothing to install. In Settings → **Copilot Runtime** you can choose where the runtime comes from:
+
+- **Bundled** *(default)* — the CLI shipped with the app. Always works, no install or PATH setup required.
+- **Auto-detect local CLI** — find and use a locally-installed CLI, preferring the newest self-updated version (under `~/.copilot/pkg/…`). Use this for terminal-resumable sessions that share state with your own `copilot` install.
+- **Custom CLI path** — point at a specific `copilot` binary or entry point.
+- **Remote CLI server** — connect to an already-running runtime by URL (`host:port` or `http://host:port`) with an optional connection token.
+
+Use **Test connection** to verify the selected runtime actually connects (it performs a real handshake), and the **Active** line shows the resolved source, version, and whether it meets the minimum supported version.
 
 ### MCP Servers
 Model Context Protocol servers extend what agents can do. whim auto-discovers servers from `~/.copilot/mcp-config.json` and installed plugins. You can also add custom servers:

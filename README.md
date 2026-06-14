@@ -59,7 +59,7 @@ Agents can run **locally** via the Copilot SDK, or in the **cloud** via GitHub's
 - **AI model selection** — choose from available Copilot models
 - **Workspace directory** — select where intent data is stored
 - **Profiles** — keep separate repos (e.g. work and personal); each has an optional name (defaults to the git repo name) and a tap-to-generate color tint; switch via the logo or the `Switch Profile` hotkey
-- **Copilot CLI path** — auto-detected or manual override
+- **Copilot runtime** — uses a **bundled** Copilot CLI by default; optionally auto-detect a local CLI, set a custom path, or connect to a remote CLI server, with a **Test connection** check
 - **Agent personas** — define @mentionable personas with custom instructions and local/cloud execution
 - **MCP servers** — auto-discovered from `~/.copilot/` + user-added custom servers
 - **CLI tools** — define CLI tools available in the environment so agents know when to use them
@@ -122,9 +122,15 @@ See [docs/architecture.md](./docs/architecture.md) for detailed component descri
 ### Prerequisites
 
 - Node.js 20+
-- GitHub Copilot CLI — `npm install -g @github/copilot`
 - A GitHub account with Copilot access
 - For cloud agents: `gh` CLI authenticated (`gh auth login`)
+
+> The GitHub Copilot CLI is **bundled** with the app — no separate install is
+> required. To use a self-updating CLI with terminal-resumable sessions,
+> optionally install it locally (`npm install -g @github/copilot`, Homebrew, or
+> `curl -fsSL https://gh.io/copilot-install | bash`) and select **Auto-detect**
+> or **Custom path** in Settings → Copilot Runtime. You can also connect to a
+> remote runtime via **Remote CLI server**.
 
 ### Install & Run
 

@@ -41,7 +41,7 @@ whim is an Electron app with a clear separation between the main process (Node.j
 
 ### Settings storage — `config.json`
 
-All app settings (theme, model, CLI path, workspace **profiles**, MCP servers, CLI tools, sandbox policy, web-remote, hotkeys, and **agent personas** including the per-persona `yolo` flag) are persisted as a single JSON file at `app.getPath('userData')/config.json` via `config.ts` (`loadConfig` / `saveConfig`). Because `userData` is pinned (see above), this resolves to `<appData>/whim/config.json` on every build.
+All app settings (theme, model, Copilot runtime source (bundled/auto/path/server) + optional CLI path and remote server URL/token, workspace **profiles**, MCP servers, CLI tools, sandbox policy, web-remote, hotkeys, and **agent personas** including the per-persona `yolo` flag) are persisted as a single JSON file at `app.getPath('userData')/config.json` via `config.ts` (`loadConfig` / `saveConfig`). Because `userData` is pinned (see above), this resolves to `<appData>/whim/config.json` on every build.
 
 ### database.ts — Storage
 
@@ -57,6 +57,16 @@ Uses `better-sqlite3` for synchronous SQLite. Key tables:
 ### ai.ts — Copilot SDK Client
 
 Three specialized sessions: **Parse** (extract title/client/dates), **Recurrence** (evaluate repeat tasks), **Recall** (find similar past intents). All share the user's selected model.
+
+**Runtime resolution.** `resolveRuntimeConnection()` chooses how the SDK connects, based on `config.cliSource`:
+- `bundled` *(default)* → spawn the CLI shipped with the app via `resolveBundledCliPath()` (`@github/copilot`, pinned in `package.json` and `asarUnpack`-ed so its native `prebuilds/` run from `app.asar.unpacked`). Spawned through Electron-as-Node (`ELECTRON_RUN_AS_NODE=1`).
+- `auto` → newest local CLI from `session.ts` detection (prefers the self-updated bundle under `~/.copilot/pkg/<platform>-<arch>/` or the OS cache dirs).
+- `path` → an explicit user-configured CLI path/command.
+- `server` → `RuntimeConnection.forUri(url, { connectionToken })` to an already-running runtime.
+
+Any source that can't be satisfied falls back to the bundled CLI. `getRuntimeStatus()` reports the effective source/version/compatibility; `testRuntimeConnection()` spins up a throwaway client and runs a real handshake (bounded by a timeout) for the Settings "Test connection" button.
+
+**session.ts — CLI discovery.** `findLatestSelfUpdatedCli()` scans every self-update cache cross-platform and picks the newest fully-extracted bundle; `autoDetectCopilotCli()` adds well-known install paths (`~/.local/bin`, Homebrew, npm-global), PATH augmentation for GUI launches, a login-shell fallback for version-manager installs, and newest-by-probed-version selection. `MIN_CLI_VERSION` gates compatibility.
 
 ### agent-service.ts — Local Agent Lifecycle
 
