@@ -267,6 +267,8 @@ export interface WhimAPI {
   installUpdate(): Promise<void>;
   checkForUpdate(): Promise<void>;
   downloadUpdate(): Promise<void>;
+  getUpdateState(): Promise<UpdateState>;
+  openUpdateLog(): Promise<{ ok: true } | { error: string }>;
 
   // ── Platform ─────────────────────────────────────────────
   getPlatform(): string;
@@ -651,6 +653,8 @@ const api: WhimAPI = {
   installUpdate: () => ipcRenderer.invoke('update:install'),
   checkForUpdate: () => ipcRenderer.invoke('update:check'),
   downloadUpdate: () => ipcRenderer.invoke('update:download'),
+  getUpdateState: () => ipcRenderer.invoke('update:get-state'),
+  openUpdateLog: () => ipcRenderer.invoke('update:open-log'),
 
   // ── Platform ─────────────────────────────────────────────
   getPlatform: () => process.platform,

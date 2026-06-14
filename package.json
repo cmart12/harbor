@@ -19,12 +19,12 @@
     "start": "npm run build && npm run rebuild:electron && electron .",
     "dev": "npm run build && npm run rebuild:electron && (tsc -p tsconfig.main.json -w --preserveWatchOutput --declaration false --sourceMap false & node scripts/build-renderer.js --watch & node scripts/watch-assets.js & electronmon .)",
     "dev:packaged": "npm run build:mac && open \"build/mac-arm64/whim.app\"",
-    "build:mac": "npm run build && npm run rebuild:electron && electron-builder --mac --dir -c.productName=\"whim\"",
-    "build:installer:mac": "npm run build && npm run rebuild:electron && electron-builder --mac -c.productName=\"whim\"",
+    "build:mac": "npm run build && npm run rebuild:electron && electron-builder --mac --dir",
+    "build:installer:mac": "npm run build && npm run rebuild:electron && electron-builder --mac",
     "build:win": "npm run build && npm run rebuild:electron && electron-builder --win --dir",
     "build:installer:win": "npm run build && npm run rebuild:electron && electron-builder --win",
     "build:installer:win:unsigned": "npm run build && npm run rebuild:electron && electron-builder --win --config scripts/electron-builder-unsigned.js",
-    "release": "npm run build && npm run rebuild:electron && electron-builder --mac --publish always -c.productName=\"whim\"",
+    "release": "npm run build && npm run rebuild:electron && electron-builder --mac --publish always",
     "release:win": "npm run build && npm run rebuild:electron && electron-builder --win --publish always"
   },
   "build": {
@@ -34,7 +34,18 @@
       "output": "build"
     },
     "files": [
-      "dist/**/*"
+      "dist/**/*",
+      "!node_modules/@github/copilot-darwin-x64/**",
+      "!node_modules/@github/copilot-darwin-arm64/**",
+      "!node_modules/@github/copilot-win32-x64/**",
+      "!node_modules/@github/copilot-win32-arm64/**",
+      "!node_modules/@github/copilot-linux-x64/**",
+      "!node_modules/@github/copilot-linux-arm64/**",
+      "!node_modules/@github/copilot-linuxmusl-x64/**",
+      "!node_modules/@github/copilot-linuxmusl-arm64/**"
+    ],
+    "asarUnpack": [
+      "node_modules/@github/copilot/**"
     ],
     "extraResources": [
       {
@@ -100,6 +111,7 @@
   "homepage": "https://github.com/patniko/whim#readme",
   "type": "commonjs",
   "dependencies": {
+    "@github/copilot": "^1.0.56-1",
     "@github/copilot-sdk": "^1.0.0-beta.10",
     "@huggingface/transformers": "^4.1.0",
     "@milkdown/kit": "^7.21.2",
@@ -109,6 +121,7 @@
     "@types/qrcode": "^1.5.6",
     "@types/ws": "^8.18.1",
     "better-sqlite3": "^12.9.0",
+    "electron-log": "^5.4.4",
     "electron-updater": "^6.8.3",
     "html-to-docx": "^1.8.0",
     "js-yaml": "^4.1.0",

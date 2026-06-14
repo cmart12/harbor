@@ -198,6 +198,27 @@
               <div id="export-destinations-list" class="personas-list"></div>
               <button id="export-dest-add-btn" class="persona-add-btn" type="button">+ Add Destination</button>
             </div>
+
+            <div class="settings-group">
+              <div class="settings-group-title">Updates</div>
+              <div class="settings-row update-settings-row">
+                <div class="update-settings-status">
+                  <div id="update-current-version" class="update-settings-version">whim</div>
+                  <div id="update-settings-line" class="settings-hint update-settings-line"></div>
+                </div>
+                <button id="update-check-btn" class="workspace-btn" type="button">Check now</button>
+              </div>
+              <div class="settings-row">
+                <label class="settings-checkbox-label">
+                  <input type="checkbox" id="auto-download-updates-cb" />
+                  Automatically download updates in the background
+                </label>
+              </div>
+              <div class="settings-hint">When on, updates download in the background and prompt you to restart. When off, you're notified and can download manually. Updates install on the next restart either way.</div>
+              <div class="settings-row">
+                <button id="update-open-log-btn" class="workspace-btn" type="button">Open update log</button>
+              </div>
+            </div>
           </div>
 
           <div class="settings-tab-panel" data-tab="environment">

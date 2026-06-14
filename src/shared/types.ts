@@ -1,10 +1,17 @@
 // ── Auto-update ────────────────────────────────────────────────────────────
-export type UpdateStatus = 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'error' | 'disabled';
+export type UpdateStatus = 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'up-to-date' | 'error' | 'disabled';
 export interface UpdateState {
   status: UpdateStatus;
+  /** Version offered by the latest release (when an update is available/downloading/downloaded). */
   version?: string;
   error?: string;
   progress?: number;
+  /** Version of the currently-running app (app.getVersion()). */
+  currentVersion?: string;
+  /** Epoch ms of the last completed check, regardless of outcome. */
+  lastCheckedAt?: number;
+  /** Whether the most recent check was triggered by the user or the background timer. */
+  checkInitiatedBy?: 'auto' | 'manual';
 }
 
 export interface Attachment {

@@ -456,6 +456,8 @@ export interface IpcCommands {
   'update:install': { args: []; result: void };
   'update:check': { args: []; result: void };
   'update:download': { args: []; result: void };
+  'update:get-state': { args: []; result: UpdateState };
+  'update:open-log': { args: []; result: { ok: true } | { error: string } };
 }
 
 // ---------------------------------------------------------------------------

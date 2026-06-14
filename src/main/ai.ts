@@ -1,8 +1,12 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import { CopilotClient, CopilotSession, RuntimeConnection } from '@github/copilot-sdk';
-import { getConfigValue } from './config';
-import { resolveCopilotCliPath } from './session';
+import { getConfigValue, type CliSource } from './config';
+import {
+  resolveBundledCliPath,
+  resolveAutoDetectedCliPath,
+  resolveConfiguredCliPath,
+} from './session';
 import { getCliShimPath } from './cli-electron-shim';
 import { RecurrenceResult, RecallMatch, Space } from '../shared/types';
 import type { SandboxPolicy } from '../shared/ipc-contract';
@@ -243,6 +247,65 @@ async function getRecallSession(): Promise<CopilotSession | null> {
   return recallSession;
 }
 
+export interface ResolvedRuntime {
+  /** SDK connection; `undefined` lets the SDK resolve its own bundled runtime. */
+  connection: RuntimeConnection | undefined;
+  kind: CliSource;
+  /** Resolved path or URL, for logging and the settings UI. */
+  target: string | null;
+}
+
+/**
+ * Resolve which Copilot runtime the SDK should connect to, honoring the
+ * configured `cliSource`:
+ *   - 'server'  → connect to an already-running runtime at `cliServerUrl`.
+ *   - 'path'    → spawn the user's explicit local CLI.
+ *   - 'auto'    → spawn the best auto-detected local CLI (prefers self-update).
+ *   - 'bundled' → spawn the CLI shipped with the app (default).
+ * Any source that can't be satisfied falls back to the bundled CLI, then to the
+ * SDK's own bundled resolution as a last resort.
+ */
+export function resolveRuntimeConnection(): ResolvedRuntime {
+  const source = (getConfigValue('cliSource') || 'bundled') as CliSource;
+
+  if (source === 'server') {
+    const url = getConfigValue('cliServerUrl');
+    if (url) {
+      const token = getConfigValue('cliServerToken') || undefined;
+      const connection = RuntimeConnection.forUri(url, token ? { connectionToken: token } : undefined);
+      return { connection, kind: 'server', target: url };
+    }
+    console.warn('[copilot-sdk] cliSource=server but no server URL configured; falling back to bundled CLI');
+  } else if (source === 'path' || source === 'auto') {
+    const localPath = source === 'auto'
+      ? resolveAutoDetectedCliPath()
+      : resolveConfiguredCliPath(getConfigValue('cliPath'));
+    if (localPath) {
+      // On Windows we must spawn through a shim that strips Electron runtime
+      // markers — otherwise the CLI mis-parses argv and exits.
+      const effectivePath = getCliShimPath(localPath) ?? localPath;
+      if (effectivePath !== localPath) {
+        console.log(`[copilot-sdk] Spawning via Electron shim: ${effectivePath}`);
+      }
+      return { connection: RuntimeConnection.forStdio({ path: effectivePath }), kind: source, target: localPath };
+    }
+    console.warn(`[copilot-sdk] cliSource=${source} but no local CLI resolved; falling back to bundled CLI`);
+  }
+
+  // Bundled CLI — the default, and the fallback for the cases above.
+  const bundled = resolveBundledCliPath();
+  if (bundled) {
+    const effectivePath = getCliShimPath(bundled) ?? bundled;
+    if (effectivePath !== bundled) {
+      console.log(`[copilot-sdk] Spawning via Electron shim: ${effectivePath}`);
+    }
+    return { connection: RuntimeConnection.forStdio({ path: effectivePath }), kind: 'bundled', target: bundled };
+  }
+
+  console.warn('[copilot-sdk] Bundled CLI not found; using the SDK default runtime resolution');
+  return { connection: undefined, kind: 'bundled', target: null };
+}
+
 export async function initCopilot(): Promise<void> {
   // Build a custom env for CLI subprocesses: ELECTRON_RUN_AS_NODE makes
   // electron.exe behave as plain Node.js so the CLI doesn't launch a full
@@ -252,22 +315,9 @@ export async function initCopilot(): Promise<void> {
   const cliEnv = { ...process.env, ELECTRON_RUN_AS_NODE: '1' };
 
   try {
-    const cliPath = resolveCopilotCliPath();
-    // On Windows we must spawn through a shim that strips Electron runtime
-    // markers — otherwise the CLI mis-parses argv and exits with
-    // "too many arguments. Expected 0 arguments but got 1."
-    const effectivePath = cliPath ? (getCliShimPath(cliPath) ?? cliPath) : null;
-    const connection = effectivePath
-      ? RuntimeConnection.forStdio({ path: effectivePath })
-      : undefined; // falls back to bundled CLI
-    if (cliPath) {
-      console.log(`[copilot-sdk] Using local CLI: ${cliPath}`);
-      if (effectivePath !== cliPath) {
-        console.log(`[copilot-sdk] Spawning via Electron shim: ${effectivePath}`);
-      }
-    } else {
-      console.warn('[copilot-sdk] Local CLI not found, using bundled CLI (sessions may not be resumable from terminal)');
-    }
+    const runtime = resolveRuntimeConnection();
+    const connection = runtime.connection;
+    console.log(`[copilot-sdk] Runtime source: ${runtime.kind}${runtime.target ? ` → ${runtime.target}` : ' (SDK default)'}`);
 
     // enableRemoteSessions allows per-session remote access to be toggled
     // on demand via session.rpc.remote.enable(). It does NOT auto-enable
@@ -295,11 +345,7 @@ export async function initCopilot(): Promise<void> {
     // Start a separate client for ephemeral sessions. When sessionFs is
     // enabled the SDK requires *every* createSession call to provide a
     // createSessionFsHandler, so this must be a dedicated client.
-    const cliPath = resolveCopilotCliPath();
-    const effectivePath = cliPath ? (getCliShimPath(cliPath) ?? cliPath) : null;
-    const connection = effectivePath
-      ? RuntimeConnection.forStdio({ path: effectivePath })
-      : undefined;
+    const connection = resolveRuntimeConnection().connection;
     const ephemeralOpts: Record<string, unknown> = {
       ...(connection ? { connection } : {}),
       enableRemoteSessions: true,

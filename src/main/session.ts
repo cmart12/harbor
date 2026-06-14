@@ -1,4 +1,5 @@
 import { execSync } from 'child_process';
+import { app } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { getSpace, assignSpaceFolder } from './database';
@@ -68,29 +69,11 @@ export function getCopilotCliVersion(): string | null {
     return null;
   }
 
-  try {
-    // On Windows, .js files can't be executed directly (they open in Notepad
-    // or Windows Script Host). Run them via the current Node/Electron binary.
-    const cmd = /\.js$/i.test(cliPath)
-      ? `"${process.execPath}" "${cliPath}" --version`
-      : `"${cliPath}" --version`;
-    const output = execSync(cmd, {
-      timeout: 10_000,
-      windowsHide: true,
-      stdio: ['ignore', 'pipe', 'ignore'],
-      // ELECTRON_RUN_AS_NODE makes electron.exe behave as plain Node.js,
-      // preventing crashes when the CLI is run under Electron on Windows.
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
-    }).toString().trim();
-    resolvedCliVersion = parseCliVersion(output);
-    if (resolvedCliVersion) {
-      console.log(`[session] CLI version: ${resolvedCliVersion}`);
-    } else {
-      console.warn(`[session] Could not parse CLI version from: ${output}`);
-    }
-  } catch (err) {
-    console.warn('[session] Failed to get CLI version:', err);
-    resolvedCliVersion = null;
+  resolvedCliVersion = probeCliVersion(cliPath);
+  if (resolvedCliVersion) {
+    console.log(`[session] CLI version: ${resolvedCliVersion}`);
+  } else {
+    console.warn(`[session] Could not determine CLI version for: ${cliPath}`);
   }
 
   return resolvedCliVersion;
@@ -190,37 +173,80 @@ export interface LaunchResult {
 // ── CLI discovery ───────────────────────────────────────
 
 /**
- * On Windows the Copilot CLI self-updates into
- * `%LOCALAPPDATA%\copilot\pkg\universal\<version>\index.js`.
- * Scan that directory for the newest version and return its index.js path.
- * The self-updated CLI is a complete standalone package (includes MXC,
- * copilot-sdk, etc.) and works under Electron with ELECTRON_RUN_AS_NODE.
+ * Directories the Copilot CLI extracts self-updates into, mirroring the CLI's
+ * own resolution order (`index.js`/`app.js`). Each base contains
+ * `universal/<ver>/` and `<platform>-<arch>/<ver>/` subdirectories, each a
+ * complete standalone CLI bundle.
+ */
+export function getCopilotPkgBaseDirs(): string[] {
+  const join = process.platform === 'win32' ? path.win32.join : path.posix.join;
+  const home = process.env.HOME || process.env.USERPROFILE || '';
+  const dirs: string[] = [];
+  const add = (d: string | null | undefined): void => { if (d) dirs.push(d); };
+
+  if (process.env.COPILOT_CACHE_HOME) add(join(process.env.COPILOT_CACHE_HOME, 'pkg'));
+
+  if (process.platform === 'darwin') {
+    add(join(home, 'Library', 'Caches', 'copilot', 'pkg'));
+  } else if (process.platform === 'win32') {
+    add(path.win32.join(process.env.LOCALAPPDATA || path.win32.join(home, '.cache'), 'copilot', 'pkg'));
+  } else {
+    add(join(process.env.XDG_CACHE_HOME || join(home, '.cache'), 'copilot', 'pkg'));
+  }
+
+  if (process.env.COPILOT_HOME) add(join(process.env.COPILOT_HOME, 'pkg'));
+  if (home) add(join(home, '.copilot', 'pkg'));
+
+  return [...new Set(dirs)];
+}
+
+/**
+ * Scan every self-update cache (all platforms) for the newest fully-extracted
+ * Copilot CLI bundle and return its `index.js`. The self-updated CLI is a
+ * complete standalone package (includes MXC, copilot-sdk, etc.) and works under
+ * Electron with ELECTRON_RUN_AS_NODE.
+ *
+ * A bundle is considered usable only when both `index.js` (the spawn entry) and
+ * `app.js` (the CLI itself) are present — this mirrors how the CLI's own loader
+ * locates versions and skips partially-extracted directories.
  */
 export function findLatestSelfUpdatedCli(): string | null {
-  if (process.platform !== 'win32') return null;
-  const base = path.win32.join(process.env.LOCALAPPDATA || '', 'copilot', 'pkg', 'universal');
-  if (!base || !fs.existsSync(base)) return null;
+  const join = process.platform === 'win32' ? path.win32.join : path.posix.join;
+  const platformArch = `${process.platform}-${process.arch}`;
 
-  let entries: string[];
-  try {
-    entries = fs.readdirSync(base).filter(name => {
-      const full = path.win32.join(base, name);
-      return fs.statSync(full).isDirectory() && fs.existsSync(path.win32.join(full, 'index.js'));
-    });
-  } catch {
-    return null;
+  let best: { version: string; raw: string; entry: string } | null = null;
+
+  for (const base of getCopilotPkgBaseDirs()) {
+    for (const sub of ['universal', platformArch]) {
+      const dir = join(base, sub);
+      let names: string[];
+      try {
+        if (!fs.existsSync(dir)) continue;
+        names = fs.readdirSync(dir);
+      } catch {
+        continue;
+      }
+      for (const name of names) {
+        const versionDir = join(dir, name);
+        const entry = join(versionDir, 'index.js');
+        try {
+          if (!fs.statSync(versionDir).isDirectory()) continue;
+          if (!fs.existsSync(entry)) continue;
+          // Require app.js too so we never pick a half-extracted bundle.
+          if (!fs.existsSync(join(versionDir, 'app.js'))) continue;
+        } catch {
+          continue;
+        }
+        const numeric = name.replace(/-.*$/, '');
+        const cmp = best ? compareVersions(numeric, best.version) : 1;
+        if (!best || cmp > 0 || (cmp === 0 && name.localeCompare(best.raw) > 0)) {
+          best = { version: numeric, raw: name, entry };
+        }
+      }
+    }
   }
-  if (entries.length === 0) return null;
 
-  // Sort by semver (highest last). Strips pre-release tags for numeric comparison,
-  // then falls back to lexicographic to break ties (e.g. 1.0.57-2 < 1.0.57-3).
-  entries.sort((a, b) => {
-    const result = compareVersions(a.replace(/-.*$/, ''), b.replace(/-.*$/, ''));
-    return result !== 0 ? result : a.localeCompare(b);
-  });
-
-  const latest = entries[entries.length - 1];
-  return path.win32.join(base, latest, 'index.js');
+  return best ? best.entry : null;
 }
 
 /**
@@ -304,48 +330,150 @@ export function resolveCmdToJs(cmdPath: string): string {
   return cmdPath;
 }
 
+/**
+ * Probe a candidate CLI's version by running `<cli> --version`. `.js` entries
+ * are run via the current Node/Electron binary (as plain Node). Returns null on
+ * any failure. Not cached — callers should cache as needed.
+ */
+export function probeCliVersion(cliPath: string): string | null {
+  try {
+    const cmd = /\.js$/i.test(cliPath)
+      ? `"${process.execPath}" "${cliPath}" --version`
+      : `"${cliPath}" --version`;
+    const output = execSync(cmd, {
+      timeout: 10_000,
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'ignore'],
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+    }).toString().trim();
+    return parseCliVersion(output);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Common bin directories prepended to PATH for discovery. GUI apps launched
+ * from Finder/Dock inherit a minimal launchd PATH (`/usr/bin:/bin:…`) that
+ * omits Homebrew, npm-global and version-manager dirs, so `which copilot`
+ * fails even when the CLI is installed. Augmenting PATH restores discovery.
+ */
+function getAugmentedPathEnv(): NodeJS.ProcessEnv {
+  if (process.platform === 'win32') return process.env;
+  const home = process.env.HOME || '';
+  const extra = [
+    '/opt/homebrew/bin',
+    '/usr/local/bin',
+    home && path.posix.join(home, '.local', 'bin'),
+    home && path.posix.join(home, '.npm-global', 'bin'),
+    '/usr/bin',
+    '/bin',
+  ].filter(Boolean) as string[];
+  const current = (process.env.PATH || '').split(':').filter(Boolean);
+  const merged = [...new Set([...current, ...extra])].join(':');
+  return { ...process.env, PATH: merged };
+}
+
+/**
+ * Ask the user's login shell where `copilot` resolves. This catches installs
+ * managed by nvm/fnm/volta/asdf and other version managers whose dirs only
+ * exist on the interactive shell PATH — invisible to a GUI-launched app.
+ */
+function resolveViaLoginShell(): string | null {
+  if (process.platform === 'win32') return null;
+  const shell = process.env.SHELL || '/bin/bash';
+  try {
+    const out = execSync(`'${shell}' -lic 'command -v copilot' 2>/dev/null`, {
+      timeout: 8000,
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).toString().trim();
+    const line = out.split(/\r?\n/).filter(Boolean).pop();
+    if (line && !line.includes('node_modules') && fs.existsSync(line)) return line;
+  } catch {
+    // Shell unavailable or copilot not found
+  }
+  return null;
+}
+
+/** Candidate install locations for the CLI, by platform. */
+function getCliCandidatePaths(): string[] {
+  if (process.platform === 'win32') {
+    return [
+      path.win32.join(process.env.APPDATA || '', 'npm', 'copilot.cmd'),
+      path.win32.join(process.env.LOCALAPPDATA || '', 'npm', 'copilot.cmd'),
+      path.win32.join(process.env.ProgramData || 'C:\\ProgramData', 'npm', 'copilot.cmd'),
+    ];
+  }
+  const home = process.env.HOME || '';
+  return [
+    '/opt/homebrew/bin/copilot',                          // Homebrew (Apple Silicon)
+    '/usr/local/bin/copilot',                             // Homebrew (Intel) / install script as root
+    home && path.posix.join(home, '.local', 'bin', 'copilot'),    // install script (non-root)
+    home && path.posix.join(home, '.npm-global', 'bin', 'copilot'),
+  ].filter(Boolean) as string[];
+}
+
+/**
+ * From a list of candidate CLI paths, return the one with the highest probed
+ * version. Falls back to the first existing candidate when versions can't be
+ * determined. Empty/missing candidates are ignored.
+ */
+function selectNewestCli(candidates: string[]): string | null {
+  const existing: string[] = [];
+  for (const p of candidates) {
+    try {
+      if (p && fs.existsSync(p) && !existing.includes(p)) existing.push(p);
+    } catch {
+      // ignore
+    }
+  }
+  if (existing.length === 0) return null;
+  if (existing.length === 1) return existing[0];
+
+  let best: { path: string; version: string | null } | null = null;
+  for (const p of existing) {
+    const version = probeCliVersion(p);
+    if (!best) { best = { path: p, version }; continue; }
+    if (version && !best.version) { best = { path: p, version }; continue; }
+    if (version && best.version && compareVersions(version, best.version) > 0) {
+      best = { path: p, version };
+    }
+  }
+  return best ? best.path : existing[0];
+}
+
 function autoDetectCopilotCli(): string | null {
-  // On Windows, prefer the self-updated CLI — it's typically newer and
-  // includes MXC support. Falls through to npm-installed paths if not found.
+  // 1. Prefer the self-updated CLI — it's the newest available across every
+  //    self-update cache and bundles MXC support. Filesystem-only, no spawn.
   const selfUpdated = findLatestSelfUpdatedCli();
   if (selfUpdated) {
     console.log(`[session] Found self-updated CLI: ${selfUpdated}`);
     return selfUpdated;
   }
 
-  if (process.platform === 'win32') {
-    const candidates = [
-      path.win32.join(process.env.APPDATA || '', 'npm', 'copilot.cmd'),
-      path.win32.join(process.env.LOCALAPPDATA || '', 'npm', 'copilot.cmd'),
-      path.win32.join(process.env.ProgramData || 'C:\\ProgramData', 'npm', 'copilot.cmd'),
-    ];
-    for (const p of candidates) {
-      if (fs.existsSync(p)) return resolveCmdToJs(p);
-    }
+  // 2. Otherwise pick the newest among well-known install locations.
+  const best = selectNewestCli(getCliCandidatePaths());
+  if (best) {
+    const resolved = resolveCmdToJs(best);
+    console.log(`[session] Detected CLI install: ${resolved}`);
+    return resolved;
   }
 
-  // macOS/Linux: check common paths
-  if (process.platform !== 'win32') {
-    const home = process.env.HOME || '';
-    const candidates = [
-      '/usr/local/bin/copilot',
-      '/opt/homebrew/bin/copilot',
-      path.join(home, '.npm-global', 'bin', 'copilot'),
-      path.join(home, '.nvm', 'current', 'bin', 'copilot'),
-    ];
-    for (const p of candidates) {
-      if (fs.existsSync(p)) return p;
-    }
-  }
-
+  // 3. Fall back to PATH lookup with an augmented PATH (fixes GUI-launch).
   try {
     const cmd = process.platform === 'win32' ? 'where.exe copilot' : 'which copilot';
-    const result = execSync(cmd, { windowsHide: true, timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    const result = execSync(cmd, {
+      windowsHide: true,
+      timeout: 5000,
+      stdio: ['ignore', 'pipe', 'ignore'],
+      env: getAugmentedPathEnv(),
+    }).toString().trim();
     const lines = result.split(/\r?\n/).filter(Boolean);
 
     // Skip node_modules shims — we want the real globally-installed CLI,
     // not the local project shim that npm puts on PATH during `npm run`.
-    const isGlobal = (l: string) => !l.includes('node_modules');
+    const isGlobal = (l: string): boolean => !l.includes('node_modules');
 
     if (process.platform === 'win32') {
       // On Windows, prefer .cmd files — bare "copilot" entries are Unix shell
@@ -355,12 +483,89 @@ function autoDetectCopilotCli(): string | null {
     }
 
     const globalLine = lines.find(l => isGlobal(l));
-    if (globalLine && fs.existsSync(globalLine)) return globalLine;
+    if (globalLine && fs.existsSync(globalLine)) return resolveCmdToJs(globalLine);
   } catch {
-    // Not found
+    // Not found on PATH
+  }
+
+  // 4. Last resort: ask the login shell (catches nvm/fnm/volta/asdf installs).
+  const shellResolved = resolveViaLoginShell();
+  if (shellResolved) {
+    console.log(`[session] Resolved CLI via login shell: ${shellResolved}`);
+    return resolveCmdToJs(shellResolved);
   }
 
   return null;
+}
+
+let resolvedBundledCliPath: string | null = null;
+let bundledCliResolved = false;
+
+/**
+ * Resolve the path to the Copilot CLI bundled with the app
+ * (`@github/copilot/index.js`, pinned in package.json). Spawned via
+ * Electron-as-Node, this runs a known-compatible CLI version with no external
+ * install required — the default runtime source.
+ *
+ * In a packaged build the package is unpacked from the asar archive (see
+ * `build.asarUnpack` in package.json) so its native addons under `prebuilds/`
+ * can execute. We prefer the `app.asar.unpacked` location and fall back to the
+ * in-place `node_modules` for unpackaged/dev runs. Result is cached.
+ */
+export function resolveBundledCliPath(): string | null {
+  if (bundledCliResolved) return resolvedBundledCliPath;
+  bundledCliResolved = true;
+
+  const rel = path.join('node_modules', '@github', 'copilot', 'index.js');
+  const appPath = app.getAppPath();
+  const candidates: string[] = [];
+  if (appPath.endsWith('.asar')) {
+    candidates.push(path.join(`${appPath}.unpacked`, rel));
+    candidates.push(path.join(appPath, rel));
+  } else {
+    candidates.push(path.join(appPath, rel));
+  }
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      resolvedBundledCliPath = candidate;
+      console.log(`[session] Bundled CLI: ${candidate}`);
+      return candidate;
+    }
+  }
+  console.error(`[session] Bundled CLI not found. Searched:\n  ${candidates.join('\n  ')}`);
+  resolvedBundledCliPath = null;
+  return null;
+}
+
+/**
+ * Resolve a user-supplied CLI path or bare command name to a usable entry
+ * point. Returns null when it can't be resolved. Used by the 'path' runtime
+ * source and by `resolveCopilotCliPath`'s config override.
+ */
+export function resolveConfiguredCliPath(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  // Full path that exists → use directly (mapping .cmd → index.js on Windows).
+  if (fs.existsSync(raw)) return resolveCmdToJs(raw);
+  // Otherwise treat it as a bare command name and resolve via PATH.
+  const resolved = resolveCommandOnPath(raw);
+  if (resolved) return resolveCmdToJs(resolved);
+  return null;
+}
+
+let resolvedAutoPath: string | null = null;
+let autoPathResolved = false;
+
+/**
+ * Auto-detect the best local Copilot CLI, ignoring any configured override.
+ * Used by the 'auto' runtime source. Result is cached; reset via
+ * invalidateCliPath().
+ */
+export function resolveAutoDetectedCliPath(): string | null {
+  if (autoPathResolved) return resolvedAutoPath;
+  autoPathResolved = true;
+  resolvedAutoPath = autoDetectCopilotCli();
+  return resolvedAutoPath;
 }
 
 /**
@@ -374,21 +579,12 @@ export function resolveCopilotCliPath(): string | null {
 
   const override = getConfigValue('cliPath');
   if (override) {
-    // If it's a full path that exists, use it directly
-    if (fs.existsSync(override)) {
-      resolvedCliPath = resolveCmdToJs(override);
+    const configured = resolveConfiguredCliPath(override);
+    if (configured) {
+      resolvedCliPath = configured;
       console.log(`[session] Using configured CLI path: ${resolvedCliPath}`);
       return resolvedCliPath;
     }
-
-    // Otherwise try to resolve the command name via PATH (where/which)
-    const resolved = resolveCommandOnPath(override);
-    if (resolved) {
-      resolvedCliPath = resolveCmdToJs(resolved);
-      console.log(`[session] Resolved configured CLI "${override}" to: ${resolvedCliPath}`);
-      return resolvedCliPath;
-    }
-
     console.warn(`[session] Configured CLI path not found: ${override}, falling back to auto-detect`);
   }
 
@@ -405,6 +601,8 @@ export function resolveCopilotCliPath(): string | null {
 export function invalidateCliPath(): void {
   cliResolved = false;
   resolvedCliPath = null;
+  autoPathResolved = false;
+  resolvedAutoPath = null;
   cliVersionResolved = false;
   resolvedCliVersion = null;
   invalidateMxcCapability();

@@ -9825,6 +9825,7 @@ body.dark .canvas-chat-pane {
 .update-banner--available { background: #1a6fb5; }
 .update-banner--downloading { background: #1a6fb5; }
 .update-banner--ready { background: #2ea043; }
+.update-banner--error { background: #b5341a; }
 
 .update-banner__text {
   flex: 1;
@@ -9845,6 +9846,12 @@ body.dark .canvas-chat-pane {
   cursor: pointer;
 }
 .update-banner__btn:hover { background: rgba(255, 255, 255, 0.25); }
+
+.update-banner__btn--ghost {
+  background: none;
+  border-color: rgba(255, 255, 255, 0.25);
+}
+.update-banner__btn--ghost:hover { background: rgba(255, 255, 255, 0.12); }
 
 .update-banner__dismiss {
   flex-shrink: 0;
@@ -9873,6 +9880,18 @@ body.dark .canvas-chat-pane {
   border-radius: 2px;
   transition: width 0.3s ease;
 }
+
+/* ── Update settings (Settings → General → Updates) ──────── */
+.update-settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.update-settings-status { min-width: 0; }
+.update-settings-version { font-weight: 600; }
+.update-settings-line { margin-top: 2px; }
+.update-settings-line--error { color: #d1432a; }
 
 /* ── Workspace profile tint ─────────────────────────────── */
 /* A subtle, theme-safe wash layered over the frosted panel. `background-image`

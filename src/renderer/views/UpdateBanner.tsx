@@ -9,11 +9,17 @@ function UpdateBanner() {
   const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
+    // Seed from the current state in case an event (e.g. an early error or a
+    // ready-to-install update) fired before this component mounted.
+    api?.getUpdateState?.().then((s: UpdateState) => {
+      setState((prev) => prev ?? s);
+    }).catch(() => {});
+
     if (!api?.onUpdateStateChanged) return;
     const unsub = api.onUpdateStateChanged((s: UpdateState) => {
       setState(s);
-      // Re-show banner when a new update arrives or download completes
-      if (s.status === 'available' || s.status === 'downloaded') {
+      // Re-show the banner whenever a new actionable state arrives.
+      if (s.status === 'available' || s.status === 'downloaded' || s.status === 'error') {
         setDismissed(false);
       }
     });
@@ -28,13 +34,17 @@ function UpdateBanner() {
     api?.downloadUpdate();
   }, []);
 
+  const handleRetry = useCallback(() => {
+    api?.checkForUpdate();
+  }, []);
+
   const handleDismiss = useCallback(() => {
     setDismissed(true);
   }, []);
 
   if (!state || dismissed) return null;
 
-  const { status, version, progress } = state;
+  const { status, version, progress, error } = state;
 
   if (status === 'available') {
     return (
@@ -68,11 +78,24 @@ function UpdateBanner() {
           Update ready{version ? ` (v${version})` : ''} — restart to apply
         </span>
         <button className="update-banner__btn" onClick={handleInstall}>Restart Now</button>
+        <button className="update-banner__btn update-banner__btn--ghost" onClick={handleDismiss}>Later</button>
+      </div>
+    );
+  }
+
+  if (status === 'error') {
+    return (
+      <div className="update-banner update-banner--error">
+        <span className="update-banner__text">
+          Update failed{error ? `: ${error}` : ''}
+        </span>
+        <button className="update-banner__btn" onClick={handleRetry}>Retry</button>
         <button className="update-banner__dismiss" onClick={handleDismiss} title="Dismiss">✕</button>
       </div>
     );
   }
 
+  // idle / checking / up-to-date / disabled are surfaced in Settings, not as a banner.
   return null;
 }
 

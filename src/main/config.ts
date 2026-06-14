@@ -33,6 +33,15 @@ export interface AgentPersona {
   ephemeral?: boolean;
 }
 
+/**
+ * Which Copilot runtime the SDK connects to:
+ * - 'bundled': the CLI shipped with the app (`@github/copilot`); the default.
+ * - 'auto':    auto-detect a local install, preferring the self-updated CLI.
+ * - 'path':    an explicit local CLI path/command (`cliPath`).
+ * - 'server':  an already-running runtime at `cliServerUrl` (remote).
+ */
+export type CliSource = 'bundled' | 'auto' | 'path' | 'server';
+
 export interface CliRuntime {
   id: string;
   label: string;        // user-friendly name, e.g. "Copilot Dev"
@@ -123,6 +132,9 @@ export interface AppConfig {
   theme: 'light' | 'dark' | 'system';
   model: string | null;
   cliPath: string | null;          // user override for Copilot CLI path; null = auto-detect
+  cliSource: CliSource;            // which Copilot runtime to use (default: 'bundled')
+  cliServerUrl: string | null;     // remote runtime URL when cliSource === 'server'
+  cliServerToken: string | null;   // optional shared secret for the remote runtime
   sessions: Record<string, string>; // spaceId → copilot CLI sessionId
   pinned: boolean;
   autoHideSidePane: boolean;       // when true, side pane auto-hides on blur & stays alwaysOnTop
@@ -304,6 +316,9 @@ const DEFAULT_CONFIG: AppConfig = {
   theme: 'system',
   model: null,
   cliPath: null,
+  cliSource: 'bundled',
+  cliServerUrl: null,
+  cliServerToken: null,
   sessions: {},
   pinned: false,
   autoHideSidePane: true,
@@ -441,6 +456,12 @@ export function loadConfig(): AppConfig {
       // intentional 'cloud' value the user just set.
       if (parsed.personasMigratedV2 === undefined && parsed.personasSeeded === true) {
         config.personasMigratedV2 = true;
+      }
+      // Runtime source: pre-source configs map an explicit cliPath to the
+      // 'path' source; everything else (including auto-detect users) defaults
+      // to the bundled CLI, which always works without a local install.
+      if (parsed.cliSource === undefined) {
+        config.cliSource = parsed.cliPath ? 'path' : 'bundled';
       }
     }
   } catch (err) {

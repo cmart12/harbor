@@ -140,9 +140,29 @@ describe('session', () => {
       process.env = { ...originalEnv };
     });
 
-    it('returns null on non-win32 platforms', () => {
+    it('returns null when no bundles are present on macOS/Linux', () => {
       Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+      mockExistsSync.mockReturnValue(false);
       expect(findLatestSelfUpdatedCli()).toBeNull();
+    });
+
+    it('scans macOS self-update caches and returns the newest bundle', () => {
+      Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
+      process.env.HOME = '/Users/test';
+      delete process.env.COPILOT_CACHE_HOME;
+      delete process.env.COPILOT_HOME;
+      const base = `/Users/test/.copilot/pkg/darwin-${process.arch}`;
+      mockExistsSync.mockImplementation((p: unknown) => {
+        const s = String(p);
+        if (s === base) return true;
+        if (s.endsWith('index.js') || s.endsWith('app.js')) return true;
+        return false;
+      });
+      mockReaddirSync.mockImplementation((p: unknown) =>
+        String(p) === base ? ['1.0.58', '1.0.62', '1.0.60'] : []);
+      mockStatSync.mockReturnValue({ isDirectory: () => true });
+
+      expect(findLatestSelfUpdatedCli()).toBe(`${base}/1.0.62/index.js`);
     });
 
     it('returns null when LOCALAPPDATA is not set', () => {
@@ -161,7 +181,7 @@ describe('session', () => {
         const s = String(p);
         if (s === base) return true;
         // All version dirs have index.js
-        if (s.endsWith('index.js')) return true;
+        if (s.endsWith('index.js') || s.endsWith('app.js')) return true;
         return false;
       });
       mockReaddirSync.mockReturnValue(['1.0.44', '1.0.57-3', '1.0.44-2']);
@@ -176,7 +196,7 @@ describe('session', () => {
       mockExistsSync.mockImplementation((p: unknown) => {
         const s = String(p);
         if (s === base) return true;
-        if (s.endsWith('index.js')) return true;
+        if (s.endsWith('index.js') || s.endsWith('app.js')) return true;
         return false;
       });
       mockReaddirSync.mockReturnValue(['1.0.44', '1.0.44-3', '1.0.44-2']);
@@ -191,8 +211,8 @@ describe('session', () => {
       mockExistsSync.mockImplementation((p: unknown) => {
         const s = String(p);
         if (s === base) return true;
-        // Only 1.0.44 has index.js
-        if (s === `${base}\\1.0.44\\index.js`) return true;
+        // Only 1.0.44 has a complete bundle (index.js + app.js)
+        if (s === `${base}\\1.0.44\\index.js` || s === `${base}\\1.0.44\\app.js`) return true;
         return false;
       });
       mockReaddirSync.mockReturnValue(['1.0.57-3', '1.0.44']);

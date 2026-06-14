@@ -18,6 +18,46 @@ gh workflow run release.yml --field tag=v0.1.0
 
 The workflow builds, signs, and publishes both platforms in parallel directly to the [`patniko/whim`](https://github.com/patniko/whim/releases) repo's Releases page. The auto-updater (electron-updater) reads `latest-mac.yml` / `latest.yml` from there with no authentication required (the repo is public).
 
+> ⚠️ **Never change the app name or `appId`.** The bundle name is pinned to
+> `productName: "whim"` in `package.json` (`build.productName`) and the identity to
+> `appId: "com.patniko.whim"`. Do **not** re-introduce per-script
+> `-c.productName=...` overrides. On macOS, electron-updater applies updates by
+> swapping the running `.app` bundle in place; if the product name changes between
+> the installed app and a new release (e.g. the historical `Copilot Whim` → `whim`
+> rename), the in-place update silently fails and users stop receiving updates. A
+> name change forces every existing macOS user to download the new build manually
+> **once** before auto-updates resume.
+
+---
+
+## Verifying auto-update works
+
+You don't need to cut a release to confirm the updater is wired correctly — the app
+now surfaces everything in **Settings → General → Updates**:
+
+- **Current version** and **last-checked time** are shown there.
+- **Check now** runs a check on demand. In the installed (packaged) app you'll see
+  `Checking…` → either `You're on the latest version` or an `Update available` /
+  `Downloading` / `Update ready — restart to apply` flow.
+- **Open update log** reveals `~/Library/Application Support/whim/logs/update.log`
+  (macOS) / `%APPDATA%\whim\logs\update.log` (Windows). Every check, download, and
+  **error** is logged there — failures are no longer swallowed silently.
+- Errors now appear as a visible banner and in the Updates panel (previously they
+  were only written to the console and auto-cleared).
+
+Notes:
+
+- In a **dev build** (`npm run dev`, unpackaged) the panel shows
+  "Auto-updates run only in the installed app" and never performs a real check —
+  this is expected. Use a packaged build to exercise the real flow:
+  `npm run build:installer:mac` (or `:win`), install it, then use **Check now**.
+- To verify end-to-end against the live feed, install the **previous** release, then
+  publish a new one and confirm the installed app picks it up (background download →
+  "Update ready — Restart now / Later", and it also installs on next quit).
+- The updater only runs in a **signed** build. An unsigned/dev-signed macOS app will
+  log a signature error on apply — that's why the panel/log/banner now make such
+  failures visible.
+
 ---
 
 ## Platform Details

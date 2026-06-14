@@ -381,7 +381,7 @@ import {
 } from './state/ipc-bridge';
 import { mountLists } from './views/mount.tsx';
 import type { WhimAPI as PreloadWhimAPI } from '../main/preload';
-import type { Skill as SharedSkill, CanvasAgentStateSnapshot, ExportFormat, ExportDestination } from '../shared/types';
+import type { Skill as SharedSkill, CanvasAgentStateSnapshot, ExportFormat, ExportDestination, UpdateState } from '../shared/types';
 
 // The local `interface WhimAPI` declared near the top of this file shadows the
 // preload's structural type; the IPC bridge accepts the preload version. Cast
@@ -4674,6 +4674,105 @@ if (commentHoverCb) {
   });
 }
 
+// ── Update settings (Settings → General → Updates) ───────
+const updateVersionEl = document.getElementById('update-current-version');
+const updateLineEl = document.getElementById('update-settings-line');
+const updateCheckBtn = document.getElementById('update-check-btn') as HTMLButtonElement | null;
+const updateOpenLogBtn = document.getElementById('update-open-log-btn') as HTMLButtonElement | null;
+const autoDownloadUpdatesCb = document.getElementById('auto-download-updates-cb') as HTMLInputElement | null;
+
+function formatCheckedAt(ts?: number): string {
+  if (!ts) return '';
+  try {
+    return new Date(ts).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  } catch {
+    return '';
+  }
+}
+
+function renderUpdateSettings(state: UpdateState): void {
+  if (updateVersionEl) {
+    updateVersionEl.textContent = state.currentVersion ? `whim v${state.currentVersion}` : 'whim';
+  }
+  if (updateCheckBtn) {
+    updateCheckBtn.disabled = state.status === 'checking' || state.status === 'downloading';
+  }
+  if (!updateLineEl) return;
+
+  updateLineEl.classList.remove('update-settings-line--error');
+  const checked = state.lastCheckedAt ? ` · last checked ${formatCheckedAt(state.lastCheckedAt)}` : '';
+
+  switch (state.status) {
+    case 'disabled':
+      updateLineEl.textContent = 'Auto-updates run only in the installed app, not in dev builds.';
+      break;
+    case 'checking':
+      updateLineEl.textContent = 'Checking for updates…';
+      break;
+    case 'available':
+      updateLineEl.textContent = `Update available${state.version ? ` (v${state.version})` : ''}.`;
+      break;
+    case 'downloading':
+      updateLineEl.textContent = `Downloading update${state.version ? ` (v${state.version})` : ''}… ${state.progress ?? 0}%`;
+      break;
+    case 'downloaded':
+      updateLineEl.textContent = `Update ready${state.version ? ` (v${state.version})` : ''} — restart to apply.`;
+      break;
+    case 'up-to-date':
+      updateLineEl.textContent = `You're on the latest version${checked}.`;
+      break;
+    case 'error':
+      updateLineEl.textContent = `Update check failed${state.error ? `: ${state.error}` : ''}.`;
+      updateLineEl.classList.add('update-settings-line--error');
+      break;
+    case 'idle':
+    default:
+      updateLineEl.textContent = state.lastCheckedAt ? `You're on the latest version${checked}.` : 'Ready.';
+      break;
+  }
+}
+
+async function loadUpdateSettings(): Promise<void> {
+  if (autoDownloadUpdatesCb) {
+    const val = await whimAPI.getSetting('auto_download_updates');
+    autoDownloadUpdatesCb.checked = val !== false; // default true
+  }
+  try {
+    renderUpdateSettings(await bridgeApi.getUpdateState());
+  } catch {
+    /* updater not ready yet — the live subscription will fill this in */
+  }
+}
+
+if (updateCheckBtn) {
+  updateCheckBtn.addEventListener('click', () => {
+    if (updateLineEl) updateLineEl.textContent = 'Checking for updates…';
+    updateCheckBtn.disabled = true;
+    bridgeApi.checkForUpdate();
+  });
+}
+
+if (updateOpenLogBtn) {
+  updateOpenLogBtn.addEventListener('click', async () => {
+    const res = await bridgeApi.openUpdateLog();
+    if (res && 'error' in res && updateLineEl) {
+      updateLineEl.textContent = `Couldn't open log: ${res.error}`;
+      updateLineEl.classList.add('update-settings-line--error');
+    }
+  });
+}
+
+if (autoDownloadUpdatesCb) {
+  autoDownloadUpdatesCb.addEventListener('change', () => {
+    whimAPI.setSetting('auto_download_updates', String(autoDownloadUpdatesCb.checked));
+  });
+}
+
+// Live-update the Updates panel as the main process broadcasts state changes.
+bridgeApi.onUpdateStateChanged((state) => {
+  renderUpdateSettings(state);
+});
+
 // ── Settings tabs ───────────────────────────────────────
 const SETTINGS_TAB_KEY = 'whim.settingsTab';
 function initSettingsTabs(): void {
@@ -8114,6 +8213,7 @@ if (isSettingsMode) {
     loadAutoRemoteSetting(),
     loadWebRemoteSetting(),
     loadCommentTriggerSetting(),
+    loadUpdateSettings(),
     loadPersonas(),
     loadRuntimes(),
     loadExportDestinations(),
