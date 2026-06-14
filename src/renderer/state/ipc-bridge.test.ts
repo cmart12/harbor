@@ -30,6 +30,7 @@ interface BridgeMock {
     agentPresenceStarted: (data: unknown) => void;
     agentPresenceEnded: (data: unknown) => void;
     spaceProcessed: (id: string) => void;
+    spaceTitleUpdated: (data: { spaceId: string; title: string }) => void;
     recurrenceApplied: (id: string) => void;
     skillsChanged: () => void;
     workspaceChanged: (path: string | null) => void;
@@ -78,6 +79,7 @@ function makeMock(overrides: Partial<{
     onAgentPresenceStarted: (cb: (d: unknown) => void) => { fire.agentPresenceStarted = cb; },
     onAgentPresenceEnded: (cb: (d: unknown) => void) => { fire.agentPresenceEnded = cb; },
     onSpaceProcessed: (cb: (id: string) => void) => { fire.spaceProcessed = cb; },
+    onSpaceTitleUpdated: (cb: (data: { spaceId: string; title: string }) => void) => { fire.spaceTitleUpdated = cb; },
     onRecurrenceApplied: (cb: (id: string) => void) => { fire.recurrenceApplied = cb; },
     onSkillsChanged: (cb: () => void) => { fire.skillsChanged = cb; },
     onWorkspaceChanged: (cb: (path: string | null) => void) => { fire.workspaceChanged = cb; },
@@ -262,6 +264,19 @@ describe('ipc-bridge', () => {
 
     m.fire.spaceProcessed('s1');
     m.fire.spaceProcessed('s2');
+
+    await vi.advanceTimersByTimeAsync(310);
+    expect(m.calls.list).toHaveBeenCalledTimes(1);
+  });
+
+  it('onSpaceTitleUpdated updates the store and debounces a spaces snapshot', async () => {
+    const space = { id: 's1', description: 'Old title', body: null, raw_text: null, client: null, due_at: null, due_at_utc: null, recurrence: null, completed_at: null, folder: null, session_id: null, source_skill_id: null, attachments: [], status: 'captured' as const, created_at: '', updated_at: '' };
+    const m = makeMock({ list: [{ ...space, description: 'New title' }] });
+    spaceStore.setSpaces([space]);
+    installIpcBridge(m.api);
+
+    m.fire.spaceTitleUpdated({ spaceId: 's1', title: 'New title' });
+    expect(spaceStore.getSpace('s1')?.description).toBe('New title');
 
     await vi.advanceTimersByTimeAsync(310);
     expect(m.calls.list).toHaveBeenCalledTimes(1);

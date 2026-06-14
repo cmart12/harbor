@@ -20,11 +20,16 @@ describe('web remote event hub', () => {
     const unsubscribe = subscribeWebRemoteEvents(callback);
 
     mirrorRendererEvent('space:processed', 'space-1');
+    mirrorRendererEvent('space:title-updated', { spaceId: 'space-1', title: 'New title' });
     unsubscribe();
 
     expect(callback).toHaveBeenCalledWith(expect.objectContaining({
       channel: 'space:processed',
       payload: { spaceId: 'space-1' },
+    }));
+    expect(callback).toHaveBeenCalledWith(expect.objectContaining({
+      channel: 'space:title-updated',
+      payload: { spaceId: 'space-1', title: 'New title' },
     }));
   });
 

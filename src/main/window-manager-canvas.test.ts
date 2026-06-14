@@ -71,7 +71,8 @@ vi.mock('electron', () => {
     return w;
   }
   (MockBrowserWindow as any).getAllWindows = () => [...createdWindows];
-  (MockBrowserWindow as any).fromWebContents = () => null;
+  (MockBrowserWindow as any).fromWebContents = (webContents: unknown) =>
+    createdWindows.find((w) => w.webContents === webContents) ?? null;
   return {
     BrowserWindow: MockBrowserWindow,
     screen: {
@@ -160,6 +161,15 @@ describe('window-manager canvas helpers', () => {
     const win = openCanvas({ kind: 'page', spaceId: 's1', page: 'notes', title: 'notes' });
     const open = getOpenCanvases();
     expect(open).toContainEqual({ winId: win.id, label: 'notes' });
+  });
+
+  it('updates a page label from a renderer title update', () => {
+    const win = openCanvas({ kind: 'page', spaceId: 's1', page: 'notes', title: 'notes' });
+    const handler = ipcOnHandlers.get('canvas-window:update-title')!;
+
+    handler({ sender: win.webContents }, 'Derived Notes');
+
+    expect(getOpenCanvases()).toContainEqual({ winId: win.id, label: 'Derived Notes' });
   });
 
   it('focusCanvasWindow shows a hidden window and focuses it', () => {

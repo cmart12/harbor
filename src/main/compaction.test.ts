@@ -170,7 +170,7 @@ describe('compactOldSegments', () => {
     initDatabase(dbPath, logRoot);
     const reloaded = listSpaces().find((s) => s.id === space.id);
     expect(reloaded).toBeDefined();
-    expect(reloaded!.body).toBe('Will survive compaction');
+    expect(reloaded!.body).toBe('# Will survive compaction');
   });
 
   it('extended snapshot payload covers canvas_agents, agent_sessions, subagents, tool calls', () => {

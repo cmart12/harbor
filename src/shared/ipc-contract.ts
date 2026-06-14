@@ -498,6 +498,7 @@ export interface IpcMessages {
   'window:set-pinned': { args: [pinned: boolean] };
   'canvas-window:open': { args: [target: CanvasTarget] };
   'canvas-window:open-page': { args: [target: { kind: 'page'; spaceId: string; page: string; title: string }] };
+  'canvas-window:update-title': { args: [title: string] };
   'canvas-window:theme-changed': { args: [theme: string] };
   'canvas-window:hide-ready': { args: [] };
 }
@@ -563,6 +564,7 @@ export interface IpcEvents {
   'agent:reply-ready': { agentId: string; spaceId: string; threadId: string | null; body: string };
   'canvas:content-updated': { spaceId: string; content: string };
   'space:processed': { spaceId: string };
+  'space:title-updated': { spaceId: string; title: string };
   'space:recurrence': { spaceId: string; result: RecurrenceResult };
   'space:recurrence-applied': { spaceId: string };
   'space:recall': { spaceId: string; match: RecallMatch };

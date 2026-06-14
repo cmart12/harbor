@@ -9,6 +9,10 @@ vi.mock('../database', () => ({
   updateCanvasContent: vi.fn(),
 }));
 
+vi.mock('../notify', () => ({
+  notifyAllWindows: vi.fn(),
+}));
+
 vi.mock('../canvas-watcher', () => ({
   markSelfWrite: vi.fn(),
 }));
@@ -21,12 +25,14 @@ vi.mock('../workspace', () => ({
 import * as fs from 'fs';
 import { updateCanvasContent } from '../database';
 import { markSelfWrite } from '../canvas-watcher';
+import { notifyAllWindows } from '../notify';
 import { writeCanvas } from '../workspace';
 import { rememberCanvasEditorContent, writeMainCanvasWithMerge } from './canvas-editor-state';
 
 describe('canvas editor write state', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(updateCanvasContent).mockReturnValue({ title: 'title', titleChanged: false });
   });
 
   it('merges external disk changes with editor changes before writing', () => {
@@ -53,5 +59,17 @@ describe('canvas editor write state', () => {
 
     expect(result).toEqual({ success: true, content: undefined });
     expect(writeCanvas).toHaveBeenCalledWith('/workspace', 'space-folder', 'editor');
+  });
+
+  it('notifies renderers when a write changes the derived title', () => {
+    vi.mocked(fs.readFileSync).mockReturnValueOnce('editor');
+    vi.mocked(updateCanvasContent).mockReturnValueOnce({ title: 'New Title', titleChanged: true });
+
+    writeMainCanvasWithMerge('/workspace', 'space-3', 'space-folder', '# New Title\n');
+
+    expect(notifyAllWindows).toHaveBeenCalledWith('space:title-updated', {
+      spaceId: 'space-3',
+      title: 'New Title',
+    });
   });
 });

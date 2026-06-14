@@ -27,6 +27,7 @@ import { VoiceRecorderButton, type VoiceRecordingResult } from './VoiceRecorderB
 import { SpaceLinkPicker, type SpaceResult } from './SpaceLinkPicker';
 import { merge3 } from '../../shared/text-merge';
 import { hasDisplayableFrontmatter, serializeFrontmatter, tryParseFrontmatter } from '../../shared/frontmatter';
+import { deriveMarkdownTitle } from '../../shared/markdown-title';
 
 declare const whimAPI: {
   writeCanvas(spaceId: string, content: string): Promise<void>;
@@ -101,6 +102,8 @@ export interface MarkdownCanvasProps {
   onInlineMention?: (handle: string, lineMarkdown: string, lineNumber: number) => void;
   onForkSelection?: (selectedText: string) => void;
   onExtractToPage?: (selectedText: string) => void;
+  titleFallback?: string;
+  onTitleChange?: (title: string) => void;
 }
 
 export interface MarkdownCanvasHandle {
@@ -148,7 +151,7 @@ function formatAttachmentRef(filename: string, relativePath: string, mimeType: s
 }
 
 export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasProps>(
-  function MarkdownCanvas({ spaceId, initialContent, initialFrontmatter, theme, personas: initialPersonas, agentPresence: initialPresence, agentThreadStatuses: initialAgentThreadStatuses, agentInteractions: initialAgentInteractions, decorations: initialDecorations, onDirtyChange, onSaveStatus, onAgentMentioned, onInlineMention, onForkSelection, onExtractToPage }, ref) {
+  function MarkdownCanvas({ spaceId, initialContent, initialFrontmatter, theme, personas: initialPersonas, agentPresence: initialPresence, agentThreadStatuses: initialAgentThreadStatuses, agentInteractions: initialAgentInteractions, decorations: initialDecorations, onDirtyChange, onSaveStatus, onAgentMentioned, onInlineMention, onForkSelection, onExtractToPage, titleFallback = 'Untitled', onTitleChange }, ref) {
     const hasFrontmatter = initialFrontmatter !== undefined;
     // Round-trip frontmatter on save whenever it's present (`hasFrontmatter`), but only
     // surface the editor UI when there's something meaningful to edit — so spaces whose
@@ -172,6 +175,9 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
     const rawContentRef = useRef(rawContent);
     const containerRef = useRef<HTMLDivElement>(null);
     const editorRef = useRef<MilkdownEditorHandle>(null);
+    const onTitleChangeRef = useRef(onTitleChange);
+    const titleFallbackRef = useRef(titleFallback);
+    const lastEmittedTitleRef = useRef<string | null>(null);
 
     const hasFrontmatterRef = useRef(hasFrontmatter);
     hasFrontmatterRef.current = hasFrontmatter;
@@ -244,8 +250,22 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
     frontmatterRef.current = frontmatter;
     editorModeRef.current = editorMode;
     rawContentRef.current = rawContent;
+    onTitleChangeRef.current = onTitleChange;
+    titleFallbackRef.current = titleFallback;
 
     void agentUsers;
+
+    const emitTitleChange = useCallback((markdown: string) => {
+      if (!onTitleChangeRef.current) return;
+      const title = deriveMarkdownTitle(markdown, titleFallbackRef.current);
+      if (title === lastEmittedTitleRef.current) return;
+      lastEmittedTitleRef.current = title;
+      onTitleChangeRef.current(title);
+    }, []);
+
+    useEffect(() => {
+      emitTitleChange(contentRef.current);
+    }, [emitTitleChange]);
 
     /** Build the full document string for saving. */
     const getFullContent = useCallback(() => {
@@ -283,6 +303,7 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
           const { body, threads: savedThreads } = splitComments(region);
           setContent(body);
           contentRef.current = body;
+          emitTitleChange(body);
           setThreads(savedThreads);
           threadsRef.current = savedThreads;
           if (editorModeRef.current === 'rendered') editorRef.current?.replaceAll(body);
@@ -303,7 +324,7 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
           }
         }
       }
-    }, [spaceId, onDirtyChange, onSaveStatus, getFullContent, stripFm]);
+    }, [spaceId, onDirtyChange, onSaveStatus, getFullContent, stripFm, emitTitleChange]);
     doSaveRef.current = doSave;
 
     const scheduleSave = useCallback(() => {
@@ -336,19 +357,21 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
       if (newBody === contentRef.current) return;
       setContent(newBody);
       contentRef.current = newBody;
+      emitTitleChange(newBody);
       markDirtyAndSave();
-    }, [markDirtyAndSave]);
+    }, [emitTitleChange, markDirtyAndSave]);
 
     // Content change ORIGINATING in the host (voice, drop, links, replies).
     const applyProgrammaticContent = useCallback((newBody: string) => {
       if (newBody === contentRef.current) return;
       setContent(newBody);
       contentRef.current = newBody;
+      emitTitleChange(newBody);
       if (editorModeRef.current === 'rendered') {
         editorRef.current?.replaceAll(newBody, { animate: true });
       }
       markDirtyAndSave();
-    }, [markDirtyAndSave]);
+    }, [emitTitleChange, markDirtyAndSave]);
 
     /** Update threads, re-highlight, and persist (body is unchanged). */
     const updateThreads = useCallback((next: CommentThread[]) => {
@@ -401,6 +424,7 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
         const { body, threads: parsedThreads } = splitComments(region);
         setContent(body);
         contentRef.current = body;
+        emitTitleChange(body);
         setThreads(parsedThreads);
         threadsRef.current = parsedThreads;
         setParseError(null);
@@ -408,7 +432,7 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
         editorModeRef.current = 'rendered';
         return { mode: 'rendered' };
       }
-    }, [hasFrontmatter, buildFull]);
+    }, [emitTitleChange, hasFrontmatter, buildFull]);
 
     const handleRawContentChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
       const newRaw = e.target.value;
@@ -424,8 +448,9 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
         const parsed = tryParseFm(newRaw);
         if (parsed) frontmatterRef.current = parsed.frontmatter;
       }
+      emitTitleChange(newRaw);
       markDirtyAndSave();
-    }, [hasFrontmatter, markDirtyAndSave]);
+    }, [emitTitleChange, hasFrontmatter, markDirtyAndSave]);
 
     useImperativeHandle(ref, () => ({
       saveNow,
@@ -482,6 +507,7 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
           rawContentRef.current = full;
           setContent(diskBody);
           contentRef.current = diskBody;
+          emitTitleChange(diskBody);
           lastSavedRef.current = full;
           lastDiskContentRef.current = full;
           onDirtyChange(false);
@@ -498,6 +524,7 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
           if (pendingSaveRef.current) { clearTimeout(pendingSaveRef.current); pendingSaveRef.current = null; }
           setContent(diskBody);
           contentRef.current = diskBody;
+          emitTitleChange(diskBody);
           editorRef.current?.replaceAll(diskBody, { animate: true });
           lastSavedRef.current = fullDisk;
           onDirtyChange(false);
@@ -509,6 +536,7 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
         if (pendingSaveRef.current) { clearTimeout(pendingSaveRef.current); pendingSaveRef.current = null; }
         setContent(merged);
         contentRef.current = merged;
+        emitTitleChange(merged);
         editorRef.current?.replaceAll(merged, { animate: true });
 
         const fullMerged = buildFull(merged, diskThreads);
@@ -541,7 +569,7 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
         const sel = window.getSelection();
         return sel ? sel.toString() : '';
       },
-    }), [saveNow, applyProgrammaticContent, updateThreads, scheduleSave, buildFull, stripFm, onDirtyChange, getFullContent, handleToggleMode, handleFrontmatterChange]);
+    }), [saveNow, applyProgrammaticContent, updateThreads, scheduleSave, buildFull, stripFm, onDirtyChange, getFullContent, handleToggleMode, handleFrontmatterChange, emitTitleChange]);
 
     // Cmd+S handler
     useEffect(() => {

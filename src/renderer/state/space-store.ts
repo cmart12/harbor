@@ -63,6 +63,18 @@ class SpaceStore {
     this.notify();
   }
 
+  updateSpaceTitle(id: string, title: string): void {
+    let changed = false;
+    const spaces = this.state.spaces.map((space) => {
+      if (space.id !== id || space.description === title) return space;
+      changed = true;
+      return { ...space, description: title };
+    });
+    if (!changed) return;
+    this.state = { ...this.state, spaces };
+    this.notify();
+  }
+
   setFilter(filter: SpaceFilter): void {
     this.state = { ...this.state, filter };
     this.notify();

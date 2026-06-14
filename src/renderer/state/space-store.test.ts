@@ -184,6 +184,17 @@ describe('SpaceStore', () => {
     expect(spaceStore.getSpace('find-me')).toEqual(space);
   });
 
+  it('updateSpaceTitle() changes only the matching space title', () => {
+    const first = makeSpace({ id: 'first', description: 'Old' });
+    const second = makeSpace({ id: 'second', description: 'Keep' });
+    spaceStore.setSpaces([first, second]);
+
+    spaceStore.updateSpaceTitle('first', 'New');
+
+    expect(spaceStore.getSpace('first')?.description).toBe('New');
+    expect(spaceStore.getSpace('second')?.description).toBe('Keep');
+  });
+
   it('getSpace() returns undefined for unknown id', () => {
     spaceStore.setSpaces([makeSpace({ id: 'x' })]);
     expect(spaceStore.getSpace('nope')).toBeUndefined();

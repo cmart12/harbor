@@ -4199,15 +4199,11 @@ body.platform-darwin .kbd-mod::after { content: '⌘'; }
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  cursor: pointer;
+  cursor: default;
   border-radius: 1px;
   padding: 2px 4px;
   margin: -2px -4px;
   border: 1px solid transparent;
-}
-
-.canvas-view header h1:hover {
-  background: rgba(0, 0, 0, 0.04);
 }
 
 .canvas-view header h1.editing {
@@ -6925,7 +6921,6 @@ body.dark .attachment-remove { color: rgba(255, 255, 255, 0.5); }
 body.dark .space-add-link:hover, body.dark .space-edit-body:hover { background: rgba(255, 255, 255, 0.06); }
 
 /* Dark canvas */
-body.dark .canvas-view header h1:hover { background: rgba(255, 255, 255, 0.05); }
 body.dark .canvas-view header h1.editing { border-color: rgba(165, 148, 232, 0.4); }
 body.dark .canvas-save-status { color: rgba(255, 255, 255, 0.55); }
 body.dark .canvas-save-btn { background: rgba(124, 102, 220, 0.2); color: #a594e8; }

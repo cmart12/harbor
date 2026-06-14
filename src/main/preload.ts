@@ -190,6 +190,7 @@ export interface WhimAPI {
   openNewCanvasWindow(target: CanvasTarget): void;
   onLoadCanvasTarget(callback: (target: CanvasTarget) => void): void;
   onCanvasWindowClosed(callback: () => void): void;
+  updateCanvasWindowTitle(title: string): void;
   setCanvasAlwaysOnTop(pinned: boolean): void;
   getCanvasAlwaysOnTop(): Promise<boolean>;
   notifyCanvasThemeChanged(theme: string): void;
@@ -224,6 +225,7 @@ export interface WhimAPI {
   onRequestHide(callback: () => void): void;
   onWorkspaceCommitted(callback: () => void): void;
   onWorkspaceChanged(callback: (path: string | null) => void): void;
+  onSpaceTitleUpdated(callback: (data: IpcEventPayload<'space:title-updated'>) => void): void;
 
   // ── Agent events ─────────────────────────────────────────
   onAgentStatusChanged(callback: (data: IpcEventPayload<'agent:status-changed'>) => void): void;
@@ -511,6 +513,7 @@ const api: WhimAPI = {
   onCanvasWindowClosed: (callback) => {
     ipcRenderer.on('canvas-window:closed', callback);
   },
+  updateCanvasWindowTitle: (title) => ipcRenderer.send('canvas-window:update-title', title),
   setCanvasAlwaysOnTop: (pinned) => ipcRenderer.send('canvas-window:set-always-on-top', pinned),
   getCanvasAlwaysOnTop: () => ipcRenderer.invoke('canvas-window:get-always-on-top'),
   notifyCanvasThemeChanged: (theme) => ipcRenderer.send('canvas-window:theme-changed', theme),
@@ -561,6 +564,9 @@ const api: WhimAPI = {
   },
   onWorkspaceChanged: (callback) => {
     ipcRenderer.on('workspace:changed', (_event: unknown, path: string | null) => callback(path));
+  },
+  onSpaceTitleUpdated: (callback) => {
+    ipcRenderer.on('space:title-updated', (_event: unknown, data: IpcEventPayload<'space:title-updated'>) => callback(data));
   },
 
   // ── Agent events ─────────────────────────────────────────

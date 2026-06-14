@@ -22,8 +22,8 @@ function buildInvocationInstructions(skillName: string, intent: string): string 
   return `Run the ${skillName} skill using its default instructions.`;
 }
 
-function buildCanvasBody(skillName: string): string {
-  return `# ${skillName}\n`;
+function buildCanvasBody(title: string): string {
+  return `# ${title}\n`;
 }
 
 export async function invokeSkill(input: SkillInvocationInput): Promise<SkillInvocationResult | { error: string }> {
@@ -67,7 +67,7 @@ export async function invokeSkill(input: SkillInvocationInput): Promise<SkillInv
     },
   };
 
-  const canvasContent = serializeFrontmatter(frontmatter, buildCanvasBody(skill.name));
+  const canvasContent = serializeFrontmatter(frontmatter, buildCanvasBody(titleSeed));
   const canvasPath = path.join(workspace, folder, 'canvas.md');
   fs.writeFileSync(canvasPath, canvasContent, 'utf-8');
   updateCanvasContent(space.id, canvasContent);

@@ -138,7 +138,8 @@ describe('database', () => {
       const space = makeIntent('Buy groceries');
       expect(space.id).toBeDefined();
       expect(space.description).toBe('Buy groceries');
-      expect(space.body).toBe('Buy groceries');
+      expect(space.body).toBe('# Buy groceries');
+      expect(space.raw_text).toBe('Buy groceries');
       expect(space.status).toBe('captured');
       expect(appendEvent).toHaveBeenCalledWith(
         expect.any(String),
@@ -193,13 +194,14 @@ describe('database', () => {
     it('extracts the first line as the description', () => {
       const space = createSpace({ body: 'First line\nSecond line\nThird line' });
       expect(space.description).toBe('First line');
+      expect(space.body).toBe('# First line\nSecond line\nThird line');
     });
 
     it('truncates long first lines to 80 chars with ellipsis', () => {
       const longLine = 'A'.repeat(100);
       const space = createSpace({ body: longLine });
-      expect(space.description).toBe('A'.repeat(77) + '…');
-      expect(space.description.length).toBe(78);
+      expect(space.description).toBe('A'.repeat(79) + '…');
+      expect(space.description.length).toBe(80);
     });
 
     it('preserves short first lines without truncation', () => {
@@ -362,6 +364,7 @@ describe('database', () => {
       // canvas_content isn't in the Space type — verify via raw DB
       const row = getDatabase().prepare('SELECT canvas_content FROM spaces WHERE id = ?').get(space.id) as any;
       expect(row.canvas_content).toBe('# Canvas Content\nHello world');
+      expect(getSpace(space.id)!.description).toBe('Canvas Content');
       expect(readCanvas).toHaveBeenCalledWith('/fake/workspace', 'test-folder');
     });
 
@@ -388,11 +391,13 @@ describe('database', () => {
   describe('updateCanvasContent', () => {
     it('updates the cached canvas content for an space', () => {
       const space = makeIntent();
-      updateCanvasContent(space.id, 'New canvas content');
+      const result = updateCanvasContent(space.id, '# New canvas content\nBody');
 
       const db = getDatabase();
-      const row = db.prepare('SELECT canvas_content FROM spaces WHERE id = ?').get(space.id) as any;
-      expect(row.canvas_content).toBe('New canvas content');
+      const row = db.prepare('SELECT canvas_content, description FROM spaces WHERE id = ?').get(space.id) as any;
+      expect(row.canvas_content).toBe('# New canvas content\nBody');
+      expect(row.description).toBe('New canvas content');
+      expect(result).toEqual({ title: 'New canvas content', titleChanged: true });
     });
   });
 

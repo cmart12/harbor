@@ -16,6 +16,7 @@ import {
 } from './lib/hotkeys';
 import { generateTintColor, isValidTint, hueOf } from './lib/tint';
 import { parseFrontmatter } from '../shared/frontmatter';
+import { deriveMarkdownTitle, ensureMarkdownH1Title } from '../shared/markdown-title';
 
 interface ResolvedProfile {
   id: string;
@@ -242,6 +243,7 @@ interface WhimAPI {
   openNewCanvasWindow(target: { kind: string; id: string; title: string }): void;
   onLoadCanvasTarget(callback: (target: { kind: string; id: string; title: string }) => void): void;
   onCanvasWindowClosed(callback: () => void): void;
+  updateCanvasWindowTitle(title: string): void;
   notifyCanvasThemeChanged(theme: string): void;
   onCanvasThemeChanged(callback: (theme: string) => void): void;
   onCanvasRequestHide(callback: () => void): void;
@@ -262,6 +264,7 @@ interface WhimAPI {
   onRequestHide(callback: () => void): void;
   onWorkspaceCommitted(callback: () => void): void;
   onSpaceProcessed(callback: (id: string) => void): void;
+  onSpaceTitleUpdated(callback: (data: { spaceId: string; title: string }) => void): void;
   onRecurrenceResult(callback: (spaceId: string, result: RecurrenceResult) => void): void;
   onRecurrenceApplied(callback: (spaceId: string) => void): void;
   onRecallHint(callback: (spaceId: string, match: RecallMatch) => void): void;
@@ -3631,7 +3634,7 @@ async function openSkillEditor(skillId: string): Promise<void> {
   canvasPageSpaceId = null;
   canvasPageName = null;
 
-  canvasTitle.textContent = skill.name;
+  setCanvasHeaderTitle(skill.name);
   canvasTitle.contentEditable = 'false';
   canvasTitle.classList.remove('editing');
   canvasTitleAI.classList.add('hidden');
@@ -4209,6 +4212,15 @@ whimAPI.onSpaceProcessed(async (id: string) => {
   processingSpaces.delete(id);
   agentStore.removeProcessingIntent(id);
   await animateRefinement(id);
+});
+
+whimAPI.onSpaceTitleUpdated(({ spaceId, title }) => {
+  const space = spaces.find(s => s.id === spaceId);
+  if (space) space.description = title;
+  spaceStore.updateSpaceTitle(spaceId, title);
+  if (canvasSpaceId === spaceId) {
+    setCanvasHeaderTitle(title);
+  }
 });
 
 // Listen for recurrence evaluation results
@@ -5898,8 +5910,15 @@ let canvasDirty = false;
 let canvasIsNewIntent = false;
 let canvasChatPaneOpen = false;
 let canvasMountGen = 0;
-let titleBeforeEdit = '';
 let canvasLinkedSkillIds: string[] = [];
+
+function setCanvasHeaderTitle(title: string): void {
+  const displayTitle = title.trim() || 'Untitled';
+  canvasTitle.textContent = displayTitle;
+  if (isCanvasMode) {
+    whimAPI.updateCanvasWindowTitle(displayTitle);
+  }
+}
 
 function pageCanvasSpaceId(spaceId: string, pageName: string): string {
   return `__page__${spaceId}/${encodeURIComponent(pageName)}`;
@@ -5947,72 +5966,9 @@ function launchInlineMention(targetSpaceId: string, handle: string, lineMarkdown
   );
 }
 
-function startEditingTitle(): void {
-  titleBeforeEdit = canvasTitle.textContent || '';
-  canvasTitle.contentEditable = 'true';
-  canvasTitle.classList.add('editing');
-  canvasTitleAI.classList.remove('hidden');
-  // Select all text
-  const range = document.createRange();
-  range.selectNodeContents(canvasTitle);
-  const sel = window.getSelection();
-  sel?.removeAllRanges();
-  sel?.addRange(range);
-}
-
-async function commitTitleEdit(): Promise<void> {
-  canvasTitle.contentEditable = 'false';
-  canvasTitle.classList.remove('editing');
-  canvasTitleAI.classList.add('hidden');
-  const newTitle = (canvasTitle.textContent || '').trim();
-  if (!newTitle) {
-    canvasTitle.textContent = titleBeforeEdit;
-  } else if (newTitle !== titleBeforeEdit && canvasSpaceId) {
-    canvasTitle.textContent = newTitle;
-    await whimAPI.update(canvasSpaceId, { description: newTitle });
-    await loadSpaces();
-  }
-}
-
-function cancelTitleEdit(): void {
-  canvasTitle.contentEditable = 'false';
-  canvasTitle.classList.remove('editing');
-  canvasTitleAI.classList.add('hidden');
-  canvasTitle.textContent = titleBeforeEdit;
-}
-
-canvasTitle.addEventListener('click', () => {
-  if (canvasTitle.contentEditable !== 'true') startEditingTitle();
-});
-
-canvasTitle.addEventListener('blur', (e) => {
-  if ((e as FocusEvent).relatedTarget === canvasTitleAI) return;
-  commitTitleEdit();
-});
-
-canvasTitle.addEventListener('keydown', (e) => {
-  if (canvasTitle.contentEditable !== 'true') return;
-  if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); commitTitleEdit(); }
-  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancelTitleEdit(); }
-});
-
-canvasTitleAI.addEventListener('click', async () => {
-  if (!canvasSpaceId) return;
-  const content = getCanvasContent();
-  if (!content.trim()) return;
-  canvasTitleAI.disabled = true;
-  canvasTitleAI.textContent = '⏳';
-  try {
-    const result = await whimAPI.summarizeTitle(content);
-    if (result.title) {
-      canvasTitle.textContent = result.title;
-      canvasTitle.focus();
-    }
-  } finally {
-    canvasTitleAI.disabled = false;
-    canvasTitleAI.textContent = '✨';
-  }
-});
+canvasTitle.contentEditable = 'false';
+canvasTitle.setAttribute('aria-readonly', 'true');
+canvasTitleAI.classList.add('hidden');
 
 // ── Canvas Dropdown Menu ────────────────────────────────
 function toggleCanvasMenu(): void {
@@ -6495,7 +6451,7 @@ async function openCanvas(spaceId: string, expanded = false): Promise<void> {
   resetCanvasAgentMaps();
   canvasSkillChips.classList.add('hidden');
   canvasSkillPicker.classList.add('hidden');
-  canvasTitle.textContent = space.description;
+  setCanvasHeaderTitle(space.description);
   canvasTitle.contentEditable = 'false';
   canvasTitle.classList.remove('editing');
   canvasTitleAI.classList.add('hidden');
@@ -6529,6 +6485,7 @@ async function openCanvas(spaceId: string, expanded = false): Promise<void> {
 
   // Parse linked skills from canvas frontmatter and render chips
   const parsedCanvas = parseFrontmatter<Record<string, unknown>>(result.content || '');
+  setCanvasHeaderTitle(deriveMarkdownTitle(result.content || '', space.description || 'Untitled'));
   canvasLinkedSkillIds = parseLinkedSkillIds(result.content || '');
   renderSkillChips();
 
@@ -6538,6 +6495,15 @@ async function openCanvas(spaceId: string, expanded = false): Promise<void> {
     content: parsedCanvas.body,
     frontmatter: parsedCanvas.frontmatter,
     theme: currentTheme,
+    titleFallback: space.description || 'Untitled',
+    onTitleChange: (title) => {
+      setCanvasHeaderTitle(title);
+      const current = spaces.find(s => s.id === spaceId);
+      if (current && current.description !== title) {
+        current.description = title;
+        spaceStore.updateSpaceTitle(spaceId, title);
+      }
+    },
     personas: canvasPersonas,
     agentThreadStatuses: Array.from(canvasThreadAgentStatuses.values()),
     agentInteractions: Array.from(canvasAgentInteractions.values()),
@@ -6564,7 +6530,7 @@ async function openCanvas(spaceId: string, expanded = false): Promise<void> {
       const pageName = selectedText.trim().split(/\s+/).slice(0, 5).join(' ');
       whimAPI.createPage(sid, pageName).then(async (result) => {
         if (result.error) return;
-        await whimAPI.writePage(sid, result.page, selectedText);
+        await whimAPI.writePage(sid, result.page, ensureMarkdownH1Title(selectedText, pageName).content);
         replaceCanvasText(selectedText, `[${selectedText}](${result.page}.md)`);
         whimAPI.openPageWindow({ kind: 'page', spaceId: sid, page: result.page, title: pageName });
       });
@@ -6597,7 +6563,7 @@ async function openPage(spaceId: string, pageName: string): Promise<void> {
   // Clean slate before mount; rehydrated from main after mount.
   resetCanvasAgentMaps();
 
-  canvasTitle.textContent = pageName;
+  setCanvasHeaderTitle(pageName);
   canvasTitle.contentEditable = 'false';
   canvasTitle.classList.remove('editing');
   canvasTitleAI.classList.add('hidden');
@@ -6615,11 +6581,14 @@ async function openPage(spaceId: string, pageName: string): Promise<void> {
     whimAPI.listPersonas().then(p => p || []),
   ]);
   if (result.error) return;
+  setCanvasHeaderTitle(deriveMarkdownTitle(result.content || '', pageName));
 
   mountCanvas(canvasRoot, {
     spaceId: pageSpaceId,
     content: result.content || '',
     theme: getResolvedTheme(),
+    titleFallback: pageName,
+    onTitleChange: setCanvasHeaderTitle,
     personas: canvasPersonas,
     agentThreadStatuses: Array.from(canvasThreadAgentStatuses.values()),
     agentInteractions: Array.from(canvasAgentInteractions.values()),
@@ -6646,7 +6615,7 @@ async function openWorkspaceFile(filePath: string, title: string): Promise<void>
   canvasPageName = null;
   canvasFilePath = filePath;
 
-  canvasTitle.textContent = title;
+  setCanvasHeaderTitle(title);
   canvasTitle.contentEditable = 'false';
   canvasTitle.classList.remove('editing');
   canvasTitleAI.classList.add('hidden');
@@ -6933,11 +6902,14 @@ async function enterPreview(commit: FolderCommit): Promise<void> {
   await unmountCanvas();
   const currentTheme = getResolvedTheme();
   const parsedPreview = parseFrontmatter<Record<string, unknown>>(result.content);
+  setCanvasHeaderTitle(deriveMarkdownTitle(result.content, canvasTitle.textContent || 'Untitled'));
   mountCanvas(canvasRoot, {
     spaceId,
     content: parsedPreview.body,
     frontmatter: parsedPreview.frontmatter,
     theme: currentTheme,
+    titleFallback: canvasTitle.textContent || 'Untitled',
+    onTitleChange: setCanvasHeaderTitle,
     agentThreadStatuses: Array.from(canvasThreadAgentStatuses.values()),
     agentInteractions: Array.from(canvasAgentInteractions.values()),
     onDirtyChange: () => {},   // no-op: preview edits are not tracked
@@ -6965,11 +6937,21 @@ async function exitPreview(): Promise<void> {
   const currentTheme = getResolvedTheme();
   const canvasPersonas = await whimAPI.listPersonas().then(p => p || []);
   const parsedSaved = parseFrontmatter<Record<string, unknown>>(savedContent || '');
+  setCanvasHeaderTitle(deriveMarkdownTitle(savedContent || '', canvasTitle.textContent || 'Untitled'));
   mountCanvas(canvasRoot, {
     spaceId,
     content: parsedSaved.body,
     frontmatter: parsedSaved.frontmatter,
     theme: currentTheme,
+    titleFallback: canvasTitle.textContent || 'Untitled',
+    onTitleChange: (title) => {
+      setCanvasHeaderTitle(title);
+      const current = spaces.find(s => s.id === spaceId);
+      if (current && current.description !== title) {
+        current.description = title;
+        spaceStore.updateSpaceTitle(spaceId, title);
+      }
+    },
     personas: canvasPersonas,
     agentThreadStatuses: Array.from(canvasThreadAgentStatuses.values()),
     agentInteractions: Array.from(canvasAgentInteractions.values()),
@@ -6996,7 +6978,7 @@ async function exitPreview(): Promise<void> {
       const pageName = selectedText.trim().split(/\s+/).slice(0, 5).join(' ');
       whimAPI.createPage(sid, pageName).then(async (result) => {
         if (result.error) return;
-        await whimAPI.writePage(sid, result.page, selectedText);
+        await whimAPI.writePage(sid, result.page, ensureMarkdownH1Title(selectedText, pageName).content);
         replaceCanvasText(selectedText, `[${selectedText}](${result.page}.md)`);
         whimAPI.openPageWindow({ kind: 'page', spaceId: sid, page: result.page, title: pageName });
       });
@@ -8359,7 +8341,7 @@ if (isCanvasMode) {
         const pageName = selected.split(/\s+/).slice(0, 5).join(' ');
         whimAPI.createPage(spaceId, pageName).then(async (result) => {
           if (result.error) return;
-          await whimAPI.writePage(spaceId, result.page, selected);
+          await whimAPI.writePage(spaceId, result.page, ensureMarkdownH1Title(selected, pageName).content);
           replaceCanvasText(selected, `[${selected}](${result.page}.md)`);
           whimAPI.openPageWindow({ kind: 'page', spaceId, page: result.page, title: pageName });
         });
@@ -8426,10 +8408,11 @@ if (isCanvasMode) {
       await openWorkspaceFile((target as any).filePath, target.title);
     } else {
       // Populate space data so openCanvas() can find it
+      const targetTitle = target.title?.trim();
       if (!spaces.find(i => i.id === target.id)) {
         spaces.push({
           id: target.id,
-          description: target.title,
+          description: targetTitle || 'Untitled',
           body: null, raw_text: null, client: null,
           due_at: null, due_at_utc: null, recurrence: null,
           completed_at: null, folder: null, session_id: null,
@@ -8440,7 +8423,7 @@ if (isCanvasMode) {
         });
       } else {
         const existing = spaces.find(i => i.id === target.id)!;
-        existing.description = target.title;
+        if (targetTitle) existing.description = targetTitle;
       }
 
       await openCanvas(target.id);

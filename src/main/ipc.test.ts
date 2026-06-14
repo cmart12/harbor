@@ -65,7 +65,7 @@ vi.mock('./database', () => ({
   closeDatabase: vi.fn(),
   mergeSessionIds: vi.fn(),
   assignSpaceFolder: vi.fn(),
-  updateCanvasContent: vi.fn(),
+  updateCanvasContent: vi.fn(() => ({ title: 'test', titleChanged: false })),
   syncCanvasContent: vi.fn(),
   createAgentSession: vi.fn(),
   deleteAgentSession: vi.fn(),

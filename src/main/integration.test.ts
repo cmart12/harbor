@@ -120,10 +120,11 @@ describe('Event log ↔ Database integration', () => {
       expect(r1).not.toBeNull();
       expect(r2).not.toBeNull();
       expect(r1.description).toBe(i1.description);
-      expect(r1.body).toBe('Buy groceries');
+      expect(r1.body).toBe('# Buy groceries');
+      expect(r1.raw_text).toBe('Buy groceries');
       expect(r1.status).toBe('captured');
       expect(r1.created_at).toBe(i1.created_at);
-      expect(r2.body).toBe('Write tests');
+      expect(r2.body).toBe('# Write tests');
       expect(listSpaces()).toHaveLength(2);
     });
   });

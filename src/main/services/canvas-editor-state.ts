@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { updateCanvasContent } from '../database';
 import { markSelfWrite } from '../canvas-watcher';
+import { notifyAllWindows } from '../notify';
 import { resolveSpaceFolder, writeCanvas } from '../workspace';
 import { merge3 } from '../../shared/text-merge';
 
@@ -48,7 +49,10 @@ export function writeMainCanvasWithMerge(
 
   markSelfWrite(spaceId, contentToWrite);
   writeCanvas(workspace, folder, contentToWrite);
-  updateCanvasContent(spaceId, contentToWrite);
+  const titleUpdate = updateCanvasContent(spaceId, contentToWrite);
+  if (titleUpdate?.titleChanged) {
+    notifyAllWindows('space:title-updated', { spaceId, title: titleUpdate.title });
+  }
   lastEditorContent.set(spaceId, contentToWrite);
 
   return { success: true, content: contentToWrite !== content ? contentToWrite : undefined };

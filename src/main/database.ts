@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { Space, Attachment, CanvasAgent, AgentSession, AgentChatEvent, CreateSpaceInput, Skill, SkillFrontmatter } from '../shared/types';
 import { appendEvent, replayLog } from './eventlog';
 import { readCanvas, slugify } from './workspace';
+import { deriveMarkdownTitle, ensureMarkdownH1Title } from '../shared/markdown-title';
 import { initContentStore, closeContentStore, storeContent, type ContentRef } from './subagent-content-store';
 import {
   canSkipReplay,
@@ -291,17 +292,16 @@ function parseAttachments(raw: string | null | undefined): Attachment[] {
 export function createSpace(input: CreateSpaceInput, sourceSkillId?: string): Space {
   const now = new Date().toISOString();
   const id = uuidv4();
-  // Placeholder title: first line or first ~80 chars of body
-  const firstLine = input.body.split('\n')[0].trim();
-  const placeholder = firstLine.length > 80 ? firstLine.slice(0, 77) + '…' : firstLine;
+  const normalizedCanvas = ensureMarkdownH1Title(input.body);
+  const title = deriveMarkdownTitle(normalizedCanvas.content);
   // Folder slug is deterministic from id + description, so we can record it in
   // the create event up front and defer the actual on-disk folder creation.
-  const folder = slugify(placeholder, id);
+  const folder = slugify(title, id);
 
   const space: Space = {
     id,
-    description: placeholder,
-    body: input.body,
+    description: title,
+    body: normalizedCanvas.content,
     raw_text: input.body,
     client: null,
     due_at: null,
@@ -472,13 +472,24 @@ export function syncCanvasContent(workspaceRoot: string): void {
     try {
       const content = readCanvas(workspaceRoot, row.folder);
       stmt.run(content, row.id);
+      if (content.trim()) syncDerivedSpaceTitle(row.id, content);
     } catch { /* folder may not exist yet */ }
   }
 }
 
+function syncDerivedSpaceTitle(spaceId: string, content: string): { title: string; changed: boolean } {
+  const title = deriveMarkdownTitle(content);
+  const row = db.prepare('SELECT description FROM spaces WHERE id = ?').get(spaceId) as { description: string } | undefined;
+  if (!row || row.description === title) return { title, changed: false };
+  db.prepare('UPDATE spaces SET description = ? WHERE id = ?').run(title, spaceId);
+  return { title, changed: true };
+}
+
 /** Update the cached canvas content for a single space. */
-export function updateCanvasContent(spaceId: string, content: string): void {
+export function updateCanvasContent(spaceId: string, content: string): { title: string; titleChanged: boolean } {
   db.prepare('UPDATE spaces SET canvas_content = ? WHERE id = ?').run(content, spaceId);
+  const result = syncDerivedSpaceTitle(spaceId, content);
+  return { title: result.title, titleChanged: result.changed };
 }
 
 /** Search spaces by description, body, or canvas content. */

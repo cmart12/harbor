@@ -5,6 +5,7 @@ import { BrowserWindow } from 'electron';
 import type { GitSyncStatus } from '../shared/ipc-contract';
 import { mirrorRendererEvent } from './web/event-hub';
 import { getLogRoot as getLogRootForWhim, migrateLegacyEventLog } from './log-store';
+import { ensureMarkdownH1Title } from '../shared/markdown-title';
 
 const WHIM_DIR = '.whim';
 const DB_FILE = 'spaces.db';
@@ -811,7 +812,7 @@ export function createPage(workspaceRoot: string, folder: string, pageName: stri
 
   if (fs.existsSync(pagePath)) return { error: 'A page with that name already exists.' };
 
-  fs.writeFileSync(pagePath, '', 'utf-8');
+  fs.writeFileSync(pagePath, ensureMarkdownH1Title('', pageName).content, 'utf-8');
   return { page: slug };
 }
 

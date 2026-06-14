@@ -22,6 +22,7 @@ const ALLOWED_EVENT_CHANNELS = new Set([
   'agent:presence-ended',
   'agent:reply-ready',
   'space:processed',
+  'space:title-updated',
   'space:recurrence-applied',
   'canvas:content-updated',
   'workspace:committed',

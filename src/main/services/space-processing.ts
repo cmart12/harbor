@@ -10,7 +10,6 @@ export async function processSpaceInBackground(id: string, body: string, created
     const parsed = await parseSpaceWithAI(body);
     // CAS: only apply AI results if space hasn't been edited since creation
     updateSpaceCAS(id, createdVersion, {
-      description: parsed.description,
       client: parsed.client,
       due_at: parsed.due_at,
       due_at_utc: parsed.due_at_utc,

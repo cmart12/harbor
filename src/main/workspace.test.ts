@@ -28,6 +28,8 @@ import {
   parseRepoNameFromRemote,
   getDefaultProfileName,
   invalidateProfileNameCache,
+  createPage,
+  readPage,
 } from './workspace';
 
 let tmpDir: string;
@@ -237,6 +239,18 @@ describe('initSpaceCanvas', () => {
     const folder = initSpaceCanvas(tmpDir, id, 'My Task', '   \n  ');
     const content = readCanvas(tmpDir, folder);
     expect(content).toBe('');
+  });
+});
+
+// ── child pages ──────────────────────────────────────────
+
+describe('child pages', () => {
+  it('creates a page seeded with an H1 title while keeping the slug as identifier', () => {
+    const folder = createSpaceFolder(tmpDir, 'abcd-1234', 'My Task');
+    const result = createPage(tmpDir, folder, 'Project Notes');
+
+    expect(result).toEqual({ page: 'project-notes' });
+    expect(readPage(tmpDir, folder, 'project-notes')).toEqual({ content: '# Project Notes\n' });
   });
 });
 

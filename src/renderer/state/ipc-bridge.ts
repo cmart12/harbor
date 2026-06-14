@@ -129,6 +129,11 @@ export function installIpcBridge(api: WhimAPI): void {
     scheduleSpacesSnapshot();
   });
 
+  api.onSpaceTitleUpdated((data) => {
+    spaceStore.updateSpaceTitle(data.spaceId, data.title);
+    scheduleSpacesSnapshot();
+  });
+
   api.onRecurrenceApplied(() => {
     scheduleSpacesSnapshot();
   });

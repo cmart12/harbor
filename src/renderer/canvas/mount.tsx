@@ -21,6 +21,8 @@ export interface MountCanvasOptions {
   onInlineMention?: (handle: string, lineMarkdown: string, lineNumber: number) => void;
   onForkSelection?: (selectedText: string) => void;
   onExtractToPage?: (selectedText: string) => void;
+  titleFallback?: string;
+  onTitleChange?: (title: string) => void;
 }
 
 export function mountCanvas(container: HTMLElement, options: MountCanvasOptions): void {
@@ -47,6 +49,8 @@ export function mountCanvas(container: HTMLElement, options: MountCanvasOptions)
       onInlineMention={options.onInlineMention}
       onForkSelection={options.onForkSelection}
       onExtractToPage={options.onExtractToPage}
+      titleFallback={options.titleFallback}
+      onTitleChange={options.onTitleChange}
     />
   );
 }

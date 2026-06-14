@@ -122,7 +122,13 @@ export function registerCanvasHandlers(): void {
     const canvasPath = path.join(folderRoot, CANVAS_FILE);
     startWatching(spaceId, canvasPath, (newContent: string) => {
       rememberCanvasEditorContent(spaceId, newContent);
-      updateCanvasContent(spaceId, newContent);
+      const titleUpdate = updateCanvasContent(spaceId, newContent);
+      if (titleUpdate.titleChanged) {
+        for (const win of BrowserWindow.getAllWindows()) {
+          win.webContents.send('space:title-updated', { spaceId, title: titleUpdate.title });
+        }
+        mirrorRendererEvent('space:title-updated', { spaceId, title: titleUpdate.title });
+      }
       for (const win of BrowserWindow.getAllWindows()) {
         win.webContents.send('canvas:content-updated', { spaceId, content: newContent });
       }
@@ -329,7 +335,13 @@ export function registerCanvasHandlers(): void {
     if (result.success) {
       // Re-read canvas and update DB
       const content = readCanvas(workspace, space.folder);
-      updateCanvasContent(spaceId, content);
+      const titleUpdate = updateCanvasContent(spaceId, content);
+      if (titleUpdate.titleChanged) {
+        for (const win of BrowserWindow.getAllWindows()) {
+          win.webContents.send('space:title-updated', { spaceId, title: titleUpdate.title });
+        }
+        mirrorRendererEvent('space:title-updated', { spaceId, title: titleUpdate.title });
+      }
     }
     return result;
   });

@@ -500,6 +500,15 @@ export function registerWindowIpcHandlers(preloadPath: string): void {
     openPageInNewWindow(preloadPath, target.spaceId, target.page);
   });
 
+  ipcMain.on('canvas-window:update-title', (event, title: string) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win || win.isDestroyed()) return;
+    const target = canvasTargets.get(win.id);
+    if (!target) return;
+    canvasTargets.set(win.id, { ...target, title });
+    emitCanvasChange();
+  });
+
   // Toggle user-pinned state for the calling canvas window.
   // When the side pane is pinned all canvases are already alwaysOnTop;
   // per-canvas pin gives the user independent control.
