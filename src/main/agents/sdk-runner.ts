@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as crypto from 'crypto';
 import { getCopilotClient, getEphemeralCopilotClient } from '../ai';
-import { AgentAnchor } from '../../shared/types';
+import { AgentAnchor, type LaunchDocumentAgentOptions } from '../../shared/types';
 import { getConfig, getConfigValue, type AgentPersona } from '../config';
 import { getAllMcpServers } from '../mcp';
 import { AgentRegistry, truncate } from './agent-registry';
@@ -552,6 +552,7 @@ export async function launchDocumentAgent(
   spaceId: string,
   workspaceRoot: string,
   spaceFolder: string,
+  options: LaunchDocumentAgentOptions = {},
 ): Promise<{ agentId: string; sessionId: string } | { error: string }> {
   const client = getCopilotClient();
   if (!client) {
@@ -577,31 +578,116 @@ export async function launchDocumentAgent(
   // Snapshot canvas hash for change detection on completion
   const canvasHashBefore = crypto.createHash('md5').update(documentContent).digest('hex');
 
+  const parsedDocument = parseFrontmatter<Record<string, unknown>>(documentContent);
+  const handleFromFrontmatter = typeof parsedDocument.frontmatter.preferred_agent === 'string'
+    ? parsedDocument.frontmatter.preferred_agent.trim()
+    : '';
+  const hasExplicitPersona = Object.prototype.hasOwnProperty.call(options, 'personaHandle');
+  const requestedPersonaHandle = hasExplicitPersona
+    ? (options.personaHandle || '').trim()
+    : handleFromFrontmatter;
+  const allPersonas = (getConfigValue('personas') as AgentPersona[]) || [];
+  const persona = requestedPersonaHandle
+    ? allPersonas.find(p => p.handle === requestedPersonaHandle) || null
+    : null;
+  if (requestedPersonaHandle && !persona) {
+    return { error: `Persona @${requestedPersonaHandle} not found` };
+  }
+  if (persona?.runLocation === 'cca') {
+    return { error: 'CCA preferred agents are not supported for canvas runs yet' };
+  }
+  const isCloudSandbox = persona?.runLocation === 'cloud';
+  const runPrompt = options.promptOverride?.trim()
+    || (typeof parsedDocument.frontmatter.instructions === 'string' && parsedDocument.frontmatter.instructions.trim())
+    || 'Execute the instructions in the document. Ask me if you need any clarification.';
+
   // Resolve linked skills from canvas frontmatter
   const skillConfig = resolveLinkedSkillConfig(documentContent, workspaceRoot);
 
   try {
-    const mcpServers = getAllMcpServers();
     const cliToolsPrompt = buildCliToolsPrompt();
     const findRecord = (sid: string) => registry.findBySessionId(sid);
+    const customToolsContext = createCustomToolsContext(agentId);
+    const sandboxSetup = persona
+      ? buildSandboxLaunchSetup({
+        agentId,
+        workingDir,
+        persona,
+        registry,
+        broker,
+        customToolsContext,
+      })
+      : null;
+    const isSandboxed = sandboxSetup?.isSandboxed === true;
+    const sandboxConfigs = sandboxSetup?.sandboxConfigs ?? null;
+    const mcpServers = sandboxSetup ? sandboxSetup.mcpServers : getAllMcpServers();
+    const customTools = sandboxSetup ? sandboxSetup.customTools : getCustomTools(customToolsContext);
+    const sandboxState = sandboxSetup?.sandboxState;
+    const hooks = sandboxSetup?.hooks;
+    const enforcementMode = sandboxSetup?.enforcementMode ?? 'both';
+    const useHostPathAwareHandler = isSandboxed && enforcementMode === 'both';
+    const useMxcOnlyAutoApprove = isSandboxed && enforcementMode === 'mxc-only';
+    const cloudOpts = isCloudSandbox ? await resolveCloudSessionOptions(workingDir) : undefined;
+    const personaPreamble = persona ? `${persona.instructions}\n\n` : '';
+    const baseSystemPrompt = `${personaPreamble}The user has pressed "Run" on their space document. Execute all instructions in the document below. The full document is also available as canvas.md in your working directory.
+
+Invocation instructions:
+
+---
+${runPrompt}
+---
+
+Document:
+
+---
+${documentContent}
+---
+${cliToolsPrompt}`;
+    const systemPrompt = isSandboxed && enforcementMode === 'both'
+      ? `${baseSystemPrompt}${SANDBOX_WORKSPACE_SYSTEM_PROMPT}`
+      : baseSystemPrompt;
 
     const session = await client.createSession({
       workingDirectory: workingDir,
       streaming: true,
+      ...(sandboxConfigs ? { configDir: sandboxConfigs.onDir } : {}),
       mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
-      tools: getCustomTools(createCustomToolsContext(agentId)),
-      onPermissionRequest: broker.createPermissionHandler(findRecord),
+      tools: customTools,
+      ...(persona?.model ? { model: persona.model } : {}),
+      ...(hooks ? { hooks } : {}),
+      ...(cloudOpts ? { cloud: cloudOpts } : {}),
+      onPermissionRequest: useHostPathAwareHandler
+        ? broker.createPathAwareSandboxPermissionHandler(findRecord)
+        : useMxcOnlyAutoApprove
+          ? broker.createMxcOnlyPermissionHandler(findRecord)
+          : broker.createPermissionHandler(findRecord),
       onUserInputRequest: broker.createUserInputHandler(findRecord),
       onElicitationRequest: broker.createElicitationHandler(findRecord),
       ...(skillConfig ? { skillDirectories: skillConfig.skillDirectories, disabledSkills: skillConfig.disabledSkills } : {}),
       systemMessage: {
         mode: 'append',
-        content: `\nThe user has pressed "Run" on their space document. Execute all instructions in the document below. The full document is also available as canvas.md in your working directory.\n\n---\n${documentContent}\n---\n${cliToolsPrompt}`,
+        content: `\n${systemPrompt}`,
       },
     });
 
+    if (isSandboxed && sandboxSetup?.runtimeSandboxConfig && !isCloudSandbox) {
+      try {
+        const result = await (session as any).rpc.options.update({
+          sandboxConfig: sandboxSetup.runtimeSandboxConfig,
+        });
+        if (result?.success === false) {
+          try { await (session as any).abort?.(); } catch { /* best-effort */ }
+          return { error: 'Failed to apply sandbox configuration (runtime rejected the update)' };
+        }
+      } catch (err: any) {
+        try { await (session as any).abort?.(); } catch { /* best-effort */ }
+        return { error: `Failed to apply sandbox configuration: ${err?.message ?? 'unknown error'}` };
+      }
+    }
+
     const sessionId = (session as any).sessionId || agentId;
     const now = new Date().toISOString();
+    const summary = persona ? `Executing document as @${persona.handle}...` : 'Executing document...';
 
     const record: AgentRecord = {
       agentId,
@@ -614,10 +700,17 @@ export async function launchDocumentAgent(
       pendingApprovalId: null,
       pendingPermissionKind: null,
       pendingApprovals: new Map(),
-      summary: 'Executing document...',
+      summary,
+      runLocation: isCloudSandbox ? 'cloud' : 'local',
+      ...(sandboxState ? { sandbox: sandboxState } : {}),
+      ...(persona?.yolo ? { yoloMode: true } : {}),
+      ...(persona?.handle ? { personaHandle: persona.handle } : {}),
       canvasSnapshot: { path: canvasPath, hashBefore: canvasHashBefore },
     };
     registry.set(agentId, record);
+    if (persona?.yolo) {
+      notifier.notifyRenderer('agent:yolo-changed', { agentId, enabled: true });
+    }
 
     persistence.createCanvasAgentRecord({
       id: agentId,
@@ -636,14 +729,21 @@ export async function launchDocumentAgent(
       space_id: spaceId,
       prompt: truncate(documentContent, 500),
       status: 'running',
-      summary: 'Executing document...',
+      summary,
       working_dir: workingDir,
       source: 'sdk',
-      persona_handle: null,
+      persona_handle: persona?.handle ?? null,
       quoted_text: null,
-      run_location: 'local',
+      run_location: isCloudSandbox ? 'cloud' : 'local',
+      yolo_mode: record.yoloMode === true,
       created_at: now,
       updated_at: now,
+    });
+    notifier.notifyRenderer('agent:status-changed', {
+      agentId,
+      status: 'running',
+      summary,
+      spaceId,
     });
 
     setupAgentEventListeners(session, record);
@@ -661,18 +761,23 @@ export async function launchDocumentAgent(
       cwd: workingDir,
     });
 
-    session.send({
-      prompt: 'Execute the instructions in the document. Ask me if you need any clarification.',
-      attachments: [{ type: 'file' as const, path: canvasPath, displayName: 'canvas.md' }],
-    }).catch((err: any) => {
-      record.status = 'failed';
-      record.summary = `Error: ${err.message || 'Unknown'}`;
-      persistence.updateStatus(record);
-      notifier.notifyRenderer(`chat:event:${agentId}`, {
-        type: 'session.error',
-        message: err.message || 'Failed to process message',
+    const readyPromise = isCloudSandbox
+      ? waitForCloudSessionStart(session, agentId)
+      : Promise.resolve();
+    readyPromise
+      .then(() => session.send({
+        prompt: runPrompt,
+        attachments: [{ type: 'file' as const, path: canvasPath, displayName: 'canvas.md' }],
+      }))
+      .catch((err: any) => {
+        record.status = 'failed';
+        record.summary = `Error: ${err.message || 'Unknown'}`;
+        persistence.updateStatus(record);
+        notifier.notifyRenderer(`chat:event:${agentId}`, {
+          type: 'session.error',
+          message: err.message || 'Failed to process message',
+        });
       });
-    });
 
     return { agentId, sessionId };
   } catch (err: any) {

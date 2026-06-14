@@ -283,3 +283,38 @@ export interface SkillContent {
   frontmatter: SkillFrontmatter;
   body: string;
 }
+
+export interface SkillInvocationProvenance {
+  skill_id: string;
+  source: 'side-panel' | 'skill-card' | 'skill-editor' | 'schedule' | 'api';
+  source_prompt?: string;
+  created_at: string;
+}
+
+export interface SkillInvocationFrontmatter {
+  skills: string[];
+  instructions: string;
+  preferred_agent?: string;
+  skill_invocation: SkillInvocationProvenance;
+  [key: string]: unknown;
+}
+
+export interface SkillInvocationInput {
+  skillId: string;
+  intent?: string;
+  run?: boolean;
+  preferredAgent?: string | null;
+  source?: SkillInvocationProvenance['source'];
+}
+
+export interface SkillInvocationResult {
+  space: Space;
+  canvasContent: string;
+  agent?: { agentId: string; sessionId: string };
+  error?: string;
+}
+
+export interface LaunchDocumentAgentOptions {
+  personaHandle?: string | null;
+  promptOverride?: string;
+}

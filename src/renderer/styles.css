@@ -2258,6 +2258,10 @@ body.dark .waveform-canvas {
   white-space: nowrap;
 }
 
+.mention-item-skill .mention-item-handle {
+  color: var(--color-info-text);
+}
+
 .mention-item-instructions {
   flex: 1;
   min-width: 0;
@@ -4416,6 +4420,10 @@ body.dark .canvas-skill-launch:hover {
   gap: 8px;
 }
 
+.frontmatter-field-stacked {
+  align-items: flex-start;
+}
+
 .frontmatter-label {
   font-size: var(--fs-caption);
   font-weight: 600;
@@ -4441,6 +4449,12 @@ body.dark .canvas-skill-launch:hover {
 .frontmatter-input:focus {
   border-color: rgba(124, 102, 220, 0.4);
   background: white;
+}
+
+.frontmatter-textarea {
+  min-height: 72px;
+  resize: vertical;
+  line-height: var(--lh-body);
 }
 
 .frontmatter-extra {

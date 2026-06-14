@@ -226,6 +226,7 @@ interface WhimAPI {
   openAgentCli(agentId: string): Promise<{ error?: string }>;
   onChatEvent(agentId: string, callback: (event: any) => void): () => void;
   launchAgent(spaceId: string, selectedText: string, anchor: any, options?: { repo?: string; model?: string }): Promise<any>;
+  launchDocumentAgent(spaceId: string, options?: { personaHandle?: string | null; promptOverride?: string }): Promise<{ agentId: string; sessionId: string } | { error: string }>;
   launchCommentAgent(spaceId: string, commentBody: string, quotedText: string, anchor: any, personaHandle: string, threadId: string | null): Promise<{ agentId?: string; sessionId?: string; error?: string }>;
   approveAgent(agentId: string, requestId: string, approved: boolean): Promise<void>;
   respondUserInput(agentId: string, requestId: string, answer: string, wasFreeform: boolean): Promise<void>;
@@ -310,6 +311,7 @@ interface WhimAPI {
   openSkillFolder(skillId: string): Promise<void>;
   createSpaceFromSkill(skillId: string): Promise<any>;
   launchSkill(skillId: string): Promise<any>;
+  invokeSkill(input: SkillInvocationInput): Promise<SkillInvocationResult | { error: string }>;
   setSkillSchedule(skillId: string, frequency: string, time: string, day: number | null): Promise<any>;
   clearSkillSchedule(skillId: string): Promise<{ success: boolean } | { error: string }>;
   onSkillsChanged(callback: () => void): void;
@@ -383,7 +385,7 @@ import {
 } from './state/ipc-bridge';
 import { mountLists } from './views/mount.tsx';
 import type { WhimAPI as PreloadWhimAPI } from '../main/preload';
-import type { Skill as SharedSkill, CanvasAgentStateSnapshot, ExportFormat, ExportDestination, UpdateState } from '../shared/types';
+import type { Skill as SharedSkill, CanvasAgentStateSnapshot, ExportFormat, ExportDestination, SkillInvocationInput, SkillInvocationResult, UpdateState } from '../shared/types';
 
 // The local `interface WhimAPI` declared near the top of this file shadows the
 // preload's structural type; the IPC bridge accepts the preload version. Cast
@@ -760,6 +762,7 @@ function setFilter(filter: typeof currentFilter): void {
   // Close persona @-mention dropdown if open and clear any selection state.
   hideMentionDropdown();
   selectedPersonaHandle = null;
+  selectedSkillMentionId = null;
 
   updatePromptHint();
   updateWorkersBadge();
@@ -2732,18 +2735,23 @@ descInput.addEventListener('input', () => {
   inputHints.classList.toggle('hidden', descInput.value.length > 0);
 });
 
-// ── Persona @-mention autocomplete (Workers tab) ─────────
-// When the prompt starts with @<token>, show a dropdown of matching personas.
-// Tab/Enter selects the highlighted persona; Space/whitespace closes the
-// dropdown and the selected handle (if any) is forwarded on submit.
+// ── Prompt @-mention autocomplete ────────────────────────
+// When the prompt starts with @<token>, show a dropdown of matching personas
+// and skills. Agent mentions launch workers; skill mentions create runnable
+// canvases.
+type PromptMentionCandidate =
+  | { kind: 'agent'; handle: string; emoji?: string; instructions?: string }
+  | { kind: 'skill'; handle: string; skillId: string; name: string; emoji?: string; description?: string };
+
 const mentionDropdown = document.getElementById('persona-mention-dropdown') as HTMLDivElement;
-let mentionMatches: AgentPersona[] = [];
+let mentionMatches: PromptMentionCandidate[] = [];
 let mentionSelectedIndex = 0;
 // Persona handle the user has explicitly selected (via dropdown or by typing
 // a complete valid handle).  Cleared if the user edits the leading mention
 // away.  Used at submit time as the source of truth, with raw-text parsing
 // as a fallback for hand-typed handles.
 let selectedPersonaHandle: string | null = null;
+let selectedSkillMentionId: string | null = null;
 let mentionComposing = false;
 
 descInput.addEventListener('compositionstart', () => { mentionComposing = true; });
@@ -2753,7 +2761,7 @@ descInput.addEventListener('compositionend', () => {
 });
 
 function isMentionEnabled(): boolean {
-  return currentFilter === 'agents' && !searchMode;
+  return currentFilter !== 'closed' && !searchMode;
 }
 
 /** Parse a leading "@token" from the raw value if present (no whitespace consumed). */
@@ -2771,6 +2779,45 @@ function findExactPersona(token: string): AgentPersona | null {
   return personas.find(p => p.handle.toLowerCase() === lower) || null;
 }
 
+function normalizeMentionText(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+}
+
+/** Find the skill whose slug or normalized name exactly matches the token. */
+function findExactSkillMention(token: string): SkillData | null {
+  const lower = normalizeMentionText(token);
+  if (!lower) return null;
+  return cachedSkills.find((skill) => (
+    skill.id.toLowerCase() === lower
+    || normalizeMentionText(skill.name) === lower
+  )) || null;
+}
+
+function buildMentionCandidates(token: string): PromptMentionCandidate[] {
+  const lower = token.toLowerCase();
+  const normalized = normalizeMentionText(token);
+  const agentMatches: PromptMentionCandidate[] = personas
+    .filter(p => p.handle.toLowerCase().startsWith(lower))
+    .map(p => ({ kind: 'agent' as const, handle: p.handle, emoji: p.emoji, instructions: p.instructions }));
+  const skillMatches: PromptMentionCandidate[] = cachedSkills
+    .filter((skill) => {
+      if (!token) return true;
+      return skill.id.toLowerCase().startsWith(normalized)
+        || normalizeMentionText(skill.name).startsWith(normalized)
+        || skill.name.toLowerCase().includes(lower)
+        || skill.description.toLowerCase().includes(lower);
+    })
+    .map(skill => ({
+      kind: 'skill' as const,
+      handle: skill.id,
+      skillId: skill.id,
+      name: skill.name,
+      emoji: skill.emoji,
+      description: skill.description,
+    }));
+  return [...agentMatches, ...skillMatches].slice(0, 10);
+}
+
 function refreshMentionDropdown(): void {
   if (mentionComposing) return;
   if (!isMentionEnabled()) {
@@ -2783,6 +2830,7 @@ function refreshMentionDropdown(): void {
   if (!parsed) {
     hideMentionDropdown();
     selectedPersonaHandle = null;
+    selectedSkillMentionId = null;
     return;
   }
 
@@ -2791,9 +2839,11 @@ function refreshMentionDropdown(): void {
   const afterToken = value.slice(parsed.afterIndex);
   if (/^\s/.test(afterToken)) {
     hideMentionDropdown();
-    // Only keep selectedPersonaHandle if the locked-in handle matches the token exactly.
+    // Only keep selected mention state if the locked-in handle matches exactly.
     const exact = findExactPersona(parsed.token);
+    const exactSkill = findExactSkillMention(parsed.token);
     selectedPersonaHandle = exact ? exact.handle : null;
+    selectedSkillMentionId = exactSkill && !exact ? exactSkill.id : null;
     return;
   }
 
@@ -2802,14 +2852,16 @@ function refreshMentionDropdown(): void {
   // uses the cached `personas` array; the reload re-runs this function.
   void maybeRefreshPersonas();
 
-  // Filter personas whose handle starts with the typed prefix (case-insensitive).
-  // Empty token matches all personas.
-  const lower = parsed.token.toLowerCase();
-  const matches = personas.filter(p => p.handle.toLowerCase().startsWith(lower));
+  void maybeRefreshSkills();
 
-  // Pre-set selectedPersonaHandle if exact match is typed.
+  // Empty token matches all personas and skills.
+  const matches = buildMentionCandidates(parsed.token);
+
+  // Pre-set selected mention state if exact match is typed.
   const exact = findExactPersona(parsed.token);
+  const exactSkill = findExactSkillMention(parsed.token);
   selectedPersonaHandle = exact ? exact.handle : null;
+  selectedSkillMentionId = exactSkill && !exact ? exactSkill.id : null;
 
   if (matches.length === 0) {
     hideMentionDropdown();
@@ -2849,25 +2901,51 @@ async function maybeRefreshPersonas(): Promise<void> {
   }
 }
 
+let mentionSkillsReloadAt = 0;
+let mentionSkillsReloadInflight = false;
+async function maybeRefreshSkills(): Promise<void> {
+  if (mentionSkillsReloadInflight) return;
+  const now = Date.now();
+  if (now - mentionSkillsReloadAt < 1500) return;
+  mentionSkillsReloadAt = now;
+  mentionSkillsReloadInflight = true;
+  try {
+    const fresh = await whimAPI.listSkills();
+    const changed = fresh.length !== cachedSkills.length
+      || fresh.some((skill, i) => skill.id !== cachedSkills[i]?.id || skill.updated_at !== cachedSkills[i]?.updated_at);
+    if (changed) {
+      cachedSkills = fresh;
+      skillStore.setSkills(cachedSkills as unknown as SharedSkill[]);
+      if (descInput.value.startsWith('@')) refreshMentionDropdown();
+    }
+  } catch { /* leave cached skills in place */ }
+  finally {
+    mentionSkillsReloadInflight = false;
+  }
+}
+
 function renderMentionDropdown(): void {
   mentionDropdown.innerHTML = '';
   for (let i = 0; i < mentionMatches.length; i++) {
     const p = mentionMatches[i];
     const item = document.createElement('button');
     item.type = 'button';
-    item.className = 'mention-item' + (i === mentionSelectedIndex ? ' selected' : '');
+    item.className = `mention-item mention-item-${p.kind}${i === mentionSelectedIndex ? ' selected' : ''}`;
     item.setAttribute('role', 'option');
     item.dataset.handle = p.handle;
+    item.dataset.kind = p.kind;
 
     const handleEl = document.createElement('span');
     handleEl.className = 'mention-item-handle';
-    handleEl.textContent = (p.emoji ? p.emoji + ' ' : '') + '@' + p.handle;
+    const label = p.kind === 'skill' ? p.name : `@${p.handle}`;
+    handleEl.textContent = (p.emoji ? p.emoji + ' ' : '') + label;
     item.appendChild(handleEl);
 
-    if (p.instructions) {
+    const description = p.kind === 'agent' ? p.instructions : p.description;
+    if (description) {
       const instrEl = document.createElement('span');
       instrEl.className = 'mention-item-instructions';
-      const firstLine = p.instructions.split('\n')[0];
+      const firstLine = description.split('\n')[0];
       instrEl.textContent = firstLine.length > 80 ? firstLine.slice(0, 77) + '...' : firstLine;
       item.appendChild(instrEl);
     }
@@ -2892,20 +2970,21 @@ function isMentionDropdownOpen(): boolean {
   return !mentionDropdown.classList.contains('hidden');
 }
 
-/** Replace the leading @token with the selected persona handle + trailing space. */
+/** Replace the leading @token with the selected mention token + trailing space. */
 function acceptMentionAt(index: number): void {
-  const persona = mentionMatches[index];
-  if (!persona) return;
+  const mention = mentionMatches[index];
+  if (!mention) return;
   const value = descInput.value;
   const parsed = parseLeadingMentionToken(value);
   if (!parsed) return;
   const rest = value.slice(parsed.afterIndex);
   const completion = rest.length > 0 && /^\s/.test(rest) ? '' : ' ';
-  descInput.value = `@${persona.handle}${completion}${rest}`;
+  descInput.value = `@${mention.handle}${completion}${rest}`;
   // Place caret right after the trailing space.
-  const caret = ('@' + persona.handle).length + completion.length;
+  const caret = ('@' + mention.handle).length + completion.length;
   descInput.setSelectionRange(caret, caret);
-  selectedPersonaHandle = persona.handle;
+  selectedPersonaHandle = mention.kind === 'agent' ? mention.handle : null;
+  selectedSkillMentionId = mention.kind === 'skill' ? mention.skillId : null;
   hideMentionDropdown();
   autoResize();
   inputHints.classList.toggle('hidden', descInput.value.length > 0);
@@ -3599,21 +3678,23 @@ async function openSkillFolder(skillId: string): Promise<void> {
   await whimAPI.openSkillFolder(skillId);
 }
 
+async function openInvokedSkillCanvas(space: { id?: string; description?: string }): Promise<void> {
+  setFilter('open');
+  await loadSpaces();
+  if (space.id) {
+    whimAPI.openNewCanvasWindow({ kind: 'space', id: space.id, title: space.description || '' });
+  }
+}
+
 async function createSpaceFromSkill(skillId: string): Promise<void> {
-  const result = await whimAPI.createSpaceFromSkill(skillId);
-  if ('error' in result) {
+  const result = await whimAPI.invokeSkill({ skillId, run: false, source: 'skill-card' });
+  if ('error' in result && !('space' in result)) {
     showStatus(`Failed: ${result.error}`, true);
     return;
   }
   showStatus(`✓ Created space with linked skill`);
   setTimeout(hideStatus, 2000);
-  // Switch to Spaces tab and reload, then open the new canvas
-  setFilter('open');
-  await loadSpaces();
-  const space = result as any;
-  if (space.id) {
-    whimAPI.openNewCanvasWindow({ kind: 'space', id: space.id, title: space.description || '' });
-  }
+  await openInvokedSkillCanvas(result.space);
 }
 
 async function deleteSkill(skillId: string): Promise<void> {
@@ -3625,20 +3706,71 @@ async function deleteSkill(skillId: string): Promise<void> {
 }
 
 async function launchSkillAsSpace(skillId: string): Promise<void> {
-  const result = await whimAPI.launchSkill(skillId);
-  if ('error' in result) {
+  const result = await whimAPI.invokeSkill({ skillId, run: true, source: 'skill-editor' });
+  if ('error' in result && !('space' in result)) {
     showStatus(`Failed: ${result.error}`, true);
     return;
   }
-  showStatus(`✓ Launched space with linked skill`);
-  setTimeout(hideStatus, 2000);
-  // Switch to Spaces tab first, then reload so render() uses the correct filter
-  setFilter('open');
-  await loadSpaces();
-  // Close the skill editor canvas if open in a popout
-  if (isCanvasMode) {
-    window.close();
+  if (result.error) {
+    showStatus(`Created canvas, but launch failed: ${result.error}`, true);
+  } else {
+    showStatus(`✓ Running skill`);
   }
+  setTimeout(hideStatus, 2000);
+  await openInvokedSkillCanvas(result.space);
+}
+
+function resolveSkillInvocationFromPrompt(raw: string): { skillId: string; intent: string } | null {
+  const parsed = parseLeadingMentionToken(raw);
+  if (!parsed) return null;
+  const token = parsed.token;
+  if (!token) return null;
+  const exactPersona = findExactPersona(token);
+  const selectedSkill = selectedSkillMentionId ? cachedSkills.find(s => s.id === selectedSkillMentionId) || null : null;
+  const exactSkill = selectedSkill && selectedSkill.id.toLowerCase() === normalizeMentionText(token)
+    ? selectedSkill
+    : findExactSkillMention(token);
+  if (!exactSkill || (exactPersona && !selectedSkill)) return null;
+  return {
+    skillId: exactSkill.id,
+    intent: raw.slice(parsed.afterIndex).trim(),
+  };
+}
+
+async function invokeSkillFromPrompt(raw: string): Promise<boolean> {
+  let invocation = resolveSkillInvocationFromPrompt(raw);
+  if (!invocation && raw.startsWith('@')) {
+    await loadSkills();
+    invocation = resolveSkillInvocationFromPrompt(raw);
+  }
+  if (!invocation) return false;
+
+  showStatus(`▶ Running ${cachedSkills.find(s => s.id === invocation.skillId)?.name || 'skill'}...`);
+  const result = await whimAPI.invokeSkill({
+    skillId: invocation.skillId,
+    intent: invocation.intent,
+    run: true,
+    source: 'side-panel',
+  });
+
+  if ('error' in result && !('space' in result)) {
+    showStatus(`Failed: ${result.error}`, true);
+    setTimeout(hideStatus, 3000);
+    return true;
+  }
+
+  descInput.value = '';
+  descInput.style.height = 'auto';
+  selectedPersonaHandle = null;
+  selectedSkillMentionId = null;
+  hideMentionDropdown();
+  if (result.error) {
+    showStatus(`Created canvas, but launch failed: ${result.error}`, true);
+  } else {
+    hideStatus();
+  }
+  await openInvokedSkillCanvas(result.space);
+  return true;
 }
 
 // Wire up skills changed event
@@ -3950,6 +4082,10 @@ form.addEventListener('submit', async (e) => {
   if (searchMode) return;
   const text = descInput.value.trim();
 
+  if (text && await invokeSkillFromPrompt(descInput.value.trim())) {
+    return;
+  }
+
   // ── Workers tab: launch an agent ──────────────────────
   if (currentFilter === 'agents') {
     if (!text) {
@@ -3998,6 +4134,7 @@ form.addEventListener('submit', async (e) => {
     descInput.value = '';
     descInput.style.height = 'auto';
     selectedPersonaHandle = null;
+    selectedSkillMentionId = null;
     hideMentionDropdown();
     descInput.focus();
     hideStatus();
@@ -6039,7 +6176,7 @@ function updateCanvasMenuContext(isSkill: boolean): void {
   canvasMenuDropdown.querySelectorAll('[data-context="skill"]').forEach(el => {
     el.classList.toggle('hidden', !isSkill);
   });
-  canvasLaunchLabel.textContent = isSkill ? 'Launch as Space' : 'Start Session';
+  canvasLaunchLabel.textContent = isSkill ? 'Run Skill' : 'Run Canvas';
 
   // Sharing isn't supported for skill templates yet — hide the share control.
   canvasShareWrap?.classList.toggle('hidden', isSkill);
@@ -6066,7 +6203,7 @@ function updateCanvasMenuContext(isSkill: boolean): void {
     canvasScheduleIndicator.classList.add('hidden');
   }
 
-  // Launch-as-space button (only meaningful for skills)
+  // Run-skill button (only meaningful for skill templates)
   canvasSkillLaunchBtn.classList.toggle('hidden', !isSkill);
 }
 
@@ -6096,7 +6233,7 @@ canvasScheduleIndicator.addEventListener('click', (e) => {
 canvasSkillLaunchBtn.addEventListener('click', async (e) => {
   e.stopPropagation();
   if (!canvasSkillId) return;
-  await createSpaceFromSkill(canvasSkillId);
+  await launchSkillAsSpace(canvasSkillId);
 });
 
 canvasSaveAsSkill.addEventListener('click', async () => {
@@ -6621,22 +6758,18 @@ canvasOpenFolder.addEventListener('click', () => {
 canvasLaunchBtn.addEventListener('click', async () => {
   closeCanvasMenu();
   if (canvasSkillId) {
-    // Skill mode: create space from skill + launch session
     await launchSkillAsSpace(canvasSkillId);
   } else if (canvasSpaceId) {
-    // Save any pending edits before launching
     await saveCanvasEditor();
 
-    // Launch SDK agent with full document context and open chat
     const result = await whimAPI.launchDocumentAgent(canvasSpaceId);
     if ('error' in result) {
       showStatus(result.error || 'Launch failed', true);
       setTimeout(hideStatus, 3000);
       return;
     }
-    // Close the canvas view and open the chat
-    closeCanvas();
-    openAgentChat(result.agentId, 'Executing document...', 'running', 'sdk', canvasSpaceId || undefined);
+    showStatus('✓ Running canvas');
+    setTimeout(hideStatus, 2000);
   }
 });
 

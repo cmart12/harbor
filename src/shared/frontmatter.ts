@@ -79,7 +79,7 @@ export function hasFrontmatter(content: string): boolean {
 }
 
 /** Frontmatter keys managed by other UI (e.g. linked skill chips) — not shown in the editor. */
-const MANAGED_FRONTMATTER_KEYS = new Set(['skills']);
+const MANAGED_FRONTMATTER_KEYS = new Set(['skills', 'skill_invocation']);
 
 /**
  * Whether a frontmatter object has any content worth surfacing in the frontmatter editor.

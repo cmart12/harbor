@@ -1,14 +1,14 @@
 import { ipcMain, shell } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
-import { isInitialized, listSkills, getSkill, upsertSkill, removeSkill, createSpace, assignSpaceFolder, updateSkillSchedule } from '../database';
+import { isInitialized, listSkills, getSkill, upsertSkill, removeSkill, updateSkillSchedule } from '../database';
 import { getConfigValue } from '../config';
 import { parseFrontmatter, serializeFrontmatter } from '../frontmatter';
 import { getSkillsDir, syncAllSkills } from '../skill-watcher';
 import { pickEmoji } from '../emoji-picker';
-import { createSpaceFolder, scheduleAutoCommit } from '../workspace';
 import { computeNextRunAt } from '../services/scheduler';
-import type { SkillFrontmatter, Skill, SkillScheduleFrequency } from '../../shared/types';
+import { invokeSkill } from '../skill-invocation';
+import type { SkillFrontmatter, Skill, SkillInvocationInput, SkillScheduleFrequency } from '../../shared/types';
 
 const SKILL_FILE = 'SKILL.md';
 
@@ -173,58 +173,26 @@ export function registerSkillHandlers(): void {
     return result;
   });
 
-  ipcMain.handle('skill:create-space', (_event, skillId: string) => {
+  ipcMain.handle('skill:create-space', async (_event, skillId: string) => {
     const workspace = getConfigValue('workspace');
     if (!workspace || !isInitialized()) return { error: 'no_workspace' };
 
-    const skill = getSkill(skillId);
-    if (!skill) return { error: 'not_found' };
-
-    // Create a new space linked to the source skill
-    const space = createSpace({ body: skill.name }, skillId);
-
-    // Create the space folder
-    const folder = createSpaceFolder(workspace, space.id, skill.name);
-    assignSpaceFolder(space.id, folder);
-    space.folder = folder;
-
-    // Write canvas.md with frontmatter linking the skill (no content copy)
-    const canvasBody = `# ${skill.name}\n`;
-    const canvasContent = serializeFrontmatter({ skills: [skillId] }, canvasBody);
-    const canvasMdPath = path.join(workspace, folder, 'canvas.md');
-    fs.writeFileSync(canvasMdPath, canvasContent, 'utf-8');
-
-    scheduleAutoCommit(workspace);
-    return space;
+    const result = await invokeSkill({ skillId, run: false, source: 'skill-card' });
+    return 'error' in result ? result : result.space;
   });
 
   ipcMain.handle('skill:launch', async (_event, skillId: string) => {
     const workspace = getConfigValue('workspace');
     if (!workspace || !isInitialized()) return { error: 'no_workspace' };
 
-    const skill = getSkill(skillId);
-    if (!skill) return { error: 'not_found' };
+    const result = await invokeSkill({ skillId, run: true, source: 'skill-editor' });
+    return 'space' in result ? result.space : result;
+  });
 
-    // Create a new space linked to the source skill
-    const space = createSpace({ body: skill.name }, skillId);
-
-    const folder = createSpaceFolder(workspace, space.id, skill.name);
-    assignSpaceFolder(space.id, folder);
-    space.folder = folder;
-
-    // Write canvas.md with frontmatter linking the skill (no content copy)
-    const canvasBody = `# ${skill.name}\n`;
-    const canvasContent = serializeFrontmatter({ skills: [skillId] }, canvasBody);
-    const canvasMdPath = path.join(workspace, folder, 'canvas.md');
-    fs.writeFileSync(canvasMdPath, canvasContent, 'utf-8');
-
-    scheduleAutoCommit(workspace);
-
-    // Also launch a session on the new space
-    const { launchSession } = await import('../session');
-    launchSession(space.id, workspace);
-
-    return space;
+  ipcMain.handle('skill:invoke', async (_event, input: SkillInvocationInput) => {
+    const workspace = getConfigValue('workspace');
+    if (!workspace || !isInitialized()) return { error: 'no_workspace' };
+    return invokeSkill(input);
   });
 
   ipcMain.handle('skill:set-schedule', (_event, skillId: string, frequency: SkillScheduleFrequency, time: string, day: number | null) => {

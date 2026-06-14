@@ -138,7 +138,7 @@ export interface WhimAPI {
 
   // ── Agent ────────────────────────────────────────────────
   launchAgent(spaceId: string, selectedText: string, anchor: AgentAnchor, options?: { repo?: string; model?: string }): Promise<IpcCommandResult<'agent:launch'>>;
-  launchDocumentAgent(spaceId: string): Promise<{ agentId: string; sessionId: string } | { error: string }>;
+  launchDocumentAgent(spaceId: string, options?: { personaHandle?: string | null; promptOverride?: string }): Promise<IpcCommandResult<'agent:launch-document'>>;
   launchCommentAgent(spaceId: string, commentBody: string, quotedText: string, anchor: AgentAnchor, personaHandle: string, threadId: string | null): Promise<IpcCommandResult<'agent:launch-from-comment'>>;
   listAgents(spaceId: string): Promise<IpcCommandResult<'agent:list'>>;
   approveAgent(agentId: string, requestId: string, approved: boolean): Promise<IpcCommandResult<'agent:approve'>>;
@@ -260,6 +260,7 @@ export interface WhimAPI {
   openSkillFolder(skillId: string): Promise<IpcCommandResult<'skill:open-folder'>>;
   createSpaceFromSkill(skillId: string): Promise<IpcCommandResult<'skill:create-space'>>;
   launchSkill(skillId: string): Promise<IpcCommandResult<'skill:launch'>>;
+  invokeSkill(input: IpcCommandArgs<'skill:invoke'>[0]): Promise<IpcCommandResult<'skill:invoke'>>;
   setSkillSchedule(skillId: string, frequency: SkillScheduleFrequency, time: string, day: number | null): Promise<IpcCommandResult<'skill:set-schedule'>>;
   clearSkillSchedule(skillId: string): Promise<IpcCommandResult<'skill:clear-schedule'>>;
   onSkillsChanged(callback: () => void): void;
@@ -401,8 +402,8 @@ const api: WhimAPI = {
   // ── Agent ────────────────────────────────────────────────
   launchAgent: (spaceId, selectedText, anchor, options?) =>
     ipcRenderer.invoke('agent:launch', spaceId, selectedText, anchor, options),
-  launchDocumentAgent: (spaceId) =>
-    ipcRenderer.invoke('agent:launch-document', spaceId),
+  launchDocumentAgent: (spaceId, options?) =>
+    ipcRenderer.invoke('agent:launch-document', spaceId, options),
   launchCommentAgent: (spaceId, commentBody, quotedText, anchor, personaHandle, threadId) =>
     ipcRenderer.invoke('agent:launch-from-comment', spaceId, commentBody, quotedText, anchor, personaHandle, threadId),
   listAgents: (spaceId) =>
@@ -642,6 +643,7 @@ const api: WhimAPI = {
   openSkillFolder: (skillId) => ipcRenderer.invoke('skill:open-folder', skillId),
   createSpaceFromSkill: (skillId) => ipcRenderer.invoke('skill:create-space', skillId),
   launchSkill: (skillId) => ipcRenderer.invoke('skill:launch', skillId),
+  invokeSkill: (input) => ipcRenderer.invoke('skill:invoke', input),
   setSkillSchedule: (skillId, frequency, time, day) => ipcRenderer.invoke('skill:set-schedule', skillId, frequency, time, day),
   clearSkillSchedule: (skillId) => ipcRenderer.invoke('skill:clear-schedule', skillId),
   onSkillsChanged: (callback) => {

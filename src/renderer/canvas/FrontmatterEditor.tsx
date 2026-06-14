@@ -2,6 +2,7 @@ import React, { useCallback, useState } from 'react';
 
 export interface FrontmatterEditorProps {
   frontmatter: Record<string, unknown>;
+  personas?: Array<{ handle: string; emoji?: string }>;
   onChange: (updated: Record<string, unknown>) => void;
 }
 
@@ -11,13 +12,19 @@ const KNOWN_FIELDS: { key: string; label: string; placeholder: string }[] = [
 ];
 
 /** Fields managed by other UI — hidden from the generic extra-keys display. */
-const MANAGED_FIELDS = new Set(['name', 'description', 'skills']);
+const MANAGED_FIELDS = new Set(['name', 'description', 'instructions', 'preferred_agent', 'skills', 'skill_invocation']);
 
-export const FrontmatterEditor: React.FC<FrontmatterEditorProps> = ({ frontmatter, onChange }) => {
+export const FrontmatterEditor: React.FC<FrontmatterEditorProps> = ({ frontmatter, personas = [], onChange }) => {
   const [expanded, setExpanded] = useState(false);
 
   const handleFieldChange = useCallback((key: string, value: string) => {
-    onChange({ ...frontmatter, [key]: value });
+    const next = { ...frontmatter };
+    if (value.trim().length === 0 && (key === 'instructions' || key === 'preferred_agent')) {
+      delete next[key];
+    } else {
+      next[key] = value;
+    }
+    onChange(next);
   }, [frontmatter, onChange]);
 
   const extraKeys = Object.keys(frontmatter).filter(
@@ -26,7 +33,9 @@ export const FrontmatterEditor: React.FC<FrontmatterEditorProps> = ({ frontmatte
 
   const name = String(frontmatter.name ?? '');
   const desc = String(frontmatter.description ?? '');
-  const summary = [name, desc].filter(Boolean).join(' — ') || 'Properties';
+  const instructions = String(frontmatter.instructions ?? '');
+  const preferredAgent = String(frontmatter.preferred_agent ?? '');
+  const summary = [name, desc, instructions ? 'Runnable instructions' : '', preferredAgent ? `@${preferredAgent}` : ''].filter(Boolean).join(' — ') || 'Properties';
 
   return (
     <div className={`frontmatter-editor${expanded ? ' expanded' : ''}`}>
@@ -52,6 +61,31 @@ export const FrontmatterEditor: React.FC<FrontmatterEditorProps> = ({ frontmatte
               />
             </div>
           ))}
+          <div className="frontmatter-field frontmatter-field-stacked">
+            <label className="frontmatter-label">Instructions</label>
+            <textarea
+              className="frontmatter-input frontmatter-textarea"
+              value={instructions}
+              placeholder="Instructions that should drive Run Canvas"
+              rows={4}
+              onChange={(e) => handleFieldChange('instructions', e.target.value)}
+            />
+          </div>
+          <div className="frontmatter-field">
+            <label className="frontmatter-label">Agent</label>
+            <select
+              className="frontmatter-input"
+              value={preferredAgent}
+              onChange={(e) => handleFieldChange('preferred_agent', e.target.value)}
+            >
+              <option value="">Default agent</option>
+              {personas.map((persona) => (
+                <option key={persona.handle} value={persona.handle}>
+                  {persona.emoji ? `${persona.emoji} ` : ''}@{persona.handle}
+                </option>
+              ))}
+            </select>
+          </div>
           {extraKeys.length > 0 && (
             <div className="frontmatter-extra">
               {extraKeys.map(key => {

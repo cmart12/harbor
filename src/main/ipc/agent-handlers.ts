@@ -241,7 +241,7 @@ export function registerAgentHandlers(): void {
     return launchQuickAgent(prompt, workspace, persona ?? undefined);
   });
 
-  ipcMain.handle('agent:launch-document', async (_event, spaceId: string) => {
+  ipcMain.handle('agent:launch-document', async (_event, spaceId: string, options?: { personaHandle?: string | null; promptOverride?: string }) => {
     const workspace = getConfigValue('workspace');
     if (!workspace || !isInitialized()) return { error: 'no_workspace' };
 
@@ -249,7 +249,7 @@ export function registerAgentHandlers(): void {
     if (!space || !space.folder) return { error: 'space_not_found' };
 
     const { launchDocumentAgent } = await import('../agent-service');
-    return launchDocumentAgent(spaceId, workspace, space.folder);
+    return launchDocumentAgent(spaceId, workspace, space.folder, options);
   });
 
   ipcMain.handle('agent:list-all', async () => {

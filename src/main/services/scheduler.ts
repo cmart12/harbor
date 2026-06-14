@@ -3,17 +3,11 @@ import {
   getScheduledSkillsNeedingNextRun,
   claimSkillRun,
   updateSkillSchedule,
-  getSkill,
-  createSpace,
-  assignSpaceFolder,
 } from '../database';
 import { getConfigValue } from '../config';
-import { createSpaceFolder, scheduleAutoCommit } from '../workspace';
-import { serializeFrontmatter } from '../frontmatter';
 import { notifyAllWindows } from '../notify';
 import { isInitialized } from '../database';
-import * as fs from 'fs';
-import * as path from 'path';
+import { invokeSkill } from '../skill-invocation';
 import type { SkillScheduleFrequency } from '../../shared/types';
 
 const CHECK_INTERVAL_MS = 60_000; // Check every 60 seconds
@@ -123,25 +117,9 @@ export async function launchSkillForSchedule(skillId: string): Promise<{ success
   const workspace = getConfigValue('workspace');
   if (!workspace || !isInitialized()) return { success: false, error: 'no_workspace' };
 
-  const skill = getSkill(skillId);
-  if (!skill) return { success: false, error: 'not_found' };
-
-  const space = createSpace({ body: skill.name }, skillId);
-
-  const folder = createSpaceFolder(workspace, space.id, skill.name);
-  assignSpaceFolder(space.id, folder);
-  space.folder = folder;
-
-  const canvasBody = `# ${skill.name}\n`;
-  const canvasContent = serializeFrontmatter({ skills: [skillId] }, canvasBody);
-  const canvasMdPath = path.join(workspace, folder, 'canvas.md');
-  fs.writeFileSync(canvasMdPath, canvasContent, 'utf-8');
-
-  scheduleAutoCommit(workspace);
-
-  const { launchSession } = await import('../session');
-  const result = await launchSession(space.id, workspace);
-  return { success: result.success, error: result.error };
+  const result = await invokeSkill({ skillId, run: true, source: 'schedule' });
+  if ('space' in result && !result.error) return { success: true };
+  return { success: false, error: result.error || 'launch_failed' };
 }
 
 /**

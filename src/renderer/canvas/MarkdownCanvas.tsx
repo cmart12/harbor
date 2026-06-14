@@ -900,6 +900,7 @@ export const MarkdownCanvas = forwardRef<MarkdownCanvasHandle, MarkdownCanvasPro
             {showFrontmatterEditor && (
               <FrontmatterEditor
                 frontmatter={frontmatter}
+                personas={personas}
                 onChange={handleFrontmatterChange}
               />
             )}

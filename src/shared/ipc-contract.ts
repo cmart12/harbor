@@ -5,7 +5,7 @@
  * This file is **types only** — no runtime code.
  */
 
-import type { Space, CreateSpaceInput, Attachment, AgentAnchor, AgentSession, LinkPreviewMeta, RecurrenceResult, RecallMatch, Skill, SkillContent, SkillScheduleFrequency, CanvasTarget, UpdateState, ExportFormat, ExportDestination } from './types';
+import type { Space, CreateSpaceInput, Attachment, AgentAnchor, AgentSession, LinkPreviewMeta, RecurrenceResult, RecallMatch, Skill, SkillContent, SkillInvocationInput, SkillInvocationResult, SkillScheduleFrequency, CanvasTarget, UpdateState, ExportFormat, ExportDestination } from './types';
 import type { ChatEvent, ElicitationSchema, ElicitationFieldValue } from './chat-types';
 import type { SubagentSummary, SubagentInfo } from './subagent-types';
 
@@ -418,6 +418,10 @@ export interface IpcCommands {
     result: { ok: true } | { error: string };
   };
   'agent:quick-launch': { args: [prompt: string, personaHandle?: string]; result: { agentId: string; sessionId: string } | { error: string } };
+  'agent:launch-document': {
+    args: [spaceId: string, options?: { personaHandle?: string | null; promptOverride?: string }];
+    result: { agentId: string; sessionId: string } | { error: string };
+  };
   'agent:list-all': { args: []; result: AgentListAllItem[] };
   'agent:delete-session': { args: [agentId: string]; result: { ok: true } };
   'agent:launch-cloud': {
@@ -471,6 +475,7 @@ export interface IpcCommands {
   'skill:open-folder': { args: [skillId: string]; result: void };
   'skill:create-space': { args: [skillId: string]; result: Space | { error: string } };
   'skill:launch': { args: [skillId: string]; result: Space | { error: string } };
+  'skill:invoke': { args: [input: SkillInvocationInput]; result: SkillInvocationResult | { error: string } };
   'skill:set-schedule': { args: [skillId: string, frequency: SkillScheduleFrequency, time: string, day: number | null]; result: Skill | { error: string } };
   'skill:clear-schedule': { args: [skillId: string]; result: { success: boolean } | { error: string } };
 
