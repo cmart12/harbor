@@ -144,7 +144,9 @@ export function installIpcBridge(api: WhimAPI): void {
       void loadPersonasSnapshot(api);
     } else {
       spaceStore.setSpaces([]);
+      agentStore.reset();
       skillStore.setSkills([]);
+      historyStore.reset();
       personaStore.setPersonas([]);
     }
   });

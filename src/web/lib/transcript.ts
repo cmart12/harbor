@@ -102,3 +102,7 @@ export function applyChatEvent(bubbles: Bubble[], event: ChatEvent): Bubble[] {
       return bubbles;
   }
 }
+
+export function applyChatEvents(bubbles: Bubble[], events: ChatEvent[]): Bubble[] {
+  return events.reduce((next, event) => applyChatEvent(next, event), bubbles);
+}

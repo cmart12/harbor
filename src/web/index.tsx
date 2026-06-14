@@ -8,7 +8,7 @@ import type { ChatEvent } from '../shared/chat-types';
 import { WebRemoteClient } from './lib/client';
 import type { WebRemoteEvent } from '../main/web/event-hub';
 import { agentGlyph, describeApproval, formatDueDate, humanizeToolName, statusLabel, timeAgo } from './lib/format';
-import { applyChatEvent, parseHistory, type Bubble } from './lib/transcript';
+import { applyChatEvent, applyChatEvents, parseHistory, type Bubble } from './lib/transcript';
 
 const TOKEN_KEY = 'whim.webRemoteToken';
 
@@ -123,6 +123,9 @@ function RemoteApp({ token, onLogout }: { token: string; onLogout: () => void })
 
   const openSpace = spaces.find((s) => s.id === openSpaceId) || null;
   const openAgent = agents.find((a) => a.agentId === openAgentId) || null;
+  const openSpaceAgents = openSpace
+    ? agents.filter((a) => a.spaceId === openSpace.id || a.spaceId.startsWith(`__page__${openSpace.id}/`))
+    : [];
 
   return (
     <div className="app">
@@ -167,7 +170,7 @@ function RemoteApp({ token, onLogout }: { token: string; onLogout: () => void })
         <CanvasScreen
           client={client}
           space={openSpace}
-          agents={agents.filter((a) => a.spaceId === openSpace.id)}
+          agents={openSpaceAgents}
           personas={personas}
           onClose={() => setOpenSpaceId(null)}
           onOpenAgent={(id) => setOpenAgentId(id)}
@@ -562,6 +565,10 @@ function HistoryView({ client, spaces, events, onRefresh, onOpenSpace }: {
 
 type CanvasTargetKind = { kind: 'main' } | { kind: 'page'; page: string };
 
+function pageCanvasSpaceId(spaceId: string, pageName: string): string {
+  return `__page__${spaceId}/${encodeURIComponent(pageName)}`;
+}
+
 function CanvasScreen({ client, space, agents, personas, onClose, onOpenAgent, onRefreshAgents }: {
   client: WebRemoteClient;
   space: Space;
@@ -581,57 +588,75 @@ function CanvasScreen({ client, space, agents, personas, onClose, onOpenAgent, o
   const dirty = useRef(false);
   const saveTimer = useRef<number | null>(null);
   const textRef = useRef<HTMLTextAreaElement | null>(null);
+  const contentRef = useRef('');
 
-  const channels = useMemo(() => target.kind === 'main'
-    ? { read: 'canvas:read' as const, write: 'canvas:write' as const, close: 'canvas:close' as const }
-    : { read: 'canvas:read-page' as const, write: 'canvas:write-page' as const, close: null }, [target]);
+  const setEditorContent = useCallback((next: string): void => {
+    contentRef.current = next;
+    setContent(next);
+  }, []);
 
   const load = useCallback(async () => {
     setLoaded(false);
     const result = target.kind === 'main'
       ? await client.invoke('canvas:read', space.id)
       : await client.invoke('canvas:read-page', space.id, target.page);
-    setContent('content' in result ? result.content : '');
+    setEditorContent('content' in result ? result.content : '');
     dirty.current = false;
     setLoaded(true);
-  }, [client, space.id, target]);
+  }, [client, space.id, target, setEditorContent]);
 
   useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => () => {
+    if (saveTimer.current) window.clearTimeout(saveTimer.current);
+  }, []);
 
   // Pick up live canvas edits from agents when not actively editing.
   useEffect(() => {
     function onUpdate(e: Event) {
       const detail = (e as CustomEvent).detail as { spaceId?: string; content?: string };
-      if (target.kind === 'main' && detail?.spaceId === space.id && !dirty.current && typeof detail.content === 'string') {
-        setContent(detail.content);
+      const targetSpaceId = target.kind === 'main' ? space.id : pageCanvasSpaceId(space.id, target.page);
+      if (detail?.spaceId === targetSpaceId && !dirty.current && typeof detail.content === 'string') {
+        setEditorContent(detail.content);
       }
     }
     window.addEventListener('whim:canvas-updated', onUpdate);
     return () => window.removeEventListener('whim:canvas-updated', onUpdate);
-  }, [space.id, target]);
+  }, [space.id, target, setEditorContent]);
 
-  const doSave = useCallback(async () => {
+  const doSave = useCallback(async (nextContent = contentRef.current) => {
     setSaveState('saving');
-    if (target.kind === 'main') await client.invoke('canvas:write', space.id, content);
-    else await client.invoke('canvas:write-page', space.id, target.page, content);
+    if (target.kind === 'main') {
+      const result = await client.invoke('canvas:write', space.id, nextContent);
+      if ('content' in result && typeof result.content === 'string') {
+        setEditorContent(result.content);
+      }
+    } else {
+      await client.invoke('canvas:write-page', space.id, target.page, nextContent);
+    }
     dirty.current = false;
     setSaveState('saved');
     window.setTimeout(() => setSaveState('idle'), 1200);
-  }, [client, space.id, target, content]);
+  }, [client, space.id, target, setEditorContent]);
 
   function onEdit(next: string) {
-    setContent(next);
+    setEditorContent(next);
     dirty.current = true;
     if (saveTimer.current) window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(() => void doSave(), 1500);
   }
 
+  async function switchTarget(nextTarget: CanvasTargetKind): Promise<void> {
+    if (saveTimer.current) window.clearTimeout(saveTimer.current);
+    if (dirty.current) await doSave();
+    setTarget(nextTarget);
+    setEditing(false);
+  }
+
   async function close() {
     if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    if (dirty.current) {
-      if (channels.close) await client.invoke(channels.close, space.id, content);
-      else await client.invoke('canvas:write-page', space.id, (target as { page: string }).page, content);
-    }
+    if (dirty.current) await doSave();
+    if (target.kind === 'main') await client.invoke('canvas:close', space.id, contentRef.current);
     onClose();
   }
 
@@ -678,9 +703,9 @@ function CanvasScreen({ client, space, agents, personas, onClose, onOpenAgent, o
         </div>
         <div className="dock-body">
           {panel === 'workers' && (
-            <CanvasWorkers client={client} space={space} agents={agents} personas={personas} selection={() => readSelection(textRef.current)} onOpenAgent={onOpenAgent} onRefreshAgents={onRefreshAgents} />
+            <CanvasWorkers client={client} space={space} target={target} agents={agents} personas={personas} selection={() => readSelection(textRef.current)} onOpenAgent={onOpenAgent} onRefreshAgents={onRefreshAgents} />
           )}
-          {panel === 'pages' && <CanvasPages client={client} space={space} onOpenPage={(page) => { setTarget({ kind: 'page', page }); setEditing(false); }} active={target.kind === 'page' ? target.page : null} onOpenMain={() => { setTarget({ kind: 'main' }); setEditing(false); }} />}
+          {panel === 'pages' && <CanvasPages client={client} space={space} onOpenPage={(page) => { void switchTarget({ kind: 'page', page }); }} active={target.kind === 'page' ? target.page : null} onOpenMain={() => { void switchTarget({ kind: 'main' }); }} />}
           {panel === 'history' && <CanvasHistory client={client} space={space} onRestored={load} />}
         </div>
       </div>
@@ -695,9 +720,10 @@ function readSelection(el: HTMLTextAreaElement | null): string {
   return value.slice(selectionStart, selectionEnd);
 }
 
-function CanvasWorkers({ client, space, agents, personas, selection, onOpenAgent, onRefreshAgents }: {
+function CanvasWorkers({ client, space, target, agents, personas, selection, onOpenAgent, onRefreshAgents }: {
   client: WebRemoteClient;
   space: Space;
+  target: CanvasTargetKind;
   agents: AgentListAllItem[];
   personas: AgentPersona[];
   selection: () => string;
@@ -717,8 +743,13 @@ function CanvasWorkers({ client, space, agents, personas, selection, onOpenAgent
     try {
       const quoted = selection();
       let result: any;
-      if (persona) {
-        result = await client.invoke('agent:launch-from-comment', space.id, task, quoted, { quote: quoted, prefix: '', suffix: '' }, persona, null);
+      const launchSpaceId = target.kind === 'page' ? pageCanvasSpaceId(space.id, target.page) : space.id;
+      const effectivePersona = persona || (target.kind === 'page' ? personas[0]?.handle ?? '' : '');
+      if (effectivePersona) {
+        result = await client.invoke('agent:launch-from-comment', launchSpaceId, task, quoted, { quote: quoted, prefix: '', suffix: '' }, effectivePersona, null);
+      } else if (target.kind === 'page') {
+        setErr('Choose a persona before deploying an agent on a child page.');
+        return;
       } else {
         result = await client.invoke('agent:launch', space.id, task, { quote: quoted || task, prefix: '', suffix: '' });
       }
@@ -879,20 +910,52 @@ function ChatScreen({ client, agent, registerLive, unregisterLive, onClose, onRe
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const loadingHistory = useRef(false);
+  const pendingEvents = useRef<ChatEvent[]>([]);
 
   useEffect(() => {
     let active = true;
+    loadingHistory.current = true;
+    pendingEvents.current = [];
     setLoading(true);
+    registerLive(agent.agentId, (event) => {
+      if (loadingHistory.current) {
+        pendingEvents.current.push(event);
+        return;
+      }
+      setBubbles((prev) => applyChatEvent(prev, event));
+    });
     (async () => {
       try {
         const result = await client.invoke('agent:get-history', agent.agentId);
-        if (active) setBubbles('events' in result && Array.isArray(result.events) ? parseHistory(result.events) : []);
+        if (active) {
+          const history = 'events' in result && Array.isArray(result.events) ? parseHistory(result.events) : [];
+          setBubbles(() => {
+            const merged = applyChatEvents(history, pendingEvents.current);
+            pendingEvents.current = [];
+            loadingHistory.current = false;
+            return merged;
+          });
+        }
+      } catch {
+        if (active) {
+          setBubbles(() => {
+            const merged = applyChatEvents([], pendingEvents.current);
+            pendingEvents.current = [];
+            loadingHistory.current = false;
+            return merged;
+          });
+        }
       } finally {
-        if (active) setLoading(false);
+        if (active) {
+          setLoading(false);
+        } else {
+          loadingHistory.current = false;
+          pendingEvents.current = [];
+        }
       }
     })();
-    registerLive(agent.agentId, (event) => setBubbles((prev) => applyChatEvent(prev, event)));
-    return () => { active = false; unregisterLive(); };
+    return () => { active = false; loadingHistory.current = false; pendingEvents.current = []; unregisterLive(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client, agent.agentId]);
 

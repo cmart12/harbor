@@ -1,5 +1,6 @@
 import type { IpcCommandChannel } from '../../shared/ipc-contract';
 import type { AgentAnchor, CreateSpaceInput, Space } from '../../shared/types';
+import * as path from 'path';
 import {
   assignSpaceFolder,
   createSpace,
@@ -9,13 +10,14 @@ import {
   listSpaceEvents,
   listSpaces,
   searchSpaces,
-  updateCanvasContent,
 } from '../database';
 import { classifyInput, listAvailableModels, resolveDateWithAI } from '../ai';
 import { getConfigValue, DEFAULT_PERSONAS, type AgentPersona } from '../config';
 import { materializeSpaceCanvas, scheduleAutoCommit } from '../workspace';
 import { processSpaceInBackground } from '../services/space-processing';
 import { notifyAllWindows } from '../notify';
+import { rememberCanvasEditorContent, writeMainCanvasWithMerge } from '../services/canvas-editor-state';
+import { resolveCommentLaunchTarget } from '../services/comment-launch-target';
 
 export const WEB_REMOTE_COMMAND_ALLOWLIST = [
   'space:create',
@@ -169,10 +171,13 @@ const HANDLERS: Record<WebRemoteCommandChannel, Handler> = {
   },
   'models:list': () => listAvailableModels(),
   'canvas:read': async (args) => {
-    const resolved = await resolveCanvasFolder(expectString(args, 0, 'spaceId'));
+    const spaceId = expectString(args, 0, 'spaceId');
+    const resolved = await resolveCanvasFolder(spaceId);
     if ('error' in resolved) return { content: '', error: resolved.error };
     const { readCanvas } = await import('../workspace');
-    return { content: readCanvas(resolved.workspace, resolved.folder) };
+    const content = readCanvas(resolved.workspace, resolved.folder);
+    rememberCanvasEditorContent(spaceId, content);
+    return { content };
   },
   'canvas:has-content': async (args) => {
     const spaceId = expectString(args, 0, 'spaceId');
@@ -189,20 +194,18 @@ const HANDLERS: Record<WebRemoteCommandChannel, Handler> = {
     const content = expectStringAllowEmpty(args, 1, 'content');
     const resolved = await resolveCanvasFolder(spaceId);
     if ('error' in resolved) return { error: resolved.error };
-    const { writeCanvas, scheduleAutoCommit } = await import('../workspace');
-    writeCanvas(resolved.workspace, resolved.folder, content);
-    updateCanvasContent(spaceId, content);
+    const { scheduleAutoCommit } = await import('../workspace');
+    const result = writeMainCanvasWithMerge(resolved.workspace, spaceId, resolved.folder, content);
     scheduleAutoCommit(resolved.workspace);
-    return { success: true };
+    return result;
   },
   'canvas:close': async (args) => {
     const spaceId = expectString(args, 0, 'spaceId');
     const content = expectStringAllowEmpty(args, 1, 'content');
     const resolved = await resolveCanvasFolder(spaceId);
     if ('error' in resolved) return null;
-    const { writeCanvas, scheduleAutoCommit } = await import('../workspace');
-    writeCanvas(resolved.workspace, resolved.folder, content);
-    updateCanvasContent(spaceId, content);
+    const { scheduleAutoCommit } = await import('../workspace');
+    writeMainCanvasWithMerge(resolved.workspace, spaceId, resolved.folder, content);
     scheduleAutoCommit(resolved.workspace);
     return null;
   },
@@ -233,6 +236,7 @@ const HANDLERS: Record<WebRemoteCommandChannel, Handler> = {
     const space = getSpace(spaceId);
     if (!space || !space.folder) return { success: false, error: 'not_found' };
     const { restoreSpaceVersion, readCanvas } = await import('../workspace');
+    const { updateCanvasContent } = await import('../database');
     const result = await restoreSpaceVersion(workspace, space.folder, sha);
     if (result.success) updateCanvasContent(spaceId, readCanvas(workspace, space.folder));
     return result;
@@ -410,20 +414,25 @@ async function launchFromCommentArgs(args: unknown[]): Promise<unknown> {
   const workspace = getConfigValue('workspace');
   if (!workspace || !isInitialized()) return { error: 'no_workspace' };
 
-  const resolved = await resolveCanvasFolder(spaceId);
-  if ('error' in resolved) return { error: resolved.error };
+  const target = resolveCommentLaunchTarget(spaceId, workspace);
+  if ('error' in target) return { error: target.error };
 
   const personas = (getConfigValue('personas') as AgentPersona[]) || [];
   const persona = personas.find((p) => p.handle === personaHandle);
   if (!persona) return { error: 'persona_not_found' };
 
   if (persona.runLocation === 'cca') {
-    const prompt = `${persona.instructions}\n\nDocument: ${resolved.folder}/canvas.md\nComment: "${commentBody}"\nOn text: "${quotedText}"`;
-    return launchCloudAgent(spaceId, prompt, workspace, persona.handle);
+    const documentPath = target.documentPath ? path.relative(workspace, target.documentPath) : `${target.folder}/canvas.md`;
+    const prompt = `${persona.instructions}\n\nDocument: ${documentPath}\nComment: "${commentBody}"\nOn text: "${quotedText}"`;
+    return launchCloudAgent(target.launchSpaceId, prompt, workspace, persona.handle);
   }
 
   const { launchCommentAgent } = await import('../agent-service');
-  return launchCommentAgent(spaceId, commentBody, quotedText, anchor, persona, threadId, workspace, resolved.folder);
+  return launchCommentAgent(target.launchSpaceId, commentBody, quotedText, anchor, persona, threadId, workspace, target.folder, {
+    documentPath: target.documentPath,
+    documentDisplayName: target.documentDisplayName,
+    documentLabel: target.documentLabel,
+  });
 }
 
 /**

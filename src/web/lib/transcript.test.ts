@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyChatEvent, parseHistory, type Bubble } from './transcript';
+import { applyChatEvent, applyChatEvents, parseHistory, type Bubble } from './transcript';
 
 describe('parseHistory', () => {
   it('builds user, assistant and tool bubbles from SDK events', () => {
@@ -50,5 +50,17 @@ describe('applyChatEvent', () => {
   it('appends an error event for session errors', () => {
     const bubbles = applyChatEvent([], { type: 'session.error', message: 'nope' });
     expect(bubbles[0]).toMatchObject({ kind: 'event', level: 'error', text: 'nope' });
+  });
+
+  it('replays buffered events after parsed history', () => {
+    const history = parseHistory([{ type: 'assistant.message', data: { content: 'history' } }]);
+    const bubbles = applyChatEvents(history, [
+      { type: 'assistant.message_delta', delta: ' liv' },
+      { type: 'assistant.message_delta', delta: 'e' },
+      { type: 'assistant.message', content: ' live' },
+    ]);
+
+    expect(bubbles.map((b) => b.kind)).toEqual(['assistant', 'assistant']);
+    expect(bubbles[1]).toMatchObject({ kind: 'assistant', text: ' live', streaming: false });
   });
 });

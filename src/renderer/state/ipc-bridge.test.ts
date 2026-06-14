@@ -96,15 +96,10 @@ function resetStores(): void {
   spaceStore.setCanvasSpace(null);
   spaceStore.setSelectedIndex(-1);
 
-  agentStore.setAgents([]);
-  agentStore.setActiveSessionIntents(new Set());
-  for (const id of agentStore.getState().approvals.keys()) agentStore.clearApproval(id);
-  for (const id of agentStore.getState().presence.keys()) agentStore.clearPresence(id);
-  for (const id of agentStore.getState().yoloMode.keys()) agentStore.setYoloMode(id, false);
-  for (const id of agentStore.getState().remoteState.keys()) agentStore.setRemoteState(id, null);
+  agentStore.reset();
 
   skillStore.setSkills([]);
-  historyStore.setEvents([]);
+  historyStore.reset();
   personaStore.setPersonas([]);
 }
 
@@ -313,13 +308,31 @@ describe('ipc-bridge', () => {
 
     // Seed
     spaceStore.setSpaces([{ id: 's', description: '', body: null, raw_text: null, client: null, due_at: null, due_at_utc: null, recurrence: null, completed_at: null, folder: null, session_id: null, source_skill_id: null, attachments: [], status: 'captured', created_at: '', updated_at: '' }]);
+    agentStore.setAgents([{ agentId: 'a', sessionId: 'sess', status: 'running', summary: '', selectedText: '', quotedText: '', anchor: { quote: '', prefix: '', suffix: '' }, spaceId: 's', createdAt: '', pendingApprovalId: null, pendingPermissionKind: null, pendingIntention: null, pendingPath: null, source: 'sdk', personaHandle: null, yoloMode: false, sandboxed: false, runLocation: 'local' }]);
+    agentStore.setActiveSessionIntents(new Set(['s']));
+    agentStore.setApproval('a', { agentId: 'a', requestId: 'r', permissionKind: 'file_write' });
+    agentStore.setSandboxBlock({ agentId: 'a', requestId: 'sb', source: 'permission', kind: 'write', target: '/tmp/file' });
+    agentStore.addStep('a', { toolCallId: 't', label: 'Editing file', status: 'running' });
+    agentStore.setPresence('a', { agentId: 'a', spaceId: 's', persona: { name: 'Agent', handle: 'agent' } });
+    agentStore.setYoloMode('a', true);
+    agentStore.setRemoteState('a', { enabled: true, url: 'http://remote' });
     skillStore.setSkills([{ id: 'k', name: '', description: '', emoji: '', folder: '', filePath: '', schedule: null, schedule_time: null, schedule_day: null, next_run_at: null, last_run_at: null, created_at: '', updated_at: '' }]);
+    historyStore.setEvents([{ id: 'e', space_id: 's', event_type: 'completed', due_at: null, due_at_utc: null, completed_at: null, recurrence_json: null, created_at: '', space_description: '', space_client: null, session_id: null }]);
     personaStore.setPersonas([{ id: 'p', handle: 'h', instructions: '', model: '', runLocation: 'local' }]);
 
     m.fire.workspaceChanged(null);
 
     expect(spaceStore.getState().spaces).toEqual([]);
+    expect(agentStore.getState().agents).toEqual([]);
+    expect(agentStore.getState().activeSessionSpaces).toEqual(new Set());
+    expect(agentStore.getState().approvals).toEqual(new Map());
+    expect(agentStore.getState().sandboxBlocks).toEqual(new Map());
+    expect(agentStore.getState().steps).toEqual(new Map());
+    expect(agentStore.getState().presence).toEqual(new Map());
+    expect(agentStore.getState().yoloMode).toEqual(new Map());
+    expect(agentStore.getState().remoteState).toEqual(new Map());
     expect(skillStore.getState().skills).toEqual([]);
+    expect(historyStore.getState().events).toEqual([]);
     expect(personaStore.getState().personas).toEqual([]);
   });
 });

@@ -58,8 +58,8 @@ export interface AgentState {
 
 type Listener = () => void;
 
-class AgentStore {
-  private state: AgentState = {
+function createInitialAgentState(): AgentState {
+  return {
     agents: [],
     processingSpaces: new Set(),
     activeSessionSpaces: new Set(),
@@ -70,6 +70,10 @@ class AgentStore {
     yoloMode: new Map(),
     remoteState: new Map(),
   };
+}
+
+class AgentStore {
+  private state: AgentState = createInitialAgentState();
   private listeners: Set<Listener> = new Set();
   /** Monotonic counter for stale-fetch detection (replaces app.ts:renderGeneration). */
   private requestCounter = 0;
@@ -81,6 +85,13 @@ class AgentStore {
 
   setAgents(agents: AgentListAllItem[]): void {
     this.state = { ...this.state, agents };
+    this.notify();
+  }
+
+  reset(): void {
+    this.state = createInitialAgentState();
+    this.requestCounter = 0;
+    this.latestRequestId = 0;
     this.notify();
   }
 

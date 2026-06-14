@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('../database', () => ({
+  assignSpaceFolder: vi.fn(),
   createSpace: vi.fn(),
   deleteAgentSession: vi.fn(),
   getSpace: vi.fn(),
@@ -8,6 +9,7 @@ vi.mock('../database', () => ({
   listSpaceEvents: vi.fn(() => []),
   listSpaces: vi.fn(() => [{ id: 'space-1', description: 'Test space' }]),
   searchSpaces: vi.fn(() => []),
+  updateCanvasContent: vi.fn(),
 }));
 
 vi.mock('../ai', () => ({
@@ -23,11 +25,20 @@ vi.mock('../config', () => ({
 
 vi.mock('../workspace', () => ({
   materializeSpaceCanvas: vi.fn(),
+  readCanvas: vi.fn(() => '# canvas'),
+  resolveSpaceFolder: vi.fn((workspace: string, folder: string) => `${workspace}/${folder}`),
   scheduleAutoCommit: vi.fn(),
+  sanitizePageName: vi.fn((name: string) => name.trim().replace(/\.md$/, '')),
+  writeCanvas: vi.fn(),
+  initSpaceCanvas: vi.fn(() => 'folder'),
 }));
 
 vi.mock('../services/space-processing', () => ({
   processSpaceInBackground: vi.fn(),
+}));
+
+vi.mock('../canvas-watcher', () => ({
+  markSelfWrite: vi.fn(),
 }));
 
 vi.mock('../notify', () => ({

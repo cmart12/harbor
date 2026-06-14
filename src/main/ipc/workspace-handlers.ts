@@ -113,6 +113,19 @@ function openWorkspace(dir: string): void {
   startSyncPolling();
 }
 
+function enterFreshStartWorkspaceState(): void {
+  stopSkillWatcher();
+  stopSyncPolling();
+  closeDatabase();
+  setConfigValue('workspace', null);
+  setActiveProfile(null);
+  destroySettingsWindow();
+  destroyCanvasWindow();
+  for (const w of BrowserWindow.getAllWindows()) {
+    w.webContents.send('workspace:changed', null);
+  }
+}
+
 /** Resolve the renderer-facing profile list (with computed display names). */
 async function buildProfilesState(): Promise<ProfilesState> {
   const profiles = getProfiles();
@@ -237,21 +250,7 @@ export function registerWorkspaceHandlers(): void {
   // Clear workspace — returns app to fresh start state (keeps saved profiles,
   // just deactivates the current one for this session).
   ipcMain.handle('workspace:clear', async () => {
-    stopSkillWatcher();
-    stopSyncPolling();
-    closeDatabase();
-    setConfigValue('workspace', null);
-    setActiveProfile(null);
-
-    // Destroy any pre-warmed settings + canvas windows so their next opens
-    // cold-start (the cached renderers would point at the old DB).
-    destroySettingsWindow();
-    destroyCanvasWindow();
-
-    // Notify all windows to reload into fresh-start state
-    for (const w of BrowserWindow.getAllWindows()) {
-      w.webContents.send('workspace:changed', null);
-    }
+    enterFreshStartWorkspaceState();
     await broadcastProfilesChanged();
 
     return { ok: true };
@@ -316,21 +315,12 @@ export function registerWorkspaceHandlers(): void {
 
     if (wasActive) {
       const remaining = getProfiles();
-      if (remaining.length > 0) {
-        setActiveProfile(remaining[0].id);
-        openWorkspace(remaining[0].path);
+      const fallback = remaining.find(profile => fs.existsSync(profile.path));
+      if (fallback) {
+        setActiveProfile(fallback.id);
+        openWorkspace(fallback.path);
       } else {
-        // No profiles left — fresh-start state.
-        stopSkillWatcher();
-        stopSyncPolling();
-        closeDatabase();
-        setConfigValue('workspace', null);
-        setActiveProfile(null);
-        destroySettingsWindow();
-        destroyCanvasWindow();
-        for (const w of BrowserWindow.getAllWindows()) {
-          w.webContents.send('workspace:changed', null);
-        }
+        enterFreshStartWorkspaceState();
       }
     }
 

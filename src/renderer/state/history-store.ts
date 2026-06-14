@@ -7,10 +7,12 @@ export interface HistoryState {
 
 type Listener = () => void;
 
+function createInitialHistoryState(): HistoryState {
+  return { events: [] };
+}
+
 class HistoryStore {
-  private state: HistoryState = {
-    events: [],
-  };
+  private state: HistoryState = createInitialHistoryState();
   private listeners: Set<Listener> = new Set();
   private requestCounter = 0;
   private latestRequestId = 0;
@@ -21,6 +23,13 @@ class HistoryStore {
 
   setEvents(events: SpaceEvent[]): void {
     this.state = { ...this.state, events };
+    this.notify();
+  }
+
+  reset(): void {
+    this.state = createInitialHistoryState();
+    this.requestCounter = 0;
+    this.latestRequestId = 0;
     this.notify();
   }
 

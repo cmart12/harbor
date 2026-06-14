@@ -104,6 +104,7 @@ describe('workspace handlers', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(fs.existsSync).mockReturnValue(true as any);
   });
 
   describe('workspace:clear', () => {
@@ -336,6 +337,35 @@ describe('workspace handlers', () => {
       const result = await invoke('profiles:remove', 'a');
       expect(result).toEqual({ ok: true });
       expect(setConfigValue).toHaveBeenCalledWith('workspace', null);
+      expect(mockSend).toHaveBeenCalledWith('workspace:changed', null);
+    });
+
+    it('skips missing fallback profile paths when the active profile is removed', async () => {
+      vi.mocked(getActiveProfileId).mockReturnValueOnce('a');
+      vi.mocked(getProfiles).mockReturnValueOnce([
+        { id: 'missing', path: '/gone', name: null, tint: null },
+        { id: 'b', path: '/personal', name: null, tint: null },
+      ] as any);
+      vi.mocked(fs.existsSync).mockImplementation((p) => p === '/personal');
+
+      const result = await invoke('profiles:remove', 'a');
+
+      expect(result).toEqual({ ok: true });
+      expect(setActiveProfile).toHaveBeenCalledWith('b');
+      expect(setConfigValue).toHaveBeenCalledWith('workspace', '/personal');
+      expect(setConfigValue).not.toHaveBeenCalledWith('workspace', '/gone');
+    });
+
+    it('goes to fresh-start when remaining profile paths are missing', async () => {
+      vi.mocked(getActiveProfileId).mockReturnValueOnce('a');
+      vi.mocked(getProfiles).mockReturnValueOnce([{ id: 'missing', path: '/gone', name: null, tint: null }] as any);
+      vi.mocked(fs.existsSync).mockReturnValue(false);
+
+      const result = await invoke('profiles:remove', 'a');
+
+      expect(result).toEqual({ ok: true });
+      expect(setConfigValue).toHaveBeenCalledWith('workspace', null);
+      expect(setActiveProfile).toHaveBeenCalledWith(null);
       expect(mockSend).toHaveBeenCalledWith('workspace:changed', null);
     });
   });
