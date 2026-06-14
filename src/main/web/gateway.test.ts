@@ -44,6 +44,19 @@ describe('web remote gateway', () => {
     expect(isAllowedWebRemoteCommand('shell:openExternal')).toBe(false);
   });
 
+  it('allows canvas, agent-launch and git-sync channels', () => {
+    for (const channel of [
+      'canvas:read', 'canvas:write', 'canvas:close', 'canvas:history',
+      'canvas:restore', 'canvas:list-pages', 'agent:launch', 'agent:list',
+      'workspace:git-status', 'workspace:git-push', 'workspace:git-pull',
+    ]) {
+      expect(isAllowedWebRemoteCommand(channel)).toBe(true);
+    }
+    // Mutating workspace/settings channels remain denied.
+    expect(isAllowedWebRemoteCommand('workspace:clear')).toBe(false);
+    expect(isAllowedWebRemoteCommand('canvas:export')).toBe(false);
+  });
+
   it('rejects denied channels before dispatch', async () => {
     await expect(invokeWebRemoteCommand('settings:set', ['cli_path', '/tmp/evil'])).rejects.toMatchObject({
       code: 'channel_not_allowed',

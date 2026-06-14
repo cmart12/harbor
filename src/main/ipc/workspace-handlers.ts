@@ -13,6 +13,7 @@ import { initDatabase, mergeSessionIds, syncCanvasContent } from '../database';
 import { compactOldSegments } from '../compaction';
 import { startSkillWatcher, stopSkillWatcher } from '../skill-watcher';
 import { destroySettingsWindow, destroyCanvasWindow } from '../window-manager';
+import { mirrorRendererEvent } from '../web/event-hub';
 import type { GitSyncStatus, ProfilesState } from '../../shared/ipc-contract';
 
 // ── Git sync polling ────────────────────────────────────
@@ -24,6 +25,7 @@ function broadcastSyncStatus(status: GitSyncStatus): void {
   for (const w of BrowserWindow.getAllWindows()) {
     w.webContents.send('workspace:git-sync-changed', status);
   }
+  mirrorRendererEvent('workspace:git-sync-changed', status);
 }
 
 async function pollGitSync(): Promise<void> {

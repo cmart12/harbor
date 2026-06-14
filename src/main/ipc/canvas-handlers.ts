@@ -5,6 +5,7 @@ import { initSpaceCanvas, ensureSpaceCanvas, readCanvas, writeCanvas, scheduleAu
 import { parseFrontmatter, serializeFrontmatter } from '../frontmatter';
 import { fetchLinkPreview } from '../services/link-preview';
 import { startWatching, stopWatching, markSelfWrite } from '../canvas-watcher';
+import { mirrorRendererEvent } from '../web/event-hub';
 import { merge3 } from '../../shared/text-merge';
 import { openFileInNewWindow, isWorkspaceMdFile } from '../window-manager';
 import type { SkillFrontmatter } from '../../shared/types';
@@ -131,6 +132,7 @@ export function registerCanvasHandlers(): void {
       for (const win of BrowserWindow.getAllWindows()) {
         win.webContents.send('canvas:content-updated', { spaceId, content: newContent });
       }
+      mirrorRendererEvent('canvas:content-updated', { spaceId, content: newContent });
     });
 
     return { content };

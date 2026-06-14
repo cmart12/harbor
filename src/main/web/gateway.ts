@@ -1,6 +1,7 @@
 import type { IpcCommandChannel } from '../../shared/ipc-contract';
-import type { CreateSpaceInput, Space } from '../../shared/types';
+import type { AgentAnchor, CreateSpaceInput, Space } from '../../shared/types';
 import {
+  assignSpaceFolder,
   createSpace,
   deleteAgentSession,
   getSpace,
@@ -8,6 +9,7 @@ import {
   listSpaceEvents,
   listSpaces,
   searchSpaces,
+  updateCanvasContent,
 } from '../database';
 import { classifyInput, listAvailableModels, resolveDateWithAI } from '../ai';
 import { getConfigValue, DEFAULT_PERSONAS, type AgentPersona } from '../config';
@@ -22,6 +24,9 @@ export const WEB_REMOTE_COMMAND_ALLOWLIST = [
   'space:list',
   'space:search',
   'space:events',
+  'space:update',
+  'space:delete',
+  'space:unarchive',
   'agent:list-all',
   'agent:get-history',
   'agent:abort',
@@ -32,8 +37,25 @@ export const WEB_REMOTE_COMMAND_ALLOWLIST = [
   'agent:respond-elicitation',
   'agent:quick-launch',
   'agent:launch-cloud',
+  'agent:launch',
+  'agent:launch-from-comment',
+  'agent:list',
   'personas:list',
   'models:list',
+  'canvas:read',
+  'canvas:write',
+  'canvas:close',
+  'canvas:has-content',
+  'canvas:history',
+  'canvas:preview-version',
+  'canvas:restore',
+  'canvas:list-pages',
+  'canvas:read-page',
+  'canvas:write-page',
+  'canvas:create-page',
+  'workspace:git-status',
+  'workspace:git-push',
+  'workspace:git-pull',
 ] as const satisfies readonly IpcCommandChannel[];
 
 export type WebRemoteCommandChannel = typeof WEB_REMOTE_COMMAND_ALLOWLIST[number];
@@ -60,6 +82,21 @@ const HANDLERS: Record<WebRemoteCommandChannel, Handler> = {
   'space:list': () => isInitialized() ? listSpaces() : [],
   'space:search': (args) => isInitialized() ? searchSpaces(expectString(args, 0, 'query')) : [],
   'space:events': (args) => listSpaceEvents(expectOptionalNumber(args, 0, 'limit') ?? 100),
+  'space:update': async (args) => {
+    if (!isInitialized()) return null;
+    const { applySpaceUpdate } = await import('../services/space-mutations');
+    return applySpaceUpdate(expectString(args, 0, 'id'), expectRecord(args[1], 'updates'));
+  },
+  'space:delete': async (args) => {
+    if (!isInitialized()) return false;
+    const { deleteSpaceFull } = await import('../services/space-mutations');
+    return deleteSpaceFull(expectString(args, 0, 'id'));
+  },
+  'space:unarchive': async (args) => {
+    if (!isInitialized()) return null;
+    const { unarchiveSpaceFull } = await import('../services/space-mutations');
+    return unarchiveSpaceFull(expectString(args, 0, 'id'));
+  },
   'agent:list-all': async () => {
     const { listAllAgents } = await import('../agent-service');
     return listAllAgents();
@@ -120,11 +157,139 @@ const HANDLERS: Record<WebRemoteCommandChannel, Handler> = {
   },
   'agent:quick-launch': quickLaunchFromArgs,
   'agent:launch-cloud': launchCloudFromArgs,
+  'agent:launch': launchAgentFromArgs,
+  'agent:launch-from-comment': launchFromCommentArgs,
+  'agent:list': async (args) => {
+    const { listAgents } = await import('../agent-service');
+    return listAgents(expectString(args, 0, 'spaceId'));
+  },
   'personas:list': () => {
     const personas = (getConfigValue('personas') || []) as AgentPersona[];
     return personas.length > 0 ? personas : DEFAULT_PERSONAS;
   },
   'models:list': () => listAvailableModels(),
+  'canvas:read': async (args) => {
+    const resolved = await resolveCanvasFolder(expectString(args, 0, 'spaceId'));
+    if ('error' in resolved) return { content: '', error: resolved.error };
+    const { readCanvas } = await import('../workspace');
+    return { content: readCanvas(resolved.workspace, resolved.folder) };
+  },
+  'canvas:has-content': async (args) => {
+    const spaceId = expectString(args, 0, 'spaceId');
+    const workspace = getConfigValue('workspace');
+    if (!workspace || !isInitialized()) return { hasContent: false };
+    const space = getSpace(spaceId);
+    if (!space) return { hasContent: false };
+    if (!space.folder) return { hasContent: !!(space.body && space.body.trim()) };
+    const { readCanvas } = await import('../workspace');
+    return { hasContent: readCanvas(workspace, space.folder).trim().length > 0 };
+  },
+  'canvas:write': async (args) => {
+    const spaceId = expectString(args, 0, 'spaceId');
+    const content = expectStringAllowEmpty(args, 1, 'content');
+    const resolved = await resolveCanvasFolder(spaceId);
+    if ('error' in resolved) return { error: resolved.error };
+    const { writeCanvas, scheduleAutoCommit } = await import('../workspace');
+    writeCanvas(resolved.workspace, resolved.folder, content);
+    updateCanvasContent(spaceId, content);
+    scheduleAutoCommit(resolved.workspace);
+    return { success: true };
+  },
+  'canvas:close': async (args) => {
+    const spaceId = expectString(args, 0, 'spaceId');
+    const content = expectStringAllowEmpty(args, 1, 'content');
+    const resolved = await resolveCanvasFolder(spaceId);
+    if ('error' in resolved) return null;
+    const { writeCanvas, scheduleAutoCommit } = await import('../workspace');
+    writeCanvas(resolved.workspace, resolved.folder, content);
+    updateCanvasContent(spaceId, content);
+    scheduleAutoCommit(resolved.workspace);
+    return null;
+  },
+  'canvas:history': async (args) => {
+    const spaceId = expectString(args, 0, 'spaceId');
+    const workspace = getConfigValue('workspace');
+    if (!workspace || !isInitialized()) return { commits: [], error: 'no_workspace' };
+    const space = getSpace(spaceId);
+    if (!space || !space.folder) return { commits: [], error: 'not_found' };
+    const { getSpaceHistory } = await import('../workspace');
+    return { commits: await getSpaceHistory(workspace, space.folder) };
+  },
+  'canvas:preview-version': async (args) => {
+    const spaceId = expectString(args, 0, 'spaceId');
+    const sha = expectString(args, 1, 'sha');
+    const workspace = getConfigValue('workspace');
+    if (!workspace || !isInitialized()) return { content: '', error: 'no_workspace' };
+    const space = getSpace(spaceId);
+    if (!space || !space.folder) return { content: '', error: 'not_found' };
+    const { getSpaceVersionContent } = await import('../workspace');
+    return getSpaceVersionContent(workspace, space.folder, sha);
+  },
+  'canvas:restore': async (args) => {
+    const spaceId = expectString(args, 0, 'spaceId');
+    const sha = expectString(args, 1, 'sha');
+    const workspace = getConfigValue('workspace');
+    if (!workspace || !isInitialized()) return { success: false, error: 'no_workspace' };
+    const space = getSpace(spaceId);
+    if (!space || !space.folder) return { success: false, error: 'not_found' };
+    const { restoreSpaceVersion, readCanvas } = await import('../workspace');
+    const result = await restoreSpaceVersion(workspace, space.folder, sha);
+    if (result.success) updateCanvasContent(spaceId, readCanvas(workspace, space.folder));
+    return result;
+  },
+  'canvas:list-pages': async (args) => {
+    const resolved = await resolveCanvasFolder(expectString(args, 0, 'spaceId'));
+    if ('error' in resolved) return { pages: [], error: resolved.error };
+    const { listPages } = await import('../workspace');
+    return { pages: listPages(resolved.workspace, resolved.folder) };
+  },
+  'canvas:read-page': async (args) => {
+    const resolved = await resolveCanvasFolder(expectString(args, 0, 'spaceId'));
+    if ('error' in resolved) return { content: '', error: resolved.error };
+    const { readPage } = await import('../workspace');
+    const result = readPage(resolved.workspace, resolved.folder, expectString(args, 1, 'pageName'));
+    return 'error' in result ? { content: '', error: result.error } : { content: result.content };
+  },
+  'canvas:write-page': async (args) => {
+    const resolved = await resolveCanvasFolder(expectString(args, 0, 'spaceId'));
+    if ('error' in resolved) return { error: resolved.error };
+    const { writePage, scheduleAutoCommit } = await import('../workspace');
+    const result = writePage(resolved.workspace, resolved.folder, expectString(args, 1, 'pageName'), expectStringAllowEmpty(args, 2, 'content'));
+    if ('error' in result) return { error: result.error };
+    scheduleAutoCommit(resolved.workspace);
+    return { success: true };
+  },
+  'canvas:create-page': async (args) => {
+    const resolved = await resolveCanvasFolder(expectString(args, 0, 'spaceId'));
+    if ('error' in resolved) return { success: false, page: '', error: resolved.error };
+    const { createPage, scheduleAutoCommit } = await import('../workspace');
+    const result = createPage(resolved.workspace, resolved.folder, expectString(args, 1, 'pageName'));
+    if ('error' in result) return { success: false, page: '', error: result.error };
+    scheduleAutoCommit(resolved.workspace);
+    return { success: true, page: result.page };
+  },
+  'workspace:git-status': async () => {
+    const workspace = getConfigValue('workspace');
+    if (!workspace) return { available: false, unavailableReason: 'not-a-repo', branch: null, ahead: 0, behind: 0 };
+    const { getGitSyncStatus } = await import('../workspace');
+    return getGitSyncStatus(workspace);
+  },
+  'workspace:git-push': async () => {
+    const workspace = getConfigValue('workspace');
+    if (!workspace) return { error: 'no_workspace' };
+    const { gitPush, getGitSyncStatus } = await import('../workspace');
+    const result = await gitPush(workspace);
+    void getGitSyncStatus(workspace).then((status) => notifyAllWindows('workspace:git-sync-changed', status)).catch(() => {});
+    return result;
+  },
+  'workspace:git-pull': async () => {
+    const workspace = getConfigValue('workspace');
+    if (!workspace) return { error: 'no_workspace' };
+    const { gitPull, getGitSyncStatus } = await import('../workspace');
+    const result = await gitPull(workspace);
+    void getGitSyncStatus(workspace).then((status) => notifyAllWindows('workspace:git-sync-changed', status)).catch(() => {});
+    return result;
+  },
 };
 
 export function isAllowedWebRemoteCommand(channel: string): channel is WebRemoteCommandChannel {
@@ -208,6 +373,81 @@ async function launchCloudFromArgs(args: unknown[]): Promise<unknown> {
   return launchCloudAgent(spaceId, prompt, workspace, null);
 }
 
+async function launchAgentFromArgs(args: unknown[]): Promise<unknown> {
+  const spaceId = expectString(args, 0, 'spaceId');
+  const selectedText = expectString(args, 1, 'selectedText');
+  const anchor = expectAnchor(args[2], selectedText);
+  const options = expectOptionalRecord(args[3]) as { repo?: string; model?: string } | undefined;
+  const workspace = getConfigValue('workspace');
+  if (!workspace || !isInitialized()) return { error: 'no_workspace' };
+  const space = getSpace(spaceId);
+  if (!space) return { error: 'space_not_found' };
+
+  let folder = space.folder;
+  if (!folder) {
+    const { initSpaceCanvas } = await import('../workspace');
+    folder = initSpaceCanvas(workspace, spaceId, space.description, space.body);
+    assignSpaceFolder(spaceId, folder);
+  }
+
+  const { launchAgent } = await import('../agent-service');
+  return launchAgent(spaceId, selectedText, anchor, workspace, folder, options);
+}
+
+/**
+ * Persona-aware canvas agent launch — mirrors the desktop `agent:launch-from-comment`
+ * handler. Routes `cca` personas to the cloud, everything else to a local comment
+ * agent bound to the canvas document.
+ */
+async function launchFromCommentArgs(args: unknown[]): Promise<unknown> {
+  const spaceId = expectString(args, 0, 'spaceId');
+  const commentBody = expectString(args, 1, 'commentBody');
+  const quotedText = expectStringAllowEmpty(args, 2, 'quotedText');
+  const anchor = expectAnchor(args[3], quotedText || commentBody);
+  const personaHandle = expectString(args, 4, 'personaHandle');
+  const threadId = typeof args[5] === 'string' ? args[5] : null;
+
+  const workspace = getConfigValue('workspace');
+  if (!workspace || !isInitialized()) return { error: 'no_workspace' };
+
+  const resolved = await resolveCanvasFolder(spaceId);
+  if ('error' in resolved) return { error: resolved.error };
+
+  const personas = (getConfigValue('personas') as AgentPersona[]) || [];
+  const persona = personas.find((p) => p.handle === personaHandle);
+  if (!persona) return { error: 'persona_not_found' };
+
+  if (persona.runLocation === 'cca') {
+    const prompt = `${persona.instructions}\n\nDocument: ${resolved.folder}/canvas.md\nComment: "${commentBody}"\nOn text: "${quotedText}"`;
+    return launchCloudAgent(spaceId, prompt, workspace, persona.handle);
+  }
+
+  const { launchCommentAgent } = await import('../agent-service');
+  return launchCommentAgent(spaceId, commentBody, quotedText, anchor, persona, threadId, workspace, resolved.folder);
+}
+
+/**
+ * Resolve the on-disk canvas folder for a space, materializing it if a folder
+ * name was recorded at creation but the folder/canvas isn't on disk yet. Mirrors
+ * the desktop canvas IPC handlers so web edits land in the same place.
+ */
+async function resolveCanvasFolder(spaceId: string): Promise<{ workspace: string; folder: string } | { error: string }> {
+  const workspace = getConfigValue('workspace');
+  if (!workspace || !isInitialized()) return { error: 'no_workspace' };
+  const space = getSpace(spaceId);
+  if (!space) return { error: 'space_not_found' };
+
+  const { initSpaceCanvas, ensureSpaceCanvas } = await import('../workspace');
+  let folder = space.folder;
+  if (!folder) {
+    folder = initSpaceCanvas(workspace, spaceId, space.description, space.body);
+    assignSpaceFolder(spaceId, folder);
+  } else {
+    ensureSpaceCanvas(workspace, folder, space.body);
+  }
+  return { workspace, folder };
+}
+
 async function launchCcaQuickAgent(prompt: string, workspace: string, persona: AgentPersona): Promise<unknown> {
   const fullPrompt = `${persona.instructions}\n\n${prompt}`;
   return launchCloudAgent(null, fullPrompt, workspace, persona.handle);
@@ -273,6 +513,24 @@ function expectString(args: unknown[], index: number, name: string): string {
     throw invalidArg(`${name} must be a non-empty string`);
   }
   return value;
+}
+
+function expectStringAllowEmpty(args: unknown[], index: number, name: string): string {
+  const value = args[index];
+  if (typeof value !== 'string') throw invalidArg(`${name} must be a string`);
+  return value;
+}
+
+function expectAnchor(value: unknown, fallbackQuote: string): AgentAnchor {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const record = value as Record<string, unknown>;
+    return {
+      quote: typeof record.quote === 'string' ? record.quote : fallbackQuote,
+      prefix: typeof record.prefix === 'string' ? record.prefix : '',
+      suffix: typeof record.suffix === 'string' ? record.suffix : '',
+    };
+  }
+  return { quote: fallbackQuote, prefix: '', suffix: '' };
 }
 
 function expectOptionalString(args: unknown[], index: number, name: string): string | undefined {

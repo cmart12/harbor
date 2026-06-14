@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import { execFile } from 'child_process';
 import { BrowserWindow } from 'electron';
 import type { GitSyncStatus } from '../shared/ipc-contract';
+import { mirrorRendererEvent } from './web/event-hub';
 import { getLogRoot as getLogRootForWhim, migrateLegacyEventLog } from './log-store';
 
 const WHIM_DIR = '.whim';
@@ -422,6 +423,7 @@ async function doCommit(workspaceRoot: string): Promise<void> {
       for (const win of BrowserWindow.getAllWindows()) {
         win.webContents.send('workspace:committed');
       }
+      mirrorRendererEvent('workspace:committed');
     } catch (err: any) {
       // Silently skip if not a git repo or git not available
       if (err?.message?.includes('not a git repository') || err?.code === 'ENOENT') {
@@ -542,6 +544,7 @@ export async function gitPull(workspaceRoot: string): Promise<{ ok: true } | { e
       for (const win of BrowserWindow.getAllWindows()) {
         win.webContents.send('workspace:committed');
       }
+      mirrorRendererEvent('workspace:committed');
       return { ok: true as const };
     } catch (err: any) {
       const msg = err?.message || 'Pull failed';

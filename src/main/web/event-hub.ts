@@ -11,10 +11,21 @@ const ALLOWED_EVENT_CHANNELS = new Set([
   'agent:status-changed',
   'agent:completed',
   'agent:approval-needed',
+  'agent:approval-resolved',
+  'agent:user-input-requested',
+  'agent:user-input-resolved',
+  'agent:elicitation-requested',
+  'agent:elicitation-resolved',
   'agent:sandbox-blocked',
   'agent:sandbox-resolved',
+  'agent:presence-started',
+  'agent:presence-ended',
+  'agent:reply-ready',
   'space:processed',
   'space:recurrence-applied',
+  'canvas:content-updated',
+  'workspace:committed',
+  'workspace:git-sync-changed',
 ]);
 
 const hub = new EventEmitter();

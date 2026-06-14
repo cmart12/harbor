@@ -28,6 +28,26 @@ describe('web remote event hub', () => {
     }));
   });
 
+  it('mirrors canvas + git sync events for live updates', () => {
+    const callback = vi.fn();
+    const unsubscribe = subscribeWebRemoteEvents(callback);
+
+    mirrorRendererEvent('canvas:content-updated', { spaceId: 'space-1', content: '# hi' });
+    mirrorRendererEvent('workspace:git-sync-changed', { available: true, branch: 'main', ahead: 1, behind: 0 });
+    mirrorRendererEvent('workspace:committed');
+    unsubscribe();
+
+    expect(callback).toHaveBeenCalledWith(expect.objectContaining({
+      channel: 'canvas:content-updated',
+      payload: { spaceId: 'space-1', content: '# hi' },
+    }));
+    expect(callback).toHaveBeenCalledWith(expect.objectContaining({
+      channel: 'workspace:git-sync-changed',
+      payload: { available: true, branch: 'main', ahead: 1, behind: 0 },
+    }));
+    expect(callback).toHaveBeenCalledWith(expect.objectContaining({ channel: 'workspace:committed' }));
+  });
+
   it('does not emit disallowed renderer events', () => {
     const callback = vi.fn();
     const unsubscribe = subscribeWebRemoteEvents(callback);
