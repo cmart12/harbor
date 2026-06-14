@@ -160,6 +160,8 @@ interface WhimAPI {
   resolveCliPath(): Promise<string | null>;
   checkCliVersion(): Promise<{ path: string | null; version: string | null; compatible: boolean; minVersion: string }>;
   checkCliMxcCapable(): Promise<{ mxcCapable: boolean }>;
+  getCliRuntimeStatus(): Promise<{ source: string; target: string | null; version: string | null; compatible: boolean; minVersion: string }>;
+  testCliConnection(): Promise<{ ok: boolean; source: string; target: string | null; version: string | null; compatible: boolean; minVersion: string; error?: string }>;
   listModels(): Promise<{ id: string; name?: string }[]>;
   listPersonas(): Promise<AgentPersona[]>;
   savePersonas(personas: AgentPersona[]): Promise<{ ok?: boolean; error?: string }>;
@@ -4389,6 +4391,7 @@ const cliPathDetected = document.getElementById('cli-path-detected') as HTMLSpan
 
 async function loadCliPathSetting(): Promise<void> {
   await loadCliPathInputSync();
+  await loadRuntimeSourceSettings();
   await runCliPathChecks();
 }
 
@@ -4418,37 +4421,44 @@ async function loadCliPathInputSync(): Promise<void> {
  * General tab is interactive immediately.
  */
 async function runCliPathChecks(): Promise<void> {
-  const info = await whimAPI.checkCliVersion();
-
-  if (!info.path) {
-    cliPathDetected.textContent = 'Not found';
-    cliPathDetected.title = '';
-  } else if (!info.compatible) {
-    cliPathDetected.textContent = `${info.path} (v${info.version || '?'} — update to ${info.minVersion}+)`;
-    cliPathDetected.title = info.path;
-    cliPathDetected.style.color = 'var(--color-warning, #d29922)';
-  } else {
-    cliPathDetected.textContent = `${info.path} (v${info.version})`;
-    cliPathDetected.title = info.path;
-    cliPathDetected.style.color = '';
-  }
+  await updateCliPathDetected();
   await updateCliMxcIndicator();
 }
 
+function cliSourceLabel(source: string): string {
+  switch (source) {
+    case 'bundled': return 'Bundled';
+    case 'auto': return 'Auto-detected';
+    case 'path': return 'Custom path';
+    case 'server': return 'Remote server';
+    default: return source;
+  }
+}
+
 async function updateCliPathDetected(): Promise<void> {
-  const info = await whimAPI.checkCliVersion();
-  if (!info.path) {
+  const info = await whimAPI.getCliRuntimeStatus();
+  cliPathDetected.style.color = '';
+
+  if (info.source === 'server') {
+    cliPathDetected.textContent = info.target ? `Remote server — ${info.target}` : 'Remote server (no URL set)';
+    cliPathDetected.title = info.target || '';
+    if (!info.target) cliPathDetected.style.color = 'var(--color-warning, #d29922)';
+    return;
+  }
+
+  if (!info.target) {
     cliPathDetected.textContent = 'Not found';
     cliPathDetected.title = '';
-    cliPathDetected.style.color = '';
-  } else if (!info.compatible) {
-    cliPathDetected.textContent = `${info.path} (v${info.version || '?'} — update to ${info.minVersion}+)`;
-    cliPathDetected.title = info.path;
+    return;
+  }
+
+  cliPathDetected.title = info.target;
+  if (!info.compatible) {
+    cliPathDetected.textContent = `${cliSourceLabel(info.source)} (v${info.version || '?'} — update to ${info.minVersion}+) — ${info.target}`;
     cliPathDetected.style.color = 'var(--color-warning, #d29922)';
   } else {
-    cliPathDetected.textContent = `${info.path} (v${info.version})`;
-    cliPathDetected.title = info.path;
-    cliPathDetected.style.color = '';
+    const v = info.version ? ` (v${info.version})` : '';
+    cliPathDetected.textContent = `${cliSourceLabel(info.source)}${v} — ${info.target}`;
   }
 }
 
@@ -4474,6 +4484,78 @@ cliPathClear.addEventListener('click', async () => {
   cliPathClear.classList.add('hidden');
   await updateCliPathDetected();
   await updateCliMxcIndicator();
+});
+
+// ── Runtime source selector ─────────────────────────────
+const cliSourceSelect = document.getElementById('cli-source-select') as HTMLSelectElement | null;
+const cliPathField = document.getElementById('cli-path-field') as HTMLElement | null;
+const cliServerFields = document.getElementById('cli-server-fields') as HTMLElement | null;
+const cliServerUrlInput = document.getElementById('cli-server-url-input') as HTMLInputElement | null;
+const cliServerTokenInput = document.getElementById('cli-server-token-input') as HTMLInputElement | null;
+const cliTestBtn = document.getElementById('cli-test-btn') as HTMLButtonElement | null;
+const cliRuntimeStatus = document.getElementById('cli-runtime-status') as HTMLSpanElement | null;
+
+function applyCliSourceVisibility(source: string): void {
+  if (cliPathField) cliPathField.hidden = source !== 'path';
+  if (cliServerFields) cliServerFields.hidden = source !== 'server';
+}
+
+async function loadRuntimeSourceSettings(): Promise<void> {
+  if (!cliSourceSelect) return;
+  const source = (await whimAPI.getSetting('cli_source')) || 'bundled';
+  cliSourceSelect.value = source;
+  if (cliServerUrlInput) cliServerUrlInput.value = (await whimAPI.getSetting('cli_server_url')) || '';
+  if (cliServerTokenInput) cliServerTokenInput.value = (await whimAPI.getSetting('cli_server_token')) || '';
+  applyCliSourceVisibility(source);
+}
+
+cliSourceSelect?.addEventListener('change', async () => {
+  const source = cliSourceSelect.value;
+  applyCliSourceVisibility(source);
+  if (cliRuntimeStatus) cliRuntimeStatus.textContent = '—';
+  await whimAPI.setSetting('cli_source', source);
+  await updateCliPathDetected();
+  await updateCliMxcIndicator();
+});
+
+let cliServerUrlDebounce: ReturnType<typeof setTimeout> | null = null;
+cliServerUrlInput?.addEventListener('input', () => {
+  if (cliServerUrlDebounce) clearTimeout(cliServerUrlDebounce);
+  cliServerUrlDebounce = setTimeout(async () => {
+    await whimAPI.setSetting('cli_server_url', cliServerUrlInput.value.trim());
+    await updateCliPathDetected();
+  }, 500);
+});
+
+let cliServerTokenDebounce: ReturnType<typeof setTimeout> | null = null;
+cliServerTokenInput?.addEventListener('input', () => {
+  if (cliServerTokenDebounce) clearTimeout(cliServerTokenDebounce);
+  cliServerTokenDebounce = setTimeout(async () => {
+    await whimAPI.setSetting('cli_server_token', cliServerTokenInput.value);
+  }, 500);
+});
+
+cliTestBtn?.addEventListener('click', async () => {
+  if (!cliRuntimeStatus) return;
+  cliTestBtn.disabled = true;
+  cliRuntimeStatus.textContent = 'Testing…';
+  cliRuntimeStatus.style.color = '';
+  try {
+    const res = await whimAPI.testCliConnection();
+    if (res.ok) {
+      const v = res.version ? ` v${res.version}` : '';
+      cliRuntimeStatus.textContent = `✓ Connected — ${cliSourceLabel(res.source)}${v}`;
+      cliRuntimeStatus.style.color = 'var(--color-success, #3fb950)';
+    } else {
+      cliRuntimeStatus.textContent = `✗ ${res.error || 'Connection failed'}`;
+      cliRuntimeStatus.style.color = 'var(--color-danger, #f85149)';
+    }
+  } catch {
+    cliRuntimeStatus.textContent = '✗ Connection failed';
+    cliRuntimeStatus.style.color = 'var(--color-danger, #f85149)';
+  } finally {
+    cliTestBtn.disabled = false;
+  }
 });
 
 // ── MXC capability indicator ────────────────────────────
@@ -7780,16 +7862,20 @@ async function checkWelcomeCli(): Promise<boolean> {
   }
 }
 
-// Save CLI path override from welcome screen input (save only, no re-check)
+// Save CLI path override from welcome screen input (save only, no re-check).
+// A non-empty path opts into the 'path' source; empty falls back to the
+// bundled CLI (the default that works without a local install).
 welcomeCliPath.addEventListener('change', async () => {
   const val = welcomeCliPath.value.trim();
   await whimAPI.setSetting('cli_path', val);
+  await whimAPI.setSetting('cli_source', val ? 'path' : 'bundled');
 });
 
 // Refresh button re-checks CLI after user upgrades or changes path
 welcomeCliRefresh.addEventListener('click', async () => {
   const val = welcomeCliPath.value.trim();
   await whimAPI.setSetting('cli_path', val);
+  await whimAPI.setSetting('cli_source', val ? 'path' : 'bundled');
   const cliOk = await checkWelcomeCli();
   // Reload models since CLI may have changed
   welcomeModelSelect.innerHTML = '<option value="">Loading models…</option>';

@@ -3241,6 +3241,46 @@ body.dark .skill-action:hover {
   font-size: var(--fs-caption);
 }
 
+.cli-source-select {
+  flex: 1;
+  font-size: var(--fs-label);
+  color: rgba(0, 0, 0, 0.9);
+  background: rgba(0, 0, 0, 0.03);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: var(--btn-radius);
+  padding: 4px 8px;
+  min-width: 0;
+}
+
+.cli-source-field[hidden] {
+  display: none;
+}
+
+.cli-runtime-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cli-runtime-status {
+  font-family: 'SF Mono', 'Menlo', monospace;
+  font-size: var(--fs-caption);
+  color: rgba(0, 0, 0, 0.6);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+body.dark .cli-source-select {
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+body.dark .cli-runtime-status {
+  color: rgba(255, 255, 255, 0.5);
+}
+
 /* ── Agent Personas ──────────────────────────────────────── */
 
 .personas-list {
