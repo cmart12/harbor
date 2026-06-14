@@ -67,6 +67,33 @@ describe('config', () => {
       expect(config.personas).toEqual([]);
     });
 
+    it('defaults cliSource to bundled for a fresh install', () => {
+      const config = loadConfig();
+      expect(config.cliSource).toBe('bundled');
+      expect(config.cliServerUrl).toBeNull();
+      expect(config.cliServerToken).toBeNull();
+    });
+
+    it("migrates an existing explicit cliPath to cliSource='path'", () => {
+      fs.writeFileSync(CONFIG_PATH, JSON.stringify({ cliPath: '/usr/local/bin/copilot' }));
+      const config = loadConfig();
+      expect(config.cliSource).toBe('path');
+      expect(config.cliPath).toBe('/usr/local/bin/copilot');
+    });
+
+    it("migrates an existing auto-detect (null cliPath) install to cliSource='bundled'", () => {
+      fs.writeFileSync(CONFIG_PATH, JSON.stringify({ cliPath: null, theme: 'dark' }));
+      const config = loadConfig();
+      expect(config.cliSource).toBe('bundled');
+    });
+
+    it('preserves an explicitly configured cliSource', () => {
+      fs.writeFileSync(CONFIG_PATH, JSON.stringify({ cliSource: 'server', cliServerUrl: 'localhost:9001' }));
+      const config = loadConfig();
+      expect(config.cliSource).toBe('server');
+      expect(config.cliServerUrl).toBe('localhost:9001');
+    });
+
     it('handles malformed JSON gracefully', () => {
       fs.writeFileSync(CONFIG_PATH, 'not json');
       const config = loadConfig();

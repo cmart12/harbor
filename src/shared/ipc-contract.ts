@@ -301,6 +301,28 @@ export interface IpcCommands {
   'cli:resolve-path': { args: []; result: string | null };
   'cli:check-version': { args: []; result: { path: string | null; version: string | null; compatible: boolean; minVersion: string } };
   'cli:check-mxc-capable': { args: []; result: { mxcCapable: boolean } };
+  'cli:runtime-status': {
+    args: [];
+    result: {
+      source: 'bundled' | 'auto' | 'path' | 'server';
+      target: string | null;
+      version: string | null;
+      compatible: boolean;
+      minVersion: string;
+    };
+  };
+  'cli:test-connection': {
+    args: [];
+    result: {
+      ok: boolean;
+      source: 'bundled' | 'auto' | 'path' | 'server';
+      target: string | null;
+      version: string | null;
+      compatible: boolean;
+      minVersion: string;
+      error?: string;
+    };
+  };
   'models:list': { args: []; result: Array<{ id: string; name: string }> };
 
   // ── Personas ─────────────────────────────────────────────

@@ -6,6 +6,9 @@ import {
   resolveBundledCliPath,
   resolveAutoDetectedCliPath,
   resolveConfiguredCliPath,
+  probeCliVersion,
+  compareVersions,
+  MIN_CLI_VERSION,
 } from './session';
 import { getCliShimPath } from './cli-electron-shim';
 import { RecurrenceResult, RecallMatch, Space } from '../shared/types';
@@ -304,6 +307,86 @@ export function resolveRuntimeConnection(): ResolvedRuntime {
 
   console.warn('[copilot-sdk] Bundled CLI not found; using the SDK default runtime resolution');
   return { connection: undefined, kind: 'bundled', target: null };
+}
+
+export interface RuntimeStatus {
+  source: CliSource;
+  target: string | null;
+  version: string | null;
+  compatible: boolean;
+  minVersion: string;
+}
+
+function isVersionCompatible(version: string | null): boolean {
+  // '0.0.1' is the dev/source build and is always treated as compatible.
+  return version != null && (version === '0.0.1' || compareVersions(version, MIN_CLI_VERSION) >= 0);
+}
+
+/**
+ * Report the effective runtime: its source, target (path or URL), version, and
+ * whether it meets the minimum. For local sources the version is probed from
+ * disk; for a remote server the version is unknown here (use
+ * {@link testRuntimeConnection} for a live handshake), so `compatible` reflects
+ * only that a URL is configured.
+ */
+export function getRuntimeStatus(): RuntimeStatus {
+  const runtime = resolveRuntimeConnection();
+  let version: string | null = null;
+  if (runtime.kind !== 'server' && runtime.target) {
+    version = probeCliVersion(runtime.target);
+  }
+  const compatible = runtime.kind === 'server' ? runtime.target != null : isVersionCompatible(version);
+  return { source: runtime.kind, target: runtime.target, version, compatible, minVersion: MIN_CLI_VERSION };
+}
+
+export interface RuntimeTestResult extends RuntimeStatus {
+  ok: boolean;
+  error?: string;
+}
+
+/**
+ * Live-test the configured runtime by spawning a throwaway client, connecting,
+ * and performing a real handshake (`listModels`). Confirms not just that a CLI
+ * exists but that the connection actually works end-to-end. Bounded by a
+ * timeout so the UI never hangs on a misconfigured runtime.
+ */
+export async function testRuntimeConnection(timeoutMs = 25_000): Promise<RuntimeTestResult> {
+  const status = getRuntimeStatus();
+  const runtime = resolveRuntimeConnection();
+  const cliEnv = { ...process.env, ELECTRON_RUN_AS_NODE: '1' };
+  const opts: Record<string, unknown> = {
+    ...(runtime.connection ? { connection: runtime.connection } : {}),
+    env: cliEnv,
+  };
+
+  let testClient: CopilotClient | null = null;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  try {
+    testClient = new CopilotClient(opts as any);
+    const client = testClient;
+    const handshake = (async () => {
+      await client.start();
+      // Listing models proves the runtime responds over the connection.
+      await client.listModels();
+    })();
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`Connection test timed out after ${timeoutMs}ms`)), timeoutMs);
+    });
+    await Promise.race([handshake, timeout]);
+    return { ...status, ok: true, compatible: runtime.kind === 'server' ? true : status.compatible };
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    return { ...status, ok: false, error };
+  } finally {
+    if (timer) clearTimeout(timer);
+    if (testClient) {
+      try {
+        await testClient.stop();
+      } catch {
+        // best-effort teardown
+      }
+    }
+  }
 }
 
 export async function initCopilot(): Promise<void> {

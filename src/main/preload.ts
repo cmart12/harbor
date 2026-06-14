@@ -63,6 +63,8 @@ export interface WhimAPI {
   resolveCliPath(): Promise<IpcCommandResult<'cli:resolve-path'>>;
   checkCliVersion(): Promise<IpcCommandResult<'cli:check-version'>>;
   checkCliMxcCapable(): Promise<IpcCommandResult<'cli:check-mxc-capable'>>;
+  getCliRuntimeStatus(): Promise<IpcCommandResult<'cli:runtime-status'>>;
+  testCliConnection(): Promise<IpcCommandResult<'cli:test-connection'>>;
   listModels(): Promise<IpcCommandResult<'models:list'>>;
 
   // ── Personas ─────────────────────────────────────────────
@@ -315,6 +317,8 @@ const api: WhimAPI = {
   resolveCliPath: () => ipcRenderer.invoke('cli:resolve-path'),
   checkCliVersion: () => ipcRenderer.invoke('cli:check-version'),
   checkCliMxcCapable: () => ipcRenderer.invoke('cli:check-mxc-capable'),
+  getCliRuntimeStatus: () => ipcRenderer.invoke('cli:runtime-status'),
+  testCliConnection: () => ipcRenderer.invoke('cli:test-connection'),
   listModels: () => ipcRenderer.invoke('models:list'),
 
   // ── Personas ─────────────────────────────────────────────

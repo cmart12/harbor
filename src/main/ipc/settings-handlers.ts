@@ -1,9 +1,9 @@
 import { ipcMain, globalShortcut } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
-import { setAIModel, listAvailableModels, reinitCopilot, previewSandboxConfig } from '../ai';
+import { setAIModel, listAvailableModels, reinitCopilot, previewSandboxConfig, getRuntimeStatus, testRuntimeConnection } from '../ai';
 import { resolveCopilotCliPath, invalidateCliPath, checkCliCompatibility, resolveCommandOnPath, resolveCmdToJs, isCliMxcCapable } from '../session';
-import { getConfigValue, setConfigValue, getConfig, getResolvedHotkeys, DEFAULT_PERSONAS, DEFAULT_HOTKEYS, HOTKEY_LABELS, rotateWebRemoteToken, normalizeWebRemotePort, normalizeWebRemoteBindAddresses, listWebRemoteInterfaces, type AgentPersona, type CliRuntime, type HotkeyConfig } from '../config';
+import { getConfigValue, setConfigValue, getConfig, getResolvedHotkeys, DEFAULT_PERSONAS, DEFAULT_HOTKEYS, HOTKEY_LABELS, rotateWebRemoteToken, normalizeWebRemotePort, normalizeWebRemoteBindAddresses, listWebRemoteInterfaces, type AgentPersona, type CliRuntime, type CliSource, type HotkeyConfig } from '../config';
 import { listDiscoveredMcpServers } from '../mcp';
 import { validateMcpServers, validateCliTools, validateSandboxPolicy } from '../validators';
 import { onAutoHideSidePaneChanged } from '../window-manager';
@@ -19,6 +19,9 @@ export function registerSettingsHandlers(): void {
       theme: 'theme',
       model: 'model',
       cli_path: 'cliPath',
+      cli_source: 'cliSource',
+      cli_server_url: 'cliServerUrl',
+      cli_server_token: 'cliServerToken',
       auto_hide_side_pane: 'autoHideSidePane',
       auto_download_updates: 'autoDownloadUpdates',
       remoteAutoEnable: 'remoteAutoEnable',
@@ -47,6 +50,21 @@ export function registerSettingsHandlers(): void {
       // Reinitialize the SDK so it picks up the new CLI
       await reinitCopilot();
       return resolved;
+    } else if (key === 'cli_source') {
+      const allowed: CliSource[] = ['bundled', 'auto', 'path', 'server'];
+      const next = (allowed as string[]).includes(value) ? (value as CliSource) : 'bundled';
+      setConfigValue('cliSource', next);
+      invalidateCliPath();
+      await reinitCopilot();
+      return next;
+    } else if (key === 'cli_server_url') {
+      const url = (value || '').trim() || null;
+      setConfigValue('cliServerUrl', url);
+      await reinitCopilot();
+      return url;
+    } else if (key === 'cli_server_token') {
+      setConfigValue('cliServerToken', (value || '').trim() || null);
+      await reinitCopilot();
     } else if (key === 'auto_hide_side_pane') {
       const enabled = value === 'true';
       setConfigValue('autoHideSidePane', enabled);
@@ -117,6 +135,14 @@ export function registerSettingsHandlers(): void {
 
   ipcMain.handle('cli:check-mxc-capable', () => {
     return { mxcCapable: isCliMxcCapable() };
+  });
+
+  ipcMain.handle('cli:runtime-status', () => {
+    return getRuntimeStatus();
+  });
+
+  ipcMain.handle('cli:test-connection', async () => {
+    return testRuntimeConnection();
   });
 
   ipcMain.handle('models:list', async () => {
