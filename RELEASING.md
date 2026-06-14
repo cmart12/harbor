@@ -2,6 +2,28 @@
 
 ## Quick Release
 
+### Recommended: the `create-release` Copilot CLI skill
+
+The repo ships a Copilot CLI skill at
+[`.github/skills/create-release`](.github/skills/create-release/SKILL.md) that drives the
+whole flow **and writes the GitHub Release notes** (electron-builder publishes the release
+with an empty body otherwise). In Copilot CLI, just ask to "create a release" (or run
+`/skills` to see it). It will:
+
+1. Bump the version (auto-increments the patch; you confirm or override).
+2. Commit, tag, and push.
+3. Trigger `release.yml` and wait for both platform builds.
+4. Generate categorized notes (Features / Fixes / Other) with an AI-written summary and
+   attach them to the published release via `gh release edit`.
+
+To (re)generate notes for any range without cutting a build:
+
+```bash
+node .github/skills/create-release/scripts/generate-notes.js --from v0.0.13 --to v0.0.14
+```
+
+### Manual steps (reference)
+
 To publish a new version for both Mac and Windows:
 
 ```bash
@@ -15,6 +37,9 @@ git push origin master --tags
 # 3. Trigger the release workflow
 gh workflow run release.yml --field tag=v0.1.0
 ```
+
+> ℹ️ The manual steps publish the build but leave the GitHub Release body empty. Add notes
+> afterward with `gh release edit <tag> --notes-file <file>` (the skill above automates this).
 
 The workflow builds, signs, and publishes both platforms in parallel directly to the [`patniko/whim`](https://github.com/patniko/whim/releases) repo's Releases page. The auto-updater (electron-updater) reads `latest-mac.yml` / `latest.yml` from there with no authentication required (the repo is public).
 
