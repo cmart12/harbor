@@ -62,8 +62,8 @@ export function ToolTile({ toolName, args, result, completed, success, error }: 
   let preview: React.ReactNode = null;
   let expandContent: React.ReactNode = null;
 
-  const errorSvg = <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="7" fill="#ef4444"/><path d="M4.5 4.5L9.5 9.5M9.5 4.5L4.5 9.5" stroke="white" strokeWidth="1.5" strokeLinecap="round"/></svg>;
-  const successSvg = <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="7" fill="#22c55e"/><path d="M4 7.2L6 9.2L10 5" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>;
+  const errorSvg = <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="7" fill="var(--color-danger)"/><path d="M4.5 4.5L9.5 9.5M9.5 4.5L4.5 9.5" stroke="white" strokeWidth="1.5" strokeLinecap="round"/></svg>;
+  const successSvg = <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="7" fill="var(--color-success)"/><path d="M4 7.2L6 9.2L10 5" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>;
 
   if (!isRunning) {
     svgIcon = isError ? errorSvg : successSvg;

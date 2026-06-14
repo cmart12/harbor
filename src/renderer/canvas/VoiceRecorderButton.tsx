@@ -99,7 +99,10 @@ export function VoiceRecorderButton({
     const totalBarWidth = w * 0.7;
     const barWidth = (totalBarWidth - barGap * (barCount - 1)) / barCount;
     const startX = (w - totalBarWidth) / 2;
-    const isDark = theme === 'dark';
+    const dangerColor =
+      getComputedStyle(document.body).getPropertyValue('--color-danger').trim()
+      || getComputedStyle(document.documentElement).getPropertyValue('--color-danger').trim()
+      || 'red';
 
     function draw(): void {
       analyser.getByteFrequencyData(dataArray);
@@ -114,12 +117,12 @@ export function VoiceRecorderButton({
         const y = (h - barH) / 2;
 
         const alpha = 0.4 + val * 0.6;
-        ctx.fillStyle = isDark
-          ? `rgba(248, 113, 113, ${alpha})`
-          : `rgba(239, 68, 68, ${alpha})`;
+        ctx.fillStyle = dangerColor;
+        ctx.globalAlpha = alpha;
         ctx.beginPath();
         ctx.roundRect(x, y, barWidth, barH, barWidth / 2);
         ctx.fill();
+        ctx.globalAlpha = 1;
       }
 
       animFrameRef.current = requestAnimationFrame(draw);

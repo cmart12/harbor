@@ -4,6 +4,7 @@ import { spaceStore } from '../state/space-store';
 import { personaStore } from '../state/persona-store';
 import { useStore } from './useStore';
 import { describeApproval } from './list-utils';
+import { EmptyState } from './EmptyState';
 import { AgentStatusIcon, StepIcon } from './icons';
 import {
   aggregateSandboxBlocks,
@@ -365,13 +366,18 @@ export function AgentsList(props: AgentsListProps): React.ReactElement {
   }
 
   if (allAgents.length === 0) {
-    return (
-      <div className="empty-state">
-        <span className="icon">⚡</span>
-        <span>
-          {props.filterQuery ? 'No matching agents.' : 'No agents yet. Describe a task above to launch one.'}
-        </span>
-      </div>
+    return props.filterQuery ? (
+      <EmptyState icon="🔍" title="No matching agents" text="Try a different search." />
+    ) : (
+      <EmptyState
+        icon="⚡"
+        title="No agents yet"
+        text="Describe a task above, or launch a standalone agent to get help."
+        cta={{
+          label: '+ New agent',
+          onClick: () => (document.getElementById('new-agent-btn') as HTMLButtonElement | null)?.click(),
+        }}
+      />
     );
   }
 

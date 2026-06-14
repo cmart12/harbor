@@ -4,6 +4,7 @@ import { agentStore } from '../state/agent-store';
 import { skillStore } from '../state/skill-store';
 import { useStore } from './useStore';
 import { formatDueDate, timeAgo } from './list-utils';
+import { EmptyState, focusCaptureInput } from './EmptyState';
 import type { Space } from '../../shared/types';
 import type { AgentListAllItem } from '../../shared/ipc-contract';
 import type { RecallMatch } from '../../shared/types';
@@ -175,6 +176,8 @@ const SpaceRow = React.memo(function SpaceRow({
           type="button"
           className={`space-focus ${isFocused ? 'is-focused' : ''}`}
           title={isFocused ? 'Unfocus' : 'Focus'}
+          aria-label={isFocused ? 'Unfocus space' : 'Focus space'}
+          aria-pressed={isFocused}
           onClick={(e) => { e.stopPropagation(); actions.onFocus(space.id); }}
         >
           🎯
@@ -183,6 +186,8 @@ const SpaceRow = React.memo(function SpaceRow({
       <button
         type="button"
         className="space-delete"
+        title="Delete space"
+        aria-label="Delete space"
         onClick={(e) => { e.stopPropagation(); actions.onDelete(space.id); }}
       >
         ✕
@@ -218,12 +223,15 @@ export function SpacesList(props: SpacesListProps): React.ReactElement {
   }, [skills]);
 
   if (displayList.length === 0) {
-    const emptyMsg = props.searchResults ? 'No matching spaces.' : 'No spaces yet. Type or speak one above.';
-    return (
-      <div className="empty-state">
-        <span className="icon">🎯</span>
-        <span>{emptyMsg}</span>
-      </div>
+    return props.searchResults ? (
+      <EmptyState icon="🔍" title="No matching spaces" text="Try a different search." />
+    ) : (
+      <EmptyState
+        icon="🎯"
+        title="No spaces yet"
+        text="Type or speak above to capture your first idea — whim refines it for you."
+        cta={{ label: 'Capture a space', onClick: focusCaptureInput }}
+      />
     );
   }
 

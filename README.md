@@ -1,6 +1,42 @@
+<div align="center">
+
+<img src="copilot.png" width="96" height="96" alt="whim" />
+
 # whim
 
+**Capture ideas, launch agents, and get things done — straight from your system tray.**
+
+[![License: MIT](https://img.shields.io/github/license/patniko/whim?color=7c66dc)](./LICENSE)
+[![Latest release](https://img.shields.io/github/v/release/patniko/whim?color=7c66dc)](https://github.com/patniko/whim/releases)
+![Platforms](https://img.shields.io/badge/platforms-macOS%20·%20Windows-7c66dc)
+![Built with Electron](https://img.shields.io/badge/built%20with-Electron-7c66dc)
+
+[Quick start](#getting-started) · [User guide](./docs/user-guide.md) · [Interactive walkthrough](./walkthrough) · [Architecture](./docs/architecture.md)
+
+</div>
+
+---
+
 A powerful Electron system-tray app for capturing intents — ideas, tasks, and goals — with voice input, AI-powered refinement, a rich markdown canvas, and an integrated AI agent system that can work locally or in the cloud.
+
+## ✨ Highlights
+
+|   |   |
+|---|---|
+| 🎯 **Instant capture** | A global hotkey summons whim anywhere. Type or speak — voice transcribes locally and AI refines it in the background. |
+| 📝 **Rich canvas** | Every intent gets a full markdown editor, auto-saved and versioned with git. |
+| 🤖 **AI agents** | Select text and `@mention` a persona to put a local or cloud agent to work — with live status and approvals. |
+| 📱 **Remote access** | Optional, token-gated mobile web UI served over your LAN or Tailscale. |
+
+## See it in action
+
+The fastest way to get a feel for whim is the **[interactive walkthrough](./walkthrough)** — a
+clickable, simulated tour of capture, agents, skills, and scheduling that runs in your browser (no
+install required):
+
+```bash
+cd walkthrough && npm install && npm start   # → http://localhost:4321
+```
 
 ## Overview
 
@@ -192,11 +228,29 @@ All workspace changes are auto-committed to git with `whim: auto-save` messages.
 ## Testing
 
 ```bash
-npm test              # Run all 202 tests
+npm test              # Run the full suite (1,300+ tests)
 npm run test:watch    # Watch mode
 ```
 
-Tests cover: database operations, validators, config, MCP servers, agent service, workspace, event log, session management, cloud agent parsing, and integration tests.
+Tests cover: database operations, validators, config, MCP servers, agent service, workspace, event log, session management, cloud agent parsing, the canvas editor, and integration tests.
+
+## Screenshots
+
+<!--
+  Drop real captures here (light + dark) for the best first impression. Suggested set:
+    docs/screenshots/spaces-light.png   — the Spaces list with a few intents + a working agent
+    docs/screenshots/canvas-dark.png    — the markdown canvas with an agent comment
+    docs/screenshots/workers.png        — the Workers tab with live steps
+    docs/screenshots/welcome.png        — the first-run welcome screen
+  Then reference them, e.g.:
+    <p align="center">
+      <img src="docs/screenshots/spaces-light.png" width="420" alt="Spaces">
+      <img src="docs/screenshots/canvas-dark.png" width="420" alt="Canvas">
+    </p>
+-->
+
+> 📸 A picture gallery is on the way. In the meantime, the
+> **[interactive walkthrough](./walkthrough)** is the best way to see whim in motion.
 
 ## License
 

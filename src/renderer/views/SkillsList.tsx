@@ -2,6 +2,7 @@ import React from 'react';
 import { skillStore } from '../state/skill-store';
 import { useStore } from './useStore';
 import { timeAgo } from './list-utils';
+import { EmptyState } from './EmptyState';
 import type { Skill } from '../../shared/types';
 
 export interface SkillsListProps {
@@ -161,11 +162,15 @@ export function SkillsList(props: SkillsListProps): React.ReactElement {
   }, [skills, props.filterQuery]);
 
   if (filtered.length === 0) {
-    return (
-      <div className="empty-state">
-        <span className="icon">🧩</span>
-        <span>{props.filterQuery ? 'No matching skills.' : 'No skills yet. Create one to get started.'}</span>
-      </div>
+    return props.filterQuery ? (
+      <EmptyState icon="🔍" title="No matching skills" text="Try a different search." />
+    ) : (
+      <EmptyState
+        icon="🧩"
+        title="No skills yet"
+        text="Skills are reusable prompts whim can run on demand or on a schedule."
+        cta={{ label: 'Create a skill', onClick: () => (window as any).createNewSkill?.() }}
+      />
     );
   }
 

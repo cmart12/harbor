@@ -33,11 +33,11 @@ function iconForType(agentType: SubagentType): string {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  running: '#22c55e',
-  idle: '#eab308',
-  completed: '#3b82f6',
-  failed: '#ef4444',
-  cancelled: '#9ca3af',
+  running: 'var(--color-success)',
+  idle: 'var(--color-warning)',
+  completed: 'var(--color-info)',
+  failed: 'var(--color-danger)',
+  cancelled: 'var(--text-faint)',
 };
 
 function formatElapsed(ms: number): string {
@@ -212,7 +212,7 @@ export function SubagentDetailOverlay({ parentAgentId, agentId, onClose }: Subag
               {agent && (
                 <span
                   className="chat-subagent-overlay-status"
-                  style={{ color: STATUS_COLORS[agent.status] ?? '#9ca3af' }}
+                  style={{ color: STATUS_COLORS[agent.status] ?? 'var(--text-faint)' }}
                 >
                   ● {agent.status}
                 </span>

@@ -4,6 +4,7 @@ import { historyStore } from '../state/history-store';
 import { agentStore } from '../state/agent-store';
 import { useStore } from './useStore';
 import { timeAgo } from './list-utils';
+import { EmptyState } from './EmptyState';
 import type { Space } from '../../shared/types';
 import type { SpaceEvent } from '../../shared/ipc-contract';
 
@@ -145,10 +146,11 @@ export function HistoryView({ onCardClick, onUnarchive }: HistoryViewProps): Rea
 
   if (closedSpaces.length === 0 && events.length === 0) {
     return (
-      <div className="empty-state">
-        <span className="icon">✨</span>
-        <span>Complete your first space to see activity here.</span>
-      </div>
+      <EmptyState
+        icon="✨"
+        title="Nothing here yet"
+        text="Completed spaces and their activity timeline will appear here."
+      />
     );
   }
 

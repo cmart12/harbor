@@ -723,9 +723,15 @@ function setFilter(filter: typeof currentFilter): void {
   if (filter === 'closed') {
     void loadHistorySnapshot(bridgeApi);
   }
-  filterBar.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  filterBar.querySelectorAll('.filter-btn').forEach(b => {
+    b.classList.remove('active');
+    b.setAttribute('aria-selected', 'false');
+  });
   const btn = filterBar.querySelector(`[data-filter="${filter}"]`) as HTMLElement;
-  if (btn) btn.classList.add('active');
+  if (btn) {
+    btn.classList.add('active');
+    btn.setAttribute('aria-selected', 'true');
+  }
 
   // Show capture form on Spaces, Workers, and Skills; hide on History
   if (filter === 'closed') {
@@ -890,11 +896,13 @@ pinBtn.addEventListener('click', async () => {
   whimAPI.setPinned(next);
   pinBtn.classList.toggle('active', next);
   pinBtn.title = next ? 'Unpin window' : 'Pin window (keep visible)';
+  pinBtn.setAttribute('aria-pressed', String(next));
 });
 
 whimAPI.onPinnedChanged((pinned: boolean) => {
   pinBtn.classList.toggle('active', pinned);
   pinBtn.title = pinned ? 'Unpin window' : 'Pin window (keep visible)';
+  pinBtn.setAttribute('aria-pressed', String(pinned));
 });
 
 async function loadPinState(): Promise<void> {
@@ -5734,6 +5742,7 @@ const canvasShareWrap = canvasShareBtn?.closest('.canvas-share-wrap') as HTMLDiv
 const canvasShareDropdown = document.getElementById('canvas-share-dropdown') as HTMLDivElement;
 const canvasShareDestinations = document.getElementById('canvas-share-destinations') as HTMLDivElement;
 const canvasShareManageDest = document.getElementById('canvas-share-manage-dest') as HTMLButtonElement;
+const canvasCopyMdBtn = document.getElementById('canvas-copy-md') as HTMLButtonElement | null;
 const canvasMarkComplete = document.getElementById('canvas-mark-complete') as HTMLButtonElement;
 const canvasSaveAsSkill = document.getElementById('canvas-save-as-skill') as HTMLButtonElement;
 const canvasManageSkills = document.getElementById('canvas-manage-skills') as HTMLButtonElement;
@@ -5984,6 +5993,23 @@ canvasShareBtn?.addEventListener('click', (e) => {
   e.stopPropagation();
   toggleShareMenu();
 });
+
+async function copyCanvasMarkdown(): Promise<void> {
+  closeShareMenu();
+  if (shareInFlight) return;
+  // Flush pending edits so the copy reflects the latest content.
+  if (canvasDirty) { try { await saveCanvasEditor(); } catch { /* fall back to in-memory content */ } }
+  const md = getCanvasContent();
+  if (!md.trim()) { flashCanvasStatus('Nothing to copy'); return; }
+  try {
+    await navigator.clipboard.writeText(md);
+    flashCanvasStatus('Copied as Markdown');
+  } catch {
+    flashCanvasStatus('Copy failed');
+  }
+}
+
+canvasCopyMdBtn?.addEventListener('click', () => void copyCanvasMarkdown());
 
 canvasShareDropdown?.querySelectorAll('[data-share-format]').forEach((el) => {
   el.addEventListener('click', () => {
@@ -7925,7 +7951,61 @@ welcomeStartBtn.addEventListener('click', async () => {
   loadSpaces();
   loadSkills();
   refreshGitSync();
+  void maybeShowFirstRunHelp();
 });
+
+// ── Help / shortcuts overlay (first-run coach + on-demand) ──
+const helpOverlay = document.getElementById('help-overlay') as HTMLDivElement | null;
+const helpBtn = document.getElementById('help-btn') as HTMLButtonElement | null;
+const helpCloseBtn = document.getElementById('help-close') as HTMLButtonElement | null;
+const helpGotItBtn = document.getElementById('help-got-it') as HTMLButtonElement | null;
+const helpDismissBackdrop = helpOverlay?.querySelector('[data-help-dismiss]') as HTMLElement | null;
+
+function isHelpOpen(): boolean {
+  return !!helpOverlay && !helpOverlay.classList.contains('hidden');
+}
+
+function openHelp(): void {
+  if (!helpOverlay) return;
+  helpOverlay.classList.remove('hidden');
+  helpGotItBtn?.focus();
+}
+
+function closeHelp(): void {
+  if (!helpOverlay) return;
+  helpOverlay.classList.add('hidden');
+  void whimAPI.setSetting('onboarding_tips_seen', '1');
+  descInput?.focus();
+}
+
+helpBtn?.addEventListener('click', openHelp);
+helpCloseBtn?.addEventListener('click', closeHelp);
+helpGotItBtn?.addEventListener('click', closeHelp);
+helpDismissBackdrop?.addEventListener('click', closeHelp);
+
+// `?` opens help (unless typing); Esc closes it before other Esc handlers run.
+document.addEventListener('keydown', (e) => {
+  if (isHelpOpen() && e.key === 'Escape') {
+    e.preventDefault();
+    e.stopPropagation();
+    closeHelp();
+    return;
+  }
+  if (e.key === '?' && !isHelpOpen()) {
+    const t = e.target as HTMLElement | null;
+    const editable = !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+    if (!editable) {
+      e.preventDefault();
+      openHelp();
+    }
+  }
+}, true);
+
+// Show the coach once, right after a brand-new user finishes setup.
+async function maybeShowFirstRunHelp(): Promise<void> {
+  const seen = await whimAPI.getSetting('onboarding_tips_seen');
+  if (!seen) openHelp();
+}
 
 // ── Init ────────────────────────────────────────────────
 // Check if workspace is set — show welcome or main view

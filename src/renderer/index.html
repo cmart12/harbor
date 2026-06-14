@@ -75,17 +75,18 @@
           <span id="profile-name" class="profile-suffix"></span>
         </h1>
         <div class="header-actions">
-          <button id="pin-btn" class="header-icon-btn" title="Pin window (keep visible)">📌</button>
-          <button id="remote-btn" class="header-icon-btn" title="Enable remote control">📱</button>
-          <button id="settings-btn" class="header-icon-btn" title="Settings">⚙</button>
+          <button id="pin-btn" class="header-icon-btn" title="Pin window (keep visible)" aria-label="Pin window" aria-pressed="false">📌</button>
+          <button id="remote-btn" class="header-icon-btn" title="Enable remote control" aria-label="Remote web access">📱</button>
+          <button id="help-btn" class="header-icon-btn" title="Help & keyboard shortcuts (?)" aria-label="Help and keyboard shortcuts">?</button>
+          <button id="settings-btn" class="header-icon-btn" title="Settings" aria-label="Settings">⚙</button>
         </div>
       </header>
 
-      <div id="filter-bar" class="filter-bar">
-        <button class="filter-btn active" data-filter="open">Spaces <span id="space-count" class="space-count-badge">0</span></button>
-        <button class="filter-btn" data-filter="agents">Workers<span id="workers-badge" class="workers-badge hidden"></span></button>
-        <button class="filter-btn" data-filter="skills">Skills</button>
-        <button class="filter-btn" data-filter="closed">Activity</button>
+      <div id="filter-bar" class="filter-bar" role="tablist" aria-label="Views">
+        <button class="filter-btn active" data-filter="open" role="tab" aria-selected="true">Spaces <span id="space-count" class="space-count-badge">0</span></button>
+        <button class="filter-btn" data-filter="agents" role="tab" aria-selected="false">Workers<span id="workers-badge" class="workers-badge hidden"></span></button>
+        <button class="filter-btn" data-filter="skills" role="tab" aria-selected="false">Skills</button>
+        <button class="filter-btn" data-filter="closed" role="tab" aria-selected="false">Activity</button>
       </div>
 
       <div id="focus-banner" class="focus-banner hidden">
@@ -94,8 +95,8 @@
           <div id="focus-desc" class="focus-desc"></div>
           <div id="focus-meta" class="focus-meta"></div>
         </div>
-        <button id="focus-done" class="focus-action" title="Complete">✓</button>
-        <button id="focus-clear" class="focus-action" title="Unfocus">✕</button>
+        <button id="focus-done" class="focus-action" title="Complete" aria-label="Complete focused space">✓</button>
+        <button id="focus-clear" class="focus-action" title="Unfocus" aria-label="Clear focus">✕</button>
       </div>
 
       <form id="capture-form">
@@ -109,15 +110,15 @@
           ></textarea>
           <div id="persona-mention-dropdown" class="mention-dropdown hidden" role="listbox"></div>
           <canvas id="waveform-canvas" class="waveform-canvas hidden"></canvas>
-          <div id="recording-indicator" class="recording-indicator hidden">
+          <div id="recording-indicator" class="recording-indicator hidden" role="status" aria-label="Recording voice input">
             <span class="rec-dot"></span>
           </div>
-          <button type="submit" id="submit-btn" class="submit-btn" title="Submit (Enter)">↩</button>
+          <button type="submit" id="submit-btn" class="submit-btn" title="Submit (Enter)" aria-label="Capture">↩</button>
         </div>
         <div id="input-hints" class="input-hints">
           <kbd>Shift+Tab</kbd> search <span class="hint-sep">·</span> <kbd>Space</kbd> record
         </div>
-        <div id="status-bar" class="status-bar hidden"></div>
+        <div id="status-bar" class="status-bar hidden" role="status" aria-live="polite"></div>
 
       </form>
 
@@ -135,6 +136,65 @@
         <span id="git-sync-status" class="git-sync-status"></span>
         <button id="git-sync-pull" class="git-sync-btn hidden" title="Pull changes from remote">↓ <span id="git-sync-behind-count">0</span></button>
         <button id="git-sync-push" class="git-sync-btn hidden" title="Push changes to remote">↑ <span id="git-sync-ahead-count">0</span></button>
+      </div>
+    </div>
+
+    <!-- Help / keyboard-shortcuts overlay (first-run coach + on-demand) -->
+    <div id="help-overlay" class="help-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="help-title">
+      <div class="help-backdrop" data-help-dismiss></div>
+      <div class="help-modal" role="document">
+        <header class="help-header">
+          <h1 id="help-title">Welcome to whim</h1>
+          <button id="help-close" class="header-icon-btn" title="Close (Esc)" aria-label="Close help">✕</button>
+        </header>
+        <p class="help-intro">A few things that make whim fast. Reopen this anytime with the <kbd>?</kbd> in the header.</p>
+
+        <ul class="help-tips">
+          <li class="help-tip">
+            <span class="help-tip-icon" aria-hidden="true">⌨️</span>
+            <div class="help-tip-body">
+              <div class="help-tip-title">Summon whim from anywhere</div>
+              <div class="help-tip-text">Press <kbd class="kbd-mod"></kbd><kbd>Shift</kbd><kbd>Space</kbd> to pop whim open, capture a thought, and dismiss.</div>
+            </div>
+          </li>
+          <li class="help-tip">
+            <span class="help-tip-icon" aria-hidden="true">🎙️</span>
+            <div class="help-tip-body">
+              <div class="help-tip-title">Capture by voice</div>
+              <div class="help-tip-text">With the box empty, press <kbd>Space</kbd> to record. Transcription runs locally on your machine.</div>
+            </div>
+          </li>
+          <li class="help-tip">
+            <span class="help-tip-icon" aria-hidden="true">🤖</span>
+            <div class="help-tip-body">
+              <div class="help-tip-title">Put agents to work</div>
+              <div class="help-tip-text">Open a canvas, select text, and <strong>@mention</strong> a persona to launch an agent on it.</div>
+            </div>
+          </li>
+          <li class="help-tip">
+            <span class="help-tip-icon" aria-hidden="true">📄</span>
+            <div class="help-tip-body">
+              <div class="help-tip-title">Open a canvas</div>
+              <div class="help-tip-text">Click a space (or press <kbd>Enter</kbd>) to open its rich markdown canvas.</div>
+            </div>
+          </li>
+        </ul>
+
+        <div class="help-shortcuts">
+          <div class="help-shortcuts-title">Keyboard shortcuts</div>
+          <div class="help-shortcuts-grid">
+            <div class="help-sc"><span>Toggle whim</span><span class="help-keys"><kbd class="kbd-mod"></kbd><kbd>Shift</kbd><kbd>Space</kbd></span></div>
+            <div class="help-sc"><span>Save / open canvas</span><span class="help-keys"><kbd>Enter</kbd></span></div>
+            <div class="help-sc"><span>Expanded canvas</span><span class="help-keys"><kbd class="kbd-mod"></kbd><kbd>Enter</kbd></span></div>
+            <div class="help-sc"><span>Search spaces</span><span class="help-keys"><kbd>Shift</kbd><kbd>Tab</kbd></span></div>
+            <div class="help-sc"><span>Switch profile</span><span class="help-keys"><kbd class="kbd-mod"></kbd><kbd>Shift</kbd><kbd>P</kbd></span></div>
+            <div class="help-sc"><span>Switch tabs</span><span class="help-keys"><kbd>←</kbd><kbd>→</kbd></span></div>
+            <div class="help-sc"><span>Navigate list</span><span class="help-keys"><kbd>↑</kbd><kbd>↓</kbd></span></div>
+            <div class="help-sc"><span>Dismiss / back</span><span class="help-keys"><kbd>Esc</kbd></span></div>
+          </div>
+        </div>
+
+        <button id="help-got-it" class="help-cta">Got it</button>
       </div>
     </div>
 
@@ -416,6 +476,12 @@
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" x2="12" y1="2" y2="15"/></svg>
             </button>
             <div id="canvas-share-dropdown" class="canvas-menu-dropdown canvas-share-dropdown hidden">
+              <div class="canvas-menu-section-label">Copy</div>
+              <button class="canvas-menu-item" id="canvas-copy-md">
+                <span class="canvas-menu-icon">⧉</span>
+                <span>Copy as Markdown</span>
+              </button>
+              <div class="canvas-menu-separator"></div>
               <div class="canvas-menu-section-label">Share via OS</div>
               <button class="canvas-menu-item" data-share-format="pdf">
                 <span class="canvas-menu-icon">📄</span>
