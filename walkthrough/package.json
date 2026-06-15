@@ -1,8 +1,8 @@
 {
-  "name": "whim-walkthrough",
+  "name": "harbor-walkthrough",
   "version": "1.0.0",
   "private": true,
-  "description": "Interactive web-based walkthrough slide deck for whim",
+  "description": "Interactive web-based walkthrough slide deck for Harbor",
   "type": "module",
   "scripts": {
     "start": "node serve.js",
