@@ -7,6 +7,8 @@ import { registerWorkspaceHandlers } from './workspace-handlers';
 import { registerSkillHandlers } from './skill-handlers';
 import { registerExportHandlers } from './export-handlers';
 import { registerNotificationHandlers } from './notification-handlers';
+import { registerGoalsHandlers } from './goals-handlers';
+import { registerCategoriesHandlers } from './categories-handlers';
 
 export function registerIpcHandlers(): void {
   registerSpaceHandlers();
@@ -18,6 +20,8 @@ export function registerIpcHandlers(): void {
   registerSkillHandlers();
   registerExportHandlers();
   registerNotificationHandlers();
+  registerGoalsHandlers();
+  registerCategoriesHandlers();
 }
 
 // Re-export typed handler utilities

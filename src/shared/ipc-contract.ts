@@ -9,6 +9,16 @@ import type { Space, CreateSpaceInput, Attachment, AgentAnchor, AgentSession, Li
 import type { ChatEvent, ElicitationSchema, ElicitationFieldValue } from './chat-types';
 import type { SubagentSummary, SubagentInfo } from './subagent-types';
 import type { Notification, NotificationListFilter, SnoozePreset } from './notification-types';
+import type {
+  Goal,
+  Category,
+  CreateGoalInput,
+  CreateCategoryInput,
+  UpdateGoalPatch,
+  UpdateCategoryPatch,
+  ListGoalsFilter,
+  ListCategoriesFilter,
+} from './goal-category-types';
 
 // ---------------------------------------------------------------------------
 // Helper types needed by the contract that don't exist in shared/ yet
@@ -512,6 +522,70 @@ export interface IpcCommands {
     args: [uid: string];
     result: { ok: true } | { error: string };
   };
+
+  // ── Goals (Phase B.1) ────────────────────────────────────
+  'goal:list': {
+    args: [filter?: ListGoalsFilter];
+    result: Goal[];
+  };
+  'goal:create': {
+    args: [input: CreateGoalInput];
+    result: Goal | { error: string };
+  };
+  'goal:update': {
+    args: [id: string, patch: UpdateGoalPatch];
+    result: Goal | { error: string };
+  };
+  'goal:archive': {
+    args: [id: string];
+    result: { ok: true } | { error: string };
+  };
+  'goal:unarchive': {
+    args: [id: string];
+    result: { ok: true } | { error: string };
+  };
+  'goal:delete': {
+    args: [id: string];
+    result: { ok: true } | { error: string };
+  };
+  'goal:list-categories': {
+    args: [goalId: string];
+    result: Category[];
+  };
+  'goal:associate-category': {
+    args: [params: { goalId: string; categoryId: string }];
+    result: { ok: true } | { error: string };
+  };
+  'goal:disassociate-category': {
+    args: [params: { goalId: string; categoryId: string }];
+    result: { ok: true } | { error: string };
+  };
+
+  // ── Categories (Phase B.1) ───────────────────────────────
+  'category:list': {
+    args: [filter?: ListCategoriesFilter];
+    result: Category[];
+  };
+  'category:create': {
+    args: [input: CreateCategoryInput];
+    result: Category | { error: string };
+  };
+  'category:update': {
+    args: [id: string, patch: UpdateCategoryPatch];
+    result: Category | { error: string };
+  };
+  'category:archive': {
+    args: [id: string];
+    result: { ok: true } | { error: string };
+  };
+  'category:unarchive': {
+    args: [id: string];
+    result: { ok: true } | { error: string };
+  };
+  'category:delete': {
+    args: [id: string];
+    result: { ok: true } | { error: string };
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -600,6 +674,11 @@ export interface IpcEvents {
 
   /** Phase A.2: a freshly-ingested notification. Renderer prepends to Feed. */
   'notification:new': Notification;
+
+  /** Phase B.1: any mutation to goals (create/update/archive/etc.). Renderer refetches. */
+  'goals:changed': void;
+  /** Phase B.1: any mutation to categories. Renderer refetches. */
+  'categories:changed': void;
 }
 
 // ---------------------------------------------------------------------------
