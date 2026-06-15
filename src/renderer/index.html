@@ -222,6 +222,8 @@
           <button class="settings-tab-btn" data-tab="remote">Remote</button>
           <button class="settings-tab-btn" data-tab="tools">Tools</button>
           <button class="settings-tab-btn" data-tab="personas">Agents</button>
+          <button class="settings-tab-btn" data-tab="goals">Goals</button>
+          <button class="settings-tab-btn" data-tab="categories">Categories</button>
           <button class="settings-tab-btn" data-tab="hotkeys">Hotkeys</button>
         </div>
 
@@ -436,6 +438,44 @@
             <div id="hotkeys-list" class="hotkeys-list"></div>
             <div class="hotkeys-footer">
               <button id="hotkeys-reset-all" class="persona-add-btn" type="button">Reset All to Defaults</button>
+            </div>
+          </div>
+
+          <!-- Phase B.1: Goals tab -->
+          <div class="settings-tab-panel" data-tab="goals">
+            <div class="gc-tab">
+              <form id="goal-add-form" class="gc-add-form" autocomplete="off">
+                <input id="goal-add-title" class="gc-input" type="text" placeholder="New goal title" maxlength="120" required />
+                <input id="goal-add-description" class="gc-input gc-input-grow" type="text" placeholder="Optional description" maxlength="400" />
+                <input id="goal-add-color" class="gc-color-input" type="color" value="#6E7681" title="Color" />
+                <button type="submit" class="persona-add-btn">+ Add</button>
+              </form>
+              <label class="gc-show-archived">
+                <input id="goal-show-archived" type="checkbox" /> Show archived
+              </label>
+              <div id="goals-list" class="gc-list"></div>
+              <div id="goals-empty" class="gc-empty hidden">
+                No goals yet. Goals are the outcomes you're working toward, e.g. "Ship Harbor M1".
+              </div>
+            </div>
+          </div>
+
+          <!-- Phase B.1: Categories tab -->
+          <div class="settings-tab-panel" data-tab="categories">
+            <div class="gc-tab">
+              <form id="category-add-form" class="gc-add-form" autocomplete="off">
+                <input id="category-add-title" class="gc-input" type="text" placeholder="New category title" maxlength="120" required />
+                <input id="category-add-description" class="gc-input gc-input-grow" type="text" placeholder="Optional description" maxlength="400" />
+                <input id="category-add-color" class="gc-color-input" type="color" value="#6E7681" title="Color" />
+                <button type="submit" class="persona-add-btn">+ Add</button>
+              </form>
+              <label class="gc-show-archived">
+                <input id="category-show-archived" type="checkbox" /> Show archived
+              </label>
+              <div id="categories-list" class="gc-list"></div>
+              <div id="categories-empty" class="gc-empty hidden">
+                No categories yet. Categories group related notifications, e.g. "Dual Access" or "SDK Partners".
+              </div>
             </div>
           </div>
         </div>

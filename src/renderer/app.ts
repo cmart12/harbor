@@ -382,6 +382,10 @@ import { skillStore } from './state/skill-store';
 import { historyStore } from './state/history-store';
 import { personaStore } from './state/persona-store';
 import { feedStore } from './state/feed-store';
+import { goalsStore } from './state/goals-store';
+import { categoriesStore } from './state/categories-store';
+import type { Goal, Category } from '../shared/goal-category-types';
+import { DEFAULT_GOAL_COLOR, DEFAULT_CATEGORY_COLOR } from '../shared/goal-category-types';
 import type { Notification, SnoozePreset } from '../shared/notification-types';
 import {
   installIpcBridge,
@@ -5245,6 +5249,339 @@ function initSettingsTabs(): void {
   if (!anyActive) activate('general');
 }
 initSettingsTabs();
+
+// ── Phase B.1: Goals + Categories tabs ───────────────────────
+function renderArchivedBadge(archived: boolean): string {
+  return archived ? '<span class="gc-archived-badge">Archived</span>' : '';
+}
+
+function buildEditFormHtml(
+  prefix: 'goal' | 'cat',
+  id: string,
+  title: string,
+  description: string,
+  color: string,
+): string {
+  return `
+    <form class="gc-edit-form" data-${prefix}-edit-id="${id}">
+      <input class="gc-input" name="title" type="text" value="${escapeHtml(title)}" maxlength="120" required />
+      <input class="gc-input gc-input-grow" name="description" type="text" value="${escapeHtml(description)}" maxlength="400" placeholder="Optional description" />
+      <input class="gc-color-input" name="color" type="color" value="${escapeHtml(color)}" />
+      <button type="submit" class="gc-action-btn">Save</button>
+      <button type="button" class="gc-action-btn" data-${prefix}-cancel-edit="${id}">Cancel</button>
+    </form>
+  `;
+}
+
+// Tracks which rows are in edit mode and which goals have expanded their linked-category list.
+const goalEditing = new Set<string>();
+const categoryEditing = new Set<string>();
+
+function renderGoalsList(): void {
+  const list = document.getElementById('goals-list');
+  const empty = document.getElementById('goals-empty');
+  if (!list || !empty) return;
+  const { goals } = goalsStore.getState();
+  if (goals.length === 0) {
+    list.innerHTML = '';
+    empty.classList.remove('hidden');
+    return;
+  }
+  empty.classList.add('hidden');
+  list.innerHTML = goals.map(g => renderGoalRow(g)).join('');
+
+  // After rendering, kick off a lazy load of linked categories for any
+  // goal that doesn't yet have a cached list.
+  for (const g of goals) {
+    if (!goalsStore.getCategoriesFor(g.id)) {
+      void goalsStore.loadCategoriesFor(g.id);
+    } else {
+      paintLinkedCategories(g.id);
+    }
+  }
+}
+
+function renderGoalRow(g: Goal): string {
+  if (goalEditing.has(g.id)) {
+    return `<div class="gc-row${g.archived_at ? ' archived' : ''}" data-goal-row="${g.id}">
+      <span class="gc-swatch" style="background:${escapeHtml(g.color)}"></span>
+      ${buildEditFormHtml('goal', g.id, g.title, g.description ?? '', g.color)}
+    </div>`;
+  }
+  return `<div class="gc-row${g.archived_at ? ' archived' : ''}" data-goal-row="${g.id}">
+    <span class="gc-swatch" style="background:${escapeHtml(g.color)}"></span>
+    <div class="gc-row-main">
+      <div class="gc-row-title-line">
+        <span class="gc-row-title">${escapeHtml(g.title)}</span>
+        ${renderArchivedBadge(!!g.archived_at)}
+      </div>
+      ${g.description ? `<div class="gc-row-description">${escapeHtml(g.description)}</div>` : ''}
+      <div class="gc-linked" data-goal-linked="${g.id}">
+        <span class="gc-linked-label">Linked categories:</span>
+        <span class="gc-linked-chips" data-goal-chips="${g.id}"></span>
+      </div>
+    </div>
+    <div class="gc-row-actions">
+      <button class="gc-action-btn" data-goal-edit="${g.id}">Edit</button>
+      <button class="gc-action-btn" data-goal-archive="${g.id}">${g.archived_at ? 'Unarchive' : 'Archive'}</button>
+      <button class="gc-action-btn danger" data-goal-delete="${g.id}">Delete</button>
+    </div>
+  </div>`;
+}
+
+function renderCategoryChip(c: Category, goalId: string): string {
+  return `<span class="gc-chip" style="background:${escapeHtml(c.color)}">
+    ${escapeHtml(c.title)}
+    <button type="button" class="gc-chip-remove" data-goal-unlink="${goalId}|${c.id}" title="Unlink">×</button>
+  </span>`;
+}
+
+function paintLinkedCategories(goalId: string): void {
+  const chipsHost = document.querySelector<HTMLElement>(`[data-goal-chips="${goalId}"]`);
+  if (!chipsHost) return;
+  const linked = goalsStore.getCategoriesFor(goalId) ?? [];
+  const linkedIds = new Set(linked.map(c => c.id));
+  const linkedHtml = linked.map(c => renderCategoryChip(c, goalId)).join('');
+
+  // "+ Link" dropdown over the unlinked, non-archived categories.
+  const available = categoriesStore
+    .getState()
+    .categories.filter(c => !c.archived_at && !linkedIds.has(c.id));
+  const selectHtml = available.length
+    ? `<select class="gc-link-select" data-goal-link-select="${goalId}">
+         <option value="">+ Link category</option>
+         ${available.map(c => `<option value="${c.id}">${escapeHtml(c.title)}</option>`).join('')}
+       </select>`
+    : '';
+  chipsHost.innerHTML = linkedHtml + selectHtml;
+}
+
+function renderCategoriesList(): void {
+  const list = document.getElementById('categories-list');
+  const empty = document.getElementById('categories-empty');
+  if (!list || !empty) return;
+  const { categories } = categoriesStore.getState();
+  if (categories.length === 0) {
+    list.innerHTML = '';
+    empty.classList.remove('hidden');
+    return;
+  }
+  empty.classList.add('hidden');
+  list.innerHTML = categories.map(c => renderCategoryRow(c)).join('');
+}
+
+function renderCategoryRow(c: Category): string {
+  if (categoryEditing.has(c.id)) {
+    return `<div class="gc-row${c.archived_at ? ' archived' : ''}" data-category-row="${c.id}">
+      <span class="gc-swatch" style="background:${escapeHtml(c.color)}"></span>
+      ${buildEditFormHtml('cat', c.id, c.title, c.description ?? '', c.color)}
+    </div>`;
+  }
+  return `<div class="gc-row${c.archived_at ? ' archived' : ''}" data-category-row="${c.id}">
+    <span class="gc-swatch" style="background:${escapeHtml(c.color)}"></span>
+    <div class="gc-row-main">
+      <div class="gc-row-title-line">
+        <span class="gc-row-title">${escapeHtml(c.title)}</span>
+        ${renderArchivedBadge(!!c.archived_at)}
+      </div>
+      ${c.description ? `<div class="gc-row-description">${escapeHtml(c.description)}</div>` : ''}
+    </div>
+    <div class="gc-row-actions">
+      <button class="gc-action-btn" data-category-edit="${c.id}">Edit</button>
+      <button class="gc-action-btn" data-category-archive="${c.id}">${c.archived_at ? 'Unarchive' : 'Archive'}</button>
+      <button class="gc-action-btn danger" data-category-delete="${c.id}">Delete</button>
+    </div>
+  </div>`;
+}
+
+function initGoalsTab(): void {
+  const form = document.getElementById('goal-add-form') as HTMLFormElement | null;
+  const titleEl = document.getElementById('goal-add-title') as HTMLInputElement | null;
+  const descEl = document.getElementById('goal-add-description') as HTMLInputElement | null;
+  const colorEl = document.getElementById('goal-add-color') as HTMLInputElement | null;
+  const showArchivedEl = document.getElementById('goal-show-archived') as HTMLInputElement | null;
+  const list = document.getElementById('goals-list');
+  if (!form || !titleEl || !descEl || !colorEl || !showArchivedEl || !list) return;
+
+  if (colorEl.value === '#000000') colorEl.value = DEFAULT_GOAL_COLOR;
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const title = titleEl.value.trim();
+    if (!title) return;
+    await goalsStore.create({
+      title,
+      description: descEl.value.trim() || null,
+      color: colorEl.value,
+    });
+    titleEl.value = '';
+    descEl.value = '';
+    titleEl.focus();
+  });
+
+  showArchivedEl.addEventListener('change', () => {
+    void goalsStore.loadInitial({ includeArchived: showArchivedEl.checked });
+  });
+
+  list.addEventListener('click', async (e) => {
+    const t = e.target as HTMLElement;
+    const editId = t.closest<HTMLElement>('[data-goal-edit]')?.dataset.goalEdit;
+    if (editId) { goalEditing.add(editId); renderGoalsList(); return; }
+    const cancelId = t.closest<HTMLElement>('[data-goal-cancel-edit]')?.dataset.goalCancelEdit;
+    if (cancelId) { goalEditing.delete(cancelId); renderGoalsList(); return; }
+    const archiveId = t.closest<HTMLElement>('[data-goal-archive]')?.dataset.goalArchive;
+    if (archiveId) {
+      const g = goalsStore.getState().goals.find(x => x.id === archiveId);
+      if (g?.archived_at) await goalsStore.unarchive(archiveId);
+      else await goalsStore.archive(archiveId);
+      return;
+    }
+    const delId = t.closest<HTMLElement>('[data-goal-delete]')?.dataset.goalDelete;
+    if (delId) {
+      const g = goalsStore.getState().goals.find(x => x.id === delId);
+      const ok = window.confirm(`Delete goal "${g?.title ?? ''}"? This cannot be undone.`);
+      if (ok) await goalsStore.delete(delId);
+      return;
+    }
+    const unlink = t.closest<HTMLElement>('[data-goal-unlink]')?.dataset.goalUnlink;
+    if (unlink) {
+      const [goalId, categoryId] = unlink.split('|');
+      if (goalId && categoryId) await goalsStore.disassociateCategory(goalId, categoryId);
+      return;
+    }
+  });
+
+  list.addEventListener('change', async (e) => {
+    const t = e.target as HTMLElement;
+    const select = t.closest<HTMLSelectElement>('[data-goal-link-select]');
+    if (select) {
+      const goalId = select.dataset.goalLinkSelect;
+      const categoryId = select.value;
+      if (goalId && categoryId) {
+        await goalsStore.associateCategory(goalId, categoryId);
+        select.value = '';
+      }
+    }
+  });
+
+  list.addEventListener('submit', async (e) => {
+    const t = e.target as HTMLElement;
+    const editForm = t.closest<HTMLFormElement>('[data-goal-edit-id]');
+    if (!editForm) return;
+    e.preventDefault();
+    const id = editForm.dataset.goalEditId;
+    if (!id) return;
+    const data = new FormData(editForm);
+    const title = String(data.get('title') ?? '').trim();
+    if (!title) return;
+    await goalsStore.update(id, {
+      title,
+      description: String(data.get('description') ?? '').trim() || null,
+      color: String(data.get('color') ?? DEFAULT_GOAL_COLOR),
+    });
+    goalEditing.delete(id);
+    renderGoalsList();
+  });
+
+  goalsStore.subscribe(renderGoalsList);
+  categoriesStore.subscribe(() => {
+    // Repaint chip rows so the "+ Link" dropdown reflects category changes.
+    for (const g of goalsStore.getState().goals) paintLinkedCategories(g.id);
+  });
+}
+
+function initCategoriesTab(): void {
+  const form = document.getElementById('category-add-form') as HTMLFormElement | null;
+  const titleEl = document.getElementById('category-add-title') as HTMLInputElement | null;
+  const descEl = document.getElementById('category-add-description') as HTMLInputElement | null;
+  const colorEl = document.getElementById('category-add-color') as HTMLInputElement | null;
+  const showArchivedEl = document.getElementById('category-show-archived') as HTMLInputElement | null;
+  const list = document.getElementById('categories-list');
+  if (!form || !titleEl || !descEl || !colorEl || !showArchivedEl || !list) return;
+
+  if (colorEl.value === '#000000') colorEl.value = DEFAULT_CATEGORY_COLOR;
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const title = titleEl.value.trim();
+    if (!title) return;
+    await categoriesStore.create({
+      title,
+      description: descEl.value.trim() || null,
+      color: colorEl.value,
+    });
+    titleEl.value = '';
+    descEl.value = '';
+    titleEl.focus();
+  });
+
+  showArchivedEl.addEventListener('change', () => {
+    void categoriesStore.loadInitial({ includeArchived: showArchivedEl.checked });
+  });
+
+  list.addEventListener('click', async (e) => {
+    const t = e.target as HTMLElement;
+    const editId = t.closest<HTMLElement>('[data-category-edit]')?.dataset.categoryEdit;
+    if (editId) { categoryEditing.add(editId); renderCategoriesList(); return; }
+    const cancelId = t.closest<HTMLElement>('[data-cat-cancel-edit]')?.dataset.catCancelEdit;
+    if (cancelId) { categoryEditing.delete(cancelId); renderCategoriesList(); return; }
+    const archiveId = t.closest<HTMLElement>('[data-category-archive]')?.dataset.categoryArchive;
+    if (archiveId) {
+      const c = categoriesStore.getState().categories.find(x => x.id === archiveId);
+      if (c?.archived_at) await categoriesStore.unarchive(archiveId);
+      else await categoriesStore.archive(archiveId);
+      return;
+    }
+    const delId = t.closest<HTMLElement>('[data-category-delete]')?.dataset.categoryDelete;
+    if (delId) {
+      const c = categoriesStore.getState().categories.find(x => x.id === delId);
+      const ok = window.confirm(`Delete category "${c?.title ?? ''}"? This cannot be undone.`);
+      if (ok) await categoriesStore.delete(delId);
+      return;
+    }
+  });
+
+  list.addEventListener('submit', async (e) => {
+    const t = e.target as HTMLElement;
+    const editForm = t.closest<HTMLFormElement>('[data-cat-edit-id]');
+    if (!editForm) return;
+    e.preventDefault();
+    const id = editForm.dataset.catEditId;
+    if (!id) return;
+    const data = new FormData(editForm);
+    const title = String(data.get('title') ?? '').trim();
+    if (!title) return;
+    await categoriesStore.update(id, {
+      title,
+      description: String(data.get('description') ?? '').trim() || null,
+      color: String(data.get('color') ?? DEFAULT_CATEGORY_COLOR),
+    });
+    categoryEditing.delete(id);
+    renderCategoriesList();
+  });
+
+  categoriesStore.subscribe(renderCategoriesList);
+}
+
+initGoalsTab();
+initCategoriesTab();
+
+// Push-event refresh wiring.
+(() => {
+  const api = (window as any).whimAPI;
+  if (api && typeof api.onGoalsChanged === 'function') {
+    api.onGoalsChanged(() => { void goalsStore.refresh(); });
+  }
+  if (api && typeof api.onCategoriesChanged === 'function') {
+    api.onCategoriesChanged(() => { void categoriesStore.refresh(); });
+  }
+})();
+
+// First load (deferred so other init can complete first).
+queueMicrotask(() => {
+  void goalsStore.loadInitial();
+  void categoriesStore.loadInitial();
+});
 
 // ── Hotkeys tab ────────────────────────────────────────
 const HOTKEY_LABELS: Record<string, string> = {

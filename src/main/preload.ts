@@ -13,6 +13,14 @@ import type {
 import type { ChatEvent } from '../shared/chat-types';
 import type { AgentAnchor, RecurrenceResult, RecallMatch, Skill, SkillContent, SkillScheduleFrequency, CanvasTarget, UpdateState, CanvasAgentStateSnapshot, ExportFormat, ExportDestination } from '../shared/types';
 import type { Notification, NotificationListFilter, SnoozePreset } from '../shared/notification-types';
+import type {
+  CreateGoalInput,
+  CreateCategoryInput,
+  UpdateGoalPatch,
+  UpdateCategoryPatch,
+  ListGoalsFilter,
+  ListCategoriesFilter,
+} from '../shared/goal-category-types';
 
 const { contextBridge, ipcRenderer } = require('electron');
 
@@ -287,6 +295,33 @@ export interface WhimAPI {
   archiveNotification(uid: string): Promise<IpcCommandResult<'notification:archive'>>;
   markNotificationDone(uid: string): Promise<IpcCommandResult<'notification:mark-done'>>;
   onNotificationNew(callback: (notification: Notification) => void): () => void;
+
+  // ── Goals (Phase B.1) ────────────────────────────────────
+  listGoals(filter?: ListGoalsFilter): Promise<IpcCommandResult<'goal:list'>>;
+  createGoal(input: CreateGoalInput): Promise<IpcCommandResult<'goal:create'>>;
+  updateGoal(id: string, patch: UpdateGoalPatch): Promise<IpcCommandResult<'goal:update'>>;
+  archiveGoal(id: string): Promise<IpcCommandResult<'goal:archive'>>;
+  unarchiveGoal(id: string): Promise<IpcCommandResult<'goal:unarchive'>>;
+  deleteGoal(id: string): Promise<IpcCommandResult<'goal:delete'>>;
+  listCategoriesForGoal(goalId: string): Promise<IpcCommandResult<'goal:list-categories'>>;
+  associateGoalCategory(params: {
+    goalId: string;
+    categoryId: string;
+  }): Promise<IpcCommandResult<'goal:associate-category'>>;
+  disassociateGoalCategory(params: {
+    goalId: string;
+    categoryId: string;
+  }): Promise<IpcCommandResult<'goal:disassociate-category'>>;
+  onGoalsChanged(callback: () => void): () => void;
+
+  // ── Categories (Phase B.1) ───────────────────────────────
+  listCategories(filter?: ListCategoriesFilter): Promise<IpcCommandResult<'category:list'>>;
+  createCategory(input: CreateCategoryInput): Promise<IpcCommandResult<'category:create'>>;
+  updateCategory(id: string, patch: UpdateCategoryPatch): Promise<IpcCommandResult<'category:update'>>;
+  archiveCategory(id: string): Promise<IpcCommandResult<'category:archive'>>;
+  unarchiveCategory(id: string): Promise<IpcCommandResult<'category:unarchive'>>;
+  deleteCategory(id: string): Promise<IpcCommandResult<'category:delete'>>;
+  onCategoriesChanged(callback: () => void): () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -692,6 +727,36 @@ const api: WhimAPI = {
     const handler = (_event: unknown, notification: Notification): void => callback(notification);
     ipcRenderer.on('notification:new', handler);
     return () => { ipcRenderer.removeListener('notification:new', handler); };
+  },
+
+  // ── Goals (Phase B.1) ────────────────────────────────────
+  listGoals: (filter) => ipcRenderer.invoke('goal:list', filter),
+  createGoal: (input) => ipcRenderer.invoke('goal:create', input),
+  updateGoal: (id, patch) => ipcRenderer.invoke('goal:update', id, patch),
+  archiveGoal: (id) => ipcRenderer.invoke('goal:archive', id),
+  unarchiveGoal: (id) => ipcRenderer.invoke('goal:unarchive', id),
+  deleteGoal: (id) => ipcRenderer.invoke('goal:delete', id),
+  listCategoriesForGoal: (goalId) => ipcRenderer.invoke('goal:list-categories', goalId),
+  associateGoalCategory: (params) => ipcRenderer.invoke('goal:associate-category', params),
+  disassociateGoalCategory: (params) =>
+    ipcRenderer.invoke('goal:disassociate-category', params),
+  onGoalsChanged: (callback) => {
+    const handler = (): void => callback();
+    ipcRenderer.on('goals:changed', handler);
+    return () => { ipcRenderer.removeListener('goals:changed', handler); };
+  },
+
+  // ── Categories (Phase B.1) ───────────────────────────────
+  listCategories: (filter) => ipcRenderer.invoke('category:list', filter),
+  createCategory: (input) => ipcRenderer.invoke('category:create', input),
+  updateCategory: (id, patch) => ipcRenderer.invoke('category:update', id, patch),
+  archiveCategory: (id) => ipcRenderer.invoke('category:archive', id),
+  unarchiveCategory: (id) => ipcRenderer.invoke('category:unarchive', id),
+  deleteCategory: (id) => ipcRenderer.invoke('category:delete', id),
+  onCategoriesChanged: (callback) => {
+    const handler = (): void => callback();
+    ipcRenderer.on('categories:changed', handler);
+    return () => { ipcRenderer.removeListener('categories:changed', handler); };
   },
 };
 

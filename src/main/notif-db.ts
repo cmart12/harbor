@@ -19,6 +19,7 @@
  */
 
 import * as path from 'path';
+import * as crypto from 'crypto';
 import { app } from 'electron';
 import Database from 'better-sqlite3';
 import type {
@@ -26,6 +27,20 @@ import type {
   NotificationListFilter,
   NotificationStatus,
 } from '../shared/notification-types';
+import type {
+  Goal,
+  Category,
+  CreateGoalInput,
+  CreateCategoryInput,
+  UpdateGoalPatch,
+  UpdateCategoryPatch,
+  ListGoalsFilter,
+  ListCategoriesFilter,
+} from '../shared/goal-category-types';
+import {
+  DEFAULT_GOAL_COLOR,
+  DEFAULT_CATEGORY_COLOR,
+} from '../shared/goal-category-types';
 
 let db: Database.Database | null = null;
 
@@ -64,7 +79,110 @@ function createSchema(conn: Database.Database): void {
       key TEXT PRIMARY KEY,
       value TEXT
     );
+
+    -- Phase B.1: goals + categories live in the sidecar DB alongside
+    -- notifications. Schema is symmetric across the two entities so the
+    -- B.2 classifier can join either dimension uniformly.
+    CREATE TABLE IF NOT EXISTS goals (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      description TEXT,
+      color TEXT NOT NULL DEFAULT '${DEFAULT_GOAL_COLOR}',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      archived_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_goals_sort_order ON goals(sort_order);
+    CREATE INDEX IF NOT EXISTS idx_goals_archived_at ON goals(archived_at);
+
+    CREATE TABLE IF NOT EXISTS categories (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      description TEXT,
+      color TEXT NOT NULL DEFAULT '${DEFAULT_CATEGORY_COLOR}',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      archived_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_categories_sort_order ON categories(sort_order);
+    CREATE INDEX IF NOT EXISTS idx_categories_archived_at ON categories(archived_at);
+
+    -- Many-to-many join. Picking a goal in the renderer auto-suggests
+    -- its associated categories. ON DELETE CASCADE keeps the table
+    -- consistent when a goal or category is hard-deleted (delete,
+    -- not archive).
+    CREATE TABLE IF NOT EXISTS goal_categories (
+      goal_id TEXT NOT NULL,
+      category_id TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (goal_id, category_id),
+      FOREIGN KEY (goal_id) REFERENCES goals(id) ON DELETE CASCADE,
+      FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_goal_categories_category_id
+      ON goal_categories(category_id);
   `);
+
+  // Phase B.1: add nullable category_id / goal_id columns to the
+  // existing notifications table. SQLite does NOT support
+  // `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, so we probe
+  // pragma_table_info first and ALTER only when missing. This keeps
+  // upgrades from older Harbor builds safe and idempotent.
+  addColumnIfMissing(conn, 'notifications', 'category_id', 'TEXT');
+  addColumnIfMissing(conn, 'notifications', 'goal_id', 'TEXT');
+  conn.exec(`
+    CREATE INDEX IF NOT EXISTS idx_notifications_category_id
+      ON notifications(category_id);
+    CREATE INDEX IF NOT EXISTS idx_notifications_goal_id
+      ON notifications(goal_id);
+  `);
+
+  seedDefaultCategoriesIfEmpty(conn);
+}
+
+function addColumnIfMissing(
+  conn: Database.Database,
+  table: string,
+  column: string,
+  decl: string,
+): void {
+  const cols = conn.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  if (cols.some(c => c.name === column)) return;
+  // Inline `decl` is a constant from our own code, not user input, so
+  // string interpolation is safe here (sqlite refuses parameter
+  // binding inside DDL anyway).
+  conn.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl}`);
+}
+
+/**
+ * One-time seed: if `categories` is empty, insert Chris's default
+ * working categories. Detected by COUNT(*) so a user who archives or
+ * deletes every default won't have them reappear.
+ */
+function seedDefaultCategoriesIfEmpty(conn: Database.Database): void {
+  const row = conn.prepare('SELECT COUNT(*) AS n FROM categories').get() as { n: number };
+  if (row.n > 0) return;
+  const now = new Date().toISOString();
+  const stmt = conn.prepare(
+    `INSERT INTO categories
+       (id, title, description, color, sort_order, archived_at, created_at, updated_at)
+     VALUES (?, ?, NULL, ?, ?, NULL, ?, ?)`,
+  );
+  const seeds: Array<{ title: string; color: string }> = [
+    { title: 'Dual Access', color: '#F59E0B' },
+    { title: 'SDK Partners', color: '#3B82F6' },
+    { title: 'AI Workstream', color: '#10B981' },
+    { title: 'Personal / Admin', color: '#8B5CF6' },
+    { title: 'Other', color: '#6B7280' },
+  ];
+  const tx = conn.transaction(() => {
+    for (let i = 0; i < seeds.length; i++) {
+      stmt.run(crypto.randomUUID(), seeds[i].title, seeds[i].color, i, now, now);
+    }
+  });
+  tx();
 }
 
 /**
@@ -274,4 +392,265 @@ export function setMeta(key: string, value: string): void {
        ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
     )
     .run(key, value);
+}
+
+// ---------------------------------------------------------------------------
+// Goals (Phase B.1)
+// ---------------------------------------------------------------------------
+
+const GOAL_COLS =
+  'id, title, description, color, sort_order, archived_at, created_at, updated_at';
+
+export function createGoal(input: CreateGoalInput): Goal {
+  const conn = requireDb();
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+  const color = input.color ?? DEFAULT_GOAL_COLOR;
+  const description = input.description ?? null;
+  const sortOrder = input.sort_order ?? nextSortOrder(conn, 'goals');
+  conn
+    .prepare(
+      `INSERT INTO goals (${GOAL_COLS})
+       VALUES (?, ?, ?, ?, ?, NULL, ?, ?)`,
+    )
+    .run(id, input.title, description, color, sortOrder, now, now);
+  return getGoal(id) as Goal;
+}
+
+export function listGoals(filter: ListGoalsFilter = {}): Goal[] {
+  const conn = requireDb();
+  const sql = filter.includeArchived
+    ? `SELECT ${GOAL_COLS} FROM goals ORDER BY sort_order ASC, created_at ASC`
+    : `SELECT ${GOAL_COLS} FROM goals
+         WHERE archived_at IS NULL
+         ORDER BY sort_order ASC, created_at ASC`;
+  return conn.prepare(sql).all() as Goal[];
+}
+
+export function getGoal(id: string): Goal | null {
+  const row = requireDb()
+    .prepare(`SELECT ${GOAL_COLS} FROM goals WHERE id = ?`)
+    .get(id) as Goal | undefined;
+  return row ?? null;
+}
+
+export function updateGoal(id: string, patch: UpdateGoalPatch): Goal | null {
+  const conn = requireDb();
+  const fields: string[] = [];
+  const values: unknown[] = [];
+  if (patch.title !== undefined) {
+    fields.push('title = ?');
+    values.push(patch.title);
+  }
+  if (patch.description !== undefined) {
+    fields.push('description = ?');
+    values.push(patch.description);
+  }
+  if (patch.color !== undefined) {
+    fields.push('color = ?');
+    values.push(patch.color);
+  }
+  if (patch.sort_order !== undefined) {
+    fields.push('sort_order = ?');
+    values.push(patch.sort_order);
+  }
+  if (fields.length === 0) return getGoal(id);
+  fields.push('updated_at = ?');
+  values.push(new Date().toISOString());
+  values.push(id);
+  conn.prepare(`UPDATE goals SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+  return getGoal(id);
+}
+
+export function archiveGoal(id: string): boolean {
+  const now = new Date().toISOString();
+  const info = requireDb()
+    .prepare('UPDATE goals SET archived_at = ?, updated_at = ? WHERE id = ?')
+    .run(now, now, id);
+  return info.changes > 0;
+}
+
+export function unarchiveGoal(id: string): boolean {
+  const now = new Date().toISOString();
+  const info = requireDb()
+    .prepare('UPDATE goals SET archived_at = NULL, updated_at = ? WHERE id = ?')
+    .run(now, id);
+  return info.changes > 0;
+}
+
+export function deleteGoal(id: string): boolean {
+  const info = requireDb().prepare('DELETE FROM goals WHERE id = ?').run(id);
+  return info.changes > 0;
+}
+
+// ---------------------------------------------------------------------------
+// Categories (Phase B.1)
+// ---------------------------------------------------------------------------
+
+const CATEGORY_COLS =
+  'id, title, description, color, sort_order, archived_at, created_at, updated_at';
+
+export function createCategory(input: CreateCategoryInput): Category {
+  const conn = requireDb();
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+  const color = input.color ?? DEFAULT_CATEGORY_COLOR;
+  const description = input.description ?? null;
+  const sortOrder = input.sort_order ?? nextSortOrder(conn, 'categories');
+  conn
+    .prepare(
+      `INSERT INTO categories (${CATEGORY_COLS})
+       VALUES (?, ?, ?, ?, ?, NULL, ?, ?)`,
+    )
+    .run(id, input.title, description, color, sortOrder, now, now);
+  return getCategory(id) as Category;
+}
+
+export function listCategories(filter: ListCategoriesFilter = {}): Category[] {
+  const conn = requireDb();
+  const sql = filter.includeArchived
+    ? `SELECT ${CATEGORY_COLS} FROM categories ORDER BY sort_order ASC, created_at ASC`
+    : `SELECT ${CATEGORY_COLS} FROM categories
+         WHERE archived_at IS NULL
+         ORDER BY sort_order ASC, created_at ASC`;
+  return conn.prepare(sql).all() as Category[];
+}
+
+export function getCategory(id: string): Category | null {
+  const row = requireDb()
+    .prepare(`SELECT ${CATEGORY_COLS} FROM categories WHERE id = ?`)
+    .get(id) as Category | undefined;
+  return row ?? null;
+}
+
+export function updateCategory(id: string, patch: UpdateCategoryPatch): Category | null {
+  const conn = requireDb();
+  const fields: string[] = [];
+  const values: unknown[] = [];
+  if (patch.title !== undefined) {
+    fields.push('title = ?');
+    values.push(patch.title);
+  }
+  if (patch.description !== undefined) {
+    fields.push('description = ?');
+    values.push(patch.description);
+  }
+  if (patch.color !== undefined) {
+    fields.push('color = ?');
+    values.push(patch.color);
+  }
+  if (patch.sort_order !== undefined) {
+    fields.push('sort_order = ?');
+    values.push(patch.sort_order);
+  }
+  if (fields.length === 0) return getCategory(id);
+  fields.push('updated_at = ?');
+  values.push(new Date().toISOString());
+  values.push(id);
+  conn.prepare(`UPDATE categories SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+  return getCategory(id);
+}
+
+export function archiveCategory(id: string): boolean {
+  const now = new Date().toISOString();
+  const info = requireDb()
+    .prepare('UPDATE categories SET archived_at = ?, updated_at = ? WHERE id = ?')
+    .run(now, now, id);
+  return info.changes > 0;
+}
+
+export function unarchiveCategory(id: string): boolean {
+  const now = new Date().toISOString();
+  const info = requireDb()
+    .prepare('UPDATE categories SET archived_at = NULL, updated_at = ? WHERE id = ?')
+    .run(now, id);
+  return info.changes > 0;
+}
+
+export function deleteCategory(id: string): boolean {
+  const info = requireDb().prepare('DELETE FROM categories WHERE id = ?').run(id);
+  return info.changes > 0;
+}
+
+// ---------------------------------------------------------------------------
+// Goal ↔ Category associations (Phase B.1)
+// ---------------------------------------------------------------------------
+
+/** Insert is idempotent (`INSERT OR IGNORE`) so callers can re-link safely. */
+export function associateGoalCategory(goalId: string, categoryId: string): boolean {
+  const conn = requireDb();
+  const now = new Date().toISOString();
+  const info = conn
+    .prepare(
+      `INSERT OR IGNORE INTO goal_categories (goal_id, category_id, created_at)
+       VALUES (?, ?, ?)`,
+    )
+    .run(goalId, categoryId, now);
+  if (info.changes > 0) {
+    conn.prepare('UPDATE goals SET updated_at = ? WHERE id = ?').run(now, goalId);
+  }
+  return info.changes > 0;
+}
+
+export function disassociateGoalCategory(goalId: string, categoryId: string): boolean {
+  const conn = requireDb();
+  const info = conn
+    .prepare('DELETE FROM goal_categories WHERE goal_id = ? AND category_id = ?')
+    .run(goalId, categoryId);
+  if (info.changes > 0) {
+    const now = new Date().toISOString();
+    conn.prepare('UPDATE goals SET updated_at = ? WHERE id = ?').run(now, goalId);
+  }
+  return info.changes > 0;
+}
+
+/** Categories linked to a goal. Excludes archived categories by default. */
+export function listCategoriesForGoal(
+  goalId: string,
+  opts: { includeArchived?: boolean } = {},
+): Category[] {
+  const conn = requireDb();
+  const sql = opts.includeArchived
+    ? `SELECT c.id, c.title, c.description, c.color, c.sort_order, c.archived_at,
+              c.created_at, c.updated_at
+         FROM categories c
+         JOIN goal_categories gc ON gc.category_id = c.id
+        WHERE gc.goal_id = ?
+        ORDER BY c.sort_order ASC, c.created_at ASC`
+    : `SELECT c.id, c.title, c.description, c.color, c.sort_order, c.archived_at,
+              c.created_at, c.updated_at
+         FROM categories c
+         JOIN goal_categories gc ON gc.category_id = c.id
+        WHERE gc.goal_id = ? AND c.archived_at IS NULL
+        ORDER BY c.sort_order ASC, c.created_at ASC`;
+  return conn.prepare(sql).all(goalId) as Category[];
+}
+
+/** Reverse lookup: which goals reference this category. */
+export function listGoalsForCategory(
+  categoryId: string,
+  opts: { includeArchived?: boolean } = {},
+): Goal[] {
+  const conn = requireDb();
+  const sql = opts.includeArchived
+    ? `SELECT g.id, g.title, g.description, g.color, g.sort_order, g.archived_at,
+              g.created_at, g.updated_at
+         FROM goals g
+         JOIN goal_categories gc ON gc.goal_id = g.id
+        WHERE gc.category_id = ?
+        ORDER BY g.sort_order ASC, g.created_at ASC`
+    : `SELECT g.id, g.title, g.description, g.color, g.sort_order, g.archived_at,
+              g.created_at, g.updated_at
+         FROM goals g
+         JOIN goal_categories gc ON gc.goal_id = g.id
+        WHERE gc.category_id = ? AND g.archived_at IS NULL
+        ORDER BY g.sort_order ASC, g.created_at ASC`;
+  return conn.prepare(sql).all(categoryId) as Goal[];
+}
+
+function nextSortOrder(conn: Database.Database, table: 'goals' | 'categories'): number {
+  const row = conn
+    .prepare(`SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM ${table}`)
+    .get() as { next: number };
+  return row.next;
 }

@@ -69,6 +69,19 @@ export type {
   SubagentProgress,
 } from '../shared/subagent-types';
 
+// ── Goals + Categories (Phase B.1) ──────────────────────────────────────────
+export type {
+  Goal,
+  Category,
+  CreateGoalInput,
+  CreateCategoryInput,
+  UpdateGoalPatch,
+  UpdateCategoryPatch,
+  ListGoalsFilter,
+  ListCategoriesFilter,
+} from '../shared/goal-category-types';
+export { DEFAULT_GOAL_COLOR, DEFAULT_CATEGORY_COLOR } from '../shared/goal-category-types';
+
 /**
  * Typed accessor for the preload-injected IPC bridge.
  * Use this instead of accessing `window.whimAPI` directly.
