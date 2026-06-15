@@ -1,7 +1,7 @@
 import type { Space } from '../../shared/types';
 import type { RecallMatch } from '../../shared/types';
 
-export type SpaceFilter = 'open' | 'agents' | 'skills' | 'closed';
+export type SpaceFilter = 'feed' | 'open' | 'agents' | 'skills' | 'closed';
 
 export interface SpaceState {
   spaces: Space[];
@@ -157,6 +157,11 @@ class SpaceStore {
       case 'agents':
       case 'skills':
         return spaces;
+      case 'feed':
+        // Feed is not backed by the spaces table; its data source lands in
+        // Phase A.2. Return an empty list so any caller that does fall
+        // through to this method gets a benign result.
+        return [];
       default:
         return spaces;
     }

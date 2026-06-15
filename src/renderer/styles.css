@@ -2390,6 +2390,44 @@ body.dark .workers-badge {
   background: radial-gradient(circle at 35% 35%, #fde68a, #fbbf24);
 }
 
+/* ── Feed tab placeholder (Phase A.1) ─────────────────── */
+
+.feed-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 32px 16px;
+  color: rgba(0, 0, 0, 0.65);
+  gap: 8px;
+}
+
+.feed-placeholder.hidden {
+  display: none;
+}
+
+.feed-placeholder-icon {
+  font-size: 32px;
+  opacity: 0.7;
+}
+
+.feed-placeholder-title {
+  font-size: var(--fs-body, 14px);
+  font-weight: 500;
+  color: rgba(0, 0, 0, 0.8);
+}
+
+.feed-placeholder-body {
+  font-size: var(--fs-label, 12px);
+  opacity: 0.75;
+  max-width: 280px;
+  line-height: 1.4;
+}
+
+body.dark .feed-placeholder { color: rgba(255, 255, 255, 0.7); }
+body.dark .feed-placeholder-title { color: rgba(255, 255, 255, 0.88); }
+
 /* ── Focus banner ─────────────────────────────────────── */
 
 .focus-banner {

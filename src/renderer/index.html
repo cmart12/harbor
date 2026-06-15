@@ -83,6 +83,7 @@
       </header>
 
       <div id="filter-bar" class="filter-bar" role="tablist" aria-label="Views">
+        <button class="filter-btn" data-filter="feed" role="tab" aria-selected="false">Feed</button>
         <button class="filter-btn active" data-filter="open" role="tab" aria-selected="true">Spaces <span id="space-count" class="space-count-badge">0</span></button>
         <button class="filter-btn" data-filter="agents" role="tab" aria-selected="false">Workers<span id="workers-badge" class="workers-badge hidden"></span></button>
         <button class="filter-btn" data-filter="skills" role="tab" aria-selected="false">Skills</button>
@@ -129,6 +130,11 @@
       <div id="agent-summary" class="agent-summary hidden"></div>
 
       <div id="space-list"></div>
+      <div id="feed-placeholder" class="feed-placeholder hidden" role="region" aria-label="Feed">
+        <div class="feed-placeholder-icon" aria-hidden="true">📮</div>
+        <div class="feed-placeholder-title">Feed</div>
+        <div class="feed-placeholder-body">Notification triage lands in Phase A.2.</div>
+      </div>
       <div id="query-result" class="query-result hidden"></div>
 
       <div id="git-sync-bar" class="git-sync-bar hidden">

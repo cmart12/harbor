@@ -430,8 +430,8 @@ let activeSessionSpaces = new Set<string>();
 // Track agents per space for Spaces view
 let agentsBySpace = new Map<string, Array<{ agentId: string; status: string; summary: string; selectedText: string; quotedText?: string; source?: string }>>();
 // Current filter
-let currentFilter: 'open' | 'agents' | 'skills' | 'closed' = 'open';
-const filterOrder: Array<'open' | 'agents' | 'skills' | 'closed'> = ['open', 'agents', 'skills', 'closed'];
+let currentFilter: 'feed' | 'open' | 'agents' | 'skills' | 'closed' = 'open';
+const filterOrder: Array<'feed' | 'open' | 'agents' | 'skills' | 'closed'> = ['feed', 'open', 'agents', 'skills', 'closed'];
 let renderGeneration = 0;
 const filterBar = document.getElementById('filter-bar') as HTMLDivElement;
 const newAgentBtn = document.getElementById('new-agent-btn') as HTMLButtonElement;
@@ -738,13 +738,22 @@ function setFilter(filter: typeof currentFilter): void {
     btn.setAttribute('aria-selected', 'true');
   }
 
-  // Show capture form on Spaces, Workers, and Skills; hide on History
-  if (filter === 'closed') {
+  // Show capture form on Spaces, Workers, and Skills; hide on History and Feed
+  if (filter === 'closed' || filter === 'feed') {
     form.style.display = 'none';
   } else {
     form.style.display = '';
     descInput.placeholder = getPlaceholderForFilter(filter);
   }
+
+  // Feed tab shows a placeholder view; hide it for any other tab.
+  const feedPlaceholder = document.getElementById('feed-placeholder');
+  if (feedPlaceholder) {
+    feedPlaceholder.classList.toggle('hidden', filter !== 'feed');
+  }
+  // Hide the space list (and any spaces-related chrome) when on Feed so the
+  // placeholder owns the content area. Other tabs reuse this element.
+  listEl.classList.toggle('hidden', filter === 'feed');
 
   // Agents tab shows the summary panel; all others hide it
   if (filter === 'agents') {
@@ -3125,7 +3134,7 @@ descInput.addEventListener('keydown', (e) => {
 descInput.addEventListener('keydown', (e) => {
   // Toggle search mode on Spaces, Workers, and Skills tabs
   if (matchesHotkey(e, 'toggleSearch')) {
-    if (currentFilter === 'closed') return; // no search on History tab
+    if (currentFilter === 'closed' || currentFilter === 'feed') return; // no search on History or Feed
     e.preventDefault();
     if (searchMode) exitSearchMode();
     else enterSearchMode();
@@ -3379,6 +3388,11 @@ function render(): void {
   } else if (currentFilter === 'closed') {
     // History mode — render card-based combined view
     renderHistoryView();
+    return;
+  } else if (currentFilter === 'feed') {
+    // Feed tab: placeholder only in Phase A.1. Notification ingestion +
+    // real rendering lands in Phase A.2. The placeholder element is
+    // already shown/hidden by setFilter().
     return;
   } else {
     // Normal mode — open spaces
