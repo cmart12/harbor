@@ -23,6 +23,7 @@
 import type { CopilotClient, CopilotSession } from '@github/copilot-sdk';
 import type { Notification } from '../../shared/notification-types';
 import { getEphemeralCopilotClient } from '../ai';
+import { InMemoryFsProvider } from '../agents/in-memory-fs-provider';
 import {
   getNotification,
   setClassification,
@@ -107,7 +108,8 @@ async function getSession(): Promise<CopilotSession | null> {
     cachedSession = await client.createSession({
       systemMessage: { content: CLASSIFIER_SYSTEM_MESSAGE },
       onPermissionRequest: async () => ({ kind: 'reject' as const }),
-    });
+      createSessionFsProvider: () => new InMemoryFsProvider(),
+    } as any);
     return cachedSession;
   } catch (err) {
     console.warn('[classifier] createSession failed:', err);
