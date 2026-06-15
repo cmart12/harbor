@@ -167,6 +167,17 @@ describe('SpaceStore', () => {
       expect(result).toEqual([captured, inProgress, done]);
     });
 
+    it('filter "feed" returns an empty list (Feed is not backed by spaces)', () => {
+      spaceStore.setFilter('feed');
+      const result = spaceStore.getFilteredSpaces();
+      expect(result).toEqual([]);
+    });
+
+    it('setFilter("feed") updates the active filter in state', () => {
+      spaceStore.setFilter('feed');
+      expect(spaceStore.getState().filter).toBe('feed');
+    });
+
     it('returns searchResults when set, regardless of filter', () => {
       const searchHit = makeSpace({ id: 'search-1', status: 'done' });
       spaceStore.setSearchResults([searchHit]);
