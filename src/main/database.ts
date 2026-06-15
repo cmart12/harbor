@@ -141,6 +141,7 @@ function createSchema(database: Database.Database): void {
       folder TEXT,
       session_id TEXT,
       source_skill_id TEXT,
+      source_notification_id TEXT,
       attachments TEXT DEFAULT '[]',
       canvas_content TEXT DEFAULT '',
       status TEXT NOT NULL DEFAULT 'captured',
@@ -311,6 +312,7 @@ export function createSpace(input: CreateSpaceInput, sourceSkillId?: string): Sp
     folder,
     session_id: null,
     source_skill_id: sourceSkillId ?? null,
+    source_notification_id: input.sourceNotificationId ?? null,
     attachments: [],
     status: 'captured',
     created_at: now,
@@ -330,6 +332,7 @@ export function createSpace(input: CreateSpaceInput, sourceSkillId?: string): Sp
     completed_at: space.completed_at,
     folder: space.folder,
     source_skill_id: space.source_skill_id,
+    source_notification_id: space.source_notification_id,
     attachments: JSON.stringify(space.attachments),
     status: space.status,
     created_at: space.created_at,
@@ -337,16 +340,16 @@ export function createSpace(input: CreateSpaceInput, sourceSkillId?: string): Sp
   });
 
   db.prepare(
-    `INSERT INTO spaces (id, description, body, raw_text, client, due_at, due_at_utc, recurrence, completed_at, folder, session_id, source_skill_id, attachments, status, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(space.id, space.description, space.body, space.raw_text, space.client, space.due_at, space.due_at_utc, space.recurrence, space.completed_at, space.folder, space.session_id, space.source_skill_id, JSON.stringify(space.attachments), space.status, space.created_at, space.updated_at);
+    `INSERT INTO spaces (id, description, body, raw_text, client, due_at, due_at_utc, recurrence, completed_at, folder, session_id, source_skill_id, source_notification_id, attachments, status, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(space.id, space.description, space.body, space.raw_text, space.client, space.due_at, space.due_at_utc, space.recurrence, space.completed_at, space.folder, space.session_id, space.source_skill_id, space.source_notification_id, JSON.stringify(space.attachments), space.status, space.created_at, space.updated_at);
 
   return space;
 }
 
 export function getSpace(id: string): Space | null {
   const row = db.prepare(
-    `SELECT id, description, body, raw_text, client, due_at, due_at_utc, recurrence, completed_at, folder, session_id, source_skill_id, attachments, status, created_at, updated_at
+    `SELECT id, description, body, raw_text, client, due_at, due_at_utc, recurrence, completed_at, folder, session_id, source_skill_id, source_notification_id, attachments, status, created_at, updated_at
      FROM spaces WHERE id = ?`
   ).get(id) as any | undefined;
   if (!row) return null;
@@ -355,7 +358,7 @@ export function getSpace(id: string): Space | null {
 
 export function listSpaces(): Space[] {
   const rows = db.prepare(
-    `SELECT id, description, body, raw_text, client, due_at, due_at_utc, recurrence, completed_at, folder, session_id, source_skill_id, attachments, status, created_at, updated_at
+    `SELECT id, description, body, raw_text, client, due_at, due_at_utc, recurrence, completed_at, folder, session_id, source_skill_id, source_notification_id, attachments, status, created_at, updated_at
      FROM spaces
      ORDER BY
        CASE WHEN status = 'done' THEN 1 ELSE 0 END ASC,
@@ -496,7 +499,7 @@ export function updateCanvasContent(spaceId: string, content: string): { title: 
 export function searchSpaces(query: string): Space[] {
   const like = `%${query}%`;
   const rows = db.prepare(
-    `SELECT id, description, body, raw_text, client, due_at, due_at_utc, recurrence, completed_at, folder, session_id, source_skill_id, attachments, status, created_at, updated_at
+    `SELECT id, description, body, raw_text, client, due_at, due_at_utc, recurrence, completed_at, folder, session_id, source_skill_id, source_notification_id, attachments, status, created_at, updated_at
      FROM spaces
      WHERE description LIKE ? OR body LIKE ? OR canvas_content LIKE ?
      ORDER BY updated_at DESC`

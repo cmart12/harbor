@@ -12,6 +12,7 @@ import type {
 } from '../shared/ipc-contract';
 import type { ChatEvent } from '../shared/chat-types';
 import type { AgentAnchor, RecurrenceResult, RecallMatch, Skill, SkillContent, SkillScheduleFrequency, CanvasTarget, UpdateState, CanvasAgentStateSnapshot, ExportFormat, ExportDestination } from '../shared/types';
+import type { Notification, NotificationListFilter, SnoozePreset } from '../shared/notification-types';
 
 const { contextBridge, ipcRenderer } = require('electron');
 
@@ -277,6 +278,15 @@ export interface WhimAPI {
 
   // ── Platform ─────────────────────────────────────────────
   getPlatform(): string;
+
+  // ── Notifications (Phase A.2) ────────────────────────────
+  listNotifications(filter?: NotificationListFilter): Promise<IpcCommandResult<'notification:list'>>;
+  promoteNotificationToNewSpace(uid: string): Promise<IpcCommandResult<'notification:promote-to-new-space'>>;
+  openNotificationLink(uid: string): Promise<IpcCommandResult<'notification:open-link'>>;
+  snoozeNotification(uid: string, preset: SnoozePreset): Promise<IpcCommandResult<'notification:snooze'>>;
+  archiveNotification(uid: string): Promise<IpcCommandResult<'notification:archive'>>;
+  markNotificationDone(uid: string): Promise<IpcCommandResult<'notification:mark-done'>>;
+  onNotificationNew(callback: (notification: Notification) => void): () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -670,6 +680,19 @@ const api: WhimAPI = {
 
   // ── Platform ─────────────────────────────────────────────
   getPlatform: () => process.platform,
+
+  // ── Notifications (Phase A.2) ────────────────────────────
+  listNotifications: (filter) => ipcRenderer.invoke('notification:list', filter),
+  promoteNotificationToNewSpace: (uid) => ipcRenderer.invoke('notification:promote-to-new-space', uid),
+  openNotificationLink: (uid) => ipcRenderer.invoke('notification:open-link', uid),
+  snoozeNotification: (uid, preset) => ipcRenderer.invoke('notification:snooze', uid, preset),
+  archiveNotification: (uid) => ipcRenderer.invoke('notification:archive', uid),
+  markNotificationDone: (uid) => ipcRenderer.invoke('notification:mark-done', uid),
+  onNotificationNew: (callback) => {
+    const handler = (_event: unknown, notification: Notification): void => callback(notification);
+    ipcRenderer.on('notification:new', handler);
+    return () => { ipcRenderer.removeListener('notification:new', handler); };
+  },
 };
 
 contextBridge.exposeInMainWorld('whimAPI', api);

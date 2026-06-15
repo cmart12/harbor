@@ -11,7 +11,7 @@ export interface LogEvent {
 const ALLOWED_SPACE_FIELDS = new Set([
   'description', 'body', 'raw_text', 'client', 'due_at', 'due_at_utc',
   'recurrence', 'completed_at', 'folder', 'status', 'created_at', 'updated_at',
-  'attachments', 'source_skill_id',
+  'attachments', 'source_skill_id', 'source_notification_id',
 ]);
 
 /**
@@ -107,12 +107,13 @@ function applyEvent(db: Database.Database, event: LogEvent): void {
       // Backfill body from raw_text/description for old events
       const body = d.body ?? d.raw_text ?? d.description ?? '';
       db.prepare(
-        `INSERT OR REPLACE INTO spaces (id, description, body, raw_text, client, due_at, due_at_utc, recurrence, completed_at, folder, source_skill_id, attachments, status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT OR REPLACE INTO spaces (id, description, body, raw_text, client, due_at, due_at_utc, recurrence, completed_at, folder, source_skill_id, source_notification_id, attachments, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(
         d.id, d.description, body, d.raw_text ?? null, d.client ?? null,
         d.due_at ?? null, d.due_at_utc ?? null, d.recurrence ?? null,
-        d.completed_at ?? null, d.folder ?? null, d.source_skill_id ?? null, d.attachments ?? '[]',
+        d.completed_at ?? null, d.folder ?? null, d.source_skill_id ?? null,
+        d.source_notification_id ?? null, d.attachments ?? '[]',
         d.status ?? 'captured',
         d.created_at, d.updated_at,
       );
@@ -342,12 +343,13 @@ function applyEvent(db: Database.Database, event: LogEvent): void {
         for (const s of spaces) {
           const body = s.body ?? s.raw_text ?? s.description ?? '';
           db.prepare(
-            `INSERT OR REPLACE INTO spaces (id, description, body, raw_text, client, due_at, due_at_utc, recurrence, completed_at, folder, source_skill_id, attachments, status, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            `INSERT OR REPLACE INTO spaces (id, description, body, raw_text, client, due_at, due_at_utc, recurrence, completed_at, folder, source_skill_id, source_notification_id, attachments, status, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
           ).run(
             s.id, s.description, body, s.raw_text ?? null, s.client ?? null,
             s.due_at ?? null, s.due_at_utc ?? null, s.recurrence ?? null,
-            s.completed_at ?? null, s.folder ?? null, s.source_skill_id ?? null, s.attachments ?? '[]',
+            s.completed_at ?? null, s.folder ?? null, s.source_skill_id ?? null,
+            s.source_notification_id ?? null, s.attachments ?? '[]',
             s.status,
             s.created_at, s.updated_at,
           );

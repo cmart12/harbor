@@ -197,6 +197,7 @@ export interface Space {
   folder: string | null;
   session_id: string | null;
   source_skill_id: string | null;
+  source_notification_id: string | null;
   attachments: Attachment[];
   status: 'captured' | 'in_progress' | 'done';
   created_at: string;
@@ -205,6 +206,12 @@ export interface Space {
 
 export interface CreateSpaceInput {
   body: string;
+  /**
+   * When a Space was created by promoting a notification, this is the
+   * `source_uid` of that notification. Persisted on the `spaces` table and
+   * carried through the event log so the linkage survives DB rebuild.
+   */
+  sourceNotificationId?: string;
 }
 
 export interface RecurrenceResult {
