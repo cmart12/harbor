@@ -130,10 +130,13 @@
       <div id="agent-summary" class="agent-summary hidden"></div>
 
       <div id="space-list"></div>
-      <div id="feed-placeholder" class="feed-placeholder hidden" role="region" aria-label="Feed">
-        <div class="feed-placeholder-icon" aria-hidden="true">📮</div>
-        <div class="feed-placeholder-title">Feed</div>
-        <div class="feed-placeholder-body">Notification triage lands in Phase A.2.</div>
+      <div id="feed-placeholder" class="feed-view hidden" role="region" aria-label="Feed">
+        <div id="feed-list" class="feed-list"></div>
+        <div id="feed-empty" class="feed-empty hidden">
+          <div class="feed-empty-icon" aria-hidden="true">📮</div>
+          <div class="feed-empty-title">No notifications</div>
+          <div class="feed-empty-body">macOS notifications will appear here.</div>
+        </div>
       </div>
       <div id="query-result" class="query-result hidden"></div>
 

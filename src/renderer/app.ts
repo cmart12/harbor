@@ -381,6 +381,8 @@ import { agentStore } from './state/agent-store';
 import { skillStore } from './state/skill-store';
 import { historyStore } from './state/history-store';
 import { personaStore } from './state/persona-store';
+import { feedStore } from './state/feed-store';
+import type { Notification, SnoozePreset } from '../shared/notification-types';
 import {
   installIpcBridge,
   loadSpacesSnapshot,
@@ -754,6 +756,12 @@ function setFilter(filter: typeof currentFilter): void {
   // Hide the space list (and any spaces-related chrome) when on Feed so the
   // placeholder owns the content area. Other tabs reuse this element.
   listEl.classList.toggle('hidden', filter === 'feed');
+
+  // First time the user opens Feed in this session, fetch the cached
+  // notifications. Subsequent activations are cheap (no-op).
+  if (filter === 'feed' && !feedStore.getState().loaded) {
+    void feedStore.loadInitial();
+  }
 
   // Agents tab shows the summary panel; all others hide it
   if (filter === 'agents') {
@@ -3390,9 +3398,8 @@ function render(): void {
     renderHistoryView();
     return;
   } else if (currentFilter === 'feed') {
-    // Feed tab: placeholder only in Phase A.1. Notification ingestion +
-    // real rendering lands in Phase A.2. The placeholder element is
-    // already shown/hidden by setFilter().
+    // Phase A.2: render the Feed list.
+    renderFeedView();
     return;
   } else {
     // Normal mode — open spaces
@@ -3434,6 +3441,184 @@ function renderAgentSummary(_agents: Array<{ status: string; createdAt?: string 
   // React owns the agent summary card (rendered by AgentSummary component
   // from spaceStore + agentStore). Legacy callers are no-ops during the
   // migration.
+}
+
+// ── Feed view (Phase A.2) ─────────────────────────────────
+
+function relativeTime(iso: string): string {
+  const then = Date.parse(iso);
+  if (Number.isNaN(then)) return iso;
+  const deltaSec = Math.round((Date.now() - then) / 1000);
+  if (deltaSec < 5) return 'just now';
+  if (deltaSec < 60) return `${deltaSec}s ago`;
+  const min = Math.round(deltaSec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.round(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const days = Math.round(hr / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(then).toLocaleDateString();
+}
+
+function showFeedToast(text: string, onClick?: () => void): void {
+  const root = document.getElementById('feed-placeholder');
+  if (!root) return;
+  const toast = document.createElement('div');
+  toast.className = 'feed-toast';
+  toast.textContent = text;
+  if (onClick) {
+    toast.classList.add('feed-toast-clickable');
+    toast.addEventListener('click', () => {
+      onClick();
+      toast.remove();
+    });
+  }
+  root.appendChild(toast);
+  setTimeout(() => { toast.remove(); }, 4000);
+}
+
+function renderFeedRow(n: Notification): HTMLDivElement {
+  const row = document.createElement('div');
+  row.className = 'feed-row';
+  row.dataset.uid = n.source_uid;
+
+  // Header: sender + source + time
+  const header = document.createElement('div');
+  header.className = 'feed-row-header';
+  const sender = document.createElement('span');
+  sender.className = 'feed-row-sender';
+  const senderText = n.sender_name
+    ? (n.sender_email ? `${n.sender_name} <${n.sender_email}>` : n.sender_name)
+    : (n.sender_email || (n.app_id || n.source));
+  sender.textContent = senderText;
+  const badge = document.createElement('span');
+  badge.className = 'feed-row-badge';
+  badge.textContent = n.source;
+  const time = document.createElement('span');
+  time.className = 'feed-row-time';
+  time.textContent = relativeTime(n.received_at);
+  header.append(sender, badge, time);
+
+  const subject = document.createElement('div');
+  subject.className = 'feed-row-subject';
+  subject.textContent = n.subject?.trim() || '(no subject)';
+
+  const body = document.createElement('div');
+  body.className = 'feed-row-body';
+  const bodyText = (n.body ?? '').trim();
+  body.textContent = bodyText.length > 200 ? bodyText.slice(0, 200) + '...' : bodyText;
+
+  // Action bar
+  const actions = document.createElement('div');
+  actions.className = 'feed-row-actions';
+
+  const mkBtn = (label: string, cls: string, onClick: () => void): HTMLButtonElement => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = `feed-action-btn ${cls}`;
+    b.textContent = label;
+    b.addEventListener('click', (e) => { e.stopPropagation(); onClick(); });
+    return b;
+  };
+
+  const promoteBtn = mkBtn('Promote', 'feed-action-promote', async () => {
+    const res = await feedStore.promoteToNewSpace(n.source_uid);
+    if (res) {
+      showFeedToast(`Promoted: ${n.subject?.trim() || 'notification'}`, () => {
+        setFilter('open');
+      });
+    } else {
+      showFeedToast('Promote failed');
+    }
+  });
+  actions.appendChild(promoteBtn);
+
+  if (n.deep_link) {
+    actions.appendChild(mkBtn('Open', 'feed-action-open', () => {
+      void feedStore.openLink(n.source_uid);
+    }));
+  }
+
+  // Snooze dropdown wrapper
+  const snoozeWrap = document.createElement('div');
+  snoozeWrap.className = 'feed-action-snooze-wrap';
+  const snoozeBtn = mkBtn('Snooze ▾', 'feed-action-snooze', () => {
+    snoozeWrap.classList.toggle('open');
+  });
+  snoozeWrap.appendChild(snoozeBtn);
+  const menu = document.createElement('div');
+  menu.className = 'feed-snooze-menu';
+  const presets: Array<{ label: string; preset: SnoozePreset }> = [
+    { label: '1 hour', preset: '1h' },
+    { label: '3 hours', preset: '3h' },
+    { label: 'Tomorrow 9am', preset: 'tomorrow_9am' },
+    { label: 'Next Monday 9am', preset: 'next_monday_9am' },
+  ];
+  for (const p of presets) {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'feed-snooze-item';
+    item.textContent = p.label;
+    item.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      snoozeWrap.classList.remove('open');
+      const ok = await feedStore.snooze(n.source_uid, p.preset);
+      if (!ok) showFeedToast('Snooze failed');
+    });
+    menu.appendChild(item);
+  }
+  snoozeWrap.appendChild(menu);
+  actions.appendChild(snoozeWrap);
+
+  actions.appendChild(mkBtn('Archive', 'feed-action-archive', async () => {
+    const ok = await feedStore.archive(n.source_uid);
+    if (!ok) showFeedToast('Archive failed');
+  }));
+  actions.appendChild(mkBtn('Done', 'feed-action-done', async () => {
+    const ok = await feedStore.markDone(n.source_uid);
+    if (!ok) showFeedToast('Mark done failed');
+  }));
+
+  row.append(header, subject, body, actions);
+  return row;
+}
+
+function renderFeedView(): void {
+  const listEl = document.getElementById('feed-list');
+  const emptyEl = document.getElementById('feed-empty');
+  if (!listEl || !emptyEl) return;
+  const { notifications, loaded } = feedStore.getState();
+  if (!loaded) {
+    // First paint shows nothing until loadInitial resolves.
+    listEl.innerHTML = '';
+    emptyEl.classList.add('hidden');
+    return;
+  }
+  listEl.innerHTML = '';
+  if (notifications.length === 0) {
+    emptyEl.classList.remove('hidden');
+    return;
+  }
+  emptyEl.classList.add('hidden');
+  const frag = document.createDocumentFragment();
+  for (const n of notifications) frag.appendChild(renderFeedRow(n));
+  listEl.appendChild(frag);
+}
+
+// Subscribe once at module-init: any feed-store change re-renders the
+// Feed view if it's currently active. Cheap when other tabs are open
+// because renderFeedView short-circuits on missing DOM nodes.
+feedStore.subscribe(() => {
+  if (currentFilter === 'feed') renderFeedView();
+});
+
+// Wire macOS notification push events into the store. The unsub return
+// value is ignored: this listener lives for the lifetime of the renderer.
+{
+  const api = window.whimAPI;
+  if (api && typeof api.onNotificationNew === 'function') {
+    api.onNotificationNew((notif) => { feedStore.prepend(notif); });
+  }
 }
 
 // ── Agent step & approval tracking ────────────────────────

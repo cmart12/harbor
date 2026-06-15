@@ -8,6 +8,7 @@
 import type { Space, CreateSpaceInput, Attachment, AgentAnchor, AgentSession, LinkPreviewMeta, RecurrenceResult, RecallMatch, Skill, SkillContent, SkillInvocationInput, SkillInvocationResult, SkillScheduleFrequency, CanvasTarget, UpdateState, ExportFormat, ExportDestination } from './types';
 import type { ChatEvent, ElicitationSchema, ElicitationFieldValue } from './chat-types';
 import type { SubagentSummary, SubagentInfo } from './subagent-types';
+import type { Notification, NotificationListFilter, SnoozePreset } from './notification-types';
 
 // ---------------------------------------------------------------------------
 // Helper types needed by the contract that don't exist in shared/ yet
@@ -485,6 +486,32 @@ export interface IpcCommands {
   'update:download': { args: []; result: void };
   'update:get-state': { args: []; result: UpdateState };
   'update:open-log': { args: []; result: { ok: true } | { error: string } };
+
+  // ── Notifications (Phase A.2) ────────────────────────────
+  'notification:list': {
+    args: [filter?: NotificationListFilter];
+    result: Notification[];
+  };
+  'notification:promote-to-new-space': {
+    args: [uid: string];
+    result: { spaceId: string } | { error: string };
+  };
+  'notification:open-link': {
+    args: [uid: string];
+    result: { ok: true } | { error: string };
+  };
+  'notification:snooze': {
+    args: [uid: string, preset: SnoozePreset];
+    result: { ok: true; snoozedUntil: string } | { error: string };
+  };
+  'notification:archive': {
+    args: [uid: string];
+    result: { ok: true } | { error: string };
+  };
+  'notification:mark-done': {
+    args: [uid: string];
+    result: { ok: true } | { error: string };
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -570,6 +597,9 @@ export interface IpcEvents {
   'space:recall': { spaceId: string; match: RecallMatch };
   'skills:changed': void;
   'update:state-changed': UpdateState;
+
+  /** Phase A.2: a freshly-ingested notification. Renderer prepends to Feed. */
+  'notification:new': Notification;
 }
 
 // ---------------------------------------------------------------------------

@@ -19,8 +19,12 @@ import { createMainWindow, toggleWindow, setupSnapOnDrop, registerWindowIpcHandl
 import { createTray, destroyTray } from './tray';
 import { initAutoUpdater, cleanupAutoUpdater } from './update-service';
 import { syncWebRemoteServer, stopWebRemoteServer } from './web/server';
+import { openNotifDb, closeNotifDb } from './notif-db';
+import { MacOSNotifSource } from './notif-sources/macos-source';
+import type { NotifSource } from './notif-sources/types';
 
 let currentToggleAccelerator: string | null = null;
+let notifSource: NotifSource | null = null;
 
 // Windows toast notifications require an AppUserModelId to be properly
 // associated with the app in the notification center.
@@ -191,6 +195,12 @@ app.whenReady().then(async () => {
     syncCanvasContent(workspace);
     startSkillWatcher(workspace);
     startScheduler();
+    // Phase A.2: open sidecar notifications DB. Lives next to whim.db
+    // under <userData>/notifications.db. Independent of the workspace
+    // path, so opens even if workspace path resolution races.
+    try { openNotifDb(); } catch (err) {
+      console.warn('[main] openNotifDb failed:', err);
+    }
 
     // Background compaction — fold events older than the 30-day keep
     // window into a single snapshot.jsonl. Runs once after startup
@@ -219,6 +229,17 @@ app.whenReady().then(async () => {
   startCliExitMonitor();
   reconcileStaleAgents();
   initAutoUpdater();
+
+  // Phase A.2: spawn the macOS notification reader. No-op on non-darwin.
+  if (process.platform === 'darwin') {
+    notifSource = new MacOSNotifSource();
+    try {
+      notifSource.start();
+    } catch (err) {
+      console.warn('[main] MacOSNotifSource.start failed:', err);
+      notifSource = null;
+    }
+  }
 
   // Auto-show window on launch once content has loaded
   mainWin.webContents.once('did-finish-load', () => {
@@ -282,6 +303,12 @@ app.on('will-quit', async () => {
   cleanupAutoUpdater();
   destroyTray();
   await shutdownCopilot();
+  // Phase A.2: graceful notif source + sidecar DB teardown.
+  if (notifSource) {
+    try { await notifSource.stop(); } catch (e) { console.warn('[main] notif stop:', e); }
+    notifSource = null;
+  }
+  try { closeNotifDb(); } catch (e) { console.warn('[main] closeNotifDb:', e); }
 });
 
 app.on('window-all-closed', () => {

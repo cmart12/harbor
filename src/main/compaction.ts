@@ -162,6 +162,7 @@ function createCompactionSchema(database: Database.Database): void {
       id TEXT PRIMARY KEY, description TEXT NOT NULL, body TEXT, raw_text TEXT,
       client TEXT, due_at TEXT, due_at_utc TEXT, recurrence TEXT,
       completed_at TEXT, folder TEXT, session_id TEXT, source_skill_id TEXT,
+      source_notification_id TEXT,
       attachments TEXT DEFAULT '[]', canvas_content TEXT DEFAULT '',
       status TEXT NOT NULL DEFAULT 'captured',
       created_at TEXT NOT NULL, updated_at TEXT NOT NULL
@@ -233,7 +234,7 @@ function materialiseSnapshot(database: Database.Database): {
   subagent_tool_calls: any[];
 } {
   return {
-    spaces: database.prepare('SELECT id, description, body, raw_text, client, due_at, due_at_utc, recurrence, completed_at, folder, source_skill_id, attachments, status, created_at, updated_at FROM spaces').all() as any[],
+    spaces: database.prepare('SELECT id, description, body, raw_text, client, due_at, due_at_utc, recurrence, completed_at, folder, source_skill_id, source_notification_id, attachments, status, created_at, updated_at FROM spaces').all() as any[],
     space_events: database.prepare('SELECT id, space_id, event_type, due_at, due_at_utc, completed_at, recurrence_json, created_at FROM space_events').all() as any[],
     canvas_agents: database.prepare('SELECT id, space_id, selected_text, session_id, pid, status, created_at, updated_at FROM canvas_agents').all() as any[],
     agent_sessions: database.prepare('SELECT id, session_id, space_id, prompt, status, summary, working_dir, source, persona_handle, quoted_text, comment_thread_id, run_location, yolo_mode, created_at, updated_at FROM agent_sessions').all() as any[],
