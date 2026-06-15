@@ -2592,10 +2592,6 @@ body.dark .workers-badge {
   color: rgba(0, 0, 0, 0.35);
 }
 
-.space-item.processing .space-desc {
-  color: rgba(0, 0, 0, 0.4);
-}
-
 .space-check {
   width: 18px;
   height: 18px;
@@ -2777,21 +2773,6 @@ body.dark .workers-badge {
 .space-edit-body:hover {
   background: rgba(0, 0, 0, 0.04);
   opacity: 1;
-}
-
-.processing-badge {
-  font-size: var(--fs-meta);
-  color: #7c66dc;
-  background: rgba(124, 102, 220, 0.1);
-  padding: 1px 6px;
-  border-radius: var(--btn-radius);
-  animation: processingPulse 1.5s ease infinite;
-  will-change: opacity;
-}
-
-@keyframes processingPulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
 }
 
 .letter-glow {
@@ -6698,7 +6679,6 @@ body.dark .space-desc { color: #e0e0e0; }
 body.dark .space-meta { color: rgba(255, 255, 255, 0.55); }
 body.dark .space-check { border-color: rgba(255, 255, 255, 0.2); }
 body.dark .space-delete { color: rgba(255, 255, 255, 0.5); }
-body.dark .processing-badge { color: #a594e8; background: rgba(124, 102, 220, 0.15); }
 body.dark .session-badge { color: rgba(255, 255, 255, 0.5); }
 body.dark .session-badge.agent-attention { color: #f59e0b; }
 body.dark .session-badge.agent-failed-badge { color: #f87171; }

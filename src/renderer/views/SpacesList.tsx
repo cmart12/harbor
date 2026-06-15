@@ -74,7 +74,6 @@ const MiniAgent = React.memo(function MiniAgent({
 
 const SpaceRow = React.memo(function SpaceRow({
   space,
-  isProcessing,
   isActiveSession,
   isFocused,
   isSelected,
@@ -84,7 +83,6 @@ const SpaceRow = React.memo(function SpaceRow({
   actions,
 }: {
   space: Space;
-  isProcessing: boolean;
   isActiveSession: boolean;
   isFocused: boolean;
   isSelected: boolean;
@@ -104,7 +102,6 @@ const SpaceRow = React.memo(function SpaceRow({
   const classes = [
     'space-item',
     space.status === 'done' ? 'done' : '',
-    isProcessing ? 'processing' : '',
     isFocused ? 'focused' : '',
     isSelected ? 'kb-selected' : '',
     hasRunningAgents ? 'has-running-agents' : '',
@@ -150,7 +147,6 @@ const SpaceRow = React.memo(function SpaceRow({
           {hasRunningAgents ? <span className="session-badge running">⚡ {runningCount} working</span> : null}
           {hasWaitingAgents ? <span className="session-badge agent-attention">⏳ needs attention</span> : null}
           {hasFailedAgents ? <span className="session-badge agent-failed-badge">✗ failed</span> : null}
-          {isProcessing ? <span className="processing-badge">refining...</span> : null}
           <span>{timeAgo(space.updated_at)}</span>
         </div>
         {spaceAgents.length > 0 ? (
@@ -241,7 +237,6 @@ export function SpacesList(props: SpacesListProps): React.ReactElement {
         <SpaceRow
           key={space.id}
           space={space}
-          isProcessing={agentState.processingSpaces.has(space.id)}
           isActiveSession={agentState.activeSessionSpaces.has(space.id)}
           isFocused={space.id === focusedSpaceId}
           isSelected={idx === selectedIndex}
