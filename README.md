@@ -2,7 +2,7 @@
 
 <img src="copilot.png" width="96" height="96" alt="whim" />
 
-# whim
+# Harbor
 
 **Capture ideas, launch agents, and get things done — straight from your system tray.**
 

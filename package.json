@@ -1,8 +1,8 @@
 {
-  "name": "whim",
+  "name": "harbor",
   "version": "0.0.15",
   "description": "Quick capture from system tray",
-  "productName": "whim",
+  "productName": "Harbor",
   "main": "dist/main/main.js",
   "scripts": {
     "clean": "node -e \"const fs=require('fs');const p=require('path');if(fs.existsSync('dist'))fs.rmSync('dist',{recursive:true,force:true})\"",
@@ -28,8 +28,8 @@
     "release:win": "npm run build && npm run rebuild:electron && electron-builder --win --publish always"
   },
   "build": {
-    "appId": "com.patniko.whim",
-    "productName": "whim",
+    "appId": "com.cmart12.harbor",
+    "productName": "Harbor",
     "directories": {
       "output": "build"
     },
