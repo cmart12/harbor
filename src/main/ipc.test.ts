@@ -91,6 +91,8 @@ vi.mock('./ai', () => ({
   setAIModel: vi.fn(async () => {}),
   reinitCopilot: vi.fn(async () => {}),
   listAvailableModels: vi.fn(async () => ['gpt-4', 'gpt-3.5']),
+  getEphemeralCopilotClient: vi.fn(() => null),
+  getCopilotClient: vi.fn(() => null),
 }));
 
 vi.mock('./session', () => ({

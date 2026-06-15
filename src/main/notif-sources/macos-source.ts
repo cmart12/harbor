@@ -28,6 +28,7 @@ import {
   getNotification,
 } from '../notif-db';
 import { sendToAllWindows } from '../ipc';
+import { enqueueForClassification } from '../classifier/classifier';
 import type { NotifSource } from './types';
 
 const CURSOR_KEY = 'macos_cursor';
@@ -150,7 +151,17 @@ export class MacOSNotifSource implements NotifSource {
           });
           if (inserted) {
             const row = getNotification(msg.source_uid);
-            if (row) sendToAllWindows('notification:new', row);
+            if (row) {
+              // Hand off to the B.2 classifier before announcing the
+              // row — the renderer subscribes to `notification:updated`
+              // for the badge repaint, so emit order doesn't actually
+              // matter for UI correctness. Enqueue first keeps the
+              // queue depth tight against feed render latency.
+              try { enqueueForClassification(msg.source_uid); } catch (err) {
+                console.warn('[macos-source] enqueue classifier failed:', err);
+              }
+              sendToAllWindows('notification:new', row);
+            }
           }
         } catch (err) {
           console.warn('[macos-source] insert failed:', err);

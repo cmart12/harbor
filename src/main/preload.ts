@@ -322,6 +322,16 @@ export interface WhimAPI {
   unarchiveCategory(id: string): Promise<IpcCommandResult<'category:unarchive'>>;
   deleteCategory(id: string): Promise<IpcCommandResult<'category:delete'>>;
   onCategoriesChanged(callback: () => void): () => void;
+
+  // ── Classifier (Phase B.2) ───────────────────────────────
+  reclassifyAllNotifications(): Promise<IpcCommandResult<'classifier:reclassify-all'>>;
+  retryFailedClassifications(): Promise<IpcCommandResult<'classifier:retry-failed'>>;
+  reclassifyOneNotification(uid: string): Promise<IpcCommandResult<'classifier:reclassify-one'>>;
+  classifierPendingCount(): Promise<IpcCommandResult<'classifier:pending-count'>>;
+  goalActiveLinkCount(goalId: string): Promise<IpcCommandResult<'goal:active-link-count'>>;
+  categoryActiveLinkCount(categoryId: string): Promise<IpcCommandResult<'category:active-link-count'>>;
+  onNotificationUpdated(callback: (notification: Notification) => void): () => void;
+  onClassifierProgress(callback: (progress: { pending: number; failed: number }) => void): () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -757,6 +767,26 @@ const api: WhimAPI = {
     const handler = (): void => callback();
     ipcRenderer.on('categories:changed', handler);
     return () => { ipcRenderer.removeListener('categories:changed', handler); };
+  },
+
+  // ── Classifier (Phase B.2) ───────────────────────────────
+  reclassifyAllNotifications: () => ipcRenderer.invoke('classifier:reclassify-all'),
+  retryFailedClassifications: () => ipcRenderer.invoke('classifier:retry-failed'),
+  reclassifyOneNotification: (uid) => ipcRenderer.invoke('classifier:reclassify-one', uid),
+  classifierPendingCount: () => ipcRenderer.invoke('classifier:pending-count'),
+  goalActiveLinkCount: (goalId) => ipcRenderer.invoke('goal:active-link-count', goalId),
+  categoryActiveLinkCount: (categoryId) =>
+    ipcRenderer.invoke('category:active-link-count', categoryId),
+  onNotificationUpdated: (callback) => {
+    const handler = (_event: unknown, notification: Notification): void => callback(notification);
+    ipcRenderer.on('notification:updated', handler);
+    return () => { ipcRenderer.removeListener('notification:updated', handler); };
+  },
+  onClassifierProgress: (callback) => {
+    const handler = (_event: unknown, progress: { pending: number; failed: number }): void =>
+      callback(progress);
+    ipcRenderer.on('classifier:progress', handler);
+    return () => { ipcRenderer.removeListener('classifier:progress', handler); };
   },
 };
 

@@ -9,6 +9,7 @@ import { registerExportHandlers } from './export-handlers';
 import { registerNotificationHandlers } from './notification-handlers';
 import { registerGoalsHandlers } from './goals-handlers';
 import { registerCategoriesHandlers } from './categories-handlers';
+import { registerClassifierHandlers } from './classifier-handlers';
 
 export function registerIpcHandlers(): void {
   registerSpaceHandlers();
@@ -22,6 +23,7 @@ export function registerIpcHandlers(): void {
   registerNotificationHandlers();
   registerGoalsHandlers();
   registerCategoriesHandlers();
+  registerClassifierHandlers();
 }
 
 // Re-export typed handler utilities

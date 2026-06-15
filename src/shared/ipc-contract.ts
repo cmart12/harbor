@@ -586,6 +586,37 @@ export interface IpcCommands {
     args: [id: string];
     result: { ok: true } | { error: string };
   };
+
+  // ── Classifier (Phase B.2) ───────────────────────────────
+  /** Reset every notification to `pending` and drain the queue. */
+  'classifier:reclassify-all': {
+    args: [];
+    result: { queued: number };
+  };
+  /** Reset only failed rows and drain. */
+  'classifier:retry-failed': {
+    args: [];
+    result: { queued: number };
+  };
+  /** Manually re-classify a single row (per-row Feed action). */
+  'classifier:reclassify-one': {
+    args: [uid: string];
+    result: { ok: true };
+  };
+  /** Snapshot of the classifier queue, used by the Settings status row. */
+  'classifier:pending-count': {
+    args: [];
+    result: { pending: number; failed: number };
+  };
+  /** Active linked-notifications count for an archive-confirmation dialog. */
+  'goal:active-link-count': {
+    args: [goalId: string];
+    result: { count: number };
+  };
+  'category:active-link-count': {
+    args: [categoryId: string];
+    result: { count: number };
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -674,6 +705,15 @@ export interface IpcEvents {
 
   /** Phase A.2: a freshly-ingested notification. Renderer prepends to Feed. */
   'notification:new': Notification;
+
+  /** Phase B.2: an existing notification was mutated (classifier write,
+   *  reclassify, etc.). Renderer replaces the row in place. */
+  'notification:updated': Notification;
+
+  /** Phase B.2: snapshot of the classifier queue. Pushed after each
+   *  batch completes so Settings can refresh its status row without
+   *  re-invoking. */
+  'classifier:progress': { pending: number; failed: number };
 
   /** Phase B.1: any mutation to goals (create/update/archive/etc.). Renderer refetches. */
   'goals:changed': void;
