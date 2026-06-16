@@ -382,11 +382,12 @@ import { skillStore } from './state/skill-store';
 import { historyStore } from './state/history-store';
 import { personaStore } from './state/persona-store';
 import { feedStore } from './state/feed-store';
+import type { FeedGroup, FeedViewMode } from './state/feed-store';
 import { goalsStore } from './state/goals-store';
 import { categoriesStore } from './state/categories-store';
 import type { Goal, Category } from '../shared/goal-category-types';
 import { DEFAULT_GOAL_COLOR, DEFAULT_CATEGORY_COLOR } from '../shared/goal-category-types';
-import type { Notification, SnoozePreset, Urgency } from '../shared/notification-types';
+import type { Notification, SnoozePreset, Urgency, VipSender } from '../shared/notification-types';
 import {
   installIpcBridge,
   loadSpacesSnapshot,
@@ -3488,6 +3489,24 @@ const URGENCY_META: Record<Urgency, { label: string; color: string }> = {
   whenever: { label: 'Whenever', color: '#888888' },
 };
 
+const FEED_VIEW_LABELS: Record<FeedViewMode, string> = {
+  'by-time': 'By Time',
+  'by-urgency': 'By Urgency',
+  'by-category': 'By Category',
+  'by-goal': 'By Goal',
+};
+
+const feedCollapsedGroups = new Set<string>();
+
+type FeedFilterKey = 'urgency' | 'categoryIds' | 'goalIds' | 'sources';
+
+interface FeedFilterChip {
+  type: FeedFilterKey;
+  value: string;
+  label: string;
+  color?: string;
+}
+
 function renderClassificationChips(n: Notification): HTMLSpanElement | null {
   const wrap = document.createElement('span');
   wrap.className = 'feed-row-chips';
@@ -3520,7 +3539,6 @@ function renderFeedRow(n: Notification): HTMLDivElement {
   row.className = 'feed-row';
   row.dataset.uid = n.source_uid;
 
-  // Header: sender + source + time
   const header = document.createElement('div');
   header.className = 'feed-row-header';
   const sender = document.createElement('span');
@@ -3528,7 +3546,14 @@ function renderFeedRow(n: Notification): HTMLDivElement {
   const senderText = n.sender_name
     ? (n.sender_email ? `${n.sender_name} <${n.sender_email}>` : n.sender_name)
     : (n.sender_email || (n.app_id || n.source));
-  sender.textContent = senderText;
+  if (n.is_vip) {
+    const star = document.createElement('span');
+    star.className = 'feed-vip-star';
+    star.textContent = '⭐';
+    sender.append(star, document.createTextNode(senderText));
+  } else {
+    sender.textContent = senderText;
+  }
   const badge = document.createElement('span');
   badge.className = 'feed-row-badge';
   badge.textContent = n.source;
@@ -3537,9 +3562,6 @@ function renderFeedRow(n: Notification): HTMLDivElement {
   time.textContent = relativeTime(n.received_at);
   header.append(sender, badge, time);
 
-  // Phase B.2: chips for urgency + category. Only rendered when the
-  // classifier has finished (status === 'done') so the feed doesn't
-  // flicker with a default `whenever` chip on every fresh insert.
   if (n.classification_status === 'done') {
     const chips = renderClassificationChips(n);
     if (chips) header.append(chips);
@@ -3554,7 +3576,6 @@ function renderFeedRow(n: Notification): HTMLDivElement {
   const bodyText = (n.body ?? '').trim();
   body.textContent = bodyText.length > 200 ? bodyText.slice(0, 200) + '...' : bodyText;
 
-  // Action bar
   const actions = document.createElement('div');
   actions.className = 'feed-row-actions';
 
@@ -3585,7 +3606,6 @@ function renderFeedRow(n: Notification): HTMLDivElement {
     }));
   }
 
-  // Snooze dropdown wrapper
   const snoozeWrap = document.createElement('div');
   snoozeWrap.className = 'feed-action-snooze-wrap';
   const snoozeBtn = mkBtn('Snooze ▾', 'feed-action-snooze', () => {
@@ -3629,47 +3649,296 @@ function renderFeedRow(n: Notification): HTMLDivElement {
   return row;
 }
 
+function ensureFeedChrome(root: HTMLElement, listEl: HTMLElement): {
+  switcher: HTMLDivElement;
+  filterRow: HTMLDivElement;
+  activeFilters: HTMLDivElement;
+} {
+  let switcher = root.querySelector<HTMLDivElement>('.feed-view-switcher');
+  if (!switcher) {
+    switcher = document.createElement('div');
+    switcher.className = 'feed-view-switcher';
+    root.insertBefore(switcher, listEl);
+  }
+
+  let filterRow = root.querySelector<HTMLDivElement>('.feed-filter-row');
+  if (!filterRow) {
+    filterRow = document.createElement('div');
+    filterRow.className = 'feed-filter-row';
+    root.insertBefore(filterRow, listEl);
+  }
+
+  let activeFilters = root.querySelector<HTMLDivElement>('.feed-active-filters');
+  if (!activeFilters) {
+    activeFilters = document.createElement('div');
+    activeFilters.className = 'feed-active-filters';
+    root.insertBefore(activeFilters, listEl);
+  }
+
+  return { switcher, filterRow, activeFilters };
+}
+
+function buildFeedFilterChips(
+  viewMode: FeedViewMode,
+  notifications: Notification[],
+  goals: Goal[],
+  categories: Category[],
+): FeedFilterChip[] {
+  if (viewMode === 'by-urgency') {
+    return (Object.entries(URGENCY_META) as Array<[Urgency, { label: string; color: string }]>).map(([urgency, meta]) => ({
+      type: 'urgency',
+      value: urgency,
+      label: meta.label,
+      color: meta.color,
+    }));
+  }
+  if (viewMode === 'by-category') {
+    return categories.map(category => ({
+      type: 'categoryIds',
+      value: category.id,
+      label: category.title,
+      color: category.color,
+    }));
+  }
+  if (viewMode === 'by-goal') {
+    return goals.map(goal => ({
+      type: 'goalIds',
+      value: goal.id,
+      label: goal.title,
+      color: goal.color,
+    }));
+  }
+  const sources = Array.from(new Set(notifications.map(notification => notification.source))).sort((a, b) => a.localeCompare(b));
+  return sources.map(source => ({
+    type: 'sources',
+    value: source,
+    label: source,
+  }));
+}
+
+function filterLabel(type: FeedFilterKey, value: string, goals: Goal[], categories: Category[]): string {
+  if (type === 'urgency') return URGENCY_META[value as Urgency]?.label ?? value;
+  if (type === 'categoryIds') return categories.find(category => category.id === value)?.title ?? value;
+  if (type === 'goalIds') return goals.find(goal => goal.id === value)?.title ?? value;
+  return value;
+}
+
+function renderFeedViewSwitcher(container: HTMLElement, viewMode: FeedViewMode): void {
+  container.innerHTML = '';
+  (Object.entries(FEED_VIEW_LABELS) as Array<[FeedViewMode, string]>).forEach(([mode, label]) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `feed-view-switch-btn${mode === viewMode ? ' active' : ''}`;
+    button.textContent = label;
+    button.addEventListener('click', () => {
+      feedStore.setViewMode(mode);
+    });
+    container.appendChild(button);
+  });
+}
+
+function renderFeedFilterRow(
+  container: HTMLElement,
+  chips: FeedFilterChip[],
+  goals: Goal[],
+  categories: Category[],
+): void {
+  const { filters } = feedStore.getState();
+  container.innerHTML = '';
+  container.classList.toggle('hidden', chips.length === 0);
+  chips.forEach(chip => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'feed-filter-chip';
+    if ((filters[chip.type] as Set<string>).has(chip.value)) {
+      button.classList.add('active');
+    }
+    button.textContent = chip.label;
+    button.title = filterLabel(chip.type, chip.value, goals, categories);
+    if (chip.color) button.style.setProperty('--feed-chip-accent', chip.color);
+    button.addEventListener('click', () => {
+      feedStore.toggleFilter(chip.type, chip.value);
+    });
+    container.appendChild(button);
+  });
+}
+
+function renderFeedActiveFilters(
+  container: HTMLElement,
+  goals: Goal[],
+  categories: Category[],
+): void {
+  const { filters } = feedStore.getState();
+  const active: FeedFilterChip[] = [];
+  (Object.entries(filters) as Array<[FeedFilterKey, Set<string>]>).forEach(([type, values]) => {
+    values.forEach(value => {
+      active.push({ type, value, label: filterLabel(type, value, goals, categories) });
+    });
+  });
+
+  container.innerHTML = '';
+  container.classList.toggle('hidden', active.length === 0);
+  active.forEach(chip => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'feed-active-filter-pill';
+    button.textContent = `${chip.label} ×`;
+    button.addEventListener('click', () => {
+      feedStore.removeFilter(chip.type, chip.value);
+    });
+    container.appendChild(button);
+  });
+}
+
+function renderFeedGroupSection(group: FeedGroup): HTMLDivElement {
+  const section = document.createElement('div');
+  section.className = 'feed-group-section';
+  if (feedCollapsedGroups.has(group.groupId)) {
+    section.classList.add('collapsed');
+  }
+
+  const header = document.createElement('button');
+  header.type = 'button';
+  header.className = 'feed-group-header';
+  header.title = group.groupDescription ?? group.groupTitle;
+  header.addEventListener('click', () => {
+    if (feedCollapsedGroups.has(group.groupId)) feedCollapsedGroups.delete(group.groupId);
+    else feedCollapsedGroups.add(group.groupId);
+    renderFeedView();
+  });
+
+  const titleWrap = document.createElement('span');
+  titleWrap.className = 'feed-group-title-wrap';
+  const dot = document.createElement('span');
+  dot.className = 'feed-group-dot';
+  dot.style.background = group.groupColor;
+  const title = document.createElement('span');
+  title.className = 'feed-group-title';
+  title.textContent = group.groupTitle;
+  titleWrap.append(dot, title);
+
+  const count = document.createElement('span');
+  count.className = 'feed-group-count';
+  count.textContent = String(group.items.length);
+
+  header.append(titleWrap, count);
+
+  const items = document.createElement('div');
+  items.className = 'feed-group-items';
+  if (group.items.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'feed-group-empty';
+    empty.textContent = 'No notifications in this section.';
+    items.appendChild(empty);
+  } else {
+    group.items.forEach(notification => items.appendChild(renderFeedRow(notification)));
+  }
+
+  section.append(header, items);
+  return section;
+}
+
+function renderFeedList(listEl: HTMLElement, notifications: Notification[]): void {
+  listEl.innerHTML = '';
+  const frag = document.createDocumentFragment();
+  notifications.forEach(notification => frag.appendChild(renderFeedRow(notification)));
+  listEl.appendChild(frag);
+}
+
+function renderFeedGroups(listEl: HTMLElement, groups: FeedGroup[]): void {
+  listEl.innerHTML = '';
+  const frag = document.createDocumentFragment();
+  groups.forEach(group => frag.appendChild(renderFeedGroupSection(group)));
+  listEl.appendChild(frag);
+}
+
+function renderFeedEmptyState(emptyEl: HTMLElement, title: string, body: string): void {
+  const titleEl = emptyEl.querySelector<HTMLElement>('.feed-empty-title');
+  const bodyEl = emptyEl.querySelector<HTMLElement>('.feed-empty-body');
+  if (titleEl) titleEl.textContent = title;
+  if (bodyEl) bodyEl.textContent = body;
+}
+
+function groupedFeedData(viewMode: FeedViewMode, goals: Goal[], categories: Category[]): FeedGroup[] {
+  if (viewMode === 'by-urgency') return feedStore.getGroupedByUrgency(goals, categories);
+  if (viewMode === 'by-category') return feedStore.getGroupedByCategory(categories);
+  return feedStore.getGroupedByGoal(goals);
+}
+
 function renderFeedView(): void {
+  const root = document.getElementById('feed-placeholder');
   const listEl = document.getElementById('feed-list');
   const emptyEl = document.getElementById('feed-empty');
-  if (!listEl || !emptyEl) return;
-  const { notifications, loaded } = feedStore.getState();
+  if (!root || !listEl || !emptyEl) return;
+
+  const { notifications, loaded, viewMode } = feedStore.getState();
+  const goals = goalsStore.getState().goals;
+  const categories = categoriesStore.getState().categories;
+  const filtered = feedStore.getFiltered();
+  const chrome = ensureFeedChrome(root, listEl);
+
+  renderFeedViewSwitcher(chrome.switcher, viewMode);
+  renderFeedFilterRow(chrome.filterRow, buildFeedFilterChips(viewMode, notifications, goals, categories), goals, categories);
+  renderFeedActiveFilters(chrome.activeFilters, goals, categories);
+
   if (!loaded) {
-    // First paint shows nothing until loadInitial resolves.
     listEl.innerHTML = '';
     emptyEl.classList.add('hidden');
     return;
   }
-  listEl.innerHTML = '';
-  if (notifications.length === 0) {
+
+  if (filtered.length === 0) {
+    listEl.innerHTML = '';
+    const hasFilters = Object.values(feedStore.getState().filters).some(values => values.size > 0);
+    if (hasFilters) {
+      renderFeedEmptyState(emptyEl, 'No matching notifications', 'Try removing a filter or switching to a different Feed view.');
+    } else if (viewMode === 'by-urgency') {
+      renderFeedEmptyState(emptyEl, 'No notifications to sort by urgency', 'New notifications will appear here as they arrive.');
+    } else if (viewMode === 'by-category') {
+      renderFeedEmptyState(emptyEl, 'No notifications to group by category', 'Once your Feed has notifications, they will be grouped here.');
+    } else if (viewMode === 'by-goal') {
+      renderFeedEmptyState(emptyEl, 'No notifications to group by goal', 'Once your Feed has notifications, they will be grouped here.');
+    } else {
+      renderFeedEmptyState(emptyEl, 'No notifications', 'macOS notifications will appear here.');
+    }
     emptyEl.classList.remove('hidden');
     return;
   }
+
   emptyEl.classList.add('hidden');
-  const frag = document.createDocumentFragment();
-  for (const n of notifications) frag.appendChild(renderFeedRow(n));
-  listEl.appendChild(frag);
+  if (viewMode === 'by-time') {
+    renderFeedList(listEl, filtered);
+    return;
+  }
+
+  renderFeedGroups(listEl, groupedFeedData(viewMode, goals, categories));
 }
 
-// Subscribe once at module-init: any feed-store change re-renders the
-// Feed view if it's currently active. Cheap when other tabs are open
-// because renderFeedView short-circuits on missing DOM nodes.
 feedStore.subscribe(() => {
   if (currentFilter === 'feed') renderFeedView();
 });
+goalsStore.subscribe(() => {
+  if (currentFilter === 'feed') renderFeedView();
+});
+categoriesStore.subscribe(() => {
+  if (currentFilter === 'feed') renderFeedView();
+});
 
-// Wire macOS notification push events into the store. The unsub return
-// value is ignored: this listener lives for the lifetime of the renderer.
 {
-  const api = window.whimAPI;
-  if (api && typeof api.onNotificationNew === 'function') {
-    api.onNotificationNew((notif) => { feedStore.prepend(notif); });
+  if (typeof bridgeApi.onNotificationNew === 'function') {
+    bridgeApi.onNotificationNew((notif) => { feedStore.prepend(notif); });
   }
-  if (api && typeof api.onNotificationUpdated === 'function') {
-    api.onNotificationUpdated((notif) => { feedStore.updateInPlace(notif); });
+  if (typeof bridgeApi.onNotificationUpdated === 'function') {
+    bridgeApi.onNotificationUpdated((notif) => { feedStore.updateInPlace(notif); });
   }
-  if (api && typeof api.onClassifierProgress === 'function') {
-    api.onClassifierProgress((progress) => { classifierProgressTick(progress); });
+  if (typeof bridgeApi.onClassifierProgress === 'function') {
+    bridgeApi.onClassifierProgress((progress) => { classifierProgressTick(progress); });
+  }
+  if (typeof bridgeApi.onVipChanged === 'function') {
+    bridgeApi.onVipChanged(() => {
+      void loadVipSenders();
+      void feedStore.loadInitial();
+    });
   }
 }
 
@@ -5712,8 +5981,120 @@ function initCategoriesTab(): void {
   categoriesStore.subscribe(renderCategoriesList);
 }
 
+const VIP_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+let vipSendersState: VipSender[] = [];
+
+function formatVipCreatedAt(iso: string): string {
+  const ts = Date.parse(iso);
+  if (Number.isNaN(ts)) return iso;
+  return new Date(ts).toLocaleString();
+}
+
+function renderVipSendersList(): void {
+  const list = document.getElementById('vip-settings-list');
+  const empty = document.getElementById('vip-settings-empty');
+  if (!list || !empty) return;
+  if (vipSendersState.length === 0) {
+    list.innerHTML = '';
+    empty.classList.remove('hidden');
+    return;
+  }
+
+  empty.classList.add('hidden');
+  list.innerHTML = vipSendersState.map(sender => `
+    <form class="vip-settings-row" data-vip-email="${escapeHtml(sender.email)}">
+      <div class="vip-settings-row-meta">
+        <div class="vip-settings-row-email">${escapeHtml(sender.email)}</div>
+        <div class="vip-settings-row-created">Added ${escapeHtml(formatVipCreatedAt(sender.created_at))}</div>
+      </div>
+      <input
+        class="vip-settings-input vip-settings-inline-name"
+        name="displayName"
+        type="text"
+        value="${escapeHtml(sender.display_name ?? '')}"
+        placeholder="Optional display name"
+        maxlength="120"
+      />
+      <div class="vip-settings-row-actions">
+        <button type="submit" class="gc-action-btn">Save</button>
+        <button type="button" class="gc-action-btn danger" data-vip-remove="${escapeHtml(sender.email)}">Remove</button>
+      </div>
+    </form>
+  `).join('');
+}
+
+async function loadVipSenders(): Promise<void> {
+  try {
+    vipSendersState = await bridgeApi.listVipSenders();
+  } catch (err) {
+    console.warn('[vip] list failed:', err);
+    vipSendersState = [];
+  }
+  renderVipSendersList();
+}
+
+function initVipSendersTab(): void {
+  const form = document.getElementById('vip-add-form') as HTMLFormElement | null;
+  const emailEl = document.getElementById('vip-add-email') as HTMLInputElement | null;
+  const nameEl = document.getElementById('vip-add-display-name') as HTMLInputElement | null;
+  const list = document.getElementById('vip-settings-list');
+  if (!form || !emailEl || !nameEl || !list) return;
+
+  const clearValidation = () => {
+    emailEl.setCustomValidity('');
+  };
+
+  emailEl.addEventListener('input', clearValidation);
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    clearValidation();
+    const email = emailEl.value.trim().toLowerCase();
+    const displayName = nameEl.value.trim();
+    if (!VIP_EMAIL_RE.test(email)) {
+      emailEl.setCustomValidity('Enter a valid email address.');
+      emailEl.reportValidity();
+      return;
+    }
+
+    await bridgeApi.addVipSender({
+      email,
+      displayName: displayName || undefined,
+    });
+    emailEl.value = '';
+    nameEl.value = '';
+    emailEl.focus();
+    await loadVipSenders();
+  });
+
+  list.addEventListener('submit', async (event) => {
+    const target = event.target as HTMLElement;
+    const row = target.closest<HTMLFormElement>('[data-vip-email]');
+    if (!row) return;
+    event.preventDefault();
+    const email = row.dataset.vipEmail;
+    if (!email) return;
+    const data = new FormData(row);
+    const displayName = String(data.get('displayName') ?? '').trim();
+    await bridgeApi.addVipSender({
+      email,
+      displayName: displayName || undefined,
+    });
+    await loadVipSenders();
+  });
+
+  list.addEventListener('click', async (event) => {
+    const target = event.target as HTMLElement;
+    const email = target.closest<HTMLElement>('[data-vip-remove]')?.dataset.vipRemove;
+    if (!email) return;
+    await bridgeApi.removeVipSender(email);
+    await loadVipSenders();
+  });
+}
+
 initGoalsTab();
 initCategoriesTab();
+initVipSendersTab();
 
 // Push-event refresh wiring.
 (() => {
@@ -5730,6 +6111,7 @@ initCategoriesTab();
 queueMicrotask(() => {
   void goalsStore.loadInitial();
   void categoriesStore.loadInitial();
+  void loadVipSenders();
 });
 
 // ── Hotkeys tab ────────────────────────────────────────

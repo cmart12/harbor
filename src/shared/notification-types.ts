@@ -90,6 +90,12 @@ export const CLASSIFICATION_STATUS_VALUES: readonly ClassificationStatus[] = [
  *
  * All timestamps are UTC RFC3339 strings.
  */
+export interface VipSender {
+  email: string;
+  display_name: string | null;
+  created_at: string;
+}
+
 export interface Notification {
   /** Stable per-source UID. For macOS this is the UUID hex of `record.uuid`. */
   source_uid: string;
@@ -123,6 +129,8 @@ export interface Notification {
   classified_at: string | null;
   /** Phase B.2: short rationale from the LLM, shown in tooltips + debugging. */
   classification_reasoning: string | null;
+  /** Phase B.3: computed at fetch time based on the VIP sender list. */
+  is_vip?: boolean;
   created_at: string;
   updated_at: string;
 }

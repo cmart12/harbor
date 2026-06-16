@@ -20,6 +20,7 @@ import {
   getNotification,
   updateStatus,
   setPromotedSpace,
+  isVipSender,
 } from '../notif-db';
 import { createSpace, isInitialized } from '../database';
 import { computeSnoozeUntil } from '../notif-snooze';
@@ -28,7 +29,10 @@ import { materializeSpaceCanvas, scheduleAutoCommit } from '../workspace';
 
 export function registerNotificationHandlers(): void {
   registerHandler('notification:list', (_event, filter) => {
-    return listNotifications(filter ?? {});
+    return listNotifications(filter ?? {}).map(notification => ({
+      ...notification,
+      is_vip: isVipSender(notification.sender_email ?? ''),
+    }));
   });
 
   registerHandler('notification:promote-to-new-space', (_event, uid) => {

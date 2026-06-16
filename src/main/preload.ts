@@ -12,7 +12,7 @@ import type {
 } from '../shared/ipc-contract';
 import type { ChatEvent } from '../shared/chat-types';
 import type { AgentAnchor, RecurrenceResult, RecallMatch, Skill, SkillContent, SkillScheduleFrequency, CanvasTarget, UpdateState, CanvasAgentStateSnapshot, ExportFormat, ExportDestination } from '../shared/types';
-import type { Notification, NotificationListFilter, SnoozePreset } from '../shared/notification-types';
+import type { Notification, NotificationListFilter, SnoozePreset, VipSender } from '../shared/notification-types';
 import type {
   CreateGoalInput,
   CreateCategoryInput,
@@ -295,6 +295,12 @@ export interface WhimAPI {
   archiveNotification(uid: string): Promise<IpcCommandResult<'notification:archive'>>;
   markNotificationDone(uid: string): Promise<IpcCommandResult<'notification:mark-done'>>;
   onNotificationNew(callback: (notification: Notification) => void): () => void;
+
+  // VIP Senders
+  listVipSenders(): Promise<VipSender[]>;
+  addVipSender(input: { email: string; displayName?: string }): Promise<VipSender>;
+  removeVipSender(email: string): Promise<{ ok: true }>;
+  onVipChanged(callback: () => void): () => void;
 
   // ── Goals (Phase B.1) ────────────────────────────────────
   listGoals(filter?: ListGoalsFilter): Promise<IpcCommandResult<'goal:list'>>;
@@ -737,6 +743,15 @@ const api: WhimAPI = {
     const handler = (_event: unknown, notification: Notification): void => callback(notification);
     ipcRenderer.on('notification:new', handler);
     return () => { ipcRenderer.removeListener('notification:new', handler); };
+  },
+
+  listVipSenders: () => ipcRenderer.invoke('vip:list'),
+  addVipSender: (input) => ipcRenderer.invoke('vip:add', input),
+  removeVipSender: (email) => ipcRenderer.invoke('vip:remove', email),
+  onVipChanged: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on('vip:changed', handler);
+    return () => { ipcRenderer.removeListener('vip:changed', handler); };
   },
 
   // ── Goals (Phase B.1) ────────────────────────────────────

@@ -13,19 +13,16 @@ function makeNotification(overrides: Partial<Notification> = {}): Notification {
   return {
     source_uid: 'uid-1',
     source: 'macos',
-    received_at: '2026-06-15T10:00:00Z',
-    inserted_at: '2026-06-15T10:00:00Z',
+    app_id: 'com.example.app',
     sender_name: 'Alice',
     sender_email: 'alice@example.com',
     subject: 'Quick question',
     body: 'Hey, do you have a minute to look at the spec? I want to ship today.',
-    app_id: null,
-    link_url: null,
-    has_attachments: 0,
-    status: 'active',
-    promoted_to_space_id: null,
+    received_at: '2026-06-15T10:00:00Z',
+    deep_link: null,
+    status: 'unread',
     snoozed_until: null,
-    raw_json: null,
+    promoted_space_id: null,
     category_id: null,
     goal_id: null,
     urgency: 'whenever',
@@ -33,6 +30,8 @@ function makeNotification(overrides: Partial<Notification> = {}): Notification {
     classification_attempts: 0,
     classified_at: null,
     classification_reasoning: null,
+    created_at: '2026-06-15T10:00:00Z',
+    updated_at: '2026-06-15T10:00:00Z',
     ...overrides,
   };
 }
@@ -43,6 +42,7 @@ function makeGoal(overrides: Partial<Goal> = {}): Goal {
     title: 'Ship Harbor B.2',
     description: 'Get the classifier into chris\'s hands',
     color: '#1f9eff',
+    sort_order: 0,
     archived_at: null,
     created_at: '2026-06-01T00:00:00Z',
     updated_at: '2026-06-01T00:00:00Z',
@@ -56,6 +56,7 @@ function makeCategory(overrides: Partial<Category> = {}): Category {
     title: 'Engineering',
     description: null,
     color: '#888888',
+    sort_order: 0,
     archived_at: null,
     created_at: '2026-06-01T00:00:00Z',
     updated_at: '2026-06-01T00:00:00Z',
@@ -93,7 +94,7 @@ describe('preClassifyHeuristics', () => {
 describe('buildPrompt', () => {
   it('lists categories by id with description', () => {
     const inputs: PromptNotificationInput[] = [{ notification: makeNotification() }];
-    const prompt = buildPrompt(inputs, [], [makeCategory({ description: 'tech work' })]);
+    const prompt = buildPrompt(inputs, [], [makeCategory({ description: 'tech work' })], new Set());
     expect(prompt).toContain('c-eng');
     expect(prompt).toContain('Engineering');
     expect(prompt).toContain('tech work');
@@ -101,14 +102,14 @@ describe('buildPrompt', () => {
 
   it('lists goals with associated description', () => {
     const inputs: PromptNotificationInput[] = [{ notification: makeNotification() }];
-    const prompt = buildPrompt(inputs, [makeGoal()], []);
+    const prompt = buildPrompt(inputs, [makeGoal()], [], new Set());
     expect(prompt).toContain('g-ship');
     expect(prompt).toContain('Ship Harbor B.2');
   });
 
   it('says "(none configured)" when categories list is empty', () => {
     const inputs: PromptNotificationInput[] = [{ notification: makeNotification() }];
-    const prompt = buildPrompt(inputs, [], []);
+    const prompt = buildPrompt(inputs, [], [], new Set());
     expect(prompt).toContain('none configured');
   });
 
@@ -116,15 +117,21 @@ describe('buildPrompt', () => {
     const inputs: PromptNotificationInput[] = [
       { notification: makeNotification(), hint: { urgency: 'whenever', reason: 'auto-digest' } },
     ];
-    const prompt = buildPrompt(inputs, [], []);
+    const prompt = buildPrompt(inputs, [], [], new Set());
     expect(prompt).toContain('hint: urgency=whenever');
     expect(prompt).toContain('auto-digest');
   });
 
   it('omits hint line when none provided', () => {
     const inputs: PromptNotificationInput[] = [{ notification: makeNotification() }];
-    const prompt = buildPrompt(inputs, [], []);
+    const prompt = buildPrompt(inputs, [], [], new Set());
     expect(prompt).not.toContain('hint:');
+  });
+
+  it('includes a VIP marker when the sender email matches', () => {
+    const inputs: PromptNotificationInput[] = [{ notification: makeNotification({ sender_email: 'vip@example.com' }) }];
+    const prompt = buildPrompt(inputs, [], [], new Set(['vip@example.com']));
+    expect(prompt).toContain('vip: true');
   });
 
   it('truncates long bodies', () => {
@@ -132,7 +139,7 @@ describe('buildPrompt', () => {
     const inputs: PromptNotificationInput[] = [
       { notification: makeNotification({ body: longBody }) },
     ];
-    const prompt = buildPrompt(inputs, [], []);
+    const prompt = buildPrompt(inputs, [], [], new Set());
     expect(prompt).toContain('...');
     expect(prompt.length).toBeLessThan(2000);
   });
@@ -142,7 +149,7 @@ describe('buildPrompt', () => {
       { notification: makeNotification({ source_uid: 'a' }) },
       { notification: makeNotification({ source_uid: 'b' }) },
     ];
-    const prompt = buildPrompt(inputs, [], []);
+    const prompt = buildPrompt(inputs, [], [], new Set());
     expect(prompt).toContain('--- notification 1 ---');
     expect(prompt).toContain('--- notification 2 ---');
   });
@@ -158,7 +165,7 @@ describe('buildPrompt', () => {
         }),
       },
     ];
-    const prompt = buildPrompt(inputs, [], []);
+    const prompt = buildPrompt(inputs, [], [], new Set());
     expect(prompt).toContain('(no subject)');
     expect(prompt).toContain('com.example.app');
   });

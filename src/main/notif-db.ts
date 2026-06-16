@@ -27,6 +27,7 @@ import type {
   NotificationListFilter,
   NotificationStatus,
   Urgency,
+  VipSender,
 } from '../shared/notification-types';
 import type {
   Goal,
@@ -124,6 +125,12 @@ function createSchema(conn: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_goal_categories_category_id
       ON goal_categories(category_id);
+
+    CREATE TABLE IF NOT EXISTS vip_senders (
+      email TEXT PRIMARY KEY COLLATE NOCASE,
+      display_name TEXT,
+      created_at TEXT NOT NULL
+    );
   `);
 
   // Phase B.1: add nullable category_id / goal_id columns to the
@@ -156,6 +163,7 @@ function createSchema(conn: Database.Database): void {
   `);
 
   seedDefaultCategoriesIfEmpty(conn);
+  ensureNewSeedCategories(conn);
 }
 
 function addColumnIfMissing(
@@ -192,6 +200,8 @@ function seedDefaultCategoriesIfEmpty(conn: Database.Database): void {
     { title: 'AI Workstream', color: '#10B981' },
     { title: 'Personal / Admin', color: '#8B5CF6' },
     { title: 'Other', color: '#6B7280' },
+    { title: 'Code Review', color: '#EC4899' },
+    { title: 'Meetings', color: '#0EA5E9' },
   ];
   const tx = conn.transaction(() => {
     for (let i = 0; i < seeds.length; i++) {
@@ -199,6 +209,22 @@ function seedDefaultCategoriesIfEmpty(conn: Database.Database): void {
     }
   });
   tx();
+}
+
+function ensureNewSeedCategories(conn: Database.Database): void {
+  const now = new Date().toISOString();
+  const newSeeds: Array<{ title: string; color: string }> = [
+    { title: 'Code Review', color: '#EC4899' },
+    { title: 'Meetings', color: '#0EA5E9' },
+  ];
+  const insertStmt = conn.prepare(
+    `INSERT INTO categories (id, title, description, color, sort_order, archived_at, created_at, updated_at)
+     SELECT ?, ?, NULL, ?, (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM categories), NULL, ?, ?
+     WHERE NOT EXISTS (SELECT 1 FROM categories WHERE title = ?)`,
+  );
+  for (const seed of newSeeds) {
+    insertStmt.run(crypto.randomUUID(), seed.title, seed.color, now, now, seed.title);
+  }
 }
 
 /**
@@ -893,4 +919,43 @@ function nextSortOrder(conn: Database.Database, table: 'goals' | 'categories'): 
     .prepare(`SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM ${table}`)
     .get() as { next: number };
   return row.next;
+}
+
+
+// VIP Senders (Phase B.3)
+
+export function addVipSender(email: string, displayName?: string | null): VipSender {
+  const conn = requireDb();
+  const now = new Date().toISOString();
+  conn.prepare(
+    `INSERT OR REPLACE INTO vip_senders (email, display_name, created_at)
+     VALUES (?, ?, COALESCE((SELECT created_at FROM vip_senders WHERE email = ?), ?))`,
+  ).run(email, displayName ?? null, email, now);
+  return getVipSender(email) as VipSender;
+}
+
+export function removeVipSender(email: string): boolean {
+  const info = requireDb().prepare('DELETE FROM vip_senders WHERE email = ?').run(email);
+  return info.changes > 0;
+}
+
+export function listVipSenders(): VipSender[] {
+  return requireDb()
+    .prepare('SELECT email, display_name, created_at FROM vip_senders ORDER BY created_at ASC')
+    .all() as VipSender[];
+}
+
+export function getVipSender(email: string): VipSender | null {
+  const row = requireDb()
+    .prepare('SELECT email, display_name, created_at FROM vip_senders WHERE email = ?')
+    .get(email) as VipSender | undefined;
+  return row ?? null;
+}
+
+export function isVipSender(email: string): boolean {
+  if (!email) return false;
+  const row = requireDb()
+    .prepare('SELECT 1 FROM vip_senders WHERE email = ?')
+    .get(email);
+  return !!row;
 }

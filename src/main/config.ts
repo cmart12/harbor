@@ -148,6 +148,7 @@ export interface AppConfig {
   cliTools: CliToolDefinition[];
   mcpServers: CustomMcpServer[];   // user-added MCP servers
   sandboxDefaultPolicy: SandboxPolicy;  // default policy for sandboxed personas
+  disableAutoUpdater: boolean;      // skip auto-updater entirely (no release feed configured yet)
   autoDownloadUpdates: boolean;     // auto-download updates in the background (vs. notify only)
   remoteEnabled: boolean;           // app-level remote: enable Mission Control on all workspace-level agents
   remoteAutoEnable: boolean;        // auto-enable remote on every new worker session
@@ -332,6 +333,7 @@ const DEFAULT_CONFIG: AppConfig = {
   cliTools: [],
   mcpServers: [],
   sandboxDefaultPolicy: { ...DEFAULT_SANDBOX_POLICY },
+  disableAutoUpdater: true,
   autoDownloadUpdates: true,
   remoteEnabled: false,
   remoteAutoEnable: false,
