@@ -79,7 +79,7 @@
       "entitlements": "scripts/entitlements.plist",
       "entitlementsInherit": "scripts/entitlements.plist",
       "extendInfo": {
-        "LSUIElement": true,
+        "LSUIElement": false,
         "NSMicrophoneUsageDescription": "whim needs microphone access for voice input."
       }
     }
