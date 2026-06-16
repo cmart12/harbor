@@ -28,6 +28,7 @@ For each notification, decide:
   - reasoning: one short sentence explaining the urgency choice. Keep it under 20 words.
 
 Default to "whenever" unless the notification clearly demands faster action. Marketing, automated digests, and FYI traffic are almost always "whenever". A direct question, an @-mention, or a deadline reference is usually "today" or sooner.
+VIP senders are people whose messages typically deserve faster response. Bias urgency upward when other signals support it, but do not over-correct; a VIP autoresponder is still low urgency.
 
 Pick category_id and goal_id ONLY from the IDs provided. Do not invent ids. Use null if nothing fits.
 
@@ -72,6 +73,7 @@ export function buildPrompt(
   inputs: PromptNotificationInput[],
   goals: Goal[],
   categories: Category[],
+  vipEmails: ReadonlySet<string>,
 ): string {
   const categoryLines = categories.map(c => {
     const desc = c.description?.trim() ? ` — ${c.description.trim()}` : '';
@@ -91,10 +93,12 @@ export function buildPrompt(
     const hintLine = hint?.urgency
       ? `\nhint: urgency=${hint.urgency}${hint.reason ? ` (${hint.reason})` : ''}`
       : '';
+    const isVip = !!n.sender_email && vipEmails.has(n.sender_email.toLowerCase());
     return [
       `uid: ${n.source_uid}`,
       `source: ${n.source}`,
       `sender: ${senderLabel}`,
+      ...(isVip ? ['vip: true'] : []),
       `subject: ${subject}`,
       `body: ${body}`,
       `received_at: ${n.received_at}${hintLine}`,

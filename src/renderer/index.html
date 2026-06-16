@@ -224,6 +224,7 @@
           <button class="settings-tab-btn" data-tab="personas">Agents</button>
           <button class="settings-tab-btn" data-tab="goals">Goals</button>
           <button class="settings-tab-btn" data-tab="categories">Categories</button>
+          <button class="settings-tab-btn" data-tab="vip-senders">VIP Senders</button>
           <button class="settings-tab-btn" data-tab="hotkeys">Hotkeys</button>
         </div>
 
@@ -487,6 +488,20 @@
               <div id="categories-list" class="gc-list"></div>
               <div id="categories-empty" class="gc-empty hidden">
                 No categories yet. Categories group related notifications, e.g. "Dual Access" or "SDK Partners".
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-tab-panel" data-tab="vip-senders">
+            <div class="vip-settings-tab">
+              <form id="vip-add-form" class="vip-settings-add-form" autocomplete="off">
+                <input id="vip-add-email" class="vip-settings-input vip-settings-email" type="email" placeholder="name@example.com" maxlength="320" required />
+                <input id="vip-add-display-name" class="vip-settings-input vip-settings-name" type="text" placeholder="Optional display name" maxlength="120" />
+                <button type="submit" class="persona-add-btn">Add</button>
+              </form>
+              <div id="vip-settings-list" class="vip-settings-list"></div>
+              <div id="vip-settings-empty" class="vip-settings-empty hidden">
+                Add coworkers or anyone whose notifications you want flagged. They'll appear with a ⭐ in your Feed.
               </div>
             </div>
           </div>

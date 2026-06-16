@@ -63,6 +63,7 @@ vi.mock('../notif-db', () => ({
   resetFailedClassifications: () => 0,
   listGoals: () => dbState.goals,
   listCategories: () => dbState.categories,
+  listVipSenders: () => [],
 }));
 
 const sentEvents: Array<{ channel: string; payload: unknown }> = [];

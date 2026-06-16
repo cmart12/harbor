@@ -8,7 +8,7 @@
 import type { Space, CreateSpaceInput, Attachment, AgentAnchor, AgentSession, LinkPreviewMeta, RecurrenceResult, RecallMatch, Skill, SkillContent, SkillInvocationInput, SkillInvocationResult, SkillScheduleFrequency, CanvasTarget, UpdateState, ExportFormat, ExportDestination } from './types';
 import type { ChatEvent, ElicitationSchema, ElicitationFieldValue } from './chat-types';
 import type { SubagentSummary, SubagentInfo } from './subagent-types';
-import type { Notification, NotificationListFilter, SnoozePreset } from './notification-types';
+import type { Notification, NotificationListFilter, SnoozePreset, VipSender } from './notification-types';
 import type {
   Goal,
   Category,
@@ -617,6 +617,11 @@ export interface IpcCommands {
     args: [categoryId: string];
     result: { count: number };
   };
+
+  // ── VIP Senders (Phase B.3) ─────────────────────────────
+  'vip:list': { args: []; result: VipSender[] };
+  'vip:add': { args: [input: { email: string; displayName?: string }]; result: VipSender };
+  'vip:remove': { args: [email: string]; result: { ok: true } };
 }
 
 // ---------------------------------------------------------------------------
@@ -719,6 +724,9 @@ export interface IpcEvents {
   'goals:changed': void;
   /** Phase B.1: any mutation to categories. Renderer refetches. */
   'categories:changed': void;
+
+  /** Phase B.3: VIP senders changed. Renderer refetches. */
+  'vip:changed': void;
 }
 
 // ---------------------------------------------------------------------------

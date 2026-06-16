@@ -37,6 +37,7 @@ import {
   resetFailedClassifications,
   listGoals,
   listCategories,
+  listVipSenders,
 } from '../notif-db';
 import { sendToAllWindows } from '../ipc/typed-handler';
 import {
@@ -272,7 +273,9 @@ async function runOnce(
 ): Promise<ParsedClassification[]> {
   const session = await getSession();
   if (!session) throw new Error('Copilot SDK client unavailable');
-  const prompt = buildPrompt(inputs, goals, categories);
+  const vipSenders = listVipSenders();
+  const vipEmails = new Set(vipSenders.map(v => v.email.toLowerCase()));
+  const prompt = buildPrompt(inputs, goals, categories, vipEmails);
   let response: { data?: { content?: string } } | null = null;
   try {
     response = await session.sendAndWait({ prompt }, SDK_TIMEOUT_MS) as
