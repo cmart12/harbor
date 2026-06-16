@@ -2461,6 +2461,35 @@ body.dark .workers-badge {
 }
 .feed-row-time { opacity: 0.6; white-space: nowrap; }
 
+/* Phase B.2 — classifier chips */
+.feed-row-chips {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 8px;
+}
+.feed-row-urgency-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #888;
+  flex-shrink: 0;
+}
+.feed-row-category-chip {
+  display: inline-block;
+  font-size: 11px;
+  line-height: 1;
+  padding: 3px 7px;
+  border-radius: 10px;
+  color: #fff;
+  background: #888;
+  white-space: nowrap;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .feed-row-subject {
   font-size: var(--fs-body, 14px);
   font-weight: 500;

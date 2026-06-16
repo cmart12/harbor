@@ -58,6 +58,33 @@ export const SNOOZE_PRESETS: readonly SnoozePreset[] = [
 ];
 
 /**
+ * Urgency classification (Phase B.2). Matches Funnel's four-tier model but
+ * uses kebab-case identifiers that map cleanly to CSS classes and JSON.
+ * Default `whenever` until the classifier (or a heuristic) overrides it.
+ */
+export type Urgency = 'urgent' | 'today' | 'this-week' | 'whenever';
+
+export const URGENCY_VALUES: readonly Urgency[] = [
+  'urgent',
+  'today',
+  'this-week',
+  'whenever',
+];
+
+/**
+ * Classification lifecycle. `pending` rows are awaiting an LLM round-trip,
+ * `done` rows have been tagged successfully, `failed` rows exhausted retry
+ * attempts. Feed renders without an urgency badge when status != `done`.
+ */
+export type ClassificationStatus = 'pending' | 'done' | 'failed';
+
+export const CLASSIFICATION_STATUS_VALUES: readonly ClassificationStatus[] = [
+  'pending',
+  'done',
+  'failed',
+];
+
+/**
  * Notification row as returned from the sidecar DB and as understood by the
  * renderer. Columns match the `notifications` table schema in `notif-db.ts`.
  *
@@ -82,6 +109,20 @@ export interface Notification {
   snoozed_until: string | null;
   /** Space id this notification was promoted into, when status === 'promoted'. */
   promoted_space_id: string | null;
+  /** Phase B.1: category linkage assigned by the B.2 classifier. */
+  category_id: string | null;
+  /** Phase B.1: goal linkage assigned by the B.2 classifier. */
+  goal_id: string | null;
+  /** Phase B.2: urgency assigned by the classifier. Defaults to `whenever`. */
+  urgency: Urgency;
+  /** Phase B.2: classification lifecycle status. */
+  classification_status: ClassificationStatus;
+  /** Phase B.2: number of LLM attempts made so far (max 3). */
+  classification_attempts: number;
+  /** Phase B.2: when the classifier last succeeded; null when pending/failed. */
+  classified_at: string | null;
+  /** Phase B.2: short rationale from the LLM, shown in tooltips + debugging. */
+  classification_reasoning: string | null;
   created_at: string;
   updated_at: string;
 }

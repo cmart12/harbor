@@ -386,7 +386,7 @@ import { goalsStore } from './state/goals-store';
 import { categoriesStore } from './state/categories-store';
 import type { Goal, Category } from '../shared/goal-category-types';
 import { DEFAULT_GOAL_COLOR, DEFAULT_CATEGORY_COLOR } from '../shared/goal-category-types';
-import type { Notification, SnoozePreset } from '../shared/notification-types';
+import type { Notification, SnoozePreset, Urgency } from '../shared/notification-types';
 import {
   installIpcBridge,
   loadSpacesSnapshot,
@@ -3481,6 +3481,40 @@ function showFeedToast(text: string, onClick?: () => void): void {
   setTimeout(() => { toast.remove(); }, 4000);
 }
 
+const URGENCY_META: Record<Urgency, { label: string; color: string }> = {
+  urgent: { label: 'Urgent', color: '#e5484d' },
+  today: { label: 'Today', color: '#f5a623' },
+  'this-week': { label: 'This week', color: '#d4a017' },
+  whenever: { label: 'Whenever', color: '#888888' },
+};
+
+function renderClassificationChips(n: Notification): HTMLSpanElement | null {
+  const wrap = document.createElement('span');
+  wrap.className = 'feed-row-chips';
+
+  const urgency = (n.urgency ?? 'whenever') as Urgency;
+  const meta = URGENCY_META[urgency] ?? URGENCY_META.whenever;
+  const dot = document.createElement('span');
+  dot.className = 'feed-row-urgency-dot';
+  dot.title = `Urgency: ${meta.label}${n.classification_reasoning ? '\n\n' + n.classification_reasoning : ''}`;
+  dot.style.background = meta.color;
+  wrap.appendChild(dot);
+
+  if (n.category_id) {
+    const cat = categoriesStore.getState().categories.find(c => c.id === n.category_id);
+    if (cat) {
+      const chip = document.createElement('span');
+      chip.className = 'feed-row-category-chip';
+      chip.textContent = cat.title;
+      chip.style.background = cat.color;
+      chip.title = `Category: ${cat.title}`;
+      wrap.appendChild(chip);
+    }
+  }
+
+  return wrap.children.length > 0 ? wrap : null;
+}
+
 function renderFeedRow(n: Notification): HTMLDivElement {
   const row = document.createElement('div');
   row.className = 'feed-row';
@@ -3502,6 +3536,14 @@ function renderFeedRow(n: Notification): HTMLDivElement {
   time.className = 'feed-row-time';
   time.textContent = relativeTime(n.received_at);
   header.append(sender, badge, time);
+
+  // Phase B.2: chips for urgency + category. Only rendered when the
+  // classifier has finished (status === 'done') so the feed doesn't
+  // flicker with a default `whenever` chip on every fresh insert.
+  if (n.classification_status === 'done') {
+    const chips = renderClassificationChips(n);
+    if (chips) header.append(chips);
+  }
 
   const subject = document.createElement('div');
   subject.className = 'feed-row-subject';
@@ -3622,6 +3664,12 @@ feedStore.subscribe(() => {
   const api = window.whimAPI;
   if (api && typeof api.onNotificationNew === 'function') {
     api.onNotificationNew((notif) => { feedStore.prepend(notif); });
+  }
+  if (api && typeof api.onNotificationUpdated === 'function') {
+    api.onNotificationUpdated((notif) => { feedStore.updateInPlace(notif); });
+  }
+  if (api && typeof api.onClassifierProgress === 'function') {
+    api.onClassifierProgress((progress) => { classifierProgressTick(progress); });
   }
 }
 
@@ -5215,6 +5263,67 @@ bridgeApi.onUpdateStateChanged((state) => {
   renderUpdateSettings(state);
 });
 
+// ── Phase B.2: Classifier status (Settings → General) ────
+const classifierStatusLineEl = document.getElementById('classifier-status-line');
+const classifierReclassifyAllBtn = document.getElementById('classifier-reclassify-all-btn') as HTMLButtonElement | null;
+const classifierRetryFailedBtn = document.getElementById('classifier-retry-failed-btn') as HTMLButtonElement | null;
+
+function renderClassifierStatus(state: { pending: number; failed: number }): void {
+  if (!classifierStatusLineEl) return;
+  classifierStatusLineEl.textContent = `Classifier: ${state.pending} pending, ${state.failed} failed`;
+}
+
+function classifierProgressTick(progress: { pending: number; failed: number }): void {
+  renderClassifierStatus(progress);
+}
+
+async function refreshClassifierStatus(): Promise<void> {
+  const api = window.whimAPI;
+  if (!api || typeof api.classifierPendingCount !== 'function') return;
+  try {
+    const res = await api.classifierPendingCount();
+    if (res && 'pending' in res) {
+      renderClassifierStatus({ pending: res.pending, failed: res.failed });
+    }
+  } catch (err) {
+    console.warn('[classifier] pending count failed:', err);
+  }
+}
+
+if (classifierReclassifyAllBtn) {
+  classifierReclassifyAllBtn.addEventListener('click', async () => {
+    const api = window.whimAPI;
+    if (!api || typeof api.reclassifyAllNotifications !== 'function') return;
+    classifierReclassifyAllBtn.disabled = true;
+    try {
+      await api.reclassifyAllNotifications();
+      await refreshClassifierStatus();
+    } catch (err) {
+      console.warn('[classifier] reclassify all failed:', err);
+    } finally {
+      classifierReclassifyAllBtn.disabled = false;
+    }
+  });
+}
+
+if (classifierRetryFailedBtn) {
+  classifierRetryFailedBtn.addEventListener('click', async () => {
+    const api = window.whimAPI;
+    if (!api || typeof api.retryFailedClassifications !== 'function') return;
+    classifierRetryFailedBtn.disabled = true;
+    try {
+      await api.retryFailedClassifications();
+      await refreshClassifierStatus();
+    } catch (err) {
+      console.warn('[classifier] retry failed:', err);
+    } finally {
+      classifierRetryFailedBtn.disabled = false;
+    }
+  });
+}
+
+void refreshClassifierStatus();
+
 // ── Settings tabs ───────────────────────────────────────
 const SETTINGS_TAB_KEY = 'whim.settingsTab';
 function initSettingsTabs(): void {
@@ -5432,8 +5541,28 @@ function initGoalsTab(): void {
     const archiveId = t.closest<HTMLElement>('[data-goal-archive]')?.dataset.goalArchive;
     if (archiveId) {
       const g = goalsStore.getState().goals.find(x => x.id === archiveId);
-      if (g?.archived_at) await goalsStore.unarchive(archiveId);
-      else await goalsStore.archive(archiveId);
+      if (g?.archived_at) {
+        await goalsStore.unarchive(archiveId);
+      } else {
+        // Phase B.2: warn before stripping a goal from active rows.
+        const api = window.whimAPI;
+        let count = 0;
+        if (api && typeof api.goalActiveLinkCount === 'function') {
+          try {
+            const res = await api.goalActiveLinkCount(archiveId);
+            count = res?.count ?? 0;
+          } catch (err) {
+            console.warn('[goals] active link count failed:', err);
+          }
+        }
+        if (count > 0) {
+          const ok = window.confirm(
+            `Archive "${g?.title ?? ''}"?\n\n${count} active notification${count === 1 ? '' : 's'} ${count === 1 ? 'is' : 'are'} still tagged with this goal. They'll keep their tag, but new notifications won't be classified into "${g?.title ?? 'this goal'}" anymore.`,
+          );
+          if (!ok) return;
+        }
+        await goalsStore.archive(archiveId);
+      }
       return;
     }
     const delId = t.closest<HTMLElement>('[data-goal-delete]')?.dataset.goalDelete;
@@ -5528,8 +5657,28 @@ function initCategoriesTab(): void {
     const archiveId = t.closest<HTMLElement>('[data-category-archive]')?.dataset.categoryArchive;
     if (archiveId) {
       const c = categoriesStore.getState().categories.find(x => x.id === archiveId);
-      if (c?.archived_at) await categoriesStore.unarchive(archiveId);
-      else await categoriesStore.archive(archiveId);
+      if (c?.archived_at) {
+        await categoriesStore.unarchive(archiveId);
+      } else {
+        // Phase B.2: warn before stripping a category from active rows.
+        const api = window.whimAPI;
+        let count = 0;
+        if (api && typeof api.categoryActiveLinkCount === 'function') {
+          try {
+            const res = await api.categoryActiveLinkCount(archiveId);
+            count = res?.count ?? 0;
+          } catch (err) {
+            console.warn('[categories] active link count failed:', err);
+          }
+        }
+        if (count > 0) {
+          const ok = window.confirm(
+            `Archive "${c?.title ?? ''}"?\n\n${count} active notification${count === 1 ? '' : 's'} ${count === 1 ? 'is' : 'are'} still tagged with this category. They'll keep their tag, but new notifications won't be classified into "${c?.title ?? 'this category'}" anymore.`,
+          );
+          if (!ok) return;
+        }
+        await categoriesStore.archive(archiveId);
+      }
       return;
     }
     const delId = t.closest<HTMLElement>('[data-category-delete]')?.dataset.categoryDelete;

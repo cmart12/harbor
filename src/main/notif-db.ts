@@ -26,6 +26,7 @@ import type {
   Notification,
   NotificationListFilter,
   NotificationStatus,
+  Urgency,
 } from '../shared/notification-types';
 import type {
   Goal,
@@ -132,11 +133,26 @@ function createSchema(conn: Database.Database): void {
   // upgrades from older Harbor builds safe and idempotent.
   addColumnIfMissing(conn, 'notifications', 'category_id', 'TEXT');
   addColumnIfMissing(conn, 'notifications', 'goal_id', 'TEXT');
+  // Phase B.2: classifier-owned columns. urgency + lifecycle status are
+  // NOT NULL with defaults so existing rows backfill on upgrade. The
+  // reasoning column is nullable since heuristic-only classifications
+  // (or pending rows) don't carry an LLM rationale.
+  addColumnIfMissing(conn, 'notifications', 'urgency', "TEXT NOT NULL DEFAULT 'whenever'");
+  addColumnIfMissing(conn, 'notifications', 'classification_status', "TEXT NOT NULL DEFAULT 'pending'");
+  addColumnIfMissing(conn, 'notifications', 'classification_attempts', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing(conn, 'notifications', 'classified_at', 'TEXT');
+  addColumnIfMissing(conn, 'notifications', 'classification_reasoning', 'TEXT');
   conn.exec(`
     CREATE INDEX IF NOT EXISTS idx_notifications_category_id
       ON notifications(category_id);
     CREATE INDEX IF NOT EXISTS idx_notifications_goal_id
       ON notifications(goal_id);
+    CREATE INDEX IF NOT EXISTS idx_notifications_urgency
+      ON notifications(urgency);
+    CREATE INDEX IF NOT EXISTS idx_notifications_classification_status
+      ON notifications(classification_status);
+    CREATE INDEX IF NOT EXISTS idx_notifications_classified_at
+      ON notifications(classified_at);
   `);
 
   seedDefaultCategoriesIfEmpty(conn);
@@ -222,6 +238,19 @@ function requireDb(): Database.Database {
   return db;
 }
 
+/**
+ * Column list shared by every notification SELECT. Centralised so we
+ * don't drift when new columns are added (Phase B.2 grew it by 5).
+ */
+const NOTIFICATION_COLUMNS = `
+  source_uid, source, app_id, sender_name, sender_email, subject,
+  body, received_at, deep_link, status, snoozed_until,
+  promoted_space_id, category_id, goal_id,
+  urgency, classification_status, classification_attempts,
+  classified_at, classification_reasoning,
+  created_at, updated_at
+`;
+
 // ---------------------------------------------------------------------------
 // CRUD
 // ---------------------------------------------------------------------------
@@ -277,9 +306,7 @@ export function insertNotification(input: InsertNotificationInput): boolean {
 export function getNotification(uid: string): Notification | null {
   const row = requireDb()
     .prepare(
-      `SELECT source_uid, source, app_id, sender_name, sender_email, subject,
-              body, received_at, deep_link, status, snoozed_until,
-              promoted_space_id, created_at, updated_at
+      `SELECT ${NOTIFICATION_COLUMNS}
        FROM notifications WHERE source_uid = ?`,
     )
     .get(uid) as Notification | undefined;
@@ -304,9 +331,7 @@ export function listNotifications(filter: NotificationListFilter = {}): Notifica
   if (filter.status) {
     return conn
       .prepare(
-        `SELECT source_uid, source, app_id, sender_name, sender_email, subject,
-                body, received_at, deep_link, status, snoozed_until,
-                promoted_space_id, created_at, updated_at
+        `SELECT ${NOTIFICATION_COLUMNS}
          FROM notifications
          WHERE status = ?
          ORDER BY received_at DESC
@@ -319,9 +344,7 @@ export function listNotifications(filter: NotificationListFilter = {}): Notifica
   const now = new Date().toISOString();
   return conn
     .prepare(
-      `SELECT source_uid, source, app_id, sender_name, sender_email, subject,
-              body, received_at, deep_link, status, snoozed_until,
-              promoted_space_id, created_at, updated_at
+      `SELECT ${NOTIFICATION_COLUMNS}
        FROM notifications
        WHERE status NOT IN ('archived', 'done', 'promoted')
          AND (status != 'snoozed' OR snoozed_until IS NULL OR snoozed_until <= ?)
@@ -392,6 +415,223 @@ export function setMeta(key: string, value: string): void {
        ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
     )
     .run(key, value);
+}
+
+// ---------------------------------------------------------------------------
+// Classifier (Phase B.2)
+// ---------------------------------------------------------------------------
+
+export interface ClassificationPatch {
+  category_id: string | null;
+  goal_id: string | null;
+  urgency: Urgency;
+  reasoning: string | null;
+}
+
+/**
+ * Apply a successful classification result. Sets `classification_status` to
+ * `done`, stamps `classified_at`, and increments `classification_attempts`.
+ * Returns `true` when the row exists and was updated.
+ */
+export function setClassification(uid: string, patch: ClassificationPatch): boolean {
+  const conn = requireDb();
+  const now = new Date().toISOString();
+  const info = conn
+    .prepare(
+      `UPDATE notifications
+          SET category_id = ?,
+              goal_id = ?,
+              urgency = ?,
+              classification_status = 'done',
+              classification_attempts = classification_attempts + 1,
+              classified_at = ?,
+              classification_reasoning = ?,
+              updated_at = ?
+        WHERE source_uid = ?`,
+    )
+    .run(
+      patch.category_id,
+      patch.goal_id,
+      patch.urgency,
+      now,
+      patch.reasoning,
+      now,
+      uid,
+    );
+  return info.changes > 0;
+}
+
+/**
+ * Bump the attempt counter without changing classification status. Used
+ * before a retry so we can decide whether the next attempt is the last
+ * one allowed.
+ */
+export function incrementClassificationAttempts(uid: string): number {
+  const conn = requireDb();
+  const now = new Date().toISOString();
+  conn
+    .prepare(
+      `UPDATE notifications
+          SET classification_attempts = classification_attempts + 1,
+              updated_at = ?
+        WHERE source_uid = ?`,
+    )
+    .run(now, uid);
+  const row = conn
+    .prepare('SELECT classification_attempts AS n FROM notifications WHERE source_uid = ?')
+    .get(uid) as { n: number } | undefined;
+  return row?.n ?? 0;
+}
+
+/**
+ * Reset a classification back to `pending` (e.g. user clicked "Reclassify").
+ * Does not touch existing `category_id` / `goal_id` / `urgency` so the
+ * Feed keeps rendering the old badge until the new round-trip completes.
+ */
+export function markClassificationPending(uid: string): boolean {
+  const conn = requireDb();
+  const now = new Date().toISOString();
+  const info = conn
+    .prepare(
+      `UPDATE notifications
+          SET classification_status = 'pending',
+              classification_attempts = 0,
+              updated_at = ?
+        WHERE source_uid = ?`,
+    )
+    .run(now, uid);
+  return info.changes > 0;
+}
+
+/** Mark a notification as terminally failed after exhausting retries. */
+export function markClassificationFailed(uid: string): boolean {
+  const conn = requireDb();
+  const now = new Date().toISOString();
+  const info = conn
+    .prepare(
+      `UPDATE notifications
+          SET classification_status = 'failed',
+              updated_at = ?
+        WHERE source_uid = ?`,
+    )
+    .run(now, uid);
+  return info.changes > 0;
+}
+
+/**
+ * List notifications that still need a classification pass. Pulls oldest
+ * first so the queue drains in receive order, which keeps Feed badges
+ * appearing in a predictable cadence.
+ */
+export function listPendingClassifications(limit = 50): Notification[] {
+  return requireDb()
+    .prepare(
+      `SELECT ${NOTIFICATION_COLUMNS}
+       FROM notifications
+       WHERE classification_status = 'pending'
+       ORDER BY received_at ASC
+       LIMIT ?`,
+    )
+    .all(limit) as Notification[];
+}
+
+export function listFailedClassifications(limit = 100): Notification[] {
+  return requireDb()
+    .prepare(
+      `SELECT ${NOTIFICATION_COLUMNS}
+       FROM notifications
+       WHERE classification_status = 'failed'
+       ORDER BY received_at ASC
+       LIMIT ?`,
+    )
+    .all(limit) as Notification[];
+}
+
+export function pendingClassificationCount(): number {
+  const row = requireDb()
+    .prepare("SELECT COUNT(*) AS n FROM notifications WHERE classification_status = 'pending'")
+    .get() as { n: number };
+  return row.n;
+}
+
+export function failedClassificationCount(): number {
+  const row = requireDb()
+    .prepare("SELECT COUNT(*) AS n FROM notifications WHERE classification_status = 'failed'")
+    .get() as { n: number };
+  return row.n;
+}
+
+/**
+ * Reset every notification's classification back to pending. Used by the
+ * Settings "Reclassify all" button after the user adds or renames goals
+ * / categories and wants the LLM to re-score the existing inbox.
+ *
+ * Returns the number of rows queued.
+ */
+export function resetAllClassifications(): number {
+  const conn = requireDb();
+  const now = new Date().toISOString();
+  const info = conn
+    .prepare(
+      `UPDATE notifications
+          SET classification_status = 'pending',
+              classification_attempts = 0,
+              updated_at = ?`,
+    )
+    .run(now);
+  return info.changes;
+}
+
+/**
+ * Reset only the failed rows back to pending so a manual "Retry failed"
+ * pass can sweep them.
+ */
+export function resetFailedClassifications(): number {
+  const conn = requireDb();
+  const now = new Date().toISOString();
+  const info = conn
+    .prepare(
+      `UPDATE notifications
+          SET classification_status = 'pending',
+              classification_attempts = 0,
+              updated_at = ?
+        WHERE classification_status = 'failed'`,
+    )
+    .run(now);
+  return info.changes;
+}
+
+/**
+ * Count of "active" notifications linked to a goal — i.e. rows that are
+ * not archived/done/promoted and not currently snoozed into the future.
+ * Powers the Settings archive-confirmation dialog.
+ */
+export function countActiveByGoal(goalId: string): number {
+  const conn = requireDb();
+  const now = new Date().toISOString();
+  const row = conn
+    .prepare(
+      `SELECT COUNT(*) AS n FROM notifications
+       WHERE goal_id = ?
+         AND status NOT IN ('archived', 'done', 'promoted')
+         AND (status != 'snoozed' OR snoozed_until IS NULL OR snoozed_until <= ?)`,
+    )
+    .get(goalId, now) as { n: number };
+  return row.n;
+}
+
+export function countActiveByCategory(categoryId: string): number {
+  const conn = requireDb();
+  const now = new Date().toISOString();
+  const row = conn
+    .prepare(
+      `SELECT COUNT(*) AS n FROM notifications
+       WHERE category_id = ?
+         AND status NOT IN ('archived', 'done', 'promoted')
+         AND (status != 'snoozed' OR snoozed_until IS NULL OR snoozed_until <= ?)`,
+    )
+    .get(categoryId, now) as { n: number };
+  return row.n;
 }
 
 // ---------------------------------------------------------------------------

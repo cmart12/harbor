@@ -21,6 +21,7 @@ import { initAutoUpdater, cleanupAutoUpdater } from './update-service';
 import { syncWebRemoteServer, stopWebRemoteServer } from './web/server';
 import { openNotifDb, closeNotifDb } from './notif-db';
 import { MacOSNotifSource } from './notif-sources/macos-source';
+import { startClassifierSweep, stopClassifierSweep } from './classifier/classifier';
 import type { NotifSource } from './notif-sources/types';
 
 let currentToggleAccelerator: string | null = null;
@@ -241,6 +242,13 @@ app.whenReady().then(async () => {
     }
   }
 
+  // Phase B.2: background sweep for pending classifications. Cheap, opts
+  // out gracefully when the SDK isn't ready, drains rows that were left
+  // pending across a restart.
+  try { startClassifierSweep(); } catch (err) {
+    console.warn('[main] startClassifierSweep failed:', err);
+  }
+
   // Auto-show window on launch once content has loaded
   mainWin.webContents.once('did-finish-load', () => {
     toggleWindow();
@@ -308,6 +316,7 @@ app.on('will-quit', async () => {
     try { await notifSource.stop(); } catch (e) { console.warn('[main] notif stop:', e); }
     notifSource = null;
   }
+  try { stopClassifierSweep(); } catch (e) { console.warn('[main] stopClassifierSweep:', e); }
   try { closeNotifDb(); } catch (e) { console.warn('[main] closeNotifDb:', e); }
 });
 

@@ -114,4 +114,25 @@ describe('feedStore', () => {
     feedStore.updateStatus('u', 'read');
     expect(feedStore.getState().notifications[0].status).toBe('read');
   });
+
+  it('updateInPlace replaces a row by source_uid while preserving order', () => {
+    feedStore.prepend(makeNotif('a', { subject: 'A original' }));
+    feedStore.prepend(makeNotif('b', { subject: 'B original' }));
+    feedStore.prepend(makeNotif('c', { subject: 'C original' }));
+    // Order: c, b, a
+    feedStore.updateInPlace(makeNotif('b', { subject: 'B updated', urgency: 'urgent' } as any));
+    const list = feedStore.getState().notifications;
+    expect(list.map(n => n.source_uid)).toEqual(['c', 'b', 'a']);
+    expect(list[1].subject).toBe('B updated');
+    expect((list[1] as any).urgency).toBe('urgent');
+  });
+
+  it('updateInPlace is a no-op when the row is not in the cache', () => {
+    feedStore.prepend(makeNotif('a'));
+    const notified = vi.fn();
+    feedStore.subscribe(notified);
+    feedStore.updateInPlace(makeNotif('not-present'));
+    expect(notified).not.toHaveBeenCalled();
+    expect(feedStore.getState().notifications).toHaveLength(1);
+  });
 });

@@ -94,6 +94,21 @@ class FeedStore {
     this.notify();
   }
 
+  /**
+   * Replace a row whole-cloth by `source_uid` while preserving its
+   * position in the list. Used by the B.2 classifier's
+   * `notification:updated` push event. No-op when the row isn't
+   * currently visible (e.g. archived or on a different tab).
+   */
+  updateInPlace(notif: Notification): void {
+    const idx = this.state.notifications.findIndex(n => n.source_uid === notif.source_uid);
+    if (idx < 0) return;
+    const copy = this.state.notifications.slice();
+    copy[idx] = notif;
+    this.state = { ...this.state, notifications: copy };
+    this.notify();
+  }
+
   async snooze(uid: string, preset: SnoozePreset): Promise<boolean> {
     const api = getAPI();
     const res = await api.snoozeNotification(uid, preset);

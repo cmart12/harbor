@@ -290,9 +290,21 @@
                 <button id="update-open-log-btn" class="workspace-btn" type="button">Open update log</button>
               </div>
             </div>
-          </div>
+            <div class="settings-group">
+              <div class="settings-group-title">Notification Classifier</div>
+              <div class="settings-row update-settings-row">
+                <div class="update-settings-status">
+                  <div id="classifier-status-line" class="settings-hint">Classifier: 0 pending, 0 failed</div>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                  <button id="classifier-reclassify-all-btn" class="workspace-btn" type="button">Reclassify all</button>
+                  <button id="classifier-retry-failed-btn" class="workspace-btn" type="button">Retry failed</button>
+                </div>
+              </div>
+              <div class="settings-hint">Re-runs the urgency / category / goal tagger over your inbox. Useful when you've added a new category or goal and want existing notifications considered.</div>
+            </div>
 
-          <div class="settings-tab-panel" data-tab="environment">
+          </div>
             <div class="settings-group">
               <div class="settings-group-title">Workspace</div>
               <div class="settings-row">
