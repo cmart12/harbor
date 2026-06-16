@@ -75,5 +75,13 @@ Funnel app's notification triage being merged into whim. See `~/.copilot/session
 - **Feed grouping/filter UX**: Feed remains inline in `app.ts` to match the existing monolithic renderer pattern. Added grouped views (urgency/category/goal), chip filters, active-filter pills, collapsible sections, and VIP stars without moving Feed into a separate view module. Rejected a larger refactor because the brief explicitly asked to keep the diff scoped to the Feed block.
 - **Seed backfill**: Default category seeds now include `Code Review` and `Meetings`, plus an `ensureNewSeedCategories()` boot-time backfill so existing installs pick up the two new categories without resetting all category rows. Rejected changing the original empty-seed guard alone because that would miss existing databases.
 
+## 2026-06-16 -- LSUIElement: Harbor is a dockable app, not a menu-bar utility
+
+- **Root cause**: `package.json` `build.mac.extendInfo.LSUIElement` was `true`, inherited from upstream whim. This macOS Info.plist flag makes the app an accessory/background process: no Dock icon, no menu bar ownership, degraded focus behavior. whim uses this intentionally (lives in the system tray), but Harbor is a standalone dockable app.
+- **Symptoms**: (1) Spaces canvas opened empty with no editor, (2) permission Approve button didn't register clicks, (3) Harbor never claimed the macOS menu bar. All three traced back to macOS not treating the app as a foreground process.
+- **Fix**: Set `LSUIElement` to `false`. One-line change in `package.json`.
+- **Rejected alternatives**: Removing the key entirely (works but leaving it explicit documents the decision). Adding `app.dock.show()` at runtime (would fight the plist flag and cause a dock-icon flash on startup).
+- **Note**: The diagnostic logging and error boundary committed to `cmart12/fix-spaces-empty-editor` were useful for ruling out code-level canvas bugs but are not needed for this fix. That branch can be deleted after this PR merges.
+
 ### Addendum: Auto-updater gate
 - Added `disableAutoUpdater: boolean` config key (default `true`) and `HARBOR_DISABLE_UPDATER` env var gate in `initAutoUpdater()`. When either is truthy, the updater sets status to `disabled` and returns early -- no network calls, no "Update failed" banner. This stays `true` until Harbor has a release pipeline. No Settings UI toggle; it is a developer escape hatch only.
