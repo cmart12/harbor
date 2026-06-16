@@ -1,10 +1,35 @@
-import React from 'react';
+import React, { Component, type ErrorInfo, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { MarkdownCanvas, type MarkdownCanvasHandle, type AgentPersona, type MentionEvent } from './MarkdownCanvas';
 import type { CanvasAgentInteraction, CanvasPresence, CanvasUser, CanvasDecoration, CanvasThreadAgentStatus } from './types';
 
 let root: Root | null = null;
 let canvasRef: React.RefObject<MarkdownCanvasHandle | null> = React.createRef();
+
+/** Error boundary so canvas mount failures are visible instead of blank. */
+class CanvasErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  state: { error: Error | null } = { error: null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('[canvas] React render error:', error, info.componentStack);
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding: 24, color: '#e5484d', fontFamily: 'system-ui' }}>
+          <h3>Canvas failed to load</h3>
+          <pre style={{ whiteSpace: 'pre-wrap', fontSize: 13 }}>{this.state.error.message}</pre>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 export interface MountCanvasOptions {
   spaceId: string;
@@ -26,6 +51,7 @@ export interface MountCanvasOptions {
 }
 
 export function mountCanvas(container: HTMLElement, options: MountCanvasOptions): void {
+  console.log('[canvas] mountCanvas called', { spaceId: options.spaceId, contentLen: options.content?.length ?? 0 });
   if (root) {
     root.unmount();
   }
@@ -33,25 +59,27 @@ export function mountCanvas(container: HTMLElement, options: MountCanvasOptions)
   canvasRef = React.createRef();
   root = createRoot(container);
   root.render(
-    <MarkdownCanvas
-      ref={canvasRef}
-      spaceId={options.spaceId}
-      initialContent={options.content}
-      initialFrontmatter={options.frontmatter}
-      theme={options.theme}
-      personas={options.personas}
-      agentPresence={options.agentPresence}
-      agentThreadStatuses={options.agentThreadStatuses}
-      agentInteractions={options.agentInteractions}
-      onDirtyChange={options.onDirtyChange}
-      onSaveStatus={options.onSaveStatus}
-      onAgentMentioned={options.onAgentMentioned}
-      onInlineMention={options.onInlineMention}
-      onForkSelection={options.onForkSelection}
-      onExtractToPage={options.onExtractToPage}
-      titleFallback={options.titleFallback}
-      onTitleChange={options.onTitleChange}
-    />
+    <CanvasErrorBoundary>
+      <MarkdownCanvas
+        ref={canvasRef}
+        spaceId={options.spaceId}
+        initialContent={options.content}
+        initialFrontmatter={options.frontmatter}
+        theme={options.theme}
+        personas={options.personas}
+        agentPresence={options.agentPresence}
+        agentThreadStatuses={options.agentThreadStatuses}
+        agentInteractions={options.agentInteractions}
+        onDirtyChange={options.onDirtyChange}
+        onSaveStatus={options.onSaveStatus}
+        onAgentMentioned={options.onAgentMentioned}
+        onInlineMention={options.onInlineMention}
+        onForkSelection={options.onForkSelection}
+        onExtractToPage={options.onExtractToPage}
+        titleFallback={options.titleFallback}
+        onTitleChange={options.onTitleChange}
+      />
+    </CanvasErrorBoundary>
   );
 }
 

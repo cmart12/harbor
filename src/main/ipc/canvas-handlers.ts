@@ -69,7 +69,10 @@ export function registerCanvasHandlers(): void {
 
   ipcMain.handle('canvas:read', (_event, spaceId: string) => {
     const workspace = getConfigValue('workspace');
-    if (!workspace || !isInitialized()) return { content: '', error: 'no_workspace' };
+    if (!workspace || !isInitialized()) {
+      console.error('[canvas:read] no_workspace', { workspace: !!workspace, initialized: isInitialized() });
+      return { content: '', error: 'no_workspace' };
+    }
 
     // Route workspace file reads to the actual file on disk
     if (spaceId.startsWith('__file__')) {
