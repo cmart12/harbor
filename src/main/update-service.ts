@@ -134,6 +134,13 @@ export function initAutoUpdater() {
   const log = configureLogger();
   registerUpdateIpc(log);
 
+  // Gate: skip the updater when explicitly disabled via config or env var.
+  if (process.env.HARBOR_DISABLE_UPDATER || getConfigValue('disableAutoUpdater')) {
+    log.info('[update] Auto-updater disabled via config/env');
+    setState({ status: 'disabled' });
+    return;
+  }
+
   if (!app.isPackaged) {
     log.info('[update] Skipping auto-updater — app is not packaged (dev build)');
     setState({ status: 'disabled' });
