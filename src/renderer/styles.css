@@ -756,6 +756,7 @@ body.platform-darwin.settings-window .settings-modal header {
   max-height: 85vh;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   animation: modalScaleIn 0.15s ease;
   font-size: var(--fs-body);
 }
@@ -807,6 +808,8 @@ body.platform-darwin.settings-window .settings-modal header {
   padding: 0 16px;
   border-bottom: 1px solid rgba(0, 0, 0, 0.08);
   flex-shrink: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 
 .settings-tab-btn {
@@ -819,6 +822,8 @@ body.platform-darwin.settings-window .settings-modal header {
   cursor: pointer;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
+  white-space: nowrap;
+  flex-shrink: 0;
   transition: color 120ms ease, border-color 120ms ease;
 }
 
@@ -2399,6 +2404,11 @@ body.dark .workers-badge {
   padding: 8px 8px 16px;
   gap: 6px;
   position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0,0,0,0.08) transparent;
 }
 
 .feed-view.hidden { display: none; }
@@ -7065,6 +7075,7 @@ body.dark .dismiss-recurrence { color: rgba(255, 255, 255, 0.55); }
 body.dark .status-bar.recurrence { background: rgba(124, 102, 220, 0.15); color: #b8a8ef; }
 
 body.dark #space-list { scrollbar-color: rgba(255, 255, 255, 0.1) transparent; }
+body.dark .feed-view { scrollbar-color: rgba(255, 255, 255, 0.1) transparent; }
 
 /* Dark agent cards */
 body.dark .agent-add-btn { border-color: rgba(255, 255, 255, 0.1); color: rgba(255, 255, 255, 0.5); }
