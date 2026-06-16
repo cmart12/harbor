@@ -7497,8 +7497,9 @@ function showCanvasInputDialog(label: string, onSubmit: (value: string) => void)
 }
 
 async function openCanvas(spaceId: string, expanded = false): Promise<void> {
+  console.log('[openCanvas] called for spaceId:', spaceId, 'isCanvasMode:', isCanvasMode);
   const space = spaces.find(i => i.id === spaceId);
-  if (!space) return;
+  if (!space) { console.warn('[openCanvas] space not found in local array'); return; }
 
   // In main window, always pop out to separate canvas window
   if (!isCanvasMode) {
@@ -7544,11 +7545,14 @@ async function openCanvas(spaceId: string, expanded = false): Promise<void> {
   ]);
 
   // Abort if user already switched to another space
-  if (canvasMountGen !== myGen) return;
+  if (canvasMountGen !== myGen) { console.warn('[openCanvas] aborted: generation mismatch'); return; }
 
   if (result.error === 'no_workspace') {
+    console.error('[openCanvas] readCanvas returned no_workspace error');
     return;
   }
+
+  console.log('[openCanvas] readCanvas success, content length:', result.content?.length);
 
   // Parse linked skills from canvas frontmatter and render chips
   const parsedCanvas = parseFrontmatter<Record<string, unknown>>(result.content || '');
@@ -9461,6 +9465,7 @@ if (isCanvasMode) {
 
   // Listen for target to load (from main process)
   whimAPI.onLoadCanvasTarget(async (target: { kind: string; id: string; title: string }) => {
+    console.log('[onLoadCanvasTarget] received:', target.kind, target.id, target.title);
     // If a canvas is already open, save and close it first
     if (canvasSpaceId || canvasSkillId || canvasPageSpaceId || canvasFilePath) {
       await saveAndUnmountCurrent();

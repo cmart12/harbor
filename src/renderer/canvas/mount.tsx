@@ -6,6 +6,32 @@ import type { CanvasAgentInteraction, CanvasPresence, CanvasUser, CanvasDecorati
 let root: Root | null = null;
 let canvasRef: React.RefObject<MarkdownCanvasHandle | null> = React.createRef();
 
+// Error boundary to catch React render errors in the canvas tree
+class CanvasErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; error: Error | null }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error('[CanvasErrorBoundary] caught error:', error, info.componentStack);
+  }
+  render() {
+    if (this.state.hasError) {
+      return React.createElement('div', { style: { padding: 24, color: 'red' } },
+        React.createElement('h3', null, 'Canvas render error'),
+        React.createElement('pre', null, this.state.error?.message || 'Unknown error')
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export interface MountCanvasOptions {
   spaceId: string;
   content: string;
@@ -26,6 +52,7 @@ export interface MountCanvasOptions {
 }
 
 export function mountCanvas(container: HTMLElement, options: MountCanvasOptions): void {
+  console.log('[mountCanvas] called for space:', options.spaceId, 'content length:', options.content?.length);
   if (root) {
     root.unmount();
   }
@@ -33,7 +60,8 @@ export function mountCanvas(container: HTMLElement, options: MountCanvasOptions)
   canvasRef = React.createRef();
   root = createRoot(container);
   root.render(
-    <MarkdownCanvas
+    <CanvasErrorBoundary>
+      <MarkdownCanvas
       ref={canvasRef}
       spaceId={options.spaceId}
       initialContent={options.content}
@@ -52,6 +80,7 @@ export function mountCanvas(container: HTMLElement, options: MountCanvasOptions)
       titleFallback={options.titleFallback}
       onTitleChange={options.onTitleChange}
     />
+    </CanvasErrorBoundary>
   );
 }
 
