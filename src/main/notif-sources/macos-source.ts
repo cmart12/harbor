@@ -31,6 +31,7 @@ import {
 import { sendToAllWindows } from '../ipc';
 import { enqueueForClassification } from '../classifier/classifier';
 import { mainLog } from '../main-log';
+import { macosThreadId } from './thread-id';
 import type { NotifSource } from './types';
 
 const CURSOR_KEY = 'macos_cursor';
@@ -166,6 +167,7 @@ export class MacOSNotifSource implements NotifSource {
             body: msg.body,
             received_at: msg.received_at,
             deep_link: msg.deep_link,
+            thread_id: macosThreadId(msg.app_id),
           });
           if (inserted) {
             const row = getNotification(msg.source_uid);

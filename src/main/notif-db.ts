@@ -159,6 +159,8 @@ function createSchema(conn: Database.Database): void {
   addColumnIfMissing(conn, 'notifications', 'classification_attempts', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing(conn, 'notifications', 'classified_at', 'TEXT');
   addColumnIfMissing(conn, 'notifications', 'classification_reasoning', 'TEXT');
+  // Phase C.0: per-source thread grouping key.
+  addColumnIfMissing(conn, 'notifications', 'thread_id', 'TEXT');
   conn.exec(`
     CREATE INDEX IF NOT EXISTS idx_notifications_category_id
       ON notifications(category_id);
@@ -170,6 +172,8 @@ function createSchema(conn: Database.Database): void {
       ON notifications(classification_status);
     CREATE INDEX IF NOT EXISTS idx_notifications_classified_at
       ON notifications(classified_at);
+    CREATE INDEX IF NOT EXISTS idx_notifications_thread_id
+      ON notifications(thread_id);
   `);
 
   seedDefaultCategoriesIfEmpty(conn);
@@ -296,6 +300,7 @@ const NOTIFICATION_COLUMNS = `
   promoted_space_id, category_id, goal_id,
   urgency, classification_status, classification_attempts,
   classified_at, classification_reasoning,
+  thread_id,
   created_at, updated_at
 `;
 
@@ -318,6 +323,8 @@ export interface InsertNotificationInput {
   /** UTC RFC3339. */
   received_at: string;
   deep_link?: string | null;
+  /** Phase C.0: deterministic thread grouping key. */
+  thread_id?: string | null;
 }
 
 /**
@@ -332,8 +339,9 @@ export function insertNotification(input: InsertNotificationInput): boolean {
     `INSERT OR IGNORE INTO notifications
        (source_uid, source, app_id, sender_name, sender_email, subject, body,
         received_at, deep_link, status, snoozed_until, promoted_space_id,
+        thread_id,
         created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'unread', NULL, NULL, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'unread', NULL, NULL, ?, ?, ?)`,
   );
   const info = stmt.run(
     input.source_uid,
@@ -345,6 +353,7 @@ export function insertNotification(input: InsertNotificationInput): boolean {
     input.body ?? null,
     input.received_at,
     input.deep_link ?? null,
+    input.thread_id ?? null,
     now,
     now,
   );

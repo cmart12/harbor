@@ -31,6 +31,7 @@ function makeNotif(uid: string, overrides: Partial<Notification> = {}): Notifica
     classification_attempts: 0,
     classified_at: null,
     classification_reasoning: null,
+    thread_id: null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     ...overrides,
@@ -233,5 +234,128 @@ describe('feedStore', () => {
     feedStore.updateInPlace(makeNotif('not-present'));
     expect(notified).not.toHaveBeenCalled();
     expect(feedStore.getState().notifications).toHaveLength(1);
+  });
+
+  // -- Phase C.0: thread grouping tests ---
+
+  describe('getGroupedByThread', () => {
+    it('groups notifications with the same thread_id into threads', () => {
+      feedStore.prepend(makeNotif('a1', { thread_id: 'macos:com.slack', received_at: '2025-01-01T10:00:00Z' }));
+      feedStore.prepend(makeNotif('a2', { thread_id: 'macos:com.slack', received_at: '2025-01-01T11:00:00Z' }));
+      feedStore.prepend(makeNotif('b1', { thread_id: 'macos:com.teams', received_at: '2025-01-01T12:00:00Z' }));
+
+      const { threads, singletons } = feedStore.getGroupedByThread();
+      expect(threads).toHaveLength(1);
+      expect(threads[0].threadId).toBe('macos:com.slack');
+      expect(threads[0].items).toHaveLength(2);
+      expect(singletons).toHaveLength(1);
+      expect(singletons[0].source_uid).toBe('b1');
+    });
+
+    it('singletons stay as normal rows (count < 2)', () => {
+      feedStore.prepend(makeNotif('x', { thread_id: 'macos:solo' }));
+      feedStore.prepend(makeNotif('y', { thread_id: null }));
+
+      const { threads, singletons } = feedStore.getGroupedByThread();
+      expect(threads).toHaveLength(0);
+      expect(singletons).toHaveLength(2);
+    });
+
+    it('aggregates urgency to highest in thread', () => {
+      feedStore.prepend(makeNotif('a1', { thread_id: 't1', urgency: 'whenever', received_at: '2025-01-01T10:00:00Z' }));
+      feedStore.prepend(makeNotif('a2', { thread_id: 't1', urgency: 'urgent', received_at: '2025-01-01T11:00:00Z' }));
+
+      const { threads } = feedStore.getGroupedByThread();
+      expect(threads[0].urgency).toBe('urgent');
+    });
+
+    it('aggregates VIP star when any message has is_vip', () => {
+      feedStore.prepend(makeNotif('a1', { thread_id: 't1', is_vip: false, received_at: '2025-01-01T10:00:00Z' }));
+      feedStore.prepend(makeNotif('a2', { thread_id: 't1', is_vip: true, received_at: '2025-01-01T11:00:00Z' }));
+
+      const { threads } = feedStore.getGroupedByThread();
+      expect(threads[0].vip).toBe(true);
+    });
+
+    it('uses latest message for summarySubject and summarySender', () => {
+      feedStore.prepend(makeNotif('a1', { thread_id: 't1', subject: 'Old subject', sender_name: 'OldSender', received_at: '2025-01-01T09:00:00Z' }));
+      feedStore.prepend(makeNotif('a2', { thread_id: 't1', subject: 'New subject', sender_name: 'NewSender', received_at: '2025-01-01T12:00:00Z' }));
+
+      const { threads } = feedStore.getGroupedByThread();
+      expect(threads[0].summarySubject).toBe('New subject');
+      expect(threads[0].summarySender).toBe('NewSender');
+    });
+
+    it('items within a thread are sorted chronologically (oldest first)', () => {
+      feedStore.prepend(makeNotif('a2', { thread_id: 't1', received_at: '2025-01-01T12:00:00Z' }));
+      feedStore.prepend(makeNotif('a1', { thread_id: 't1', received_at: '2025-01-01T09:00:00Z' }));
+
+      const { threads } = feedStore.getGroupedByThread();
+      expect(threads[0].items[0].source_uid).toBe('a1');
+      expect(threads[0].items[1].source_uid).toBe('a2');
+    });
+
+    it('threads are sorted by latestAt DESC', () => {
+      feedStore.prepend(makeNotif('a1', { thread_id: 'early', received_at: '2025-01-01T08:00:00Z' }));
+      feedStore.prepend(makeNotif('a2', { thread_id: 'early', received_at: '2025-01-01T09:00:00Z' }));
+      feedStore.prepend(makeNotif('b1', { thread_id: 'late', received_at: '2025-01-01T11:00:00Z' }));
+      feedStore.prepend(makeNotif('b2', { thread_id: 'late', received_at: '2025-01-01T12:00:00Z' }));
+
+      const { threads } = feedStore.getGroupedByThread();
+      expect(threads[0].threadId).toBe('late');
+      expect(threads[1].threadId).toBe('early');
+    });
+
+    it('picks most common category with ties going to most recent', () => {
+      feedStore.prepend(makeNotif('a1', { thread_id: 't1', category_id: 'cat-a', received_at: '2025-01-01T08:00:00Z' }));
+      feedStore.prepend(makeNotif('a2', { thread_id: 't1', category_id: 'cat-b', received_at: '2025-01-01T12:00:00Z' }));
+
+      const { threads } = feedStore.getGroupedByThread();
+      // Tied 1-1, most recent (a2) has cat-b
+      expect(threads[0].category).toBe('cat-b');
+    });
+  });
+
+  describe('thread bulk actions', () => {
+    it('snoozeThread calls snooze for each notification in the thread', async () => {
+      api.snoozeNotification.mockResolvedValue({ ok: true as const });
+      feedStore.prepend(makeNotif('a1', { thread_id: 'th1' }));
+      feedStore.prepend(makeNotif('a2', { thread_id: 'th1' }));
+      feedStore.prepend(makeNotif('b1', { thread_id: 'other' }));
+
+      const ok = await feedStore.snoozeThread('th1', '1h');
+      expect(ok).toBe(true);
+      expect(api.snoozeNotification).toHaveBeenCalledTimes(2);
+    });
+
+    it('archiveThread calls archive for each notification in the thread', async () => {
+      api.archiveNotification.mockResolvedValue({ ok: true as const });
+      feedStore.prepend(makeNotif('a1', { thread_id: 'th1' }));
+      feedStore.prepend(makeNotif('a2', { thread_id: 'th1' }));
+
+      const ok = await feedStore.archiveThread('th1');
+      expect(ok).toBe(true);
+      expect(api.archiveNotification).toHaveBeenCalledTimes(2);
+    });
+
+    it('markThreadDone calls markDone for each notification in the thread', async () => {
+      api.markNotificationDone.mockResolvedValue({ ok: true as const });
+      feedStore.prepend(makeNotif('a1', { thread_id: 'th1' }));
+      feedStore.prepend(makeNotif('a2', { thread_id: 'th1' }));
+
+      const ok = await feedStore.markThreadDone('th1');
+      expect(ok).toBe(true);
+      expect(api.markNotificationDone).toHaveBeenCalledTimes(2);
+    });
+
+    it('promoteThread promotes the latest message', async () => {
+      api.promoteNotificationToNewSpace.mockResolvedValue({ spaceId: 'sp-1' });
+      feedStore.prepend(makeNotif('a1', { thread_id: 'th1', received_at: '2025-01-01T08:00:00Z' }));
+      feedStore.prepend(makeNotif('a2', { thread_id: 'th1', received_at: '2025-01-01T12:00:00Z' }));
+
+      const res = await feedStore.promoteThread('th1');
+      expect(res).toEqual({ spaceId: 'sp-1' });
+      expect(api.promoteNotificationToNewSpace).toHaveBeenCalledWith('a2');
+    });
   });
 });

@@ -33,6 +33,7 @@ import {
 import { sendToAllWindows } from '../ipc/typed-handler';
 import { enqueueForClassification } from '../classifier/classifier';
 import type { NotifSource } from './types';
+import { workiqOutlookThreadId, workiqTeamsThreadId } from './thread-id';
 import type { WorkerOutbound, WorkerInbound } from './workiq-worker';
 import { mainLog, safeStringify } from '../main-log';
 
@@ -198,6 +199,18 @@ export class WorkIQNotifSource implements NotifSource {
         const now = new Date().toISOString();
         try {
           for (const item of msg.items) {
+            const threadId = item.source === 'workiq-outlook'
+              ? workiqOutlookThreadId({
+                  conversation_id: item.conversation_id,
+                  sender_email: item.sender_email,
+                  subject: item.subject,
+                })
+              : workiqTeamsThreadId({
+                  channel_id: item.channel_id,
+                  thread_id_from_response: item.thread_id_from_response,
+                  sender_name: item.sender_name,
+                  subject: item.subject,
+                });
             const inserted = insertNotification({
               source_uid: item.source_uid,
               source: item.source,
@@ -208,6 +221,7 @@ export class WorkIQNotifSource implements NotifSource {
               body: item.body,
               received_at: item.received_at,
               deep_link: item.deep_link,
+              thread_id: threadId,
             });
             if (inserted) {
               const row = getNotification(item.source_uid);

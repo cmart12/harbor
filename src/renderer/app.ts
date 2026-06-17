@@ -383,7 +383,7 @@ import { skillStore } from './state/skill-store';
 import { historyStore } from './state/history-store';
 import { personaStore } from './state/persona-store';
 import { feedStore } from './state/feed-store';
-import type { FeedGroup, FeedViewMode } from './state/feed-store';
+import type { FeedGroup, FeedViewMode, ThreadGroup } from './state/feed-store';
 import { goalsStore } from './state/goals-store';
 import { categoriesStore } from './state/categories-store';
 import type { Goal, Category } from '../shared/goal-category-types';
@@ -3495,9 +3495,188 @@ const FEED_VIEW_LABELS: Record<FeedViewMode, string> = {
   'by-urgency': 'By Urgency',
   'by-category': 'By Category',
   'by-goal': 'By Goal',
+  'by-thread': 'By Thread',
 };
 
 const feedCollapsedGroups = new Set<string>();
+
+// Phase C.0: expand/collapse state for thread cards, persisted in localStorage
+const THREAD_EXPAND_KEY_PREFIX = 'harbor:thread-expanded:';
+const feedExpandedThreads = new Set<string>();
+
+function isThreadExpanded(threadId: string): boolean {
+  return feedExpandedThreads.has(threadId);
+}
+
+function toggleThreadExpanded(threadId: string): void {
+  if (feedExpandedThreads.has(threadId)) {
+    feedExpandedThreads.delete(threadId);
+    try { localStorage.removeItem(THREAD_EXPAND_KEY_PREFIX + threadId); } catch { /* noop */ }
+  } else {
+    feedExpandedThreads.add(threadId);
+    try { localStorage.setItem(THREAD_EXPAND_KEY_PREFIX + threadId, '1'); } catch { /* noop */ }
+  }
+}
+
+function renderThreadCard(thread: ThreadGroup, goals: Goal[], categories: Category[]): HTMLDivElement {
+  const card = document.createElement('div');
+  card.className = 'thread-card';
+  const expanded = isThreadExpanded(thread.threadId);
+  if (expanded) card.classList.add('expanded');
+
+  const header = document.createElement('div');
+  header.className = 'thread-card-header';
+
+  const chevron = document.createElement('span');
+  chevron.className = 'thread-card-chevron';
+  chevron.textContent = expanded ? '▾' : '▸';
+
+  const sender = document.createElement('span');
+  sender.className = 'feed-row-sender';
+  if (thread.vip) {
+    const star = document.createElement('span');
+    star.className = 'feed-vip-star';
+    star.textContent = '⭐';
+    sender.append(star, document.createTextNode(thread.summarySender));
+  } else {
+    sender.textContent = thread.summarySender;
+  }
+
+  const countBadge = document.createElement('span');
+  countBadge.className = 'thread-card-count';
+  countBadge.textContent = `${thread.items.length} messages`;
+
+  const time = document.createElement('span');
+  time.className = 'feed-row-time';
+  time.textContent = relativeTime(thread.latestAt);
+
+  const chipsWrap = document.createElement('span');
+  chipsWrap.className = 'feed-classification-chips';
+  const urgencyMeta = URGENCY_META[thread.urgency];
+  if (urgencyMeta && thread.urgency !== 'whenever') {
+    const chip = document.createElement('span');
+    chip.className = 'feed-urgency-chip';
+    chip.style.setProperty('--feed-chip-accent', urgencyMeta.color);
+    chip.textContent = urgencyMeta.label;
+    chipsWrap.appendChild(chip);
+  }
+  if (thread.category) {
+    const cat = categories.find(c => c.id === thread.category);
+    if (cat) {
+      const chip = document.createElement('span');
+      chip.className = 'feed-category-chip';
+      chip.style.setProperty('--feed-chip-accent', cat.color);
+      chip.textContent = cat.title;
+      chipsWrap.appendChild(chip);
+    }
+  }
+
+  header.append(chevron, sender, countBadge, chipsWrap, time);
+  header.addEventListener('click', () => {
+    toggleThreadExpanded(thread.threadId);
+    renderFeedView();
+  });
+
+  const subject = document.createElement('div');
+  subject.className = 'feed-row-subject';
+  subject.textContent = thread.summarySubject;
+
+  const actions = document.createElement('div');
+  actions.className = 'feed-row-actions thread-card-actions';
+
+  const mkBtn = (label: string, cls: string, onClick: () => void): HTMLButtonElement => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = `feed-action-btn ${cls}`;
+    b.textContent = label;
+    b.addEventListener('click', (e) => { e.stopPropagation(); onClick(); });
+    return b;
+  };
+
+  const snoozeWrap = document.createElement('div');
+  snoozeWrap.className = 'feed-action-snooze-wrap';
+  const snoozeBtn = mkBtn('Snooze All \u25BE', 'feed-action-snooze', () => {
+    snoozeWrap.classList.toggle('open');
+  });
+  snoozeWrap.appendChild(snoozeBtn);
+  const menu = document.createElement('div');
+  menu.className = 'feed-snooze-menu';
+  const presets: Array<{ label: string; preset: SnoozePreset }> = [
+    { label: '1 hour', preset: '1h' },
+    { label: '3 hours', preset: '3h' },
+    { label: 'Tomorrow 9am', preset: 'tomorrow_9am' },
+    { label: 'Next Monday 9am', preset: 'next_monday_9am' },
+  ];
+  for (const p of presets) {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'feed-snooze-item';
+    item.textContent = p.label;
+    item.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      snoozeWrap.classList.remove('open');
+      const ok = await feedStore.snoozeThread(thread.threadId, p.preset);
+      if (!ok) showFeedToast('Snooze failed');
+    });
+    menu.appendChild(item);
+  }
+  snoozeWrap.appendChild(menu);
+  actions.appendChild(snoozeWrap);
+
+  actions.appendChild(mkBtn('Archive All', 'feed-action-archive', async () => {
+    const ok = await feedStore.archiveThread(thread.threadId);
+    if (!ok) showFeedToast('Archive failed');
+  }));
+  actions.appendChild(mkBtn('Done All', 'feed-action-done', async () => {
+    const ok = await feedStore.markThreadDone(thread.threadId);
+    if (!ok) showFeedToast('Mark done failed');
+  }));
+  actions.appendChild(mkBtn('Promote', 'feed-action-promote', async () => {
+    const res = await feedStore.promoteThread(thread.threadId);
+    if (res) {
+      showFeedToast(`Promoted thread: ${thread.summarySubject}`, () => {
+        setFilter('open');
+      });
+    } else {
+      showFeedToast('Promote failed');
+    }
+  }));
+
+  card.append(header, subject, actions);
+
+  if (expanded) {
+    const messagesWrap = document.createElement('div');
+    messagesWrap.className = 'thread-card-messages';
+    for (const n of thread.items) {
+      messagesWrap.appendChild(renderFeedRow(n));
+    }
+    card.appendChild(messagesWrap);
+  }
+
+  return card;
+}
+
+function renderFeedThreadView(container: HTMLElement, threads: ThreadGroup[], singletons: Notification[], goals: Goal[], categories: Category[]): void {
+  container.innerHTML = '';
+  // Merge threads and singletons by latest time, interleaved
+  type Entry = { type: 'thread'; thread: ThreadGroup } | { type: 'single'; notif: Notification };
+  const entries: Entry[] = [
+    ...threads.map(t => ({ type: 'thread' as const, thread: t })),
+    ...singletons.map(n => ({ type: 'single' as const, notif: n })),
+  ];
+  entries.sort((a, b) => {
+    const aTime = a.type === 'thread' ? a.thread.latestAt : a.notif.received_at;
+    const bTime = b.type === 'thread' ? b.thread.latestAt : b.notif.received_at;
+    return bTime.localeCompare(aTime);
+  });
+  for (const entry of entries) {
+    if (entry.type === 'thread') {
+      container.appendChild(renderThreadCard(entry.thread, goals, categories));
+    } else {
+      container.appendChild(renderFeedRow(entry.notif));
+    }
+  }
+}
 
 type FeedFilterKey = 'urgency' | 'categoryIds' | 'goalIds' | 'sources';
 
@@ -3899,6 +4078,8 @@ function renderFeedView(): void {
       renderFeedEmptyState(emptyEl, 'No notifications to group by category', 'Once your Feed has notifications, they will be grouped here.');
     } else if (viewMode === 'by-goal') {
       renderFeedEmptyState(emptyEl, 'No notifications to group by goal', 'Once your Feed has notifications, they will be grouped here.');
+    } else if (viewMode === 'by-thread') {
+      renderFeedEmptyState(emptyEl, 'No notifications to group by thread', 'Once your Feed has notifications, threads will be grouped here.');
     } else {
       renderFeedEmptyState(emptyEl, 'No notifications', 'macOS notifications will appear here.');
     }
@@ -3909,6 +4090,11 @@ function renderFeedView(): void {
   emptyEl.classList.add('hidden');
   if (viewMode === 'by-time') {
     renderFeedList(listEl, filtered);
+    return;
+  }
+  if (viewMode === 'by-thread') {
+    const { threads, singletons } = feedStore.getGroupedByThread();
+    renderFeedThreadView(listEl, threads, singletons, goals, categories);
     return;
   }
 

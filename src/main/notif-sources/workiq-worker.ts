@@ -51,6 +51,12 @@ export interface WorkIQItem {
   body: string | null;
   received_at: string;
   deep_link: string | null;
+  /** Phase C.0: Outlook conversation_id when available. */
+  conversation_id: string | null;
+  /** Phase C.0: Teams channel_id when available. */
+  channel_id: string | null;
+  /** Phase C.0: Teams thread_id from SDK response when available. */
+  thread_id_from_response: string | null;
 }
 
 /** Messages FROM parent TO worker. */
@@ -84,6 +90,9 @@ export function buildWorkIQPrompt(cursorIso: string): string {
     '  body: first 200 characters of the message body',
     '  received_at: ISO 8601 timestamp when the message was received',
     '  deep_link: URL to open this item in Outlook/Teams (null if unavailable)',
+    '  conversation_id: (Outlook only) the conversation/thread id grouping related emails (null if unavailable)',
+    '  channel_id: (Teams only) the channel id this message belongs to (null if unavailable or a chat)',
+    '  thread_id: (Teams only) the thread/reply-chain id within the channel (null if unavailable or top-level)',
     '',
     'Return ONLY the JSON array. No markdown fences, no explanation.',
     'If there are no results, return an empty array: []',
@@ -146,6 +155,11 @@ export function parseWorkIQItems(raw: unknown[]): WorkIQItem[] {
     const deepLink = typeof obj.deep_link === 'string' ? obj.deep_link : null;
     const rawUid = typeof obj.source_uid === 'string' ? obj.source_uid : null;
 
+    // Phase C.0: threading fields (optional from SDK)
+    const conversationId = typeof obj.conversation_id === 'string' ? obj.conversation_id : null;
+    const channelId = typeof obj.channel_id === 'string' ? obj.channel_id : null;
+    const threadIdFromResponse = typeof obj.thread_id === 'string' ? obj.thread_id : null;
+
     const day = dayBucket(receivedAt);
     let uid: string;
     if (rawUid && deepLink) {
@@ -168,6 +182,9 @@ export function parseWorkIQItems(raw: unknown[]): WorkIQItem[] {
       body,
       received_at: receivedAt,
       deep_link: deepLink,
+      conversation_id: conversationId,
+      channel_id: channelId,
+      thread_id_from_response: threadIdFromResponse,
     });
   }
   return items;

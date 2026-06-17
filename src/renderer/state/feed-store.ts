@@ -18,7 +18,7 @@ import { getAPI } from '../ipc-client';
 
 type Listener = () => void;
 
-export type FeedViewMode = 'by-time' | 'by-urgency' | 'by-category' | 'by-goal';
+export type FeedViewMode = 'by-time' | 'by-urgency' | 'by-category' | 'by-goal' | 'by-thread';
 
 export interface FeedFilters {
   urgency: Set<Urgency>;
@@ -33,6 +33,18 @@ export interface FeedGroup {
   groupColor: string;
   groupDescription?: string;
   items: Notification[];
+}
+
+/** Phase C.0: a collapsed thread in the "By Thread" view. */
+export interface ThreadGroup {
+  threadId: string;
+  items: Notification[];
+  latestAt: string;
+  urgency: Urgency;
+  vip: boolean;
+  category: string | null;
+  summarySubject: string;
+  summarySender: string;
 }
 
 export interface FeedState {
@@ -88,7 +100,7 @@ function loadViewMode(): FeedViewMode {
   if (!storage) return DEFAULT_VIEW_MODE;
   try {
     const raw = storage.getItem(FEED_VIEW_MODE_KEY);
-    return raw === 'by-urgency' || raw === 'by-category' || raw === 'by-goal' || raw === 'by-time'
+    return raw === 'by-urgency' || raw === 'by-category' || raw === 'by-goal' || raw === 'by-time' || raw === 'by-thread'
       ? raw
       : DEFAULT_VIEW_MODE;
   } catch {
@@ -317,6 +329,65 @@ class FeedStore {
     ];
   }
 
+  /**
+   * Phase C.0: group filtered notifications by `thread_id`.
+   * Singletons (count == 1) stay as normal rows; threads (count >= 2)
+   * collapse into ThreadGroup cards.
+   */
+  getGroupedByThread(): { threads: ThreadGroup[]; singletons: Notification[] } {
+    const filtered = this.getFiltered();
+    const buckets = new Map<string, Notification[]>();
+    const noThread: Notification[] = [];
+
+    for (const n of filtered) {
+      if (!n.thread_id) {
+        noThread.push(n);
+        continue;
+      }
+      const list = buckets.get(n.thread_id);
+      if (list) {
+        list.push(n);
+      } else {
+        buckets.set(n.thread_id, [n]);
+      }
+    }
+
+    const threads: ThreadGroup[] = [];
+    const singletons: Notification[] = [...noThread];
+
+    for (const [threadId, items] of buckets) {
+      if (items.length < 2) {
+        singletons.push(...items);
+        continue;
+      }
+      // Sort items chronologically (oldest first) within the thread
+      items.sort((a, b) => a.received_at.localeCompare(b.received_at));
+
+      const latest = items[items.length - 1];
+      const highestUrgency = pickHighestUrgency(items);
+      const hasVip = items.some(n => n.is_vip);
+      const mostCommonCategory = pickMostCommonCategory(items);
+
+      threads.push({
+        threadId,
+        items,
+        latestAt: latest.received_at,
+        urgency: highestUrgency,
+        vip: hasVip,
+        category: mostCommonCategory,
+        summarySubject: latest.subject ?? threadId,
+        summarySender: latest.sender_name ?? latest.sender_email ?? 'Unknown',
+      });
+    }
+
+    // Sort threads by latest message DESC
+    threads.sort((a, b) => b.latestAt.localeCompare(a.latestAt));
+    // Sort singletons by received_at DESC
+    singletons.sort((a, b) => b.received_at.localeCompare(a.received_at));
+
+    return { threads, singletons };
+  }
+
   /** Insert a new notification at the top, deduped by source_uid. */
   prepend(notif: Notification): void {
     if (this.state.notifications.some(n => n.source_uid === notif.source_uid)) {
@@ -408,6 +479,46 @@ class FeedStore {
     return !!(res && 'ok' in res);
   }
 
+  // -- Phase C.0: thread bulk-action methods ---------------------------------
+
+  async snoozeThread(threadId: string, preset: SnoozePreset): Promise<boolean> {
+    const items = this.state.notifications.filter(n => n.thread_id === threadId);
+    let allOk = true;
+    for (const n of items) {
+      const ok = await this.snooze(n.source_uid, preset);
+      if (!ok) allOk = false;
+    }
+    return allOk;
+  }
+
+  async archiveThread(threadId: string): Promise<boolean> {
+    const items = this.state.notifications.filter(n => n.thread_id === threadId);
+    let allOk = true;
+    for (const n of items) {
+      const ok = await this.archive(n.source_uid);
+      if (!ok) allOk = false;
+    }
+    return allOk;
+  }
+
+  async markThreadDone(threadId: string): Promise<boolean> {
+    const items = this.state.notifications.filter(n => n.thread_id === threadId);
+    let allOk = true;
+    for (const n of items) {
+      const ok = await this.markDone(n.source_uid);
+      if (!ok) allOk = false;
+    }
+    return allOk;
+  }
+
+  async promoteThread(threadId: string): Promise<{ spaceId: string } | null> {
+    // Promote the latest message, which carries full thread context
+    const items = this.state.notifications.filter(n => n.thread_id === threadId);
+    if (items.length === 0) return null;
+    items.sort((a, b) => b.received_at.localeCompare(a.received_at));
+    return this.promoteToNewSpace(items[0].source_uid);
+  }
+
   /** Test-only reset hook. */
   _resetForTests(): void {
     this.state = this.createInitialState();
@@ -416,3 +527,57 @@ class FeedStore {
 }
 
 export const feedStore = new FeedStore();
+
+// ---------------------------------------------------------------------------
+// Phase C.0: thread grouping helpers
+// ---------------------------------------------------------------------------
+
+const URGENCY_RANK: Record<Urgency, number> = {
+  urgent: 0,
+  today: 1,
+  'this-week': 2,
+  whenever: 3,
+};
+
+function pickHighestUrgency(items: Notification[]): Urgency {
+  let best: Urgency = 'whenever';
+  for (const n of items) {
+    if (URGENCY_RANK[n.urgency] < URGENCY_RANK[best]) {
+      best = n.urgency;
+    }
+  }
+  return best;
+}
+
+/**
+ * Return the most common non-null category_id in the list.
+ * Ties go to the category of the most recent item.
+ */
+function pickMostCommonCategory(items: Notification[]): string | null {
+  const counts = new Map<string, number>();
+  for (const n of items) {
+    if (n.category_id) {
+      counts.set(n.category_id, (counts.get(n.category_id) ?? 0) + 1);
+    }
+  }
+  if (counts.size === 0) return null;
+
+  let maxCount = 0;
+  for (const c of counts.values()) {
+    if (c > maxCount) maxCount = c;
+  }
+
+  // Among ties, prefer the most recent item's category
+  const tiedIds = new Set<string>();
+  for (const [id, c] of counts) {
+    if (c === maxCount) tiedIds.add(id);
+  }
+  if (tiedIds.size === 1) return tiedIds.values().next().value!;
+
+  // Walk items in reverse chronological order (latest first)
+  const sorted = [...items].sort((a, b) => b.received_at.localeCompare(a.received_at));
+  for (const n of sorted) {
+    if (n.category_id && tiedIds.has(n.category_id)) return n.category_id;
+  }
+  return tiedIds.values().next().value!;
+}
