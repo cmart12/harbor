@@ -123,7 +123,7 @@ vi.mock('../mcp', () => ({
 // Import after mocks are defined
 // ---------------------------------------------------------------------------
 
-import { WorkIQNotifSource, _setClientFactory, _resetClientFactoryForTests } from './workiq-source';
+import { WorkIQNotifSource, _setClientFactory, _resetClientFactoryForTests, workiqApprovalHandler } from './workiq-source';
 import { sendToAllWindows } from '../ipc/typed-handler';
 import { enqueueForClassification } from '../classifier/classifier';
 
@@ -562,5 +562,74 @@ describe('WorkIQNotifSource', () => {
     expect(createSession).toHaveBeenCalled();
     const opts = createSession.mock.calls[0][0];
     expect(opts.mcpServers).toBeUndefined();
+  });
+
+  it('passes the workiq approval allowlist as onPermissionRequest', async () => {
+    const session = makeSession('[]');
+    const createSession = vi.fn().mockResolvedValue(session);
+    sdkState.client = { createSession };
+    _setClientFactory(() => sdkState.client as any);
+    mcpServersStore.value = { workiq: { type: 'stdio', command: 'wiq' } };
+
+    await source.start();
+    lastMockWorker!.emit('message', { type: 'request-poll', id: 'r1', prompt: 'p' });
+    await new Promise(r => setImmediate(r));
+    await new Promise(r => setImmediate(r));
+
+    const opts = createSession.mock.calls[0][0];
+    expect(opts.onPermissionRequest).toBe(workiqApprovalHandler);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// workiqApprovalHandler: standalone unit tests for the allowlist policy.
+// ---------------------------------------------------------------------------
+
+describe('workiqApprovalHandler', () => {
+  it('approves workiq MCP tool calls', async () => {
+    const result = await workiqApprovalHandler({
+      kind: 'mcp', serverName: 'workiq', toolName: 'fetch', toolTitle: 'Fetch', readOnly: true,
+    });
+    expect(result.kind).toBe('approve-once');
+  });
+
+  it('rejects non-workiq MCP tool calls', async () => {
+    const result = await workiqApprovalHandler({
+      kind: 'mcp', serverName: 'datadog', toolName: 'search_logs', toolTitle: 'Search Logs', readOnly: true,
+    });
+    expect(result.kind).toBe('reject');
+  });
+
+  it('approves workiq extension permission access (e.g. EULA)', async () => {
+    const result = await workiqApprovalHandler({
+      kind: 'extension-permission-access', extensionName: 'workiq', capabilities: ['eula'],
+    });
+    expect(result.kind).toBe('approve-once');
+  });
+
+  it('rejects non-workiq extension permission access', async () => {
+    const result = await workiqApprovalHandler({
+      kind: 'extension-permission-access', extensionName: 'datadog', capabilities: ['eula'],
+    });
+    expect(result.kind).toBe('reject');
+  });
+
+  it('approves workiq extension management', async () => {
+    const result = await workiqApprovalHandler({
+      kind: 'extension-management', extensionName: 'workiq', operation: 'reload',
+    });
+    expect(result.kind).toBe('approve-once');
+  });
+
+  it('approves harmless reads', async () => {
+    const result = await workiqApprovalHandler({ kind: 'read' });
+    expect(result.kind).toBe('approve-once');
+  });
+
+  it('rejects shell, write, url, memory, custom-tool, hook', async () => {
+    for (const kind of ['shell', 'write', 'url', 'memory', 'custom-tool', 'hook']) {
+      const result = await workiqApprovalHandler({ kind });
+      expect(result.kind, kind).toBe('reject');
+    }
   });
 });

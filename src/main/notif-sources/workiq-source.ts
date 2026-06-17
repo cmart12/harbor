@@ -299,7 +299,15 @@ export class WorkIQNotifSource implements NotifSource {
     try {
       this.cachedSession = await client.createSession({
         systemMessage: { content: SYSTEM_MESSAGE },
-        onPermissionRequest: async () => ({ kind: 'reject' as const }),
+        // This is a background poller -- there is no UI to surface
+        // approval prompts to. Auto-approve anything originating from
+        // the workiq MCP / extension (tool calls, EULA, capability
+        // grants). Approve plain reads too in case the model wants to
+        // peek at config. Reject everything else: shell, write, url,
+        // memory, custom tools, hooks, and any non-workiq MCP. This is
+        // a tight allowlist rather than full `yoloMode: true` so a
+        // misconfigured prompt can't surprise us with side effects.
+        onPermissionRequest: workiqApprovalHandler,
         createSessionFsProvider: () => new InMemoryFsProvider(),
         ...(workiqMcp ? { mcpServers: workiqMcp } : {}),
       } as any);
@@ -365,5 +373,40 @@ function describeError(err: unknown): string {
     return JSON.stringify(err);
   } catch {
     return String(err);
+  }
+}
+
+/**
+ * Permission handler for the workiq background poller session.
+ *
+ * Allowlist:
+ *  - kind: 'mcp'                          AND serverName === 'workiq'   → approve
+ *  - kind: 'extension-management'         AND extensionName === 'workiq' → approve
+ *  - kind: 'extension-permission-access'  AND extensionName === 'workiq' → approve
+ *  - kind: 'read'                         (harmless, model may peek)    → approve
+ *
+ * Everything else (shell, write, url, memory, custom-tool, hook, and
+ * any MCP/extension whose name is not 'workiq') is rejected so a
+ * misconfigured prompt cannot trigger arbitrary side effects.
+ *
+ * Exported for tests. Future C.3 (context-gathering agent) should use
+ * the same shape — pass it an allowed-server set instead of hard-coding.
+ */
+export async function workiqApprovalHandler(request: unknown): Promise<{ kind: 'approve-once' | 'reject' }> {
+  const req = request as { kind?: string; serverName?: string; extensionName?: string };
+  switch (req.kind) {
+    case 'mcp':
+      return req.serverName === 'workiq'
+        ? { kind: 'approve-once' as const }
+        : { kind: 'reject' as const };
+    case 'extension-management':
+    case 'extension-permission-access':
+      return req.extensionName === 'workiq'
+        ? { kind: 'approve-once' as const }
+        : { kind: 'reject' as const };
+    case 'read':
+      return { kind: 'approve-once' as const };
+    default:
+      return { kind: 'reject' as const };
   }
 }

@@ -151,3 +151,21 @@ Funnel app's notification triage being merged into whim. See `~/.copilot/session
   - `passes the workiq MCP server into createSession options`: seeds discovered MCPs with workiq + datadog + kusto, asserts createSession options carry only `{ mcpServers: { workiq: ... } }` -- no leakage from unrelated servers.
   - `omits mcpServers from createSession when no workiq MCP is discovered`: seeds only datadog, asserts `opts.mcpServers` is undefined (graceful fallback).
 - **Total: 51 notif-sources tests pass (was 49, +2).**
+
+## 2026-06-17 -- Phase C.1 hotfix #5 (workiq session approval allowlist)
+
+- **Symptom**: After hotfix #4 wired the workiq MCP into the session, the SDK still returned no data. The diagnostic log added in `47ef1da` showed the model itself was refusing: "I need to use the WorkIQ tools to access your Outlook emails and Teams messages, but you've rejected each attempt so far (fetch, search_paths, and EULA acceptance)."
+- **Root cause**: `WorkIQNotifSource.getSession()` set `onPermissionRequest: async () => ({ kind: 'reject' as const })`. That was a safety copy from the classifier (which makes no MCP calls), and it auto-rejected every workiq tool call + EULA prompt with no UI to surface them through.
+- **SDK surface used**: `onPermissionRequest: PermissionHandler` -- a per-session option on `createSession`. The handler receives a `PermissionRequest` with a discriminated `kind` and returns `{ kind: 'approve-once' | 'reject' }`. Whim's main agent flow also uses `yoloMode: true` (a session-level full-bypass), but per the brief's preference for tight allowlisting over YOLO, this fix uses a discriminator-based approval handler.
+- **Allowlist policy** (`workiqApprovalHandler`, exported for tests):
+  - `kind: 'mcp'` AND `serverName === 'workiq'` → approve
+  - `kind: 'extension-management'` AND `extensionName === 'workiq'` → approve
+  - `kind: 'extension-permission-access'` AND `extensionName === 'workiq'` → approve (EULA + capability grants)
+  - `kind: 'read'` → approve (harmless)
+  - Anything else (shell, write, url, memory, custom-tool, hook, or any non-workiq MCP/extension) → reject
+- **Why allowlist over YOLO**: A misconfigured prompt or model-drift could otherwise trigger arbitrary side effects (shell, web fetch). The tight allowlist matches exactly the surface the workiq MCP needs.
+- **For C.3 (context-gathering agent)**: Same pattern applies. Refactor `workiqApprovalHandler` into a parameterized `createNamespacedApprovalHandler({ servers: string[], extensions: string[] })` when C.3 lands so we don't fork the policy per source.
+- **Tests** (+8):
+  - Orchestrator: `passes the workiq approval allowlist as onPermissionRequest` (createSession options carry the handler reference).
+  - Standalone: 7 cases for the handler covering workiq-MCP-approve, non-workiq-MCP-reject, EULA-approve, non-workiq-EULA-reject, extension-management-approve, read-approve, and reject for every "everything else" kind.
+- **Total: 59 notif-sources tests pass (was 51, +8).**
