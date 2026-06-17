@@ -131,6 +131,16 @@ function createSchema(conn: Database.Database): void {
       display_name TEXT,
       created_at TEXT NOT NULL
     );
+
+    -- Phase C.1: per-source settings (enable flag, cursor, error).
+    CREATE TABLE IF NOT EXISTS source_settings (
+      source TEXT PRIMARY KEY,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      last_poll_iso TEXT,
+      last_error TEXT,
+      last_cursor_iso TEXT,
+      updated_at TEXT NOT NULL
+    );
   `);
 
   // Phase B.1: add nullable category_id / goal_id columns to the
@@ -164,6 +174,7 @@ function createSchema(conn: Database.Database): void {
 
   seedDefaultCategoriesIfEmpty(conn);
   ensureNewSeedCategories(conn);
+  seedDefaultSourceSettings(conn);
 }
 
 function addColumnIfMissing(
@@ -224,6 +235,17 @@ function ensureNewSeedCategories(conn: Database.Database): void {
   );
   for (const seed of newSeeds) {
     insertStmt.run(crypto.randomUUID(), seed.title, seed.color, now, now, seed.title);
+  }
+}
+
+/** Phase C.1: ensure a row exists for each known notification source. */
+function seedDefaultSourceSettings(conn: Database.Database): void {
+  const now = new Date().toISOString();
+  const stmt = conn.prepare(
+    `INSERT OR IGNORE INTO source_settings (source, enabled, updated_at) VALUES (?, 1, ?)`,
+  );
+  for (const s of ['macos', 'workiq-outlook', 'workiq-teams']) {
+    stmt.run(s, now);
   }
 }
 
@@ -958,4 +980,75 @@ export function isVipSender(email: string): boolean {
     .prepare('SELECT 1 FROM vip_senders WHERE email = ?')
     .get(email);
   return !!row;
+}
+
+// ---------------------------------------------------------------------------
+// Source settings (Phase C.1)
+// ---------------------------------------------------------------------------
+
+export interface SourceSettings {
+  source: string;
+  enabled: boolean;
+  last_poll_iso: string | null;
+  last_error: string | null;
+  last_cursor_iso: string | null;
+  updated_at: string;
+}
+
+interface SourceSettingsRow {
+  source: string;
+  enabled: number;
+  last_poll_iso: string | null;
+  last_error: string | null;
+  last_cursor_iso: string | null;
+  updated_at: string;
+}
+
+function rowToSourceSettings(row: SourceSettingsRow): SourceSettings {
+  return { ...row, enabled: row.enabled === 1 };
+}
+
+export function getSourceSettings(source: string): SourceSettings | null {
+  const row = requireDb()
+    .prepare('SELECT * FROM source_settings WHERE source = ?')
+    .get(source) as SourceSettingsRow | undefined;
+  return row ? rowToSourceSettings(row) : null;
+}
+
+export function setSourceSettings(
+  source: string,
+  patch: Partial<Pick<SourceSettings, 'enabled' | 'last_poll_iso' | 'last_error' | 'last_cursor_iso'>>,
+): void {
+  const now = new Date().toISOString();
+  const fields: string[] = ['updated_at = ?'];
+  const values: unknown[] = [now];
+
+  if (patch.enabled !== undefined) {
+    fields.push('enabled = ?');
+    values.push(patch.enabled ? 1 : 0);
+  }
+  if (patch.last_poll_iso !== undefined) {
+    fields.push('last_poll_iso = ?');
+    values.push(patch.last_poll_iso);
+  }
+  if (patch.last_error !== undefined) {
+    fields.push('last_error = ?');
+    values.push(patch.last_error);
+  }
+  if (patch.last_cursor_iso !== undefined) {
+    fields.push('last_cursor_iso = ?');
+    values.push(patch.last_cursor_iso);
+  }
+
+  values.push(source);
+  requireDb().prepare(
+    `UPDATE source_settings SET ${fields.join(', ')} WHERE source = ?`,
+  ).run(...values);
+}
+
+export function listSourceSettings(): SourceSettings[] {
+  const rows = requireDb()
+    .prepare('SELECT * FROM source_settings ORDER BY source')
+    .all() as SourceSettingsRow[];
+  return rows.map(rowToSourceSettings);
 }

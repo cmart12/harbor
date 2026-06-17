@@ -338,6 +338,14 @@ export interface WhimAPI {
   categoryActiveLinkCount(categoryId: string): Promise<IpcCommandResult<'category:active-link-count'>>;
   onNotificationUpdated(callback: (notification: Notification) => void): () => void;
   onClassifierProgress(callback: (progress: { pending: number; failed: number }) => void): () => void;
+
+  // ── Sources (Phase C.1) ─────────────────────────────────
+  listSources(): Promise<IpcCommandResult<'source:list'>>;
+  getSourceStatus(source: string): Promise<IpcCommandResult<'source:get-status'>>;
+  setSourceEnabled(params: { source: string; enabled: boolean }): Promise<IpcCommandResult<'source:set-enabled'>>;
+  forceRebackfill(source: string): Promise<IpcCommandResult<'source:force-rebackfill'>>;
+  pollSourceNow(source: string): Promise<IpcCommandResult<'source:poll-now'>>;
+  onSourceStatusChanged(callback: () => void): () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -802,6 +810,18 @@ const api: WhimAPI = {
       callback(progress);
     ipcRenderer.on('classifier:progress', handler);
     return () => { ipcRenderer.removeListener('classifier:progress', handler); };
+  },
+
+  // ── Sources (Phase C.1) ─────────────────────────────────
+  listSources: () => ipcRenderer.invoke('source:list'),
+  getSourceStatus: (source) => ipcRenderer.invoke('source:get-status', source),
+  setSourceEnabled: (params) => ipcRenderer.invoke('source:set-enabled', params),
+  forceRebackfill: (source) => ipcRenderer.invoke('source:force-rebackfill', source),
+  pollSourceNow: (source) => ipcRenderer.invoke('source:poll-now', source),
+  onSourceStatusChanged: (callback) => {
+    const handler = (): void => callback();
+    ipcRenderer.on('source:status-changed', handler);
+    return () => { ipcRenderer.removeListener('source:status-changed', handler); };
   },
 };
 

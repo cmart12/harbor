@@ -11004,3 +11004,160 @@ body.dark .vip-settings-empty {
 body.dark .vip-settings-empty {
   border-color: rgba(255, 255, 255, 0.1);
 }
+
+/* ── Phase C.1: Sources tab ──────────────────────────── */
+
+.source-settings-tab {
+  padding: 0 2px;
+}
+.source-settings-hint {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.55);
+  margin: 0 0 12px;
+}
+.source-settings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.source-settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.02);
+}
+.source-settings-row-info {
+  flex: 1;
+  min-width: 0;
+}
+.source-settings-row-name {
+  font-weight: 500;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+.source-settings-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: rgba(0, 0, 0, 0.55);
+  flex-wrap: wrap;
+}
+.source-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.source-badge-running {
+  background: rgba(16, 185, 129, 0.15);
+  color: #047857;
+}
+.source-badge-off {
+  background: rgba(107, 114, 128, 0.15);
+  color: #4B5563;
+}
+.source-badge-failing {
+  background: rgba(239, 68, 68, 0.15);
+  color: #DC2626;
+  cursor: help;
+}
+.source-settings-error {
+  color: #DC2626;
+  font-size: 10px;
+  cursor: help;
+}
+.source-settings-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-left: 12px;
+}
+.source-toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  font-size: 11px;
+}
+.source-toggle-text {
+  user-select: none;
+}
+.source-btn {
+  padding: 3px 8px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 4px;
+  background: transparent;
+  font-size: 11px;
+  cursor: pointer;
+  color: inherit;
+}
+.source-btn:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.05);
+}
+.source-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.source-btn-danger:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #DC2626;
+}
+.source-settings-empty {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.45);
+  padding: 16px;
+  text-align: center;
+}
+
+/* Dark mode overrides for Sources */
+body.dark .source-settings-hint {
+  color: rgba(255, 255, 255, 0.55);
+}
+body.dark .source-settings-row {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+}
+body.dark .source-settings-row-name {
+  color: rgba(255, 255, 255, 0.9);
+}
+body.dark .source-settings-row-meta {
+  color: rgba(255, 255, 255, 0.55);
+}
+body.dark .source-badge-running {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34D399;
+}
+body.dark .source-badge-off {
+  background: rgba(107, 114, 128, 0.2);
+  color: #9CA3AF;
+}
+body.dark .source-badge-failing {
+  background: rgba(239, 68, 68, 0.2);
+  color: #F87171;
+}
+body.dark .source-settings-error {
+  color: #F87171;
+}
+body.dark .source-btn {
+  border-color: rgba(255, 255, 255, 0.15);
+}
+body.dark .source-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.05);
+}
+body.dark .source-btn-danger:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #F87171;
+}
+body.dark .source-settings-empty {
+  color: rgba(255, 255, 255, 0.45);
+}
