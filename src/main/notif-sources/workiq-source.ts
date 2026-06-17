@@ -33,6 +33,7 @@ import { sendToAllWindows } from '../ipc/typed-handler';
 import { enqueueForClassification } from '../classifier/classifier';
 import type { NotifSource } from './types';
 import type { WorkerOutbound, WorkerInbound } from './workiq-worker';
+import { mainLog } from '../main-log';
 
 const MAX_RESTARTS = 2;
 const RESTART_BACKOFF_MS = 10_000;
@@ -67,6 +68,10 @@ export class WorkIQNotifSource implements NotifSource {
   private restartCount = 0;
   private stopping = false;
   private cachedSession: CopilotSession | null = null;
+  /** Most recent raw error from worker 'error' / 'exit' / SDK call, used as
+   *  the `last_error` payload before falling back to the generic crash
+   *  message. Survives across restarts so the UI can show the real cause. */
+  private lastRawError: string | null = null;
 
   async start(): Promise<void> {
     if (this.worker) return;
@@ -107,12 +112,23 @@ export class WorkIQNotifSource implements NotifSource {
 
     w.on('message', (msg: WorkerOutbound) => { void this.handleMessage(msg); });
     w.on('error', (err) => {
+      const detail = describeError(err);
+      this.lastRawError = detail;
       console.error('[workiq-source] worker error:', err);
-      this.setError(err instanceof Error ? err.message : String(err));
+      mainLog.error('[workiq-source] worker error:', detail);
+      this.setError(detail);
     });
     w.on('exit', (code) => {
       if (this.stopping) return;
-      console.warn(`[workiq-source] worker exited with code ${code}`);
+      const exitMsg = `worker exited with code ${code}`;
+      console.warn(`[workiq-source] ${exitMsg}`);
+      mainLog.warn(`[workiq-source] ${exitMsg}; lastRawError=${this.lastRawError ?? '(none)'}`);
+      // Capture exit code as raw error if we have nothing better. The 'error'
+      // handler usually fires first with a real Error object, but for some
+      // failure modes (immediate exit, segfault) we only see the exit code.
+      if (!this.lastRawError && code !== 0) {
+        this.lastRawError = `worker exited with code ${code}`;
+      }
       this.worker = null;
       if (this.restartCount < MAX_RESTARTS) {
         this.restartCount += 1;
@@ -120,8 +136,12 @@ export class WorkIQNotifSource implements NotifSource {
           if (!this.stopping) this.spawnWorker();
         }, RESTART_BACKOFF_MS).unref?.();
       } else {
-        console.error('[workiq-source] worker died too many times, giving up');
-        this.setError('Worker crashed repeatedly');
+        const finalError = this.lastRawError
+          ? `Worker crashed repeatedly. Last error: ${this.lastRawError}`
+          : 'Worker crashed repeatedly';
+        console.error(`[workiq-source] worker died too many times: ${finalError}`);
+        mainLog.error('[workiq-source] worker died too many times:', finalError);
+        this.setError(finalError);
       }
     });
 
@@ -151,6 +171,8 @@ export class WorkIQNotifSource implements NotifSource {
         return;
       }
       case 'error': {
+        this.lastRawError = msg.error;
+        mainLog.error('[workiq-source] worker reported error:', msg.error);
         this.setError(msg.error);
         return;
       }
@@ -186,6 +208,10 @@ export class WorkIQNotifSource implements NotifSource {
 
           this.updateSourceAfterPoll('workiq-outlook', msg.cursor, now);
           this.updateSourceAfterPoll('workiq-teams', msg.cursor, now);
+          // Healthy poll clears prior crash bookkeeping so a future
+          // single crash doesn't immediately trip MAX_RESTARTS again.
+          this.lastRawError = null;
+          this.restartCount = 0;
 
           sendToAllWindows('source:status-changed');
         } catch (err) {
@@ -291,5 +317,23 @@ export class WorkIQNotifSource implements NotifSource {
       console.warn(`[workiq-source] settings read failed for ${source}:`, err);
       return null;
     }
+  }
+}
+
+/**
+ * Render an unknown error into a useful single string for logging and for
+ * `last_error` persistence. Captures message + first ~500 chars of stack so
+ * the UI tooltip can show meaningful detail without becoming unreadable.
+ */
+function describeError(err: unknown): string {
+  if (err instanceof Error) {
+    const stack = err.stack ? `\n${err.stack.slice(0, 500)}` : '';
+    return `${err.message}${stack}`;
+  }
+  if (typeof err === 'string') return err;
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return String(err);
   }
 }

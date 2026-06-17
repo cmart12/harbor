@@ -105,6 +105,15 @@ vi.mock('../agents/in-memory-fs-provider', () => ({
   InMemoryFsProvider: vi.fn(),
 }));
 
+vi.mock('../main-log', () => ({
+  mainLog: {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  },
+  initMainLog: vi.fn(),
+}));
+
 // ---------------------------------------------------------------------------
 // Import after mocks are defined
 // ---------------------------------------------------------------------------
@@ -303,6 +312,49 @@ describe('WorkIQNotifSource', () => {
     });
 
     expect(sendToAllWindows).toHaveBeenCalledWith('source:status-changed');
+  });
+
+  it('persists the raw worker error in last_error when worker crashes repeatedly', async () => {
+    await source.start();
+    const worker = lastMockWorker!;
+
+    // Simulate a real worker crash: an Error event with message + stack,
+    // followed by exit. Repeat past MAX_RESTARTS (2) so the orchestrator
+    // gives up. The persisted last_error must include the actual cause,
+    // not just the generic 'Worker crashed repeatedly' string.
+    const realError = new Error("Cannot find module 'electron'");
+    realError.stack = "Error: Cannot find module 'electron'\n    at Module._resolveFilename (node:internal/modules/cjs/loader:1234:5)\n    at Module._load";
+
+    // First crash
+    worker.emit('error', realError);
+    worker.emit('exit', 1);
+    // Wait for the restart timer to elapse (RESTART_BACKOFF_MS = 10s).
+    // Using fake timers would be ideal, but for this test we just emit
+    // additional crashes through the same worker reference: each emit
+    // bumps restartCount via the same worker because spawnWorker reuses
+    // the same MockWorker constructor pattern. To force the final crash
+    // synchronously, manipulate the counter via repeated error+exit:
+    vi.useFakeTimers();
+    try {
+      vi.advanceTimersByTime(11_000);
+      // The orchestrator spawned a new worker; use the latest reference
+      const w2 = lastMockWorker!;
+      w2.emit('error', realError);
+      w2.emit('exit', 1);
+      vi.advanceTimersByTime(11_000);
+      const w3 = lastMockWorker!;
+      w3.emit('error', realError);
+      w3.emit('exit', 1);
+      vi.advanceTimersByTime(11_000);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    const persisted = settingsStore['workiq-outlook']?.last_error;
+    expect(persisted).toBeTruthy();
+    expect(persisted).toContain("Cannot find module 'electron'");
+    // And it must NOT be the bare generic fallback string
+    expect(persisted).not.toBe('Worker crashed repeatedly');
   });
 
   // ── Cursor seeding ─────────────────────────────────────
