@@ -38,7 +38,7 @@ import { mainLog } from '../main-log';
 
 const MAX_RESTARTS = 2;
 const RESTART_BACKOFF_MS = 10_000;
-const SDK_TIMEOUT_MS = 60_000;
+const SDK_TIMEOUT_MS = 180_000; // 3 min — WorkIQ first-run (EULA + 7-day backfill + Graph) regularly exceeded 60s.
 
 const SYSTEM_MESSAGE = `You are a notification bridge. When asked, query the user's Microsoft 365 data via WorkIQ and return the results as a JSON array. Return ONLY the JSON array, no markdown fences, no commentary.`;
 

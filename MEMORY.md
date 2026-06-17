@@ -169,3 +169,10 @@ Funnel app's notification triage being merged into whim. See `~/.copilot/session
   - Orchestrator: `passes the workiq approval allowlist as onPermissionRequest` (createSession options carry the handler reference).
   - Standalone: 7 cases for the handler covering workiq-MCP-approve, non-workiq-MCP-reject, EULA-approve, non-workiq-EULA-reject, extension-management-approve, read-approve, and reject for every "everything else" kind.
 - **Total: 59 notif-sources tests pass (was 51, +8).**
+
+## 2026-06-17 -- Phase C.1 hotfix #6 (SDK timeout + first-run backfill window)
+
+- **Symptom**: After hotfix #5 the approval allowlist worked and Sources flipped to Running, but every poll hit `Timeout after 60000ms waiting for session.idle`. The first-run cost (EULA accept + 7-day backfill + Graph round-trips) genuinely exceeded 60s.
+- **Fix 1 (timeout)**: `SDK_TIMEOUT_MS` in `workiq-source.ts` from 60s → **180s (3 min)**. Passed as the second arg to `session.sendAndWait({ prompt }, SDK_TIMEOUT_MS)` per the SDK signature `sendAndWait(options, timeout?)`. Also bumped the worker-side parent-round-trip timeout from 90s → 210s so the orchestrator's 180s fires first and we get a real error message instead of a generic 'SDK request timed out in worker'.
+- **Fix 2 (initial backfill)**: `BACKFILL_DAYS = 7` → `BACKFILL_HOURS = 24` in `workiq-worker.ts`. First poll is cheap; subsequent polls advance from `last_cursor_iso` and are tiny. Force re-backfill clears the cursor and lands here again, so this is the rebackfill floor too. Chris can manually pre-seed a longer cursor through `setSourceSettings` if he wants a wider initial sweep.
+- **No SDK option change**: `sendAndWait` already takes a per-call timeout. No need to touch session-level config.

@@ -29,10 +29,14 @@ import { contentHash, dayBucket } from './blake3-hash';
 // ---------------------------------------------------------------------------
 
 const POLL_INTERVAL_MS = 5 * 60 * 1_000; // 5 minutes
-const BACKFILL_DAYS = 7;
+const BACKFILL_HOURS = 24;
 const MAX_ATTEMPTS = 3;
 const BACKOFF_MS = [1_000, 5_000, 30_000];
-const SDK_REQUEST_TIMEOUT_MS = 90_000;
+// Worker-side timeout on the parent round-trip. Must be larger than the
+// SDK_TIMEOUT_MS in the orchestrator (currently 180s) so the parent's
+// timeout fires first and we get a real error message instead of a
+// generic 'SDK request timed out in worker'.
+const SDK_REQUEST_TIMEOUT_MS = 210_000;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -185,8 +189,12 @@ function sleep(ms: number): Promise<void> {
 }
 
 function defaultCursor(): string {
+  // Initial backfill window. Kept tight (24h) so the very first poll
+  // doesn't blow the SDK timeout. Subsequent polls advance from
+  // last_cursor_iso and are cheap. Force re-backfill clears the cursor
+  // and lands here again, so this is also the "rebackfill" floor.
   const d = new Date();
-  d.setDate(d.getDate() - BACKFILL_DAYS);
+  d.setHours(d.getHours() - BACKFILL_HOURS);
   return d.toISOString();
 }
 
