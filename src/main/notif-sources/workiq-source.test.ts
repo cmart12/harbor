@@ -24,6 +24,7 @@ class MockWorker extends EventEmitter {
   }
   async terminate(): Promise<number> {
     this.terminated = true;
+    this.emit('exit', 0);
     return 0;
   }
 }
@@ -78,11 +79,37 @@ vi.mock('../classifier/classifier', () => ({
   enqueueForClassification: vi.fn(),
 }));
 
+// SDK mock: a session whose sendAndWait we can override per test
+const sdkState: {
+  client: unknown;
+  session: { sendAndWait: ReturnType<typeof vi.fn>; disconnect: ReturnType<typeof vi.fn> } | null;
+  createSession: ReturnType<typeof vi.fn>;
+} = {
+  client: null,
+  session: null,
+  createSession: vi.fn(),
+};
+
+function makeSession(text: string) {
+  return {
+    sendAndWait: vi.fn().mockResolvedValue({ data: { content: text } }),
+    disconnect: vi.fn(),
+  };
+}
+
+vi.mock('../ai', () => ({
+  getEphemeralCopilotClient: () => sdkState.client,
+}));
+
+vi.mock('../agents/in-memory-fs-provider', () => ({
+  InMemoryFsProvider: vi.fn(),
+}));
+
 // ---------------------------------------------------------------------------
 // Import after mocks are defined
 // ---------------------------------------------------------------------------
 
-import { WorkIQNotifSource } from './workiq-source';
+import { WorkIQNotifSource, _setClientFactory, _resetClientFactoryForTests } from './workiq-source';
 import { sendToAllWindows } from '../ipc/typed-handler';
 import { enqueueForClassification } from '../classifier/classifier';
 
@@ -98,11 +125,16 @@ describe('WorkIQNotifSource', () => {
     insertedNotifications.length = 0;
     Object.keys(settingsStore).forEach(k => delete settingsStore[k]);
     vi.clearAllMocks();
+    sdkState.client = null;
+    sdkState.session = null;
+    sdkState.createSession = vi.fn();
+    _resetClientFactoryForTests();
     source = new WorkIQNotifSource();
   });
 
   afterEach(async () => {
     await source.stop();
+    _resetClientFactoryForTests();
   });
 
   // ── Lifecycle ──────────────────────────────────────────
@@ -299,21 +331,104 @@ describe('WorkIQNotifSource', () => {
 
   it('handles log messages without crashing', async () => {
     await source.start();
-    // Should not throw
     lastMockWorker!.emit('message', {
-      type: 'log',
-      level: 'info',
-      message: 'Poll completed',
+      type: 'log', level: 'info', message: 'Poll completed',
     });
     lastMockWorker!.emit('message', {
-      type: 'log',
-      level: 'warn',
-      message: 'Rate limited',
+      type: 'log', level: 'warn', message: 'Rate limited',
     });
     lastMockWorker!.emit('message', {
-      type: 'log',
-      level: 'error',
-      message: 'Something broke',
+      type: 'log', level: 'error', message: 'Something broke',
     });
+  });
+
+  // ── SDK round-trip (request-poll / sdk-response) ──────
+
+  it('responds to request-poll by calling SDK and posting sdk-response', async () => {
+    const session = makeSession('[{"source":"workiq-outlook","source_uid":"a"}]');
+    sdkState.session = session;
+    sdkState.client = {
+      createSession: vi.fn().mockResolvedValue(session),
+    };
+    _setClientFactory(() => sdkState.client as any);
+
+    await source.start();
+    lastMockWorker!.emit('message', {
+      type: 'request-poll',
+      id: 'req-1',
+      prompt: 'List my emails',
+    });
+
+    // Wait for the async SDK call + postMessage to flush
+    await new Promise(r => setImmediate(r));
+    await new Promise(r => setImmediate(r));
+
+    expect(session.sendAndWait).toHaveBeenCalledWith(
+      { prompt: 'List my emails' },
+      expect.any(Number),
+    );
+    const responseMsg = lastMockWorker!.postMessages.find(
+      (m: any) => m.type === 'sdk-response' && m.id === 'req-1'
+    ) as any;
+    expect(responseMsg).toBeDefined();
+    expect(responseMsg.success).toBe(true);
+    expect(responseMsg.text).toContain('workiq-outlook');
+  });
+
+  it('posts sdk-response error when SDK client is unavailable', async () => {
+    _setClientFactory(() => null);
+    await source.start();
+    lastMockWorker!.emit('message', {
+      type: 'request-poll',
+      id: 'req-noclient',
+      prompt: 'p',
+    });
+    await new Promise(r => setImmediate(r));
+    await new Promise(r => setImmediate(r));
+
+    const responseMsg = lastMockWorker!.postMessages.find(
+      (m: any) => m.type === 'sdk-response' && m.id === 'req-noclient'
+    ) as any;
+    expect(responseMsg).toBeDefined();
+    expect(responseMsg.success).toBe(false);
+    expect(responseMsg.error).toMatch(/SDK session/i);
+  });
+
+  it('posts sdk-response error when SDK throws', async () => {
+    const session = {
+      sendAndWait: vi.fn().mockRejectedValue(new Error('rate limited')),
+      disconnect: vi.fn(),
+    };
+    sdkState.client = { createSession: vi.fn().mockResolvedValue(session) };
+    _setClientFactory(() => sdkState.client as any);
+
+    await source.start();
+    lastMockWorker!.emit('message', {
+      type: 'request-poll',
+      id: 'req-err',
+      prompt: 'p',
+    });
+    await new Promise(r => setImmediate(r));
+    await new Promise(r => setImmediate(r));
+
+    const responseMsg = lastMockWorker!.postMessages.find(
+      (m: any) => m.type === 'sdk-response' && m.id === 'req-err'
+    ) as any;
+    expect(responseMsg).toBeDefined();
+    expect(responseMsg.success).toBe(false);
+    expect(responseMsg.error).toBe('rate limited');
+  });
+
+  it('does not import electron in the worker (worker file is electron-free)', async () => {
+    // Reading the worker source as a string to assert no SDK / electron imports.
+    const fs = await import('fs');
+    const path = await import('path');
+    const src = fs.readFileSync(
+      path.join(__dirname, 'workiq-worker.ts'),
+      'utf8'
+    );
+    expect(src).not.toMatch(/from ['"]electron['"]/);
+    expect(src).not.toMatch(/from ['"]\.\.\/ai['"]/);
+    expect(src).not.toMatch(/@github\/copilot-sdk/);
   });
 });

@@ -6,16 +6,7 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 
-// Mock Electron app and ai.ts to prevent config/electron import errors
-vi.mock('electron', () => ({
-  app: { getPath: () => '/tmp/test-harbor' },
-}));
-vi.mock('../ai', () => ({
-  getEphemeralCopilotClient: vi.fn(),
-}));
-vi.mock('../agents/in-memory-fs-provider', () => ({
-  InMemoryFsProvider: vi.fn(),
-}));
+// Worker no longer imports electron/ai — only worker_threads and blake3-hash.
 vi.mock('worker_threads', () => ({
   parentPort: null,
 }));

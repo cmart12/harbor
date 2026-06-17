@@ -108,3 +108,13 @@ Funnel app's notification triage being merged into whim. See `~/.copilot/session
 - **SDK session pattern**: Worker caches one `CopilotSession` for its lifetime. Uses `sendAndWait({ prompt }, timeout)` matching the classifier pattern. On error, drops session and rebuilds. `InMemoryFsProvider` required for `createSession`.
 - **Response parsing**: Worker has its own `extractJsonArray()` because the existing `extractJson` in `ai.ts` only matches objects. Parser validates each element has a valid source field before accepting.
 - **Deferred scope**: Slack source (future C.x), promote-to-existing-space (C.2), context-gathering agent (C.3).
+
+## 2026-06-17 -- Phase C.1 hotfix (worker electron import bug)
+
+- **Bug**: First smoke test of C.1 failed with `Cannot find module 'electron'` from inside the WorkIQ worker thread. Node `worker_threads` cannot load Electron's `electron` module, and the worker was importing `getEphemeralCopilotClient()` from `src/main/ai.ts`, which transitively pulls electron in. The classifier (B.2) doesn't hit this because it lives in the main process. The macOS worker (A.2) doesn't hit it because it never touches the SDK.
+- **Fix (Option A)**: Move the SDK call into the main process; keep everything else in the worker. The worker now posts `{ type: 'request-poll', id, prompt }` to the parent; the parent (orchestrator) holds the cached `CopilotSession`, calls `sendAndWait`, and posts `{ type: 'sdk-response', id, success, text|error }` back. Worker resolves a pending promise keyed by `id`.
+- **Why A over B (drop worker, run all in main)**: Smaller diff (~130 vs ~300 lines moved), preserves the A.2 orchestrator+worker pattern, keeps prompt/parser/dedupe/scheduler off the main event loop. The extra round-trip per poll is negligible at 5-minute cadence.
+- **Worker is now electron-free**: No imports of `electron`, `../ai`, or `@github/copilot-sdk`. Added a regression test that reads the worker source as a string and asserts those imports stay gone.
+- **Session ownership moved**: `cachedSession` and `getSession`/`dropSession` lifted from worker into the `WorkIQNotifSource` class. Added `_setClientFactory()` / `_resetClientFactoryForTests()` injection seam mirroring the classifier's pattern.
+- **Pending-request map in worker**: New `pending` Map keyed by request id, with 90s timeout per request and reject-all-on-stop so the worker exits cleanly. Backoff/retry stays in the worker.
+- **Verified**: Dev smoke shows worker polls cleanly, SDK round-trips through main, response parses, no electron errors. Per-poll log line: `[workiq-source:worker] poll complete, no new items`.
