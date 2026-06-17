@@ -228,6 +228,9 @@ export interface WhimAPI {
   // ── Settings popout window ──────────────────────────────
   openSettingsWindow(): void;
 
+  // ── Renderer logging ──────────────────────────────────
+  logToMain(level: 'info' | 'warn' | 'error', message: string): void;
+
   // ── Window / workspace events ────────────────────────────
   onWindowShown(callback: (data: { side: 'left' | 'right'; expanded: boolean }) => void): void;
   onWindowToggle(callback: () => void): void;
@@ -617,6 +620,9 @@ const api: WhimAPI = {
 
   // ── Settings popout window ──────────────────────────────
   openSettingsWindow: () => ipcRenderer.send('settings-window:open'),
+
+  // ── Renderer logging ──────────────────────────────────
+  logToMain: (level, message) => ipcRenderer.send('log:from-renderer', { level, message }),
 
   // ── Window / workspace events ────────────────────────────
   onWindowShown: (callback) => {

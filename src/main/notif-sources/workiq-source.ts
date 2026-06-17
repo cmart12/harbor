@@ -34,7 +34,7 @@ import { sendToAllWindows } from '../ipc/typed-handler';
 import { enqueueForClassification } from '../classifier/classifier';
 import type { NotifSource } from './types';
 import type { WorkerOutbound, WorkerInbound } from './workiq-worker';
-import { mainLog } from '../main-log';
+import { mainLog, safeStringify } from '../main-log';
 
 const MAX_RESTARTS = 2;
 const RESTART_BACKOFF_MS = 10_000;
@@ -254,8 +254,30 @@ export class WorkIQNotifSource implements NotifSource {
         } satisfies WorkerInbound);
         return;
       }
-      const response = await session.sendAndWait({ prompt }, SDK_TIMEOUT_MS) as
-        { data?: { content?: string } } | null;
+      const response = await session.sendAndWait({ prompt }, SDK_TIMEOUT_MS);
+
+      // Log the full SDK response shape so we can diagnose empty-text bugs.
+      // The response may carry tool-call output in `data.toolRequests`.
+      if (response) {
+        mainLog.info('[workiq-source] SDK response keys:', Object.keys(response));
+        const data = response.data;
+        mainLog.info('[workiq-source] SDK response.data keys:', Object.keys(data));
+        mainLog.info('[workiq-source] SDK response.data.content (first 800):',
+          (data.content ?? '').slice(0, 800) || '(empty)');
+        // Surface tool requests, model, phase, and messageId for debugging.
+        const diagnosticFields: Record<string, unknown> = {};
+        if (data.toolRequests?.length) diagnosticFields.toolRequests = data.toolRequests;
+        if (data.model) diagnosticFields.model = data.model;
+        if (data.phase) diagnosticFields.phase = data.phase;
+        if (data.messageId) diagnosticFields.messageId = data.messageId;
+        if (Object.keys(diagnosticFields).length > 0) {
+          mainLog.info('[workiq-source] SDK response diagnostic fields:',
+            safeStringify(diagnosticFields).slice(0, 1500));
+        }
+      } else {
+        mainLog.warn('[workiq-source] SDK response was null/undefined');
+      }
+
       const text = response?.data?.content ?? '';
       w.postMessage({
         type: 'sdk-response',

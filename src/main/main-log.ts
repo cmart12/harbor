@@ -1,11 +1,10 @@
 /**
  * Centralized main-process logger (Phase C prep).
  *
- * Uses `electron-log` under the hood. Two file transports:
- *  1. Default: <userData>/logs/main.log (electron-log rotation).
- *  2. Debug tap: ~/.copilot/sessions-output/harbor-debug.log
- *     - Truncated on every app launch for a fresh, self-contained log.
- *     - Well-known path the parent agent can `tail -f`.
+ * Uses `electron-log` under the hood with a single file transport at
+ * the debug-tap path: ~/.copilot/sessions-output/harbor-debug.log
+ *   - Truncated on every app launch for a fresh, self-contained log.
+ *   - Well-known path the parent agent can `tail -f`.
  *
  * Call `initMainLog()` once from `main.ts` before spawning any workers.
  * Then import `mainLog` anywhere in the main process.
@@ -14,7 +13,7 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
-import { app } from 'electron';
+import { app, ipcMain } from 'electron';
 
 export const DEBUG_LOG_DIR = path.join(os.homedir(), '.copilot', 'sessions-output');
 export const DEBUG_LOG_PATH = path.join(DEBUG_LOG_DIR, 'harbor-debug.log');
@@ -45,16 +44,9 @@ export function initMainLog(): void {
     const mod = require('electron-log/main');
     const log = mod?.default ?? mod;
 
-    // Transport 1: standard userData logs path with rotation.
-    const userDataLogPath = path.join(app.getPath('userData'), 'logs', 'main.log');
+    // Single file transport: debug-tap path is the source of truth.
     log.transports.file.level = 'info';
-    log.transports.file.resolvePathFn = () => userDataLogPath;
-
-    // Transport 2: debug tap file at the well-known path.
-    // electron-log v5 supports adding a second file transport via `create()`.
-    const debugTransport = log.transports.file.create('debug-tap');
-    debugTransport.level = 'info';
-    debugTransport.resolvePathFn = () => DEBUG_LOG_PATH;
+    log.transports.file.resolvePathFn = () => DEBUG_LOG_PATH;
 
     // Console transport: only in dev.
     if (log.transports.console) {
@@ -73,6 +65,18 @@ export function initMainLog(): void {
     _log = fallback;
     fallback.warn('[main-log] electron-log unavailable, using fallback:', err);
   }
+
+  // Register IPC channel so the renderer can forward logs to the
+  // main-process file sink. Fire-and-forget (ipcMain.on, not .handle).
+  ipcMain.on('log:from-renderer', (_event, payload: { level: string; message: string }) => {
+    const log = _log;
+    if (!log) return;
+    const lvl = payload?.level;
+    const msg = typeof payload?.message === 'string' ? payload.message : String(payload?.message);
+    if (lvl === 'error') log.error(msg);
+    else if (lvl === 'warn') log.warn(msg);
+    else log.info(msg);
+  });
 }
 
 function makeFallbackLog(): MainLog {

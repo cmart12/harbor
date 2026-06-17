@@ -2,6 +2,7 @@ import React from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { MarkdownCanvas, type MarkdownCanvasHandle, type AgentPersona, type MentionEvent } from './MarkdownCanvas';
 import type { CanvasAgentInteraction, CanvasPresence, CanvasUser, CanvasDecoration, CanvasThreadAgentStatus } from './types';
+import { logToMain } from '../log';
 
 let root: Root | null = null;
 let canvasRef: React.RefObject<MarkdownCanvasHandle | null> = React.createRef();
@@ -52,7 +53,7 @@ export interface MountCanvasOptions {
 }
 
 export function mountCanvas(container: HTMLElement, options: MountCanvasOptions): void {
-  console.log('[mountCanvas] called for space:', options.spaceId, 'content length:', options.content?.length);
+  logToMain('info', '[mountCanvas] called for space:', options.spaceId, 'content length:', options.content?.length);
   if (root) {
     root.unmount();
   }
