@@ -111,6 +111,9 @@ vi.mock('../main-log', () => ({
     warn: vi.fn(),
     error: vi.fn(),
   },
+  safeStringify: (v: unknown) => {
+    try { return JSON.stringify(v); } catch { return String(v); }
+  },
   initMainLog: vi.fn(),
 }));
 
@@ -578,6 +581,64 @@ describe('WorkIQNotifSource', () => {
 
     const opts = createSession.mock.calls[0][0];
     expect(opts.onPermissionRequest).toBe(workiqApprovalHandler);
+  });
+
+  // ── Follow-up on empty content with tool requests ─────
+
+  it('issues a follow-up prompt when SDK returns empty content with toolRequests', async () => {
+    const session = {
+      sendAndWait: vi.fn()
+        .mockResolvedValueOnce({ data: { content: '', toolRequests: [{ name: 'workiq_fetch' }] } })
+        .mockResolvedValueOnce({ data: { content: '[{"source":"workiq-outlook","source_uid":"x"}]' } }),
+      disconnect: vi.fn(),
+    };
+    sdkState.client = { createSession: vi.fn().mockResolvedValue(session) };
+    _setClientFactory(() => sdkState.client as any);
+
+    await source.start();
+    lastMockWorker!.emit('message', {
+      type: 'request-poll',
+      id: 'req-followup',
+      prompt: 'List my emails',
+    });
+
+    // The handler is async; flush microtask queue thoroughly
+    for (let i = 0; i < 10; i++) {
+      await new Promise(r => setImmediate(r));
+    }
+
+    // SDK should have been called twice: original + follow-up
+    expect(session.sendAndWait).toHaveBeenCalledTimes(2);
+
+    // The follow-up prompt should ask for JSON
+    const followUpCall = session.sendAndWait.mock.calls[1];
+    expect(followUpCall[0].prompt).toContain('JSON array');
+
+    // The response posted to the worker should contain the follow-up content
+    const responseMsg = lastMockWorker!.postMessages.find(
+      (m: any) => m.type === 'sdk-response' && m.id === 'req-followup'
+    ) as any;
+    expect(responseMsg).toBeDefined();
+    expect(responseMsg.success).toBe(true);
+    expect(responseMsg.text).toContain('workiq-outlook');
+  });
+
+  it('does not issue follow-up when content is non-empty', async () => {
+    const session = makeSession('[{"source":"workiq-outlook","source_uid":"a"}]');
+    sdkState.client = { createSession: vi.fn().mockResolvedValue(session) };
+    _setClientFactory(() => sdkState.client as any);
+
+    await source.start();
+    lastMockWorker!.emit('message', {
+      type: 'request-poll',
+      id: 'req-nofollow',
+      prompt: 'List my emails',
+    });
+    await new Promise(r => setImmediate(r));
+    await new Promise(r => setImmediate(r));
+
+    // Only one call (no follow-up needed)
+    expect(session.sendAndWait).toHaveBeenCalledTimes(1);
   });
 });
 

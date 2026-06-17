@@ -293,14 +293,7 @@ async function pollOnce(cursorIso: string): Promise<{ items: WorkIQItem[]; curso
       const prompt = buildWorkIQPrompt(cursorIso);
       const responseText = await requestSdkPoll(prompt);
 
-      // Diagnostic: log the first 800 chars of every raw SDK response so we
-      // can tell whether the MCP reached the session, whether the model is
-      // refusing, or whether we're getting prose-wrapped JSON the parser
-      // can't extract. Truncated to keep the log readable.
-      const preview = responseText.length > 800
-        ? responseText.slice(0, 800) + `... (+${responseText.length - 800} chars)`
-        : responseText;
-      workerLog('info', `raw SDK response (first 800 chars): ${preview}`);
+      workerLog('info', 'poll cycle complete');
 
       const rawArray = extractJsonArray(responseText);
       if (!rawArray) {

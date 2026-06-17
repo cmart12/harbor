@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 
 // Mock electron before importing config
 vi.mock('electron', () => ({
@@ -9,7 +10,7 @@ vi.mock('electron', () => ({
   },
 }));
 
-import { loadConfig, getConfig, getConfigValue, setConfigValue, getSessionId, setSessionId, removeSession, saveConfig, DEFAULT_WEB_REMOTE_PORT, isTailscaleAddress, DEFAULT_HOTKEYS, getProfiles, getActiveProfile, getActiveProfileId, getProfileById, upsertProfileForPath, updateProfile, removeProfileById, setActiveProfile, getNextProfile, generateProfileId, getExportDestinations, setExportDestinations, validateExportDestinations, getExportDestinationById, generateExportDestinationId } from './config';
+import { loadConfig, getConfig, getConfigValue, setConfigValue, getSessionId, setSessionId, removeSession, saveConfig, DEFAULT_WEB_REMOTE_PORT, isTailscaleAddress, DEFAULT_HOTKEYS, getProfiles, getActiveProfile, getActiveProfileId, getProfileById, upsertProfileForPath, updateProfile, removeProfileById, setActiveProfile, getNextProfile, generateProfileId, getExportDestinations, setExportDestinations, validateExportDestinations, getExportDestinationById, generateExportDestinationId, ensureDefaultWorkspace } from './config';
 
 const CONFIG_PATH = path.join('/tmp/space-test-config', 'config.json');
 
@@ -98,6 +99,49 @@ describe('config', () => {
       fs.writeFileSync(CONFIG_PATH, 'not json');
       const config = loadConfig();
       expect(config.theme).toBe('system');      expect(config.cliTools).toEqual([]);
+    });
+  });
+
+  describe('ensureDefaultWorkspace', () => {
+    const expectedDefault = path.join(os.homedir(), '.copilot', 'harbor-workspace');
+
+    afterEach(() => {
+      // Clean up any created workspace directory
+      try { fs.rmSync(expectedDefault, { recursive: true }); } catch { /* ignore */ }
+    });
+
+    it('sets default workspace when none is configured', () => {
+      loadConfig();
+      ensureDefaultWorkspace();
+      expect(getConfigValue('workspace')).toBe(expectedDefault);
+      expect(fs.existsSync(expectedDefault)).toBe(true);
+      // Should have seeded a profile
+      const profiles = getProfiles();
+      expect(profiles.length).toBeGreaterThanOrEqual(1);
+      expect(profiles.some(p => p.path === expectedDefault)).toBe(true);
+    });
+
+    it('re-creates missing workspace directory when path is configured', () => {
+      const customPath = path.join('/tmp', 'space-test-workspace-' + Date.now());
+      fs.writeFileSync(CONFIG_PATH, JSON.stringify({ workspace: customPath }));
+      loadConfig();
+      ensureDefaultWorkspace();
+      // The workspace path should remain unchanged but directory should exist
+      expect(getConfigValue('workspace')).toBe(customPath);
+      expect(fs.existsSync(customPath)).toBe(true);
+      // Clean up
+      try { fs.rmSync(customPath, { recursive: true }); } catch { /* ignore */ }
+    });
+
+    it('does not overwrite an existing workspace', () => {
+      const customPath = path.join('/tmp', 'space-test-ws-existing-' + Date.now());
+      fs.mkdirSync(customPath, { recursive: true });
+      fs.writeFileSync(CONFIG_PATH, JSON.stringify({ workspace: customPath }));
+      loadConfig();
+      ensureDefaultWorkspace();
+      expect(getConfigValue('workspace')).toBe(customPath);
+      // Clean up
+      try { fs.rmSync(customPath, { recursive: true }); } catch { /* ignore */ }
     });
   });
 
