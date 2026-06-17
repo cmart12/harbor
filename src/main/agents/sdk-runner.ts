@@ -416,7 +416,7 @@ export async function launchQuickAgent(
           content: `\n${systemContent}`,
         },
       } : {}),
-      ...((isEphemeral && !isCloudSandbox) ? { createSessionFsHandler: () => new InMemoryFsProvider() } : {}),
+      ...((isEphemeral && !isCloudSandbox) ? { createSessionFsProvider: () => new InMemoryFsProvider() } : {}),
       ...(cloudOpts ? { cloud: cloudOpts } : {}),
       onPermissionRequest: useHostPathAwareHandler
         ? broker.createPathAwareSandboxPermissionHandler(findRecord)
