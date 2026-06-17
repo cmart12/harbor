@@ -83,3 +83,26 @@ export function workiqTeamsThreadId(input: WorkIQTeamsThreadInput): string {
   const subj = normalizeSubject(input.subject ?? '');
   return 'workiq-teams:' + sender + ':' + subj;
 }
+
+// ---------------------------------------------------------------------------
+// Slack
+// ---------------------------------------------------------------------------
+
+export interface SlackThreadInput {
+  channel_id?: string | null;
+  sender_name?: string | null;
+  subject?: string | null;
+}
+
+/**
+ * Slack thread: prefer `channel_id` (all messages in the same channel
+ * share one thread), fall back to `sender_name:normalizeSubject(subject)`.
+ */
+export function slackThreadId(input: SlackThreadInput): string {
+  if (input.channel_id) {
+    return 'slack:' + input.channel_id;
+  }
+  const sender = input.sender_name ?? 'unknown';
+  const subj = normalizeSubject(input.subject ?? '');
+  return 'slack:' + sender + ':' + subj;
+}
