@@ -121,6 +121,7 @@
     "@types/qrcode": "^1.5.6",
     "@types/ws": "^8.18.1",
     "better-sqlite3": "^12.9.0",
+    "blake3": "^2.1.4",
     "bplist-parser": "^0.3.2",
     "electron-log": "^5.4.4",
     "electron-updater": "^6.8.3",

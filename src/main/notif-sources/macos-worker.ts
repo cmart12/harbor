@@ -60,9 +60,16 @@ export interface WorkerOutboundLog {
   message: string;
 }
 
+export interface WorkerOutboundPollComplete {
+  type: 'poll-complete';
+  /** UTC RFC3339 — when the poll cycle finished (success). */
+  iso: string;
+}
+
 export type WorkerOutbound =
   | WorkerOutboundNotification
   | WorkerOutboundCursor
+  | WorkerOutboundPollComplete
   | WorkerOutboundLog;
 
 function macEpochToIso(seconds: number): string {
@@ -272,7 +279,13 @@ parentPort?.on('message', (msg: WorkerInboundMessage | { type: 'init'; cursor: s
 async function loop(): Promise<void> {
   while (!stopped) {
     const next = pollOnce(cursor, warnedFda);
-    if (next !== null) cursor = next;
+    if (next !== null) {
+      cursor = next;
+      // Signal the orchestrator that a successful poll cycle completed
+      // so it can update source_settings.last_poll_iso + clear stale
+      // last_error. `pollOnce` returns null only when the DB read fails.
+      post({ type: 'poll-complete', iso: new Date().toISOString() });
+    }
     await new Promise<void>((resolve) => {
       const t = setTimeout(resolve, POLL_INTERVAL_MS);
       // Allow Node to exit if the parent forgets to call stop() — guards

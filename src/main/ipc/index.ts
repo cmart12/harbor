@@ -11,6 +11,7 @@ import { registerGoalsHandlers } from './goals-handlers';
 import { registerCategoriesHandlers } from './categories-handlers';
 import { registerClassifierHandlers } from './classifier-handlers';
 import { registerVipHandlers } from './vip-handlers';
+import { registerSourceHandlers } from './source-handlers';
 
 export function registerIpcHandlers(): void {
   registerSpaceHandlers();
@@ -26,6 +27,7 @@ export function registerIpcHandlers(): void {
   registerCategoriesHandlers();
   registerClassifierHandlers();
   registerVipHandlers();
+  registerSourceHandlers();
 }
 
 // Re-export typed handler utilities

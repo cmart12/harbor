@@ -28,6 +28,16 @@ export type SpaceUpdates = Partial<
   Pick<Space, 'description' | 'body' | 'client' | 'due_at' | 'due_at_utc' | 'status' | 'attachments'>
 >;
 
+/** Phase C.1: status of a notification source shown in Settings. */
+export interface SourceStatus {
+  source: string;
+  enabled: boolean;
+  is_running: boolean;
+  last_poll_iso: string | null;
+  last_error: string | null;
+  last_cursor_iso: string | null;
+}
+
 export interface SpaceEvent {
   id: string;
   space_id: string;
@@ -622,6 +632,22 @@ export interface IpcCommands {
   'vip:list': { args: []; result: VipSender[] };
   'vip:add': { args: [input: { email: string; displayName?: string }]; result: VipSender };
   'vip:remove': { args: [email: string]; result: { ok: true } };
+
+  // ── Sources (Phase C.1) ─────────────────────────────────
+  'source:list': { args: []; result: SourceStatus[] };
+  'source:get-status': { args: [source: string]; result: SourceStatus };
+  'source:set-enabled': {
+    args: [params: { source: string; enabled: boolean }];
+    result: { ok: true };
+  };
+  'source:force-rebackfill': {
+    args: [source: string];
+    result: { ok: true };
+  };
+  'source:poll-now': {
+    args: [source: string];
+    result: { ok: true };
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -727,6 +753,9 @@ export interface IpcEvents {
 
   /** Phase B.3: VIP senders changed. Renderer refetches. */
   'vip:changed': void;
+
+  /** Phase C.1: a notification source changed state. Renderer refetches. */
+  'source:status-changed': void;
 }
 
 // ---------------------------------------------------------------------------

@@ -26,6 +26,7 @@ import {
   getMeta,
   setMeta,
   getNotification,
+  setSourceSettings,
 } from '../notif-db';
 import { sendToAllWindows } from '../ipc';
 import { enqueueForClassification } from '../classifier/classifier';
@@ -48,6 +49,7 @@ type WorkerMessage =
       received_at: string;
     }
   | { type: 'cursor'; value: string }
+  | { type: 'poll-complete'; iso: string }
   | { type: 'log'; level: 'info' | 'warn' | 'error'; message: string };
 
 export class MacOSNotifSource implements NotifSource {
@@ -134,6 +136,21 @@ export class MacOSNotifSource implements NotifSource {
           setMeta(CURSOR_KEY, msg.value);
         } catch (err) {
           mainLog.warn('[macos-source] cursor write failed:', err);
+        }
+        return;
+      }
+      case 'poll-complete': {
+        // Every successful poll cycle updates source_settings so the
+        // Sources UI can show a fresh last_poll_iso + clear any stale
+        // last_error left over from a prior crash.
+        try {
+          setSourceSettings('macos', {
+            last_poll_iso: msg.iso,
+            last_error: null,
+          });
+          sendToAllWindows('source:status-changed');
+        } catch (err) {
+          console.warn('[macos-source] source_settings update failed:', err);
         }
         return;
       }

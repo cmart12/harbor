@@ -6092,9 +6092,122 @@ function initVipSendersTab(): void {
   });
 }
 
+// ── Phase C.1: Sources tab ──────────────────────────────
+
+const SOURCE_LABELS: Record<string, string> = {
+  'macos': 'macOS Notification Center',
+  'workiq-outlook': 'WorkIQ - Outlook',
+  'workiq-teams': 'WorkIQ - Teams',
+};
+
+function sourceStatusBadge(enabled: boolean, isRunning: boolean, lastError: string | null): string {
+  if (!enabled) return '<span class="source-badge source-badge-off">Off</span>';
+  if (lastError) return '<span class="source-badge source-badge-failing" title="' + escapeHtml(lastError) + '">Failing</span>';
+  if (isRunning) return '<span class="source-badge source-badge-running">Running</span>';
+  return '<span class="source-badge source-badge-off">Off</span>';
+}
+
+function sourceRelativeTime(isoStr: string | null): string {
+  if (!isoStr) return 'Never';
+  const ms = Date.now() - new Date(isoStr).getTime();
+  if (ms < 0) return 'Just now';
+  const secs = Math.floor(ms / 1000);
+  if (secs < 60) return `${secs}s ago`;
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
+}
+
+async function loadSourceStatuses(): Promise<void> {
+  const api = (window as any).whimAPI;
+  if (!api || typeof api.listSources !== 'function') return;
+
+  const list = document.getElementById('source-settings-list');
+  if (!list) return;
+
+  try {
+    const sources = await api.listSources();
+    if (!Array.isArray(sources) || sources.length === 0) {
+      list.innerHTML = '<div class="source-settings-empty">No sources configured.</div>';
+      return;
+    }
+
+    list.innerHTML = sources.map((s: any) => {
+      const label = SOURCE_LABELS[s.source] ?? s.source;
+      const badge = sourceStatusBadge(s.enabled, s.is_running, s.last_error);
+      const lastPoll = sourceRelativeTime(s.last_poll_iso);
+      const errorTrunc = s.last_error
+        ? escapeHtml(s.last_error.length > 80 ? s.last_error.slice(0, 80) + '...' : s.last_error)
+        : '';
+
+      return `
+        <div class="source-settings-row" data-source="${escapeHtml(s.source)}">
+          <div class="source-settings-row-info">
+            <div class="source-settings-row-name">${escapeHtml(label)}</div>
+            <div class="source-settings-row-meta">
+              ${badge}
+              <span class="source-settings-poll">Last poll: ${escapeHtml(lastPoll)}</span>
+              ${errorTrunc ? `<span class="source-settings-error" title="${escapeHtml(s.last_error ?? '')}">${errorTrunc}</span>` : ''}
+            </div>
+          </div>
+          <div class="source-settings-row-actions">
+            <label class="source-toggle-label">
+              <input type="checkbox" class="source-toggle" data-source-toggle="${escapeHtml(s.source)}" ${s.enabled ? 'checked' : ''} />
+              <span class="source-toggle-text">${s.enabled ? 'Enabled' : 'Disabled'}</span>
+            </label>
+            <button class="source-btn" data-source-poll="${escapeHtml(s.source)}" ${!s.enabled ? 'disabled' : ''}>Poll now</button>
+            <button class="source-btn source-btn-danger" data-source-rebackfill="${escapeHtml(s.source)}" ${!s.enabled ? 'disabled' : ''}>Re-backfill</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+  } catch (err) {
+    console.warn('[sources-tab] load failed:', err);
+  }
+}
+
+function initSourcesTab(): void {
+  const list = document.getElementById('source-settings-list');
+  if (!list) return;
+
+  const api = (window as any).whimAPI;
+  if (!api) return;
+
+  list.addEventListener('change', async (event) => {
+    const target = event.target as HTMLInputElement;
+    const source = target.dataset.sourceToggle;
+    if (!source) return;
+    await api.setSourceEnabled({ source, enabled: target.checked });
+    await loadSourceStatuses();
+  });
+
+  list.addEventListener('click', async (event) => {
+    const target = event.target as HTMLElement;
+
+    const pollSource = target.closest<HTMLElement>('[data-source-poll]')?.dataset.sourcePoll;
+    if (pollSource) {
+      await api.pollSourceNow(pollSource);
+      // Refresh after a short delay to pick up new poll time
+      setTimeout(() => { void loadSourceStatuses(); }, 2000);
+      return;
+    }
+
+    const rebackfillSource = target.closest<HTMLElement>('[data-source-rebackfill]')?.dataset.sourceRebackfill;
+    if (rebackfillSource) {
+      if (!confirm(`Reset the cursor for ${SOURCE_LABELS[rebackfillSource] ?? rebackfillSource} and re-backfill? This will re-ingest the last 7 days.`)) return;
+      await api.forceRebackfill(rebackfillSource);
+      await loadSourceStatuses();
+    }
+  });
+}
+
 initGoalsTab();
 initCategoriesTab();
 initVipSendersTab();
+initSourcesTab();
 
 // Push-event refresh wiring.
 (() => {
@@ -6105,6 +6218,9 @@ initVipSendersTab();
   if (api && typeof api.onCategoriesChanged === 'function') {
     api.onCategoriesChanged(() => { void categoriesStore.refresh(); });
   }
+  if (api && typeof api.onSourceStatusChanged === 'function') {
+    api.onSourceStatusChanged(() => { void loadSourceStatuses(); });
+  }
 })();
 
 // First load (deferred so other init can complete first).
@@ -6112,6 +6228,7 @@ queueMicrotask(() => {
   void goalsStore.loadInitial();
   void categoriesStore.loadInitial();
   void loadVipSenders();
+  void loadSourceStatuses();
 });
 
 // ── Hotkeys tab ────────────────────────────────────────
