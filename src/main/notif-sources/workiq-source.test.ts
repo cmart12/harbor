@@ -114,6 +114,11 @@ vi.mock('../main-log', () => ({
   initMainLog: vi.fn(),
 }));
 
+const mcpServersStore: { value: Record<string, unknown> } = { value: {} };
+vi.mock('../mcp', () => ({
+  getAllMcpServers: () => mcpServersStore.value,
+}));
+
 // ---------------------------------------------------------------------------
 // Import after mocks are defined
 // ---------------------------------------------------------------------------
@@ -137,6 +142,7 @@ describe('WorkIQNotifSource', () => {
     sdkState.client = null;
     sdkState.session = null;
     sdkState.createSession = vi.fn();
+    mcpServersStore.value = {};
     _resetClientFactoryForTests();
     source = new WorkIQNotifSource();
   });
@@ -505,5 +511,56 @@ describe('WorkIQNotifSource', () => {
     expect(src).not.toMatch(/from ['"]electron['"]/);
     expect(src).not.toMatch(/from ['"]\.\.\/ai['"]/);
     expect(src).not.toMatch(/@github\/copilot-sdk/);
+  });
+
+  // ── MCP wiring ─────────────────────────────────────────
+
+  it('passes the workiq MCP server into createSession options', async () => {
+    const session = makeSession('[]');
+    const createSession = vi.fn().mockResolvedValue(session);
+    sdkState.client = { createSession };
+    _setClientFactory(() => sdkState.client as any);
+    mcpServersStore.value = {
+      workiq: { type: 'stdio', command: 'workiq-mcp' },
+      datadog: { type: 'http', url: 'https://dd.example.com' },
+      kusto: { type: 'stdio', command: 'kusto-mcp' },
+    };
+
+    await source.start();
+    lastMockWorker!.emit('message', {
+      type: 'request-poll', id: 'r1', prompt: 'p',
+    });
+    await new Promise(r => setImmediate(r));
+    await new Promise(r => setImmediate(r));
+
+    expect(createSession).toHaveBeenCalled();
+    const opts = createSession.mock.calls[0][0];
+    expect(opts.mcpServers).toBeDefined();
+    expect(opts.mcpServers).toHaveProperty('workiq');
+    // No other MCPs should leak in
+    expect(opts.mcpServers).not.toHaveProperty('datadog');
+    expect(opts.mcpServers).not.toHaveProperty('kusto');
+    expect(Object.keys(opts.mcpServers)).toEqual(['workiq']);
+  });
+
+  it('omits mcpServers from createSession when no workiq MCP is discovered', async () => {
+    const session = makeSession('[]');
+    const createSession = vi.fn().mockResolvedValue(session);
+    sdkState.client = { createSession };
+    _setClientFactory(() => sdkState.client as any);
+    mcpServersStore.value = {
+      datadog: { type: 'http', url: 'https://dd.example.com' },
+    };
+
+    await source.start();
+    lastMockWorker!.emit('message', {
+      type: 'request-poll', id: 'r1', prompt: 'p',
+    });
+    await new Promise(r => setImmediate(r));
+    await new Promise(r => setImmediate(r));
+
+    expect(createSession).toHaveBeenCalled();
+    const opts = createSession.mock.calls[0][0];
+    expect(opts.mcpServers).toBeUndefined();
   });
 });

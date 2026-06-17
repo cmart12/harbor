@@ -23,6 +23,7 @@ import { Worker } from 'worker_threads';
 import type { CopilotSession } from '@github/copilot-sdk';
 import { getEphemeralCopilotClient } from '../ai';
 import { InMemoryFsProvider } from '../agents/in-memory-fs-provider';
+import { getAllMcpServers } from '../mcp';
 import {
   insertNotification,
   getNotification,
@@ -48,6 +49,9 @@ const SYSTEM_MESSAGE = `You are a notification bridge. When asked, query the use
 type ClientFactory = typeof getEphemeralCopilotClient;
 let clientFactory: ClientFactory = getEphemeralCopilotClient;
 
+type McpServersFactory = typeof getAllMcpServers;
+let mcpServersFactory: McpServersFactory = getAllMcpServers;
+
 /** Test-only: replace the SDK client factory with a mock. */
 export function _setClientFactory(factory: ClientFactory): void {
   clientFactory = factory;
@@ -55,6 +59,11 @@ export function _setClientFactory(factory: ClientFactory): void {
 /** Test-only: restore default factory. */
 export function _resetClientFactoryForTests(): void {
   clientFactory = getEphemeralCopilotClient;
+  mcpServersFactory = getAllMcpServers;
+}
+/** Test-only: replace the MCP discovery factory with a mock. */
+export function _setMcpServersFactory(factory: McpServersFactory): void {
+  mcpServersFactory = factory;
 }
 
 /**
@@ -267,11 +276,32 @@ export class WorkIQNotifSource implements NotifSource {
     if (this.cachedSession) return this.cachedSession;
     const client = clientFactory();
     if (!client) return null;
+
+    // Filter discovered MCPs to just the workiq server. The full set
+    // (DataDog, Kusto, Slack, etc.) would bloat the tool list and pollute
+    // the session for a query that only needs Outlook + Teams. The custom
+    // entries already override discovered ones in `getAllMcpServers()`,
+    // so picking the `workiq` key here gets Chris's config copy if it
+    // exists, otherwise the plugin-discovered one.
+    let workiqMcp: Record<string, unknown> | undefined;
+    try {
+      const all = mcpServersFactory();
+      const wiq = all['workiq'];
+      if (wiq) {
+        workiqMcp = { workiq: wiq };
+      } else {
+        mainLog.warn('[workiq-source] no `workiq` MCP server discovered; SDK session has no tools to query Outlook/Teams');
+      }
+    } catch (err) {
+      mainLog.warn('[workiq-source] mcp discovery failed:', err);
+    }
+
     try {
       this.cachedSession = await client.createSession({
         systemMessage: { content: SYSTEM_MESSAGE },
         onPermissionRequest: async () => ({ kind: 'reject' as const }),
         createSessionFsProvider: () => new InMemoryFsProvider(),
+        ...(workiqMcp ? { mcpServers: workiqMcp } : {}),
       } as any);
       return this.cachedSession;
     } catch (err) {

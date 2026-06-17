@@ -138,3 +138,16 @@ Funnel app's notification triage being merged into whim. See `~/.copilot/session
 - **Stale "Worker crashed repeatedly" auto-clears**: No explicit migration needed. The first successful poll now writes `last_error: null`, which sweeps the stale value. Tested by seeding the stale string and asserting it's cleared after one healthy zero-item poll.
 - **New test**: `writes last_poll_iso on every successful poll (including zero items)` seeds stale crash errors on both sources, emits a zero-item poll, asserts both sources have a fresh `last_poll_iso` AND `last_error: null`.
 - **Total: 49 notif-sources tests pass (was 48, +1).**
+
+## 2026-06-17 -- Phase C.1 hotfix #4 (wire workiq MCP into SDK session)
+
+- **Symptom**: After hotfix #3 the source plumbing worked end-to-end and `last_poll_iso` advanced every 5min, but `listNotifications()` never returned a workiq row -- only macos. Worker logs showed `WorkIQ response contained no parseable array` on every poll.
+- **Root cause**: The `createSession({...})` call in `WorkIQNotifSource.getSession()` passed no `mcpServers` option, so the session had no tool to actually query Outlook/Teams. The model just returned conversational text instead of a JSON array. Whim's main agent flow uses `getAllMcpServers()` from `src/main/mcp.ts` -- C.1 missed wiring it.
+- **Fix**: In `getSession()`, call `mcpServersFactory()` (defaults to `getAllMcpServers`), pluck the `workiq` entry, and pass `{ mcpServers: { workiq: ... } }` into `createSession`. The custom-config copy already wins over discovered-plugin per `getAllMcpServers()` spread order, so config takes precedence automatically when both exist.
+- **Why filter to just `workiq`**: The full discovered set (DataDog, Kusto, Slack, etc.) would bloat the tool list and pollute a single-purpose query session. The brief explicitly called for filtering.
+- **Graceful fallback**: If no `workiq` MCP is found, log a warning via `mainLog` and continue with no `mcpServers` option. Worker still polls but returns empty results rather than crashing.
+- **Injection seam**: New `_setMcpServersFactory()` test-only helper alongside `_setClientFactory()`, mirroring the classifier pattern. `_resetClientFactoryForTests()` resets both.
+- **Tests added**:
+  - `passes the workiq MCP server into createSession options`: seeds discovered MCPs with workiq + datadog + kusto, asserts createSession options carry only `{ mcpServers: { workiq: ... } }` -- no leakage from unrelated servers.
+  - `omits mcpServers from createSession when no workiq MCP is discovered`: seeds only datadog, asserts `opts.mcpServers` is undefined (graceful fallback).
+- **Total: 51 notif-sources tests pass (was 49, +2).**
