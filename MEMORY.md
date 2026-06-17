@@ -85,3 +85,12 @@ Funnel app's notification triage being merged into whim. See `~/.copilot/session
 
 ### Addendum: Auto-updater gate
 - Added `disableAutoUpdater: boolean` config key (default `true`) and `HARBOR_DISABLE_UPDATER` env var gate in `initAutoUpdater()`. When either is truthy, the updater sets status to `disabled` and returns early -- no network calls, no "Update failed" banner. This stays `true` until Harbor has a release pipeline. No Settings UI toggle; it is a developer escape hatch only.
+
+## 2026-06-17 -- Audit: sdk-runner.ts FS provider key was wrong
+
+- **Bug confirmed**: `src/main/agents/sdk-runner.ts` line 419 used `createSessionFsHandler` as the options key when calling `client.createSession()`. The Copilot SDK (`@github/copilot-sdk ^1.0.0-beta.10`) expects `createSessionFsProvider`. The SDK checks for this key by name at runtime (`client.js:318`) and throws "createSessionFsProvider is required in session config when sessionFs is enabled in client options" if it is missing. The key is also typed as `createSessionFsProvider` in `types.d.ts:1625`.
+- **Impact**: On the ephemeral client (which enables `sessionFs`), every `createSession` call from `sdk-runner.ts` that hit the `isEphemeral && !isCloudSandbox` path would either throw at the SDK validation check or silently skip the in-memory FS provider, meaning agent code paths depending on session FS would get null/fail.
+- **Fix**: Renamed `createSessionFsHandler` to `createSessionFsProvider` in `sdk-runner.ts`. Also fixed a stale comment in `ai.ts` (line 430) that referenced the wrong name.
+- **Classifier was correct**: `src/main/classifier/classifier.ts` (Phase B.2) already uses `createSessionFsProvider` with an `as any` cast. The B.2 implementer's finding was accurate.
+- **TypeScript didn't catch this**: The wrong key was spread via a conditional expression (`...(condition ? { wrongKey: ... } : {})`), which bypasses TypeScript's excess property checking on spread objects. The `as any` cast on the classifier's call was a workaround for a separate typing issue, not related to the key name.
+- **No other occurrences**: `createSessionFsHandler` appeared nowhere else in `src/` after the fix.

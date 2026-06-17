@@ -427,7 +427,7 @@ export async function initCopilot(): Promise<void> {
   try {
     // Start a separate client for ephemeral sessions. When sessionFs is
     // enabled the SDK requires *every* createSession call to provide a
-    // createSessionFsHandler, so this must be a dedicated client.
+    // createSessionFsProvider, so this must be a dedicated client.
     const connection = resolveRuntimeConnection().connection;
     const ephemeralOpts: Record<string, unknown> = {
       ...(connection ? { connection } : {}),
