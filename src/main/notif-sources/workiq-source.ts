@@ -278,7 +278,43 @@ export class WorkIQNotifSource implements NotifSource {
         mainLog.warn('[workiq-source] SDK response was null/undefined');
       }
 
-      const text = response?.data?.content ?? '';
+      let text = response?.data?.content ?? '';
+
+      // If the model executed tool calls but returned empty content, it
+      // fetched data without summarizing. Issue a single follow-up prompt
+      // on the same session asking it to return the JSON.
+      const toolRequests = response?.data?.toolRequests;
+      if (!text && toolRequests?.length) {
+        mainLog.info(
+          `[workiq-source] SDK returned empty content with ${toolRequests.length} tool request(s). Issuing follow-up prompt.`,
+        );
+        mainLog.info(
+          '[workiq-source] Tool requests:',
+          safeStringify(toolRequests).slice(0, 1500),
+        );
+
+        try {
+          const followUp = await session.sendAndWait(
+            { prompt: 'Please return the items you fetched as a JSON array matching this schema: [{source, source_uid, sender_name, sender_email, subject, body, received_at, deep_link}]. Return ONLY the JSON array, no prose.' },
+            SDK_TIMEOUT_MS,
+          );
+          const followUpText = followUp?.data?.content ?? '';
+          mainLog.info(
+            '[workiq-source] Follow-up response.data keys:',
+            followUp?.data ? Object.keys(followUp.data).join(', ') : '(null)',
+          );
+          mainLog.info(
+            '[workiq-source] Follow-up response.data.content (first 800):',
+            followUpText.slice(0, 800) || '(empty)',
+          );
+          if (followUpText) {
+            text = followUpText;
+          }
+        } catch (followUpErr) {
+          mainLog.warn('[workiq-source] Follow-up prompt failed:', followUpErr);
+        }
+      }
+
       w.postMessage({
         type: 'sdk-response',
         id,

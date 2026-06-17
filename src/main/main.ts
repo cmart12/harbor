@@ -4,7 +4,7 @@ import './app-paths';
 import { app, BrowserWindow, dialog, globalShortcut, session, protocol, net, systemPreferences } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
-import { loadConfig, getConfigValue, setConfigValue, getResolvedHotkeys } from './config';
+import { loadConfig, getConfigValue, setConfigValue, getResolvedHotkeys, ensureDefaultWorkspace } from './config';
 import { initDatabase, mergeSessionIds, syncCanvasContent } from './database';
 import { initWorkspace, getDbPath, getLogRoot } from './workspace';
 import { startSkillWatcher } from './skill-watcher';
@@ -195,7 +195,8 @@ app.whenReady().then(async () => {
 
   // Load local config and initialize workspace if configured
   const config = loadConfig();
-  const workspace = config.workspace;
+  ensureDefaultWorkspace();
+  const workspace = getConfigValue('workspace');
 
   if (workspace && fs.existsSync(workspace)) {
     initWorkspace(workspace);

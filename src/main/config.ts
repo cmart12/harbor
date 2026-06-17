@@ -513,6 +513,53 @@ function migrateProfiles(): void {
   }
 }
 
+/**
+ * Ensure a usable workspace exists on disk after config load.
+ *
+ * Two cases:
+ * 1. No workspace configured (fresh install or user never set one):
+ *    Set a sensible default at ~/.copilot/harbor-workspace so Spaces
+ *    can open without requiring manual first-run configuration.
+ * 2. Workspace path is set but the directory is missing (e.g. external
+ *    drive unmounted, or dotfiles migration): re-create the directory
+ *    so downstream code does not early-return on a missing path.
+ */
+export function ensureDefaultWorkspace(): void {
+  const DEFAULT_WORKSPACE = path.join(os.homedir(), '.copilot', 'harbor-workspace');
+
+  if (!config.workspace) {
+    try {
+      fs.mkdirSync(DEFAULT_WORKSPACE, { recursive: true });
+    } catch (err) {
+      console.error('[config] Failed to create default workspace:', err);
+      return;
+    }
+    config.workspace = DEFAULT_WORKSPACE;
+
+    // Seed a matching profile so the profiles UI stays consistent.
+    if (config.profiles.length === 0) {
+      const profile: WorkspaceProfile = {
+        id: generateProfileId(),
+        path: DEFAULT_WORKSPACE,
+        name: null,
+        tint: null,
+      };
+      config.profiles = [profile];
+      config.activeProfileId = profile.id;
+    }
+
+    saveConfig();
+    console.info('[config] auto-set workspace to', DEFAULT_WORKSPACE);
+  } else if (!fs.existsSync(config.workspace)) {
+    try {
+      fs.mkdirSync(config.workspace, { recursive: true });
+      console.info('[config] re-created missing workspace directory:', config.workspace);
+    } catch (err) {
+      console.error('[config] Failed to re-create workspace directory:', err);
+    }
+  }
+}
+
 export function saveConfig(): void {
   try {
     fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), 'utf-8');
