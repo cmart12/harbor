@@ -9843,12 +9843,17 @@ body.dark .chat-subagent-tile {
 
 body.canvas-window {
   background: transparent;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
 }
 
 body.canvas-window #app {
   border-radius: 0;
   padding: 0;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.98) 100%);
+  height: auto !important;
+  min-height: 0 !important;
 }
 
 body.canvas-window #main-view {
@@ -9856,6 +9861,15 @@ body.canvas-window #main-view {
 }
 
 body.canvas-window .canvas-view {
+  position: fixed !important;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
   animation: none;
 }
 
