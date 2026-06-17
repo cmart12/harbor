@@ -18,7 +18,6 @@ import { startCliExitMonitor, stopCliExitMonitor, reconcileStaleAgents } from '.
 import { createMainWindow, toggleWindow, setupSnapOnDrop, registerWindowIpcHandlers, preWarmSettingsWindow, releaseSettingsWindow, preWarmCanvasWindow, releaseCanvasWindow } from './window-manager';
 import { createTray, destroyTray } from './tray';
 import { initAutoUpdater, cleanupAutoUpdater } from './update-service';
-import { initMainLog } from './main-log';
 import { syncWebRemoteServer, stopWebRemoteServer } from './web/server';
 import { openNotifDb, closeNotifDb } from './notif-db';
 import { MacOSNotifSource } from './notif-sources/macos-source';

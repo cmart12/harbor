@@ -103,7 +103,7 @@ export class WorkIQNotifSource implements NotifSource {
       ]);
       await w.terminate();
     } catch (err) {
-      console.warn('[workiq-source] worker shutdown error:', err);
+      mainLog.warn('[workiq-source] worker shutdown error:', err);
     }
   }
 
@@ -123,14 +123,14 @@ export class WorkIQNotifSource implements NotifSource {
     w.on('error', (err) => {
       const detail = describeError(err);
       this.lastRawError = detail;
-      console.error('[workiq-source] worker error:', err);
+      mainLog.error('[workiq-source] worker error:', err);
       mainLog.error('[workiq-source] worker error:', detail);
       this.setError(detail);
     });
     w.on('exit', (code) => {
       if (this.stopping) return;
       const exitMsg = `worker exited with code ${code}`;
-      console.warn(`[workiq-source] ${exitMsg}`);
+      mainLog.warn(`[workiq-source] ${exitMsg}`);
       mainLog.warn(`[workiq-source] ${exitMsg}; lastRawError=${this.lastRawError ?? '(none)'}`);
       // Capture exit code as raw error if we have nothing better. The 'error'
       // handler usually fires first with a real Error object, but for some
@@ -148,7 +148,7 @@ export class WorkIQNotifSource implements NotifSource {
         const finalError = this.lastRawError
           ? `Worker crashed repeatedly. Last error: ${this.lastRawError}`
           : 'Worker crashed repeatedly';
-        console.error(`[workiq-source] worker died too many times: ${finalError}`);
+        mainLog.error(`[workiq-source] worker died too many times: ${finalError}`);
         mainLog.error('[workiq-source] worker died too many times:', finalError);
         this.setError(finalError);
       }
@@ -174,8 +174,13 @@ export class WorkIQNotifSource implements NotifSource {
   private async handleMessage(msg: WorkerOutbound): Promise<void> {
     switch (msg.type) {
       case 'log': {
-        const fn = msg.level === 'error' ? console.error :
-          msg.level === 'warn' ? console.warn : console.log;
+        // Forward worker logs through mainLog so they hit the same
+        // <userData>/logs/main.log + ~/.copilot/sessions-output/harbor-debug.log
+        // tap that the rest of the main process writes to. Mirrors the
+        // post-debug-tap macos-source pattern so all sources flow through
+        // a single sink.
+        const fn = msg.level === 'error' ? mainLog.error :
+          msg.level === 'warn' ? mainLog.warn : mainLog.info;
         fn(`[workiq-source:worker] ${msg.message}`);
         return;
       }
@@ -208,7 +213,7 @@ export class WorkIQNotifSource implements NotifSource {
               const row = getNotification(item.source_uid);
               if (row) {
                 try { enqueueForClassification(item.source_uid); } catch (err) {
-                  console.warn('[workiq-source] enqueue classifier failed:', err);
+                  mainLog.warn('[workiq-source] enqueue classifier failed:', err);
                 }
                 sendToAllWindows('notification:new', row);
               }
@@ -224,7 +229,7 @@ export class WorkIQNotifSource implements NotifSource {
 
           sendToAllWindows('source:status-changed');
         } catch (err) {
-          console.warn('[workiq-source] insert batch failed:', err);
+          mainLog.warn('[workiq-source] insert batch failed:', err);
         }
         return;
       }
@@ -313,7 +318,7 @@ export class WorkIQNotifSource implements NotifSource {
       } as any);
       return this.cachedSession;
     } catch (err) {
-      console.warn('[workiq-source] createSession failed:', err);
+      mainLog.warn('[workiq-source] createSession failed:', err);
       return null;
     }
   }
@@ -333,7 +338,7 @@ export class WorkIQNotifSource implements NotifSource {
         last_error: null,
       });
     } catch (err) {
-      console.warn(`[workiq-source] settings update failed for ${source}:`, err);
+      mainLog.warn(`[workiq-source] settings update failed for ${source}:`, err);
     }
   }
 
@@ -342,7 +347,7 @@ export class WorkIQNotifSource implements NotifSource {
       try {
         setSourceSettings(source, { last_error: error });
       } catch (err) {
-        console.warn(`[workiq-source] error write failed for ${source}:`, err);
+        mainLog.warn(`[workiq-source] error write failed for ${source}:`, err);
       }
     }
     sendToAllWindows('source:status-changed');
@@ -352,7 +357,7 @@ export class WorkIQNotifSource implements NotifSource {
     try {
       return getSourceSettings(source);
     } catch (err) {
-      console.warn(`[workiq-source] settings read failed for ${source}:`, err);
+      mainLog.warn(`[workiq-source] settings read failed for ${source}:`, err);
       return null;
     }
   }

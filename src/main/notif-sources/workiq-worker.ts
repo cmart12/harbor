@@ -181,6 +181,36 @@ function post(msg: WorkerOutbound): void {
   parentPort?.postMessage(msg);
 }
 
+/**
+ * Stringify a value safely for forwarding through `{ type: 'log' }`.
+ * Errors render as `stack ?? message ?? String(err)`. Objects go through
+ * JSON.stringify with a circular-ref fallback so a stray ref doesn't
+ * crash the worker.
+ */
+function safeStringify(value: unknown): string {
+  if (value instanceof Error) {
+    return value.stack ?? value.message ?? String(value);
+  }
+  if (typeof value === 'string') return value;
+  if (value === null || value === undefined) return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+/**
+ * Worker-side log helper. The worker cannot import `mainLog` (Electron
+ * is not loadable in worker_threads), so we route through a parentPort
+ * message that the orchestrator forwards to `mainLog` -- which in turn
+ * writes to <userData>/logs/main.log and the debug-tap file.
+ */
+function workerLog(level: 'info' | 'warn' | 'error', ...args: unknown[]): void {
+  const message = args.map(safeStringify).join(' ');
+  post({ type: 'log', level, message });
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => {
     const t = setTimeout(resolve, ms);
@@ -270,11 +300,11 @@ async function pollOnce(cursorIso: string): Promise<{ items: WorkIQItem[]; curso
       const preview = responseText.length > 800
         ? responseText.slice(0, 800) + `... (+${responseText.length - 800} chars)`
         : responseText;
-      post({ type: 'log', level: 'info', message: `raw SDK response (first 800 chars): ${preview}` });
+      workerLog('info', `raw SDK response (first 800 chars): ${preview}`);
 
       const rawArray = extractJsonArray(responseText);
       if (!rawArray) {
-        post({ type: 'log', level: 'info', message: 'WorkIQ response contained no parseable array' });
+        workerLog('info', 'WorkIQ response contained no parseable array');
         return { items: [], cursor: cursorIso };
       }
 
@@ -286,7 +316,7 @@ async function pollOnce(cursorIso: string): Promise<{ items: WorkIQItem[]; curso
       return { items, cursor: newCursor };
     } catch (err) {
       lastError = err instanceof Error ? err.message : String(err);
-      post({ type: 'log', level: 'warn', message: `poll attempt ${attempt + 1} failed: ${lastError}` });
+      workerLog('warn', `poll attempt ${attempt + 1} failed: ${lastError}`);
     }
   }
 
@@ -330,7 +360,7 @@ parentPort?.on('message', (msg: WorkerInbound) => {
 async function runPoll(): Promise<void> {
   if (stopped) return;
   const c = cursor ?? defaultCursor();
-  post({ type: 'log', level: 'info', message: `polling WorkIQ since ${c}` });
+  workerLog('info', `polling WorkIQ since ${c}`);
   const result = await pollOnce(c);
   if (result) {
     cursor = result.cursor;
@@ -339,7 +369,7 @@ async function runPoll(): Promise<void> {
     // batches are the common case once WorkIQ is caught up.
     post({ type: 'notifications', items: result.items, cursor: result.cursor });
     if (result.items.length === 0) {
-      post({ type: 'log', level: 'info', message: `poll complete, no new items` });
+      workerLog('info', `poll complete, no new items`);
     }
   }
 }
