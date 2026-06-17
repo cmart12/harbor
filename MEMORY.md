@@ -183,3 +183,20 @@ Funnel app's notification triage being merged into whim. See `~/.copilot/session
 - **Orchestrator (`workiq-source.ts`)**: replaced every `console.log/warn/error` with the matching `mainLog.info/warn/error`. The `case 'log'` worker-message handler now picks `mainLog.error / mainLog.warn / mainLog.info` instead of the `console.*` triplet, mirroring post-debug-tap `macos-source.ts` exactly.
 - **Worker (`workiq-worker.ts`)**: still cannot import `mainLog` (Electron isn't loadable in worker_threads). Added a `workerLog(level, ...args)` helper that posts `{ type: 'log', level, message }` to the parent and a `safeStringify(value)` helper that handles `Error` (`stack ?? message ?? String`), strings, null/undefined, and objects (with a circular-ref fallback to `String(value)`). All existing `post({ type: 'log', ... })` sites now go through `workerLog`. No console use in the worker.
 - **Tests**: no test changes needed -- the existing log-passthrough test exercises the parent handler, and the worker tests don't depend on the post shape. Still 59 passing.
+
+## 2026-06-17 -- Phase C.0 (Conversation grouping in Feed)
+
+- **Goal**: Group semantically-redundant notifications (chatty Teams meetings, email threads) into collapsible thread cards in the Feed, keeping it calm.
+- **Approach**: Deterministic per-source grouping computed at ingest time. No LLM, no manual merge (both deferred to future phases).
+- **Schema**: Added `thread_id TEXT` (nullable, indexed) column to `notifications` via the existing `addColumnIfMissing` pattern. Old rows stay NULL; thread_id is computed on each new ingest.
+- **Grouping rules** (pure functions in `thread-id.ts`):
+  - macOS: `'macos:' + app_id` (all notifications from the same app share one thread).
+  - WorkIQ Outlook: `'workiq-outlook:' + conversation_id` if SDK returns it, else `sender_email:normalizeSubject(subject)`.
+  - WorkIQ Teams: `'workiq-teams:' + channel_id + ':' + thread_id_from_response` if both present, else `sender_name:normalizeSubject(subject)`.
+  - `normalizeSubject()` strips `Re:`/`Fwd:`/`FW:` prefixes case-insensitively and trims.
+- **WorkIQ prompt update**: Prompt now requests `conversation_id` (Outlook), `channel_id`, and `thread_id` (Teams). Parser extracts them; fields are optional (null when SDK doesn't provide them).
+- **Feed rendering**: Added "By Thread" view mode to the segmented switcher. Thread cards only appear for groups with count >= 2; singletons render as normal rows. Cards show: latest subject, latest sender, highest urgency chip, VIP star, most common category, "N messages" badge, latest timestamp. Click expands/collapses (state in localStorage). Per-thread bulk actions: Snooze All, Archive All, Done All, Promote.
+- **feed-store**: `getGroupedByThread()` returns `{ threads, singletons }`. Thread bulk-action methods (`snoozeThread`, `archiveThread`, `markThreadDone`, `promoteThread`) fan out to per-uid IPC.
+- **Tests**: 27 thread-id tests + 12 feed-store thread tests + 3 notif-db round-trip tests = +42 tests.
+- **Rejected / deferred**: Manual merge of threads across sources; LLM-powered cross-source grouping; retroactive backfill of historical rows.
+- **Conventions upheld**: `{ ok: true as const }` IPC pattern; no em dashes; lint/typecheck baselines maintained; existing code untouched outside scope.

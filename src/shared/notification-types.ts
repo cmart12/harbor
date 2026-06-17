@@ -129,6 +129,8 @@ export interface Notification {
   classified_at: string | null;
   /** Phase B.2: short rationale from the LLM, shown in tooltips + debugging. */
   classification_reasoning: string | null;
+  /** Phase C.0: deterministic thread grouping key, computed at ingest. */
+  thread_id: string | null;
   /** Phase B.3: computed at fetch time based on the VIP sender list. */
   is_vip?: boolean;
   created_at: string;

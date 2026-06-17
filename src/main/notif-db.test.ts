@@ -116,4 +116,28 @@ describe('notif-db', () => {
     expect(row?.status).toBe('promoted');
     expect(row?.promoted_space_id).toBe('space-abc');
   });
+
+  it('inserts and reads back thread_id', () => {
+    const ok = insertNotification({ ...sampleInput('tid-1'), thread_id: 'macos:com.slack' });
+    expect(ok).toBe(true);
+    const row = getNotification('tid-1');
+    expect(row).not.toBeNull();
+    expect(row?.thread_id).toBe('macos:com.slack');
+  });
+
+  it('thread_id defaults to null when not provided', () => {
+    insertNotification(sampleInput('tid-2'));
+    const row = getNotification('tid-2');
+    expect(row?.thread_id).toBeNull();
+  });
+
+  it('listNotifications includes thread_id in results', () => {
+    insertNotification({ ...sampleInput('tid-3'), thread_id: 'workiq-outlook:conv-1' });
+    insertNotification({ ...sampleInput('tid-4'), thread_id: null });
+    const rows = listNotifications();
+    const t3 = rows.find(r => r.source_uid === 'tid-3');
+    const t4 = rows.find(r => r.source_uid === 'tid-4');
+    expect(t3?.thread_id).toBe('workiq-outlook:conv-1');
+    expect(t4?.thread_id).toBeNull();
+  });
 });
