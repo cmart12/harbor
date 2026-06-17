@@ -29,6 +29,7 @@ import {
 } from '../notif-db';
 import { sendToAllWindows } from '../ipc';
 import { enqueueForClassification } from '../classifier/classifier';
+import { mainLog } from '../main-log';
 import type { NotifSource } from './types';
 
 const CURSOR_KEY = 'macos_cursor';
@@ -58,7 +59,7 @@ export class MacOSNotifSource implements NotifSource {
   async start(): Promise<void> {
     if (this.worker) return;
     if (process.platform !== 'darwin') {
-      console.log('[macos-source] Skipping — not macOS');
+      mainLog.info('[macos-source] Skipping - not macOS');
       return;
     }
     this.spawnWorker();
@@ -78,7 +79,7 @@ export class MacOSNotifSource implements NotifSource {
       ]);
       await w.terminate();
     } catch (err) {
-      console.warn('[macos-source] worker shutdown error:', err);
+      mainLog.warn('[macos-source] worker shutdown error:', err);
     }
   }
 
@@ -92,11 +93,11 @@ export class MacOSNotifSource implements NotifSource {
 
     w.on('message', (msg: WorkerMessage) => this.handleMessage(msg));
     w.on('error', (err) => {
-      console.error('[macos-source] worker error:', err);
+      mainLog.error('[macos-source] worker error:', err);
     });
     w.on('exit', (code) => {
       if (this.stopping) return;
-      console.warn(`[macos-source] worker exited with code ${code}`);
+      mainLog.warn(`[macos-source] worker exited with code ${code}`);
       this.worker = null;
       if (this.restartCount < MAX_RESTARTS) {
         this.restartCount += 1;
@@ -104,7 +105,7 @@ export class MacOSNotifSource implements NotifSource {
           if (!this.stopping) this.spawnWorker();
         }, RESTART_BACKOFF_MS).unref?.();
       } else {
-        console.error('[macos-source] worker died too many times — giving up');
+        mainLog.error('[macos-source] worker died too many times, giving up');
       }
     });
 
@@ -113,7 +114,7 @@ export class MacOSNotifSource implements NotifSource {
       try {
         return getMeta(CURSOR_KEY);
       } catch (err) {
-        console.warn('[macos-source] cursor read failed:', err);
+        mainLog.warn('[macos-source] cursor read failed:', err);
         return null;
       }
     })();
@@ -123,8 +124,8 @@ export class MacOSNotifSource implements NotifSource {
   private handleMessage(msg: WorkerMessage): void {
     switch (msg.type) {
       case 'log': {
-        const fn = msg.level === 'error' ? console.error :
-          msg.level === 'warn' ? console.warn : console.log;
+        const fn = msg.level === 'error' ? mainLog.error :
+          msg.level === 'warn' ? mainLog.warn : mainLog.info;
         fn(`[macos-source:worker] ${msg.message}`);
         return;
       }
@@ -132,7 +133,7 @@ export class MacOSNotifSource implements NotifSource {
         try {
           setMeta(CURSOR_KEY, msg.value);
         } catch (err) {
-          console.warn('[macos-source] cursor write failed:', err);
+          mainLog.warn('[macos-source] cursor write failed:', err);
         }
         return;
       }
@@ -158,13 +159,13 @@ export class MacOSNotifSource implements NotifSource {
               // matter for UI correctness. Enqueue first keeps the
               // queue depth tight against feed render latency.
               try { enqueueForClassification(msg.source_uid); } catch (err) {
-                console.warn('[macos-source] enqueue classifier failed:', err);
+                mainLog.warn('[macos-source] enqueue classifier failed:', err);
               }
               sendToAllWindows('notification:new', row);
             }
           }
         } catch (err) {
-          console.warn('[macos-source] insert failed:', err);
+          mainLog.warn('[macos-source] insert failed:', err);
         }
         return;
       }

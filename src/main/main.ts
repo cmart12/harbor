@@ -22,6 +22,7 @@ import { syncWebRemoteServer, stopWebRemoteServer } from './web/server';
 import { openNotifDb, closeNotifDb } from './notif-db';
 import { MacOSNotifSource } from './notif-sources/macos-source';
 import { startClassifierSweep, stopClassifierSweep } from './classifier/classifier';
+import { initMainLog, logStartupBanner } from './main-log';
 import type { NotifSource } from './notif-sources/types';
 
 let currentToggleAccelerator: string | null = null;
@@ -118,6 +119,10 @@ const MIME_TYPES: Record<string, string> = {
 
 app.whenReady().then(async () => {
   try {
+  // Initialize the dual-transport logger before anything else logs.
+  initMainLog();
+  logStartupBanner();
+
   // Register custom protocol to serve renderer files (Web Speech API needs a real origin, not file://)
   // Also serves workspace attachment files via copilot-whim://app/workspace/<intentFolder>/<path>
   protocol.handle('copilot-whim', (request) => {
