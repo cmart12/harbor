@@ -127,3 +127,14 @@ Funnel app's notification triage being merged into whim. See `~/.copilot/session
 - **Scope discipline**: Only `workiq-source.ts` writes to `mainLog` for now. No broader logging migration -- that's a future pass. The brief was explicit: "Don't try to fix the underlying issue yet. We need data first."
 - **New test**: `persists the raw worker error in last_error when worker crashes repeatedly` simulates three crashes through `MAX_RESTARTS`, asserts the persisted `last_error` contains the real error message (`"Cannot find module 'electron'"`) and is NOT the bare generic string.
 - **Helper**: `describeError(unknown)` renders Errors as `message\n<stack[:500]>`, strings as-is, objects via `JSON.stringify` with a String() fallback.
+
+## 2026-06-17 -- Phase C.1 hotfix #3 (successful polls never wrote last_poll_iso)
+
+- **Symptom**: Worker logs showed healthy polls (`[workiq-source:worker] poll complete, no new items` every 5min), but `whimAPI.listSources()` returned `last_poll_iso: null` and `last_error: "Worker crashed repeatedly"` (stale from a prior crash). Same for macOS source.
+- **Root cause #1 (workiq)**: The worker's `runPoll()` only posted `{ type: 'notifications', ... }` when `items.length > 0`. When the poll succeeded with zero items (the common case), the orchestrator never heard about it -- so `updateSourceAfterPoll()` never ran, `last_poll_iso` stayed null, and `last_error` was never cleared.
+- **Root cause #2 (macos)**: A.2 predates `source_settings`. The macOS orchestrator wrote to a separate `notif_meta.macos_cursor` key for cursor tracking, but never touched `source_settings` at all. Healthy polls were invisible to the Sources tab.
+- **Fix (workiq)**: Drop the `if (items.length > 0)` gate in `workiq-worker.ts runPoll()`. Always post `{ type: 'notifications', items: [...], cursor }` on a successful poll, even with empty items. The orchestrator's existing `case 'notifications'` already handles empty arrays correctly.
+- **Fix (macos)**: New worker outbound message `{ type: 'poll-complete', iso }` posted after every successful `pollOnce` (null return means DB read failed -- no signal). New handler in `macos-source.ts` writes `setSourceSettings('macos', { last_poll_iso, last_error: null })` and broadcasts `source:status-changed`. Cursor tracking stays in `notif_meta` -- not migrating that, scope discipline.
+- **Stale "Worker crashed repeatedly" auto-clears**: No explicit migration needed. The first successful poll now writes `last_error: null`, which sweeps the stale value. Tested by seeding the stale string and asserting it's cleared after one healthy zero-item poll.
+- **New test**: `writes last_poll_iso on every successful poll (including zero items)` seeds stale crash errors on both sources, emits a zero-item poll, asserts both sources have a fresh `last_poll_iso` AND `last_error: null`.
+- **Total: 49 notif-sources tests pass (was 48, +1).**

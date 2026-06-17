@@ -276,6 +276,29 @@ describe('WorkIQNotifSource', () => {
     expect(settingsStore['workiq-teams']?.last_cursor_iso).toBe('2025-06-17T12:00:00Z');
   });
 
+  it('writes last_poll_iso on every successful poll (including zero items)', async () => {
+    // Seed a stale crash error to confirm a healthy zero-item poll clears
+    // it AND writes last_poll_iso. This was the regression that left both
+    // WorkIQ sources stuck on "Worker crashed repeatedly" forever.
+    settingsStore['workiq-outlook'] = { last_error: 'Worker crashed repeatedly' };
+    settingsStore['workiq-teams'] = { last_error: 'Worker crashed repeatedly' };
+
+    await source.start();
+    const before = Date.now();
+    lastMockWorker!.emit('message', {
+      type: 'notifications',
+      items: [],
+      cursor: '2025-06-17T12:00:00Z',
+    });
+
+    for (const src of ['workiq-outlook', 'workiq-teams']) {
+      const polled = settingsStore[src]?.last_poll_iso;
+      expect(polled, `${src} last_poll_iso`).toBeTruthy();
+      expect(new Date(polled as string).getTime()).toBeGreaterThanOrEqual(before - 100);
+      expect(settingsStore[src]?.last_error, `${src} last_error`).toBeNull();
+    }
+  });
+
   it('clears last_error on successful poll', async () => {
     settingsStore['workiq-outlook'] = { last_error: 'previous error' };
     settingsStore['workiq-teams'] = { last_error: 'previous error' };

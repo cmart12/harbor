@@ -317,9 +317,11 @@ async function runPoll(): Promise<void> {
   const result = await pollOnce(c);
   if (result) {
     cursor = result.cursor;
-    if (result.items.length > 0) {
-      post({ type: 'notifications', items: result.items, cursor: result.cursor });
-    } else {
+    // Always post notifications (even with zero items) so the parent
+    // updates last_poll_iso and clears any stale last_error. Empty
+    // batches are the common case once WorkIQ is caught up.
+    post({ type: 'notifications', items: result.items, cursor: result.cursor });
+    if (result.items.length === 0) {
       post({ type: 'log', level: 'info', message: `poll complete, no new items` });
     }
   }
