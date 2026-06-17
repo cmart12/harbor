@@ -22,6 +22,7 @@ import { syncWebRemoteServer, stopWebRemoteServer } from './web/server';
 import { openNotifDb, closeNotifDb } from './notif-db';
 import { MacOSNotifSource } from './notif-sources/macos-source';
 import { WorkIQNotifSource } from './notif-sources/workiq-source';
+import { SlackNotifSource } from './notif-sources/slack-source';
 import { startClassifierSweep, stopClassifierSweep } from './classifier/classifier';
 import { initMainLog, logStartupBanner } from './main-log';
 import type { NotifSource } from './notif-sources/types';
@@ -31,6 +32,7 @@ import { getSourceSettings } from './notif-db';
 let currentToggleAccelerator: string | null = null;
 let notifSource: NotifSource | null = null;
 let workiqSource: WorkIQNotifSource | null = null;
+let slackSource: SlackNotifSource | null = null;
 
 // Windows toast notifications require an AppUserModelId to be properly
 // associated with the app in the notification center.
@@ -273,6 +275,7 @@ app.whenReady().then(async () => {
       isRunning(source: string): boolean {
         if (source === 'macos') return notifSource !== null;
         if (source === 'workiq-outlook' || source === 'workiq-teams') return workiqSource !== null;
+        if (source === 'slack') return slackSource !== null;
         return false;
       },
       setEnabled(source: string, enabled: boolean): void {
@@ -292,6 +295,20 @@ app.whenReady().then(async () => {
               });
               workiqSource = null;
             }
+          }
+        }
+        // Slack source toggle
+        if (source === 'slack') {
+          if (enabled && !slackSource) {
+            slackSource = new SlackNotifSource();
+            slackSource.start().catch(err => {
+              console.warn('[main] Slack start failed:', err);
+            });
+          } else if (!enabled && slackSource) {
+            slackSource.stop().catch(err => {
+              console.warn('[main] Slack stop failed:', err);
+            });
+            slackSource = null;
           }
         }
         // macOS source toggle: simple start/stop
@@ -321,13 +338,40 @@ app.whenReady().then(async () => {
             });
           }
         }
+        if (source === 'slack') {
+          if (slackSource) {
+            slackSource.stop().then(() => {
+              slackSource = new SlackNotifSource();
+              return slackSource.start();
+            }).catch(err => {
+              console.warn('[main] Slack rebackfill restart failed:', err);
+            });
+          }
+        }
       },
       pollNow(source: string): void {
         if ((source === 'workiq-outlook' || source === 'workiq-teams') && workiqSource) {
           workiqSource.pollNow();
         }
+        if (source === 'slack' && slackSource) {
+          slackSource.pollNow();
+        }
       },
     });
+  }
+
+  // Phase C.4: spawn Slack source (mentions + DMs via Copilot SDK).
+  {
+    const slackEnabled = getSourceSettings('slack')?.enabled ?? true;
+    if (slackEnabled) {
+      slackSource = new SlackNotifSource();
+      try {
+        slackSource.start();
+      } catch (err) {
+        console.warn('[main] SlackNotifSource.start failed:', err);
+        slackSource = null;
+      }
+    }
   }
 
   // Phase B.2: background sweep for pending classifications. Cheap, opts
@@ -408,6 +452,11 @@ app.on('will-quit', async () => {
   if (workiqSource) {
     try { await workiqSource.stop(); } catch (e) { console.warn('[main] workiq stop:', e); }
     workiqSource = null;
+  }
+  // Phase C.4: tear down Slack source.
+  if (slackSource) {
+    try { await slackSource.stop(); } catch (e) { console.warn('[main] slack stop:', e); }
+    slackSource = null;
   }
   try { stopClassifierSweep(); } catch (e) { console.warn('[main] stopClassifierSweep:', e); }
   try { closeNotifDb(); } catch (e) { console.warn('[main] closeNotifDb:', e); }

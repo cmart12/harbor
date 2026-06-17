@@ -248,7 +248,7 @@ function seedDefaultSourceSettings(conn: Database.Database): void {
   const stmt = conn.prepare(
     `INSERT OR IGNORE INTO source_settings (source, enabled, updated_at) VALUES (?, 1, ?)`,
   );
-  for (const s of ['macos', 'workiq-outlook', 'workiq-teams']) {
+  for (const s of ['macos', 'workiq-outlook', 'workiq-teams', 'slack']) {
     stmt.run(s, now);
   }
 }

@@ -200,3 +200,18 @@ Funnel app's notification triage being merged into whim. See `~/.copilot/session
 - **Tests**: 27 thread-id tests + 12 feed-store thread tests + 3 notif-db round-trip tests = +42 tests.
 - **Rejected / deferred**: Manual merge of threads across sources; LLM-powered cross-source grouping; retroactive backfill of historical rows.
 - **Conventions upheld**: `{ ok: true as const }` IPC pattern; no em dashes; lint/typecheck baselines maintained; existing code untouched outside scope.
+
+## 2026-06-17 -- Phase C.4 (Slack source via Copilot SDK)
+
+- **What**: Added Slack as a third notification source alongside macOS and WorkIQ. V1 scope: mentions and DMs only, no channel-wide activity.
+- **Architecture**: Identical to WorkIQ (Phase C.1). Orchestrator (`slack-source.ts`) owns the SDK session in the main process (workers can't import Electron). Worker (`slack-worker.ts`) runs a 5-minute poll loop with 24-hour initial backfill.
+- **Approval handler**: `slackApprovalHandler` approves `kind: 'mcp'` when `serverName === 'slack'`, `kind: 'extension-permission-access'` / `kind: 'extension-management'` when `extensionName === 'slack'`, and `kind: 'read'`. Rejects everything else (shell, write, url, etc.).
+- **Dedupe**: Reuses blake3 day-bucketed hashing. Preferred inputs: `(slack, channel_id, source_uid, day)`. Fallback: `(slack, sender_name, bodyPrefix100, day)`.
+- **Prompt fields**: `source`, `source_uid`, `sender_name`, `sender_email`, `subject`, `body`, `received_at`, `deep_link`, `channel_id`, `thread_ts`.
+- **Follow-up prompt**: Same pattern as C.1 PR #13. When SDK returns empty content + tool requests, retries once with explicit JSON instruction.
+- **MCP discovery**: If `getAllMcpServers()` doesn't include a `slack` key, the orchestrator logs a warning and continues without spawning -- no crash.
+- **Source settings**: Added `'slack'` to the seed loop. UI Sources tab renders a fourth "Slack" row automatically.
+- **thread_id**: Computes `slackThreadId(channel_id, sender_name, subject)` at ingest. Uses `'slack:' + channel_id` when present, else `'slack:' + sender_name + ':' + normalizeSubject(subject)`.
+- **Tests**: 57 new tests (32 orchestrator + 25 prompt/parser). Total suite grows accordingly.
+- **Deferred**: Channel-wide activity (not V1).
+- **Rejected**: Subdividing into `slack-mentions` / `slack-dms` sources (single `slack` source simplifies everything for V1).

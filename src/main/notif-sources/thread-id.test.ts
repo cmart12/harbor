@@ -4,6 +4,7 @@ import {
   macosThreadId,
   workiqOutlookThreadId,
   workiqTeamsThreadId,
+  slackThreadId,
 } from './thread-id';
 
 describe('normalizeSubject', () => {
@@ -164,5 +165,45 @@ describe('workiqTeamsThreadId', () => {
       sender_name: 'Dana',
       subject: 'Re: Fwd: sprint planning',
     })).toBe('workiq-teams:Dana:sprint planning');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// slackThreadId
+// ---------------------------------------------------------------------------
+
+describe('slackThreadId', () => {
+  it('uses channel_id when present', () => {
+    expect(slackThreadId({
+      channel_id: 'C01234ABC',
+      sender_name: 'Alice',
+      subject: '#general',
+    })).toBe('slack:C01234ABC');
+  });
+
+  it('falls back to sender_name:normalizeSubject when channel_id is absent', () => {
+    expect(slackThreadId({
+      channel_id: null,
+      sender_name: 'Bob',
+      subject: 'DM with Bob',
+    })).toBe('slack:Bob:DM with Bob');
+  });
+
+  it('uses "unknown" when sender_name is null', () => {
+    expect(slackThreadId({
+      sender_name: null,
+      subject: '#random',
+    })).toBe('slack:unknown:#random');
+  });
+
+  it('normalizes subject in fallback path', () => {
+    expect(slackThreadId({
+      sender_name: 'Carol',
+      subject: 'Re: standup notes',
+    })).toBe('slack:Carol:standup notes');
+  });
+
+  it('handles all nulls gracefully', () => {
+    expect(slackThreadId({})).toBe('slack:unknown:');
   });
 });
