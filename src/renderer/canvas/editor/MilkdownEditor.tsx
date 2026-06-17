@@ -278,6 +278,7 @@ const MilkdownInner = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
           l.blur(() => runIsolated('blur', () => onBlurRef.current?.()));
           l.selectionUpdated((sctx, selection) => runIsolated('selectionUpdated', () => {
             const view = sctx.get(editorViewCtx);
+            if (!view.state) return;
             const { from, to, empty } = selection;
             if (!empty) {
               onMentionQueryRef.current?.(null);
