@@ -176,6 +176,65 @@ describe('mcp', () => {
       const result = getAllMcpServers();
       expect((result['server'] as any).command).toBe('new');
     });
+
+    it('forwards OAuth fields for custom http servers', () => {
+      mockExistsSync.mockReturnValue(false);
+      mockGetConfigValue.mockReturnValue([
+        {
+          name: 'slack',
+          type: 'http',
+          url: 'https://mcp.slack.com/mcp',
+          tools: ['*'],
+          oauthClientId: '12345.67890',
+          oauthPublicClient: true,
+        },
+      ] as any);
+
+      const result = getAllMcpServers();
+      const slack = result['slack'] as any;
+      expect(slack).toBeDefined();
+      expect(slack.type).toBe('http');
+      expect(slack.url).toBe('https://mcp.slack.com/mcp');
+      expect(slack.oauthClientId).toBe('12345.67890');
+      expect(slack.oauthPublicClient).toBe(true);
+    });
+
+    it('forwards headers for custom http servers', () => {
+      mockExistsSync.mockReturnValue(false);
+      mockGetConfigValue.mockReturnValue([
+        {
+          name: 'datadog',
+          type: 'http',
+          url: 'https://mcp.datadoghq.com/mcp',
+          tools: ['*'],
+          headers: { 'X-Custom': 'value' },
+        },
+      ] as any);
+
+      const result = getAllMcpServers();
+      const dd = result['datadog'] as any;
+      expect(dd.headers).toEqual({ 'X-Custom': 'value' });
+    });
+
+    it('omits OAuth fields when not set on custom server', () => {
+      mockExistsSync.mockReturnValue(false);
+      mockGetConfigValue.mockReturnValue([
+        {
+          name: 'plain',
+          type: 'http',
+          url: 'https://example.com/mcp',
+          tools: [],
+        },
+      ] as any);
+
+      const result = getAllMcpServers();
+      const plain = result['plain'] as any;
+      expect(plain.type).toBe('http');
+      expect(plain.tools).toEqual(['*']);
+      expect(plain).not.toHaveProperty('oauthClientId');
+      expect(plain).not.toHaveProperty('oauthPublicClient');
+      expect(plain).not.toHaveProperty('headers');
+    });
   });
 
   describe('listDiscoveredMcpServers', () => {
