@@ -433,6 +433,7 @@ export async function initCopilot(): Promise<void> {
       ...(connection ? { connection } : {}),
       enableRemoteSessions: true,
       env: cliEnv,
+      mcpOAuthTokenStorage: 'persistent',
       sessionFs: {
         initialCwd: '/',
         sessionStatePath: '/.session-state',

@@ -64,6 +64,9 @@ function customToSdkFormat(custom: CustomMcpServer[]): Record<string, MCPServerC
           type: s.type,
           url: s.url,
           tools: s.tools.length > 0 ? s.tools : ['*'],
+          ...(s.oauthClientId ? { oauthClientId: s.oauthClientId } : {}),
+          ...(s.oauthPublicClient !== undefined ? { oauthPublicClient: s.oauthPublicClient } : {}),
+          ...(s.headers ? { headers: s.headers } : {}),
         };
       }
     } else {

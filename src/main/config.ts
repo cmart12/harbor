@@ -60,6 +60,9 @@ export interface CustomMcpServer {
   args?: string[];
   url?: string;
   tools: string[];
+  oauthClientId?: string;
+  oauthPublicClient?: boolean;
+  headers?: Record<string, string>;
 }
 
 export interface WebRemoteInterface {
