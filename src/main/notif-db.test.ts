@@ -14,6 +14,7 @@ import {
   insertNotification,
   getNotification,
   listNotifications,
+  listNotificationsByUids,
   updateStatus,
   setPromotedSpace,
 } from './notif-db';
@@ -139,5 +140,30 @@ describe('notif-db', () => {
     const t4 = rows.find(r => r.source_uid === 'tid-4');
     expect(t3?.thread_id).toBe('workiq-outlook:conv-1');
     expect(t4?.thread_id).toBeNull();
+  });
+
+  describe('listNotificationsByUids', () => {
+    it('returns notifications matching the provided UIDs', () => {
+      insertNotification({ ...sampleInput('batch-1'), deep_link: 'https://outlook.live.com/msg/1' });
+      insertNotification({ ...sampleInput('batch-2'), deep_link: 'https://slack.com/archives/C01/p123' });
+      insertNotification(sampleInput('batch-3'));
+
+      const results = listNotificationsByUids(['batch-1', 'batch-2']);
+      expect(results).toHaveLength(2);
+      const uids = results.map(r => r.source_uid).sort();
+      expect(uids).toEqual(['batch-1', 'batch-2']);
+      expect(results.find(r => r.source_uid === 'batch-1')?.deep_link).toBe('https://outlook.live.com/msg/1');
+    });
+
+    it('returns empty array for empty input', () => {
+      expect(listNotificationsByUids([])).toEqual([]);
+    });
+
+    it('silently drops unknown UIDs', () => {
+      insertNotification(sampleInput('known-1'));
+      const results = listNotificationsByUids(['known-1', 'unknown-x', 'unknown-y']);
+      expect(results).toHaveLength(1);
+      expect(results[0].source_uid).toBe('known-1');
+    });
   });
 });

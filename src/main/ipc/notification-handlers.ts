@@ -17,6 +17,7 @@ import { shell } from 'electron';
 import { registerHandler } from './typed-handler';
 import {
   listNotifications,
+  listNotificationsByUids,
   getNotification,
   updateStatus,
   setPromotedSpace,
@@ -113,5 +114,9 @@ export function registerNotificationHandlers(): void {
   registerHandler('notification:mark-done', (_event, uid) => {
     if (!getNotification(uid)) return { error: 'notification_not_found' };
     return updateStatus(uid, 'done') ? { ok: true as const } : { error: 'update_failed' };
+  });
+
+  registerHandler('notification:list-by-uids', (_event, uids) => {
+    return listNotificationsByUids(uids ?? []);
   });
 }

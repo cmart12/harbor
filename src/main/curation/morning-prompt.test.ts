@@ -122,4 +122,14 @@ describe('buildMorningPrompt', () => {
     expect(CURATION_SYSTEM_MESSAGE).toBeTruthy();
     expect(CURATION_SYSTEM_MESSAGE).toContain('productivity assistant');
   });
+
+  it('includes emphatic evidence_uids instruction with example', () => {
+    const prompt = buildMorningPrompt(baseInput);
+    expect(prompt).toContain('evidence_uids');
+    expect(prompt).toContain('MUST include the source');
+    expect(prompt).toContain('source_uid');
+    expect(prompt).toContain('open the source in one click');
+    // Verify example JSON is present
+    expect(prompt).toContain('"evidence_uids": ["msft-graph-msg-AAMkADRiYWI5OGRm"');
+  });
 });

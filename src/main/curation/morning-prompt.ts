@@ -97,7 +97,25 @@ Rules:
 - Keep titles concise and actionable (imperative verb + object)
 - Keep descriptions under 800 characters
 - Do NOT duplicate items that already exist in the user's open to-do list
-- Return ONLY the JSON object, no surrounding text`;
+- Return ONLY the JSON object, no surrounding text
+
+## Evidence Traceability (CRITICAL)
+
+For every to-do you extract from a notification, email, message, or transcript, you MUST include the source's \`source_uid\` in the \`evidence_uids\` array. The user relies on this to open the source in one click. Without it, the to-do is much less useful. Always populate evidence_uids when the source is a specific message or email. Leave it as an empty array only for to-dos that are general prep (e.g. "review your slides before the meeting" with no specific source).
+
+Example with evidence_uids populated:
+\`\`\`json
+{
+  "kind": "task",
+  "title": "Approve Josh Alexy's recording access request",
+  "description": "Josh needs recording access for the Friday demo session. Approve in the admin portal.",
+  "priority": "today",
+  "category_id": null,
+  "goal_id": null,
+  "linked_meeting_id": null,
+  "evidence_uids": ["msft-graph-msg-AAMkADRiYWI5OGRm", "slack-T01A-C02B-1689012345.678"]
+}
+\`\`\``;
 }
 
 function buildToolInstructions(probedTools?: string[]): string {

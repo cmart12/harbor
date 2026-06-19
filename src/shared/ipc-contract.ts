@@ -540,6 +540,10 @@ export interface IpcCommands {
     args: [uid: string];
     result: { ok: true } | { error: string };
   };
+  'notification:list-by-uids': {
+    args: [uids: string[]];
+    result: Notification[];
+  };
 
   // ── Goals (Phase B.1) ────────────────────────────────────
   'goal:list': {
