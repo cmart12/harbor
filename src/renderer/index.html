@@ -83,8 +83,9 @@
       </header>
 
       <div id="filter-bar" class="filter-bar" role="tablist" aria-label="Views">
+        <button class="filter-btn active" data-filter="todos" role="tab" aria-selected="true">To-Dos</button>
         <button class="filter-btn" data-filter="feed" role="tab" aria-selected="false">Feed</button>
-        <button class="filter-btn active" data-filter="open" role="tab" aria-selected="true">Spaces <span id="space-count" class="space-count-badge">0</span></button>
+        <button class="filter-btn" data-filter="open" role="tab" aria-selected="false">Spaces <span id="space-count" class="space-count-badge">0</span></button>
         <button class="filter-btn" data-filter="agents" role="tab" aria-selected="false">Workers<span id="workers-badge" class="workers-badge hidden"></span></button>
         <button class="filter-btn" data-filter="skills" role="tab" aria-selected="false">Skills</button>
         <button class="filter-btn" data-filter="closed" role="tab" aria-selected="false">Activity</button>
@@ -100,7 +101,7 @@
         <button id="focus-clear" class="focus-action" title="Unfocus" aria-label="Clear focus">✕</button>
       </div>
 
-      <form id="capture-form">
+      <form id="capture-form" style="display:none">
         <div class="input-wrapper">
           <textarea
             id="description-input"
@@ -129,7 +130,29 @@
 
       <div id="agent-summary" class="agent-summary hidden"></div>
 
-      <div id="space-list"></div>
+      <div id="space-list" class="hidden"></div>
+      <div id="todo-view" class="todo-view" role="region" aria-label="To-Dos">
+        <form id="todo-add-form" class="todo-add-form">
+          <input type="text" id="todo-add-input" class="todo-add-input" placeholder="Add a to-do..." autocomplete="off" />
+          <select id="todo-add-priority" class="todo-add-priority">
+            <option value="whenever">Whenever</option>
+            <option value="this_week">This week</option>
+            <option value="today">Today</option>
+            <option value="urgent">Urgent</option>
+          </select>
+          <button type="submit" class="todo-add-btn" title="Add to-do">+</button>
+        </form>
+        <div id="todo-list" class="todo-list"></div>
+        <div id="todo-empty" class="todo-empty hidden">
+          <div class="todo-empty-icon" aria-hidden="true">✅</div>
+          <div class="todo-empty-title">No to-dos yet</div>
+          <div class="todo-empty-body">Type one above to get started. Auto-extracted to-dos will appear here when curation runs (coming soon).</div>
+        </div>
+        <div id="todo-snoozed-section" class="todo-snoozed-section hidden">
+          <button id="todo-snoozed-toggle" class="todo-snoozed-toggle">Snoozed <span id="todo-snoozed-count">0</span></button>
+          <div id="todo-snoozed-list" class="todo-snoozed-list hidden"></div>
+        </div>
+      </div>
       <div id="feed-placeholder" class="feed-view hidden" role="region" aria-label="Feed">
         <div id="feed-list" class="feed-list"></div>
         <div id="feed-empty" class="feed-empty hidden">

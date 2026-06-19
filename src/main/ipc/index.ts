@@ -12,6 +12,8 @@ import { registerCategoriesHandlers } from './categories-handlers';
 import { registerClassifierHandlers } from './classifier-handlers';
 import { registerVipHandlers } from './vip-handlers';
 import { registerSourceHandlers } from './source-handlers';
+import { registerTodoHandlers } from './todo-handlers';
+import { registerCurationHandlers } from './curation-handlers';
 
 export function registerIpcHandlers(): void {
   registerSpaceHandlers();
@@ -28,6 +30,8 @@ export function registerIpcHandlers(): void {
   registerClassifierHandlers();
   registerVipHandlers();
   registerSourceHandlers();
+  registerTodoHandlers();
+  registerCurationHandlers();
 }
 
 // Re-export typed handler utilities

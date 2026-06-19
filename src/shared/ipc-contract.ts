@@ -19,6 +19,14 @@ import type {
   ListGoalsFilter,
   ListCategoriesFilter,
 } from './goal-category-types';
+import type {
+  Todo,
+  CurationRun,
+  CreateTodoInput,
+  UpdateTodoPatch,
+  ListTodosFilter,
+} from './todo-types';
+import type { SnoozePreset as TodoSnoozePreset } from './todo-types';
 
 // ---------------------------------------------------------------------------
 // Helper types needed by the contract that don't exist in shared/ yet
@@ -648,6 +656,50 @@ export interface IpcCommands {
     args: [source: string];
     result: { ok: true };
   };
+
+  // ── Phase E.1: To-do commands ─────────────────────────────
+  'todo:list': {
+    args: [filter?: ListTodosFilter];
+    result: Todo[];
+  };
+  'todo:create': {
+    args: [input: CreateTodoInput];
+    result: Todo | { error: string };
+  };
+  'todo:get': {
+    args: [id: string];
+    result: Todo | null;
+  };
+  'todo:update': {
+    args: [params: { id: string; patch: UpdateTodoPatch }];
+    result: Todo | { error: string };
+  };
+  'todo:done': {
+    args: [id: string];
+    result: { ok: true } | { error: string };
+  };
+  'todo:dismiss': {
+    args: [id: string];
+    result: { ok: true } | { error: string };
+  };
+  'todo:snooze': {
+    args: [params: { id: string; preset: TodoSnoozePreset }];
+    result: { ok: true } | { error: string };
+  };
+  'todo:accept-suggested': {
+    args: [id: string];
+    result: { ok: true } | { error: string };
+  };
+  'todo:promote-to-space': {
+    args: [id: string];
+    result: { space_id: string } | { error: string };
+  };
+
+  // ── Phase E.1: Curation run commands (read-only in E.1) ───
+  'curation:list-runs': {
+    args: [params?: { limit?: number }];
+    result: CurationRun[];
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -756,6 +808,9 @@ export interface IpcEvents {
 
   /** Phase C.1: a notification source changed state. Renderer refetches. */
   'source:status-changed': void;
+
+  /** Phase E.1: any to-do mutation. Renderer refetches the to-do list. */
+  'todos:changed': void;
 }
 
 // ---------------------------------------------------------------------------

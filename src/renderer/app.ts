@@ -384,6 +384,8 @@ import { historyStore } from './state/history-store';
 import { personaStore } from './state/persona-store';
 import { feedStore } from './state/feed-store';
 import type { FeedGroup, FeedViewMode, ThreadGroup } from './state/feed-store';
+import { todoStore } from './state/todo-store';
+import type { Todo } from '../shared/todo-types';
 import { goalsStore } from './state/goals-store';
 import { categoriesStore } from './state/categories-store';
 import type { Goal, Category } from '../shared/goal-category-types';
@@ -438,8 +440,8 @@ let activeSessionSpaces = new Set<string>();
 // Track agents per space for Spaces view
 let agentsBySpace = new Map<string, Array<{ agentId: string; status: string; summary: string; selectedText: string; quotedText?: string; source?: string }>>();
 // Current filter
-let currentFilter: 'feed' | 'open' | 'agents' | 'skills' | 'closed' = 'open';
-const filterOrder: Array<'feed' | 'open' | 'agents' | 'skills' | 'closed'> = ['feed', 'open', 'agents', 'skills', 'closed'];
+let currentFilter: 'todos' | 'feed' | 'open' | 'agents' | 'skills' | 'closed' = 'todos';
+const filterOrder: Array<'todos' | 'feed' | 'open' | 'agents' | 'skills' | 'closed'> = ['todos', 'feed', 'open', 'agents', 'skills', 'closed'];
 let renderGeneration = 0;
 const filterBar = document.getElementById('filter-bar') as HTMLDivElement;
 const newAgentBtn = document.getElementById('new-agent-btn') as HTMLButtonElement;
@@ -746,8 +748,8 @@ function setFilter(filter: typeof currentFilter): void {
     btn.setAttribute('aria-selected', 'true');
   }
 
-  // Show capture form on Spaces, Workers, and Skills; hide on History and Feed
-  if (filter === 'closed' || filter === 'feed') {
+  // Show capture form on Spaces, Workers, and Skills; hide on History, Feed, and To-Dos
+  if (filter === 'closed' || filter === 'feed' || filter === 'todos') {
     form.style.display = 'none';
   } else {
     form.style.display = '';
@@ -759,14 +761,26 @@ function setFilter(filter: typeof currentFilter): void {
   if (feedPlaceholder) {
     feedPlaceholder.classList.toggle('hidden', filter !== 'feed');
   }
-  // Hide the space list (and any spaces-related chrome) when on Feed so the
-  // placeholder owns the content area. Other tabs reuse this element.
-  listEl.classList.toggle('hidden', filter === 'feed');
+
+  // To-Dos tab shows the todo-view; hide it for any other tab.
+  const todoView = document.getElementById('todo-view');
+  if (todoView) {
+    todoView.classList.toggle('hidden', filter !== 'todos');
+  }
+
+  // Hide the space list (and any spaces-related chrome) when on Feed or To-Dos
+  // so the placeholder owns the content area. Other tabs reuse this element.
+  listEl.classList.toggle('hidden', filter === 'feed' || filter === 'todos');
 
   // First time the user opens Feed in this session, fetch the cached
   // notifications. Subsequent activations are cheap (no-op).
   if (filter === 'feed' && !feedStore.getState().loaded) {
     void feedStore.loadInitial();
+  }
+
+  // First time the user opens To-Dos in this session, load them.
+  if (filter === 'todos') {
+    void todoStoreLoadAndRender();
   }
 
   // Agents tab shows the summary panel; all others hide it
@@ -3902,6 +3916,300 @@ function filterLabel(type: FeedFilterKey, value: string, goals: Goal[], categori
   if (type === 'goalIds') return goals.find(goal => goal.id === value)?.title ?? value;
   return value;
 }
+
+// ---------------------------------------------------------------------------
+// Phase E.1: To-Do view
+// ---------------------------------------------------------------------------
+
+const PRIORITY_CHIP_META: Record<string, { label: string; className: string }> = {
+  urgent: { label: 'Urgent', className: 'priority-chip-urgent' },
+  today: { label: 'Today', className: 'priority-chip-today' },
+  this_week: { label: 'This week', className: 'priority-chip-this-week' },
+  whenever: { label: 'Whenever', className: 'priority-chip-whenever' },
+};
+
+let todoSubscribed = false;
+
+async function todoStoreLoadAndRender(): Promise<void> {
+  if (!todoSubscribed) {
+    todoSubscribed = true;
+    todoStore.subscribe(() => renderTodoView());
+  }
+  if (!todoStore.getState().loaded) {
+    await todoStore.loadInitial();
+  }
+  renderTodoView();
+}
+
+function renderTodoView(): void {
+  const todoList = document.getElementById('todo-list') as HTMLDivElement;
+  const todoEmpty = document.getElementById('todo-empty') as HTMLDivElement;
+  const snoozedSection = document.getElementById('todo-snoozed-section') as HTMLDivElement;
+  const snoozedList = document.getElementById('todo-snoozed-list') as HTMLDivElement;
+  const snoozedCount = document.getElementById('todo-snoozed-count') as HTMLSpanElement;
+
+  if (!todoList) return;
+
+  const { todos } = todoStore.getState();
+  const categories = categoriesStore.getState().categories;
+  const goals = goalsStore.getState().goals;
+
+  // Separate snoozed items
+  const activeTodos = todos.filter(t => t.status !== 'snoozed');
+  const snoozedTodos = todos.filter(t => t.status === 'snoozed');
+
+  // Group active todos by category
+  const grouped = new Map<string, { category: { id: string; title: string; color: string } | null; items: Todo[] }>();
+  for (const todo of activeTodos) {
+    const key = todo.category_id ?? '__uncategorized__';
+    if (!grouped.has(key)) {
+      const cat = todo.category_id ? categories.find(c => c.id === todo.category_id) : null;
+      grouped.set(key, {
+        category: cat ? { id: cat.id, title: cat.title, color: cat.color } : null,
+        items: [],
+      });
+    }
+    grouped.get(key)!.items.push(todo);
+  }
+
+  // Sort groups: named categories first (alphabetically), uncategorized last
+  const sortedGroups = [...grouped.entries()].sort(([a], [b]) => {
+    if (a === '__uncategorized__') return 1;
+    if (b === '__uncategorized__') return -1;
+    const aTitle = grouped.get(a)?.category?.title ?? '';
+    const bTitle = grouped.get(b)?.category?.title ?? '';
+    return aTitle.localeCompare(bTitle);
+  });
+
+  todoList.innerHTML = '';
+  todoEmpty.classList.toggle('hidden', activeTodos.length > 0 || snoozedTodos.length > 0);
+
+  for (const [, group] of sortedGroups) {
+    const section = document.createElement('div');
+    section.className = 'todo-group';
+
+    const header = document.createElement('div');
+    header.className = 'todo-group-header';
+    const dot = group.category
+      ? `<span class="todo-cat-dot" style="background:${group.category.color}"></span>`
+      : '';
+    header.innerHTML = `${dot}<span class="todo-group-title">${group.category?.title ?? 'Uncategorized'}</span><span class="todo-group-count">${group.items.length}</span>`;
+    section.appendChild(header);
+
+    for (const todo of group.items) {
+      section.appendChild(renderTodoRow(todo, categories, goals));
+    }
+    todoList.appendChild(section);
+  }
+
+  // Snoozed section
+  if (snoozedTodos.length > 0) {
+    snoozedSection.classList.remove('hidden');
+    snoozedCount.textContent = String(snoozedTodos.length);
+    snoozedList.innerHTML = '';
+    for (const todo of snoozedTodos) {
+      snoozedList.appendChild(renderTodoRow(todo, categories, goals));
+    }
+  } else {
+    snoozedSection.classList.add('hidden');
+  }
+}
+
+function renderTodoRow(
+  todo: Todo,
+  categories: Array<{ id: string; title: string; color: string }>,
+  goals: Array<{ id: string; title: string; color: string }>,
+): HTMLElement {
+  const row = document.createElement('div');
+  row.className = 'todo-row';
+  if (todo.triage_state === 'suggested') row.classList.add('suggested');
+  if (todo.status === 'snoozed') row.classList.add('snoozed');
+  row.dataset.todoId = todo.id;
+
+  const titleEl = document.createElement('span');
+  titleEl.className = 'todo-row-title';
+  titleEl.textContent = todo.title;
+  titleEl.title = 'Click to edit';
+  titleEl.addEventListener('click', () => {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'todo-inline-edit';
+    input.value = todo.title;
+    titleEl.replaceWith(input);
+    input.focus();
+    input.select();
+    const finish = (): void => {
+      const newTitle = input.value.trim();
+      if (newTitle && newTitle !== todo.title) {
+        void todoStore.update(todo.id, { title: newTitle });
+      } else {
+        renderTodoView();
+      }
+    };
+    input.addEventListener('blur', finish);
+    input.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') { ev.preventDefault(); input.blur(); }
+      if (ev.key === 'Escape') { input.value = todo.title; input.blur(); }
+    });
+  });
+
+  const priorityMeta = PRIORITY_CHIP_META[todo.priority] ?? PRIORITY_CHIP_META.whenever;
+  const priorityChip = document.createElement('span');
+  priorityChip.className = `todo-priority-chip ${priorityMeta.className}`;
+  priorityChip.textContent = priorityMeta.label;
+
+  const chipsContainer = document.createElement('span');
+  chipsContainer.className = 'todo-chips';
+  chipsContainer.appendChild(priorityChip);
+
+  const cat = todo.category_id ? categories.find(c => c.id === todo.category_id) : null;
+  if (cat) {
+    const catChip = document.createElement('span');
+    catChip.className = 'todo-cat-chip';
+    catChip.style.borderColor = cat.color;
+    catChip.textContent = cat.title;
+    chipsContainer.appendChild(catChip);
+  }
+
+  const goal = todo.goal_id ? goals.find(g => g.id === todo.goal_id) : null;
+  if (goal) {
+    const goalChip = document.createElement('span');
+    goalChip.className = 'todo-goal-chip';
+    goalChip.style.borderColor = goal.color;
+    goalChip.textContent = goal.title;
+    chipsContainer.appendChild(goalChip);
+  }
+
+  if (todo.due_at) {
+    const dueChip = document.createElement('span');
+    dueChip.className = 'todo-due-chip';
+    dueChip.textContent = `due ${formatRelativeDate(todo.due_at)}`;
+    chipsContainer.appendChild(dueChip);
+  }
+
+  if (todo.status === 'snoozed' && todo.snoozed_until) {
+    const snoozeLabel = document.createElement('span');
+    snoozeLabel.className = 'todo-snooze-label';
+    snoozeLabel.textContent = `snoozed until ${formatRelativeDate(todo.snoozed_until)}`;
+    chipsContainer.appendChild(snoozeLabel);
+  }
+
+  const actions = document.createElement('span');
+  actions.className = 'todo-actions';
+
+  if (todo.triage_state === 'suggested') {
+    const acceptBtn = document.createElement('button');
+    acceptBtn.className = 'todo-action-btn todo-accept-btn';
+    acceptBtn.title = 'Accept suggestion';
+    acceptBtn.textContent = 'Accept';
+    acceptBtn.addEventListener('click', (e) => { e.stopPropagation(); void todoStore.acceptSuggested(todo.id); });
+    actions.appendChild(acceptBtn);
+  }
+
+  const doneBtn = document.createElement('button');
+  doneBtn.className = 'todo-action-btn todo-done-btn';
+  doneBtn.title = 'Mark done';
+  doneBtn.textContent = '\u2713';
+  doneBtn.addEventListener('click', (e) => { e.stopPropagation(); void todoStore.markDone(todo.id); });
+  actions.appendChild(doneBtn);
+
+  const dismissBtn = document.createElement('button');
+  dismissBtn.className = 'todo-action-btn todo-dismiss-btn';
+  dismissBtn.title = 'Dismiss';
+  dismissBtn.textContent = '\u2715';
+  dismissBtn.addEventListener('click', (e) => { e.stopPropagation(); void todoStore.dismiss(todo.id); });
+  actions.appendChild(dismissBtn);
+
+  // Snooze dropdown
+  const snoozeBtn = document.createElement('button');
+  snoozeBtn.className = 'todo-action-btn todo-snooze-btn';
+  snoozeBtn.title = 'Snooze';
+  snoozeBtn.textContent = '\u23F0';
+  snoozeBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const existing = row.querySelector('.todo-snooze-dropdown');
+    if (existing) { existing.remove(); return; }
+    const dropdown = document.createElement('div');
+    dropdown.className = 'todo-snooze-dropdown';
+    const presets: Array<{ label: string; value: string }> = [
+      { label: '1 hour', value: '1h' },
+      { label: '3 hours', value: '3h' },
+      { label: 'Tomorrow 9am', value: 'tomorrow_9am' },
+      { label: 'Next Monday 9am', value: 'next_monday_9am' },
+    ];
+    for (const p of presets) {
+      const opt = document.createElement('button');
+      opt.className = 'todo-snooze-option';
+      opt.textContent = p.label;
+      opt.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        void todoStore.snooze(todo.id, p.value as any);
+        dropdown.remove();
+      });
+      dropdown.appendChild(opt);
+    }
+    row.appendChild(dropdown);
+    // Close on next click outside
+    const close = (ev: MouseEvent): void => {
+      if (!dropdown.contains(ev.target as Node)) {
+        dropdown.remove();
+        document.removeEventListener('click', close);
+      }
+    };
+    setTimeout(() => document.addEventListener('click', close), 0);
+  });
+  actions.appendChild(snoozeBtn);
+
+  // Promote to Space
+  if (!todo.space_id) {
+    const spaceBtn = document.createElement('button');
+    spaceBtn.className = 'todo-action-btn todo-space-btn';
+    spaceBtn.title = 'Promote to Space';
+    spaceBtn.textContent = '\u{1F680}';
+    spaceBtn.addEventListener('click', (e) => { e.stopPropagation(); void todoStore.promoteToSpace(todo.id); });
+    actions.appendChild(spaceBtn);
+  }
+
+  const left = document.createElement('div');
+  left.className = 'todo-row-left';
+  left.appendChild(titleEl);
+  left.appendChild(chipsContainer);
+
+  row.appendChild(left);
+  row.appendChild(actions);
+
+  return row;
+}
+
+// Wire up the todo add form
+const todoAddForm = document.getElementById('todo-add-form') as HTMLFormElement | null;
+const todoAddInput = document.getElementById('todo-add-input') as HTMLInputElement | null;
+const todoAddPriority = document.getElementById('todo-add-priority') as HTMLSelectElement | null;
+
+if (todoAddForm && todoAddInput && todoAddPriority) {
+  todoAddForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const title = todoAddInput.value.trim();
+    if (!title) return;
+    const priority = todoAddPriority.value as any;
+    void todoStore.create({ title, priority });
+    todoAddInput.value = '';
+    todoAddPriority.value = 'whenever';
+  });
+}
+
+// Snoozed section toggle
+const snoozedToggle = document.getElementById('todo-snoozed-toggle');
+const snoozedListEl = document.getElementById('todo-snoozed-list');
+if (snoozedToggle && snoozedListEl) {
+  snoozedToggle.addEventListener('click', () => {
+    snoozedListEl.classList.toggle('hidden');
+    snoozedToggle.classList.toggle('expanded');
+  });
+}
+
+// Load To-Dos on boot (since it's the default tab)
+void todoStoreLoadAndRender();
 
 function renderFeedViewSwitcher(container: HTMLElement, viewMode: FeedViewMode): void {
   container.innerHTML = '';
