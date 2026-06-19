@@ -700,6 +700,16 @@ export interface IpcCommands {
     args: [params?: { limit?: number }];
     result: CurationRun[];
   };
+
+  // ── Phase E.2a: Curation run commands (manual trigger) ────
+  'curation:run-morning-now': {
+    args: [];
+    result: { runId: string; todosCreated: number; summary: string } | { error: string };
+  };
+  'curation:get-progress': {
+    args: [runId: string];
+    result: { status: string; phase?: string };
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -811,6 +821,9 @@ export interface IpcEvents {
 
   /** Phase E.1: any to-do mutation. Renderer refetches the to-do list. */
   'todos:changed': void;
+
+  /** Phase E.2a: a curation run completed. Renderer can refresh. */
+  'curation:run-complete': { runId: string; run_type: string; todosCreated: number; summary: string };
 }
 
 // ---------------------------------------------------------------------------

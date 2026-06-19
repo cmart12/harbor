@@ -3954,8 +3954,8 @@ function renderTodoView(): void {
   const categories = categoriesStore.getState().categories;
   const goals = goalsStore.getState().goals;
 
-  // Separate snoozed items
-  const activeTodos = todos.filter(t => t.status !== 'snoozed');
+  // Separate snoozed items; exclude suggested + meeting_prep (rendered in curation sections)
+  const activeTodos = todos.filter(t => t.status !== 'snoozed' && !(t.triage_state === 'suggested'));
   const snoozedTodos = todos.filter(t => t.status === 'snoozed');
 
   // Group active todos by category
@@ -4207,6 +4207,150 @@ if (snoozedToggle && snoozedListEl) {
     snoozedToggle.classList.toggle('expanded');
   });
 }
+
+// ---------------------------------------------------------------------------
+// Phase E.2a: Curation UI (Run morning prep, schedule, suggested, summary)
+// ---------------------------------------------------------------------------
+
+let curationRunning = false;
+let curationSummaryDismissed = false;
+let latestCurationSummary: string | null = null;
+
+const curationRunBtn = document.getElementById('curation-run-btn') as HTMLButtonElement | null;
+const curationStatus = document.getElementById('curation-status') as HTMLSpanElement | null;
+const curationSummaryBanner = document.getElementById('curation-summary-banner') as HTMLDivElement | null;
+const curationSummaryText = document.getElementById('curation-summary-text') as HTMLSpanElement | null;
+const curationSummaryDismissBtn = document.getElementById('curation-summary-dismiss') as HTMLButtonElement | null;
+const curationScheduleSection = document.getElementById('curation-schedule-section') as HTMLDivElement | null;
+const curationScheduleList = document.getElementById('curation-schedule-list') as HTMLDivElement | null;
+const curationSuggestedSection = document.getElementById('curation-suggested-section') as HTMLDivElement | null;
+const curationSuggestedList = document.getElementById('curation-suggested-list') as HTMLDivElement | null;
+
+if (curationRunBtn) {
+  curationRunBtn.addEventListener('click', async () => {
+    if (curationRunning) return;
+    curationRunning = true;
+    curationRunBtn.disabled = true;
+    if (curationStatus) {
+      curationStatus.classList.remove('hidden');
+      curationStatus.textContent = 'Gathering today\'s context...';
+    }
+
+    try {
+      const result = await api.runMorningCurationNow();
+      if ('error' in result) {
+        if (curationStatus) curationStatus.textContent = `Error: ${result.error}`;
+      } else {
+        if (curationStatus) curationStatus.textContent = `Done: ${result.todosCreated} items found`;
+        latestCurationSummary = result.summary;
+        renderCurationSummaryBanner();
+        setTimeout(() => { if (curationStatus) curationStatus.classList.add('hidden'); }, 4000);
+      }
+    } catch (err) {
+      if (curationStatus) curationStatus.textContent = `Error: ${(err as Error).message}`;
+    } finally {
+      curationRunning = false;
+      curationRunBtn.disabled = false;
+    }
+  });
+}
+
+if (curationSummaryDismissBtn) {
+  curationSummaryDismissBtn.addEventListener('click', () => {
+    curationSummaryDismissed = true;
+    if (curationSummaryBanner) curationSummaryBanner.classList.add('hidden');
+  });
+}
+
+// Listen for curation run complete push events
+api.onCurationRunComplete((payload) => {
+  latestCurationSummary = payload.summary;
+  renderCurationSummaryBanner();
+});
+
+function renderCurationSummaryBanner(): void {
+  if (!curationSummaryBanner || !curationSummaryText) return;
+  if (curationSummaryDismissed || !latestCurationSummary) {
+    curationSummaryBanner.classList.add('hidden');
+    return;
+  }
+  curationSummaryText.textContent = latestCurationSummary;
+  curationSummaryBanner.classList.remove('hidden');
+}
+
+function renderCurationSections(): void {
+  const { todos } = todoStore.getState();
+  const categories = categoriesStore.getState().categories;
+  const goals = goalsStore.getState().goals;
+
+  // Today's Schedule: meeting_prep items from today with suggested state
+  const today = new Date().toISOString().slice(0, 10);
+  const meetingPreps = todos.filter(
+    t => t.kind === 'meeting_prep' && t.created_at.startsWith(today),
+  );
+  if (curationScheduleSection && curationScheduleList) {
+    if (meetingPreps.length > 0) {
+      curationScheduleSection.classList.remove('hidden');
+      curationScheduleList.innerHTML = '';
+      for (const prep of meetingPreps) {
+        curationScheduleList.appendChild(renderMeetingPrepCard(prep));
+      }
+    } else {
+      curationScheduleSection.classList.add('hidden');
+    }
+  }
+
+  // Suggested items (triage_state === 'suggested', kind === 'task')
+  const suggested = todos.filter(t => t.triage_state === 'suggested' && t.kind !== 'meeting_prep');
+  if (curationSuggestedSection && curationSuggestedList) {
+    if (suggested.length > 0) {
+      curationSuggestedSection.classList.remove('hidden');
+      curationSuggestedList.innerHTML = '';
+      for (const item of suggested) {
+        curationSuggestedList.appendChild(renderTodoRow(item, categories, goals));
+      }
+    } else {
+      curationSuggestedSection.classList.add('hidden');
+    }
+  }
+}
+
+function renderMeetingPrepCard(todo: Todo): HTMLElement {
+  const card = document.createElement('div');
+  card.className = 'meeting-prep-card';
+  card.dataset.todoId = todo.id;
+
+  const titleRow = document.createElement('div');
+  titleRow.className = 'meeting-prep-title';
+  titleRow.textContent = todo.title;
+
+  const desc = document.createElement('div');
+  desc.className = 'meeting-prep-desc';
+  desc.textContent = todo.description ?? '';
+
+  const actions = document.createElement('div');
+  actions.className = 'meeting-prep-actions';
+
+  const acceptBtn = document.createElement('button');
+  acceptBtn.className = 'todo-action-btn todo-accept-btn';
+  acceptBtn.textContent = 'Accept';
+  acceptBtn.addEventListener('click', (e) => { e.stopPropagation(); void todoStore.acceptSuggested(todo.id); });
+  actions.appendChild(acceptBtn);
+
+  const dismissBtn = document.createElement('button');
+  dismissBtn.className = 'todo-action-btn todo-dismiss-btn';
+  dismissBtn.textContent = '\u2715';
+  dismissBtn.addEventListener('click', (e) => { e.stopPropagation(); void todoStore.dismiss(todo.id); });
+  actions.appendChild(dismissBtn);
+
+  card.appendChild(titleRow);
+  card.appendChild(desc);
+  card.appendChild(actions);
+  return card;
+}
+
+// Hook curation sections into the todoStore subscription
+todoStore.subscribe(() => renderCurationSections());
 
 // Load To-Dos on boot (since it's the default tab)
 void todoStoreLoadAndRender();

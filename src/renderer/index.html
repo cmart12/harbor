@@ -132,6 +132,29 @@
 
       <div id="space-list" class="hidden"></div>
       <div id="todo-view" class="todo-view" role="region" aria-label="To-Dos">
+        <!-- Phase E.2a: Curation controls -->
+        <div id="curation-header" class="curation-header">
+          <button id="curation-run-btn" class="curation-run-btn" title="Run morning prep now">&#9728; Run morning prep</button>
+          <span id="curation-status" class="curation-status hidden"></span>
+        </div>
+        <!-- Phase E.2a: Run summary banner (collapsible) -->
+        <div id="curation-summary-banner" class="curation-summary-banner hidden">
+          <div class="curation-summary-content">
+            <span class="curation-summary-icon">&#128220;</span>
+            <span id="curation-summary-text" class="curation-summary-text"></span>
+          </div>
+          <button id="curation-summary-dismiss" class="curation-summary-dismiss" title="Dismiss">&times;</button>
+        </div>
+        <!-- Phase E.2a: Today's schedule (meeting_prep items) -->
+        <div id="curation-schedule-section" class="curation-schedule-section hidden">
+          <div class="curation-schedule-header">Today's Schedule</div>
+          <div id="curation-schedule-list" class="curation-schedule-list"></div>
+        </div>
+        <!-- Phase E.2a: Suggested items -->
+        <div id="curation-suggested-section" class="curation-suggested-section hidden">
+          <div class="curation-suggested-header">Suggested</div>
+          <div id="curation-suggested-list" class="curation-suggested-list"></div>
+        </div>
         <form id="todo-add-form" class="todo-add-form">
           <input type="text" id="todo-add-input" class="todo-add-input" placeholder="Add a to-do..." autocomplete="off" />
           <select id="todo-add-priority" class="todo-add-priority">
