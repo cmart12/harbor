@@ -258,3 +258,31 @@ Funnel app's notification triage being merged into whim. See `~/.copilot/session
 - Dedupe heuristic.
 
 **Rejected**: Separate `todo-db.ts` file (single connection in `notif-db.ts` is simpler and avoids dual-connection issues).
+
+## 2025-06-19 - Phase E.2a (morning curation, manual-trigger only)
+
+**What was built**: Full morning curation pipeline fired by a manual "Run morning prep now" button. No scheduler yet (E.2b).
+
+**Architecture decisions**:
+- Reused SDK-in-main pattern from workiq-source.ts: single cached CopilotSession, dropped on error, rebuilt on next attempt.
+- MCP probe runs once per process lifetime (first curation run). Sends a prompt asking the model to list available WorkIQ/Slack tools. Result cached in memory; informs subsequent prompt construction.
+- Curation approval handler follows workiqApprovalHandler pattern: allows workiq + slack MCP/extensions + read; rejects everything else.
+- Prompt builder assembles: tool instructions (based on probe), time window, existing open todos (for model-side dedupe awareness), categories/goals/VIPs, and a JSON output schema requesting `{ summary, items[] }`.
+- Basic dedupe (V1): case-insensitive containment check + Levenshtein distance < 5. Intentionally simple; LLM-assisted dedupe deferred to E.6.
+- All curation-created todos start as `triage_state='suggested'`. User accepts/dismisses from the UI.
+- Morning window: 12h. Kickoff (first-ever run): 7 days.
+- SDK timeout: 180s (curation takes longer than per-source polls due to tool use).
+
+**New files**: `src/main/curation/morning-curator.ts`, `morning-prompt.ts`, `curation-approval.ts` + 4 test files (40 tests total).
+
+**IPC additions**: `curation:run-morning-now`, `curation:get-progress`, `curation:run-complete` event.
+
+**Renderer additions**: Run button + spinner, "Today's Schedule" section (meeting_prep cards), "Suggested" section with Accept/Dismiss, collapsible run summary banner.
+
+**Deferred to later phases**:
+- E.2b: Auto-scheduler (8am/6pm cron-style trigger).
+- E.3: Evening recap run.
+- E.5: Agent delegation from curation results.
+- E.6: LLM-assisted dedupe (replace simple title similarity with model comparison).
+
+**Rejected**: Over-engineering the probe (persisting to DB vs. in-memory cache is sufficient since it only needs to survive one process lifetime).

@@ -368,8 +368,11 @@ export interface WhimAPI {
   promoteTodoToSpace(id: string): Promise<IpcCommandResult<'todo:promote-to-space'>>;
   onTodosChanged(callback: () => void): () => void;
 
-  // ── Curation runs (Phase E.1 scaffolding) ──────────────
+  // ── Curation runs (Phase E.1 scaffolding + E.2a) ──────────
   listCurationRuns(params?: { limit?: number }): Promise<IpcCommandResult<'curation:list-runs'>>;
+  runMorningCurationNow(): Promise<IpcCommandResult<'curation:run-morning-now'>>;
+  getCurationProgress(runId: string): Promise<IpcCommandResult<'curation:get-progress'>>;
+  onCurationRunComplete(callback: (payload: { runId: string; run_type: string; todosCreated: number; summary: string }) => void): () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -867,8 +870,15 @@ const api: WhimAPI = {
     return () => { ipcRenderer.removeListener('todos:changed', handler); };
   },
 
-  // ── Curation runs (Phase E.1 scaffolding) ──────────────
+  // ── Curation runs (Phase E.1 scaffolding + E.2a) ──────────
   listCurationRuns: (params) => ipcRenderer.invoke('curation:list-runs', params),
+  runMorningCurationNow: () => ipcRenderer.invoke('curation:run-morning-now'),
+  getCurationProgress: (runId) => ipcRenderer.invoke('curation:get-progress', runId),
+  onCurationRunComplete: (callback) => {
+    const handler = (_: unknown, payload: any): void => callback(payload);
+    ipcRenderer.on('curation:run-complete', handler);
+    return () => { ipcRenderer.removeListener('curation:run-complete', handler); };
+  },
 };
 
 contextBridge.exposeInMainWorld('whimAPI', api);
