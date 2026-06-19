@@ -86,6 +86,13 @@ export class MacOSNotifSource implements NotifSource {
     }
   }
 
+  /** Trigger an immediate poll without waiting for a background timer. */
+  pollNow(): void {
+    if (this.worker) {
+      this.worker.postMessage({ type: 'poll-now' });
+    }
+  }
+
   private spawnWorker(): void {
     // The worker source lives in `dist/main/notif-sources/macos-worker.js`
     // after build; tsc preserves the directory layout so `__dirname` here

@@ -164,6 +164,13 @@ describe('SlackNotifSource', () => {
     expect(initMsg).toBeDefined();
   });
 
+  it('does not register any setInterval after start (Phase E.0)', async () => {
+    const spy = vi.spyOn(global, 'setInterval');
+    await source.start();
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
   it('sends stop to worker and terminates on stop()', async () => {
     await source.start();
     const worker = lastMockWorker!;
