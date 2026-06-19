@@ -4015,6 +4015,57 @@ function renderTodoView(): void {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Evidence deep-link cache (Phase E.2a follow-up)
+// ---------------------------------------------------------------------------
+
+interface EvidenceNotification {
+  source_uid: string;
+  source: string;
+  deep_link: string | null;
+  sender_name: string | null;
+  subject: string | null;
+}
+
+const evidenceCache = new Map<string, EvidenceNotification>();
+let evidenceFetchQueue: Set<string> = new Set();
+let evidenceFetchTimer: ReturnType<typeof setTimeout> | null = null;
+
+function resolveEvidenceNotifications(uids: string[]): void {
+  const uncached = uids.filter(uid => !evidenceCache.has(uid));
+  if (uncached.length === 0) return;
+  for (const uid of uncached) evidenceFetchQueue.add(uid);
+  if (evidenceFetchTimer) return;
+  evidenceFetchTimer = setTimeout(async () => {
+    const batch = Array.from(evidenceFetchQueue);
+    evidenceFetchQueue = new Set();
+    evidenceFetchTimer = null;
+    try {
+      const results = await bridgeApi.listNotificationsByUids(batch);
+      for (const n of results) {
+        evidenceCache.set(n.source_uid, {
+          source_uid: n.source_uid,
+          source: n.source,
+          deep_link: n.deep_link ?? null,
+          sender_name: n.sender_name ?? null,
+          subject: n.subject ?? null,
+        });
+      }
+      // Re-render to show the deep links now that data is available
+      renderTodoView();
+    } catch (err) {
+      logToMain(`[evidence] fetch failed: ${err}`);
+    }
+  }, 50);
+}
+
+function getSourceLabel(source: string): string {
+  if (source.includes('outlook') || source.includes('workiq-outlook')) return 'Outlook';
+  if (source.includes('teams') || source.includes('workiq-teams')) return 'Teams';
+  if (source.includes('slack')) return 'Slack';
+  return 'source';
+}
+
 function renderTodoRow(
   todo: Todo,
   categories: Array<{ id: string; title: string; color: string }>,
@@ -4092,6 +4143,76 @@ function renderTodoRow(
     snoozeLabel.className = 'todo-snooze-label';
     snoozeLabel.textContent = `snoozed until ${formatRelativeDate(todo.snoozed_until)}`;
     chipsContainer.appendChild(snoozeLabel);
+  }
+
+  // Evidence deep link (Phase E.2a follow-up)
+  const evidenceUids: string[] = todo.evidence_uids
+    ? (typeof todo.evidence_uids === 'string' ? JSON.parse(todo.evidence_uids) : todo.evidence_uids)
+    : [];
+  if (evidenceUids.length > 0) {
+    // Kick off async resolution (no-op if already cached)
+    resolveEvidenceNotifications(evidenceUids);
+    const resolved = evidenceUids
+      .map(uid => evidenceCache.get(uid))
+      .filter((n): n is EvidenceNotification => !!n && !!n.deep_link);
+    if (resolved.length === 1) {
+      const link = document.createElement('button');
+      link.className = 'todo-evidence-link';
+      link.textContent = `\u2197 Open in ${getSourceLabel(resolved[0].source)}`;
+      link.title = resolved[0].subject || 'Open source';
+      link.addEventListener('click', (e) => {
+        e.stopPropagation();
+        void whimAPI.openExternal(resolved[0].deep_link!);
+      });
+      chipsContainer.appendChild(link);
+    } else if (resolved.length > 1) {
+      const sources = new Set(resolved.map(r => r.source));
+      if (sources.size === 1) {
+        // All from same source: open the first
+        const link = document.createElement('button');
+        link.className = 'todo-evidence-link';
+        link.textContent = `\u2197 Open in ${getSourceLabel(resolved[0].source)}`;
+        link.title = resolved[0].subject || 'Open source';
+        link.addEventListener('click', (e) => {
+          e.stopPropagation();
+          void whimAPI.openExternal(resolved[0].deep_link!);
+        });
+        chipsContainer.appendChild(link);
+      } else {
+        // Multiple sources: show popover
+        const link = document.createElement('button');
+        link.className = 'todo-evidence-link';
+        link.textContent = '\u2197 View sources';
+        link.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const existing = row.querySelector('.todo-evidence-popover');
+          if (existing) { existing.remove(); return; }
+          const popover = document.createElement('div');
+          popover.className = 'todo-evidence-popover';
+          for (const ev of resolved) {
+            const item = document.createElement('button');
+            item.className = 'todo-evidence-popover-item';
+            const label = ev.sender_name || ev.subject || ev.source_uid.slice(0, 20);
+            item.textContent = `${getSourceLabel(ev.source)}: ${label}`;
+            item.addEventListener('click', (ev2) => {
+              ev2.stopPropagation();
+              void whimAPI.openExternal(ev.deep_link!);
+              popover.remove();
+            });
+            popover.appendChild(item);
+          }
+          row.appendChild(popover);
+          const close = (ev2: MouseEvent): void => {
+            if (!popover.contains(ev2.target as Node)) {
+              popover.remove();
+              document.removeEventListener('click', close);
+            }
+          };
+          setTimeout(() => document.addEventListener('click', close), 0);
+        });
+        chipsContainer.appendChild(link);
+      }
+    }
   }
 
   const actions = document.createElement('span');

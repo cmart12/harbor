@@ -425,6 +425,23 @@ export function getNotification(uid: string): Notification | null {
 }
 
 /**
+ * Batch-fetch notifications by their source_uid values. Returns only rows
+ * that exist; unknown UIDs are silently dropped. Used by the renderer to
+ * resolve evidence deep links on curated to-dos.
+ */
+export function listNotificationsByUids(uids: string[]): Notification[] {
+  if (uids.length === 0) return [];
+  const conn = requireDb();
+  const placeholders = uids.map(() => '?').join(', ');
+  return conn
+    .prepare(
+      `SELECT ${NOTIFICATION_COLUMNS}
+       FROM notifications WHERE source_uid IN (${placeholders})`,
+    )
+    .all(...uids) as Notification[];
+}
+
+/**
  * List notifications.
  *
  * When `filter.status` is unset we return the "active" feed: everything that

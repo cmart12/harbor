@@ -11535,6 +11535,54 @@ body.dark .source-settings-empty {
 }
 .todo-snooze-option:hover { background: rgba(0, 0, 0, 0.06); }
 
+/* ── Evidence deep link (Phase E.2a follow-up) ────────── */
+
+.todo-evidence-link {
+  display: inline-flex;
+  align-items: center;
+  border: none;
+  background: transparent;
+  font-size: var(--fs-label, 11px);
+  color: var(--accent, #0969da);
+  cursor: pointer;
+  padding: 1px 4px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+.todo-evidence-link:hover {
+  background: rgba(9, 105, 218, 0.08);
+  text-decoration: underline;
+}
+.todo-evidence-popover {
+  position: absolute;
+  right: 12px;
+  top: 100%;
+  z-index: 25;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  padding: 4px;
+  min-width: 180px;
+}
+.todo-evidence-popover-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  padding: 6px 10px;
+  font-size: var(--fs-label, 12px);
+  border-radius: 6px;
+  cursor: pointer;
+  color: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 260px;
+}
+.todo-evidence-popover-item:hover { background: rgba(0, 0, 0, 0.06); }
+
 /* ── Snoozed section ───────────────────────────────────── */
 
 .todo-snoozed-section {
@@ -11611,6 +11659,15 @@ body.dark .todo-snooze-dropdown {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 body.dark .todo-snooze-option:hover { background: rgba(255, 255, 255, 0.06); }
+
+body.dark .todo-evidence-link { color: #58a6ff; }
+body.dark .todo-evidence-link:hover { background: rgba(88, 166, 255, 0.1); }
+body.dark .todo-evidence-popover {
+  background: #1E1E1E;
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+body.dark .todo-evidence-popover-item:hover { background: rgba(255, 255, 255, 0.06); }
 
 body.dark .todo-snoozed-toggle { color: rgba(255, 255, 255, 0.4); }
 body.dark .todo-snoozed-toggle:hover { color: rgba(255, 255, 255, 0.6); }

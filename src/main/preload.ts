@@ -298,6 +298,7 @@ export interface WhimAPI {
 
   // ── Notifications (Phase A.2) ────────────────────────────
   listNotifications(filter?: NotificationListFilter): Promise<IpcCommandResult<'notification:list'>>;
+  listNotificationsByUids(uids: string[]): Promise<IpcCommandResult<'notification:list-by-uids'>>;
   promoteNotificationToNewSpace(uid: string): Promise<IpcCommandResult<'notification:promote-to-new-space'>>;
   openNotificationLink(uid: string): Promise<IpcCommandResult<'notification:open-link'>>;
   snoozeNotification(uid: string, preset: SnoozePreset): Promise<IpcCommandResult<'notification:snooze'>>;
@@ -772,6 +773,7 @@ const api: WhimAPI = {
 
   // ── Notifications (Phase A.2) ────────────────────────────
   listNotifications: (filter) => ipcRenderer.invoke('notification:list', filter),
+  listNotificationsByUids: (uids) => ipcRenderer.invoke('notification:list-by-uids', uids),
   promoteNotificationToNewSpace: (uid) => ipcRenderer.invoke('notification:promote-to-new-space', uid),
   openNotificationLink: (uid) => ipcRenderer.invoke('notification:open-link', uid),
   snoozeNotification: (uid, preset) => ipcRenderer.invoke('notification:snooze', uid, preset),

@@ -286,3 +286,7 @@ Funnel app's notification triage being merged into whim. See `~/.copilot/session
 - E.6: LLM-assisted dedupe (replace simple title similarity with model comparison).
 
 **Rejected**: Over-engineering the probe (persisting to DB vs. in-memory cache is sufficient since it only needs to survive one process lifetime).
+
+## 2026-06-19 — Phase E.2a follow-up (evidence deep links on curated to-dos)
+
+Added "Open source" deep links on to-do rows when `evidence_uids` is populated and the referenced notifications have a `deep_link`. Prompt updated with emphatic instruction + example to ensure the model always populates `evidence_uids` for message-sourced to-dos. New IPC `notification:list-by-uids` for batched lookup. Renderer lazily resolves evidence notifications with a session-lifetime cache, renders inline link (single source) or popover (multiple sources). No backfill of existing todos; future curation runs will include evidence consistently. Clicked links open via existing `shell:openExternal` path.
