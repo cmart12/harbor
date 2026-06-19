@@ -356,6 +356,9 @@ app.whenReady().then(async () => {
         if (source === 'slack' && slackSource) {
           slackSource.pollNow();
         }
+        if (source === 'macos' && notifSource) {
+          (notifSource as MacOSNotifSource).pollNow();
+        }
       },
     });
   }

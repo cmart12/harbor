@@ -23,7 +23,6 @@ import bplistParser from 'bplist-parser';
 
 // CFAbsoluteTime epoch is 2001-01-01 UTC; this is its Unix-seconds offset.
 const MAC_EPOCH_OFFSET_SECS = 978_307_200;
-const POLL_INTERVAL_MS = 30_000;
 const MAX_ROWS_PER_POLL = 500;
 
 interface ParsedBody {
@@ -266,33 +265,24 @@ let stopped = false;
 let cursor: string | null = null;
 const warnedFda = { value: false };
 
-parentPort?.on('message', (msg: WorkerInboundMessage | { type: 'init'; cursor: string | null }) => {
+parentPort?.on('message', (msg: WorkerInboundMessage | { type: 'init'; cursor: string | null } | { type: 'poll-now' }) => {
   if (msg.type === 'stop') {
     stopped = true;
     return;
   }
   if (msg.type === 'init') {
     cursor = msg.cursor;
+    return;
   }
-});
-
-async function loop(): Promise<void> {
-  while (!stopped) {
+  if (msg.type === 'poll-now') {
     const next = pollOnce(cursor, warnedFda);
     if (next !== null) {
       cursor = next;
-      // Signal the orchestrator that a successful poll cycle completed
-      // so it can update source_settings.last_poll_iso + clear stale
-      // last_error. `pollOnce` returns null only when the DB read fails.
       post({ type: 'poll-complete', iso: new Date().toISOString() });
     }
-    await new Promise<void>((resolve) => {
-      const t = setTimeout(resolve, POLL_INTERVAL_MS);
-      // Allow Node to exit if the parent forgets to call stop() — guards
-      // against orphaned worker keeping the main process alive at quit.
-      t.unref?.();
-    });
   }
-}
+});
 
-void loop();
+// Phase E.0: no background loop. Polls happen only on explicit 'poll-now'
+// messages from the orchestrator (triggered by the user clicking "Poll now"
+// in Settings -> Sources).

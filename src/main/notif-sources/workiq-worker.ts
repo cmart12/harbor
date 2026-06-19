@@ -2,7 +2,6 @@
  * WorkIQ polling worker thread (Phase C.1).
  *
  * Runs off the main process in a dedicated Node Worker thread. Owns:
- *  - the 5-minute poll scheduler,
  *  - prompt construction,
  *  - response parsing and blake3 content-based dedupe,
  *  - cursor tracking and retry/backoff,
@@ -28,7 +27,6 @@ import { contentHash, dayBucket } from './blake3-hash';
 // Constants
 // ---------------------------------------------------------------------------
 
-const POLL_INTERVAL_MS = 5 * 60 * 1_000; // 5 minutes
 const BACKFILL_HOURS = 24;
 const MAX_ATTEMPTS = 3;
 const BACKOFF_MS = [1_000, 5_000, 30_000];
@@ -384,13 +382,6 @@ async function runPoll(): Promise<void> {
   }
 }
 
-async function loop(): Promise<void> {
-  await sleep(500);
-
-  while (!stopped) {
-    await runPoll();
-    await sleep(POLL_INTERVAL_MS);
-  }
-}
-
-void loop();
+// Phase E.0: no background loop. Polls happen only on explicit 'poll-now'
+// messages from the orchestrator (triggered by the user clicking "Poll now"
+// in Settings -> Sources).

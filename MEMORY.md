@@ -215,3 +215,10 @@ Funnel app's notification triage being merged into whim. See `~/.copilot/session
 - **Tests**: 57 new tests (32 orchestrator + 25 prompt/parser). Total suite grows accordingly.
 - **Deferred**: Channel-wide activity (not V1).
 - **Rejected**: Subdividing into `slack-mentions` / `slack-dms` sources (single `slack` source simplifies everything for V1).
+
+## 2026-06-19 -- Phase E.0 (emergency: disable continuous polling)
+
+- **Decided**: Remove all background `setInterval`/`loop()` polling from worker threads (workiq, slack, macOS). Workers now idle after boot and only poll when the user clicks "Poll now" in Settings > Sources. This is a temporary measure to eliminate token consumption until Phase E.1 designs a curation-based workflow.
+- **Why**: Continuous 5-min (workiq/slack) and 30-sec (macOS) poll loops consumed tokens even when the user was not actively using the app.
+- **What changed**: Removed `POLL_INTERVAL_MS` constants and `loop()`/`void loop()` calls from all three workers. Added `poll-now` handler and `pollNow()` method to macOS (workiq and slack already had them). Wired macOS into the SourceController `pollNow` dispatch in `main.ts`.
+- **Rejected**: Reducing poll frequency (still burns tokens silently). Pausing polls when app is backgrounded (complex, still not zero).
