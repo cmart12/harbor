@@ -21,6 +21,12 @@ import type {
   ListGoalsFilter,
   ListCategoriesFilter,
 } from '../shared/goal-category-types';
+import type {
+  CreateTodoInput,
+  UpdateTodoPatch,
+  ListTodosFilter,
+} from '../shared/todo-types';
+import type { SnoozePreset as TodoSnoozePreset } from '../shared/todo-types';
 
 const { contextBridge, ipcRenderer } = require('electron');
 
@@ -349,6 +355,21 @@ export interface WhimAPI {
   forceRebackfill(source: string): Promise<IpcCommandResult<'source:force-rebackfill'>>;
   pollSourceNow(source: string): Promise<IpcCommandResult<'source:poll-now'>>;
   onSourceStatusChanged(callback: () => void): () => void;
+
+  // ── To-dos (Phase E.1) ─────────────────────────────────
+  listTodos(filter?: ListTodosFilter): Promise<IpcCommandResult<'todo:list'>>;
+  createTodo(input: CreateTodoInput): Promise<IpcCommandResult<'todo:create'>>;
+  getTodo(id: string): Promise<IpcCommandResult<'todo:get'>>;
+  updateTodo(params: { id: string; patch: UpdateTodoPatch }): Promise<IpcCommandResult<'todo:update'>>;
+  markTodoDone(id: string): Promise<IpcCommandResult<'todo:done'>>;
+  dismissTodo(id: string): Promise<IpcCommandResult<'todo:dismiss'>>;
+  snoozeTodo(params: { id: string; preset: TodoSnoozePreset }): Promise<IpcCommandResult<'todo:snooze'>>;
+  acceptSuggestedTodo(id: string): Promise<IpcCommandResult<'todo:accept-suggested'>>;
+  promoteTodoToSpace(id: string): Promise<IpcCommandResult<'todo:promote-to-space'>>;
+  onTodosChanged(callback: () => void): () => void;
+
+  // ── Curation runs (Phase E.1 scaffolding) ──────────────
+  listCurationRuns(params?: { limit?: number }): Promise<IpcCommandResult<'curation:list-runs'>>;
 }
 
 // ---------------------------------------------------------------------------
@@ -829,6 +850,25 @@ const api: WhimAPI = {
     ipcRenderer.on('source:status-changed', handler);
     return () => { ipcRenderer.removeListener('source:status-changed', handler); };
   },
+
+  // ── To-dos (Phase E.1) ─────────────────────────────────
+  listTodos: (filter) => ipcRenderer.invoke('todo:list', filter),
+  createTodo: (input) => ipcRenderer.invoke('todo:create', input),
+  getTodo: (id) => ipcRenderer.invoke('todo:get', id),
+  updateTodo: (params) => ipcRenderer.invoke('todo:update', params),
+  markTodoDone: (id) => ipcRenderer.invoke('todo:done', id),
+  dismissTodo: (id) => ipcRenderer.invoke('todo:dismiss', id),
+  snoozeTodo: (params) => ipcRenderer.invoke('todo:snooze', params),
+  acceptSuggestedTodo: (id) => ipcRenderer.invoke('todo:accept-suggested', id),
+  promoteTodoToSpace: (id) => ipcRenderer.invoke('todo:promote-to-space', id),
+  onTodosChanged: (callback) => {
+    const handler = (): void => callback();
+    ipcRenderer.on('todos:changed', handler);
+    return () => { ipcRenderer.removeListener('todos:changed', handler); };
+  },
+
+  // ── Curation runs (Phase E.1 scaffolding) ──────────────
+  listCurationRuns: (params) => ipcRenderer.invoke('curation:list-runs', params),
 };
 
 contextBridge.exposeInMainWorld('whimAPI', api);

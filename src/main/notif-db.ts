@@ -43,6 +43,17 @@ import {
   DEFAULT_GOAL_COLOR,
   DEFAULT_CATEGORY_COLOR,
 } from '../shared/goal-category-types';
+import type {
+  Todo,
+  CurationRun,
+  CreateTodoInput,
+  UpdateTodoPatch,
+  ListTodosFilter,
+  CreateCurationRunInput,
+  UpdateCurationRunPatch,
+} from '../shared/todo-types';
+import type { SnoozePreset } from '../shared/notification-types';
+import { computeSnoozeUntil } from './notif-snooze';
 
 let db: Database.Database | null = null;
 
@@ -141,6 +152,49 @@ function createSchema(conn: Database.Database): void {
       last_cursor_iso TEXT,
       updated_at TEXT NOT NULL
     );
+
+    -- Phase E.1: to-dos (the primary object in the Phase E redesign).
+    CREATE TABLE IF NOT EXISTS todos (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      description TEXT,
+      status TEXT NOT NULL DEFAULT 'open',
+      source TEXT NOT NULL DEFAULT 'manual',
+      curation_run_id TEXT,
+      evidence_uids TEXT,
+      goal_id TEXT,
+      category_id TEXT,
+      priority TEXT NOT NULL DEFAULT 'whenever',
+      due_at TEXT,
+      snoozed_until TEXT,
+      space_id TEXT,
+      kind TEXT NOT NULL DEFAULT 'task',
+      linked_meeting_id TEXT,
+      triage_state TEXT NOT NULL DEFAULT 'triaged',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      completed_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_todos_status_priority ON todos(status, priority);
+    CREATE INDEX IF NOT EXISTS idx_todos_category ON todos(category_id);
+    CREATE INDEX IF NOT EXISTS idx_todos_goal ON todos(goal_id);
+    CREATE INDEX IF NOT EXISTS idx_todos_triage ON todos(triage_state);
+    CREATE INDEX IF NOT EXISTS idx_todos_curation_run ON todos(curation_run_id);
+
+    -- Phase E.1: curation runs (scaffolding for E.2; no runs created yet).
+    CREATE TABLE IF NOT EXISTS curation_runs (
+      id TEXT PRIMARY KEY,
+      run_type TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      started_at TEXT NOT NULL,
+      completed_at TEXT,
+      source_window_start TEXT,
+      source_window_end TEXT,
+      summary TEXT,
+      todos_created INTEGER NOT NULL DEFAULT 0,
+      error TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_curation_runs_type ON curation_runs(run_type, started_at);
   `);
 
   // Phase B.1: add nullable category_id / goal_id columns to the
@@ -1061,3 +1115,252 @@ export function listSourceSettings(): SourceSettings[] {
     .all() as SourceSettingsRow[];
   return rows.map(rowToSourceSettings);
 }
+
+// ---------------------------------------------------------------------------
+// Phase E.1: To-do CRUD
+// ---------------------------------------------------------------------------
+
+const TODO_COLUMNS = `
+  id, title, description, status, source, curation_run_id,
+  evidence_uids, goal_id, category_id, priority, due_at,
+  snoozed_until, space_id, kind, linked_meeting_id, triage_state,
+  created_at, updated_at, completed_at
+`;
+
+export function createTodo(input: CreateTodoInput): Todo {
+  const conn = requireDb();
+  const now = new Date().toISOString();
+  const id = crypto.randomUUID();
+  const evidenceJson = input.evidence_uids ? JSON.stringify(input.evidence_uids) : null;
+
+  conn.prepare(
+    `INSERT INTO todos
+       (id, title, description, status, source, curation_run_id,
+        evidence_uids, goal_id, category_id, priority, due_at,
+        snoozed_until, space_id, kind, linked_meeting_id, triage_state,
+        created_at, updated_at, completed_at)
+     VALUES (?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, NULL)`,
+  ).run(
+    id,
+    input.title,
+    input.description ?? null,
+    input.source ?? 'manual',
+    input.curation_run_id ?? null,
+    evidenceJson,
+    input.goal_id ?? null,
+    input.category_id ?? null,
+    input.priority ?? 'whenever',
+    input.due_at ?? null,
+    input.kind ?? 'task',
+    input.linked_meeting_id ?? null,
+    input.triage_state ?? 'triaged',
+    now,
+    now,
+  );
+
+  return getTodo(id)!;
+}
+
+export function getTodo(id: string): Todo | null {
+  const row = requireDb()
+    .prepare(`SELECT ${TODO_COLUMNS} FROM todos WHERE id = ?`)
+    .get(id) as Todo | undefined;
+  return row ?? null;
+}
+
+export function listTodos(filter: ListTodosFilter = {}): Todo[] {
+  const conn = requireDb();
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+
+  if (filter.status && filter.status.length > 0) {
+    const placeholders = filter.status.map(() => '?').join(', ');
+    conditions.push(`status IN (${placeholders})`);
+    params.push(...filter.status);
+  } else {
+    // Default: exclude done + dismissed
+    conditions.push("status NOT IN ('done', 'dismissed')");
+  }
+
+  if (!filter.includeSnoozed) {
+    // Hide future-snoozed items from the default list
+    conditions.push(
+      "(status != 'snoozed' OR snoozed_until IS NULL OR snoozed_until <= ?)",
+    );
+    params.push(new Date().toISOString());
+  }
+
+  if (filter.triage_state) {
+    conditions.push('triage_state = ?');
+    params.push(filter.triage_state);
+  }
+
+  if (filter.category_id) {
+    conditions.push('category_id = ?');
+    params.push(filter.category_id);
+  }
+
+  if (filter.goal_id) {
+    conditions.push('goal_id = ?');
+    params.push(filter.goal_id);
+  }
+
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+  return conn
+    .prepare(
+      `SELECT ${TODO_COLUMNS}
+       FROM todos
+       ${where}
+       ORDER BY
+         CASE priority
+           WHEN 'urgent' THEN 0
+           WHEN 'today' THEN 1
+           WHEN 'this_week' THEN 2
+           WHEN 'whenever' THEN 3
+           ELSE 4
+         END,
+         due_at ASC NULLS LAST,
+         created_at DESC`,
+    )
+    .all(...params) as Todo[];
+}
+
+export function updateTodo(id: string, patch: UpdateTodoPatch): Todo {
+  const conn = requireDb();
+  const now = new Date().toISOString();
+  const fields: string[] = ['updated_at = ?'];
+  const values: unknown[] = [now];
+
+  if (patch.title !== undefined) { fields.push('title = ?'); values.push(patch.title); }
+  if (patch.description !== undefined) { fields.push('description = ?'); values.push(patch.description); }
+  if (patch.status !== undefined) { fields.push('status = ?'); values.push(patch.status); }
+  if (patch.priority !== undefined) { fields.push('priority = ?'); values.push(patch.priority); }
+  if (patch.due_at !== undefined) { fields.push('due_at = ?'); values.push(patch.due_at); }
+  if (patch.goal_id !== undefined) { fields.push('goal_id = ?'); values.push(patch.goal_id); }
+  if (patch.category_id !== undefined) { fields.push('category_id = ?'); values.push(patch.category_id); }
+  if (patch.kind !== undefined) { fields.push('kind = ?'); values.push(patch.kind); }
+  if (patch.linked_meeting_id !== undefined) { fields.push('linked_meeting_id = ?'); values.push(patch.linked_meeting_id); }
+
+  values.push(id);
+  conn.prepare(`UPDATE todos SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+
+  return getTodo(id)!;
+}
+
+export function markTodoDone(id: string): void {
+  const now = new Date().toISOString();
+  requireDb().prepare(
+    `UPDATE todos SET status = 'done', completed_at = ?, updated_at = ? WHERE id = ?`,
+  ).run(now, now, id);
+}
+
+export function dismissTodo(id: string): void {
+  const now = new Date().toISOString();
+  requireDb().prepare(
+    `UPDATE todos SET status = 'dismissed', completed_at = ?, updated_at = ? WHERE id = ?`,
+  ).run(now, now, id);
+}
+
+export function snoozeTodo(id: string, preset: SnoozePreset): void {
+  const snoozedUntil = computeSnoozeUntil(preset);
+  const now = new Date().toISOString();
+  requireDb().prepare(
+    `UPDATE todos SET status = 'snoozed', snoozed_until = ?, updated_at = ? WHERE id = ?`,
+  ).run(snoozedUntil, now, id);
+}
+
+/** Flip snoozed todos back to open when their snooze time has passed. */
+export function unsnoozeIfDue(): number {
+  const now = new Date().toISOString();
+  const info = requireDb().prepare(
+    `UPDATE todos
+     SET status = 'open', snoozed_until = NULL, updated_at = ?
+     WHERE status = 'snoozed' AND snoozed_until IS NOT NULL AND snoozed_until <= ?`,
+  ).run(now, now);
+  return info.changes;
+}
+
+export function acceptSuggestedTodo(id: string): void {
+  const now = new Date().toISOString();
+  requireDb().prepare(
+    `UPDATE todos SET triage_state = 'triaged', updated_at = ? WHERE id = ? AND triage_state = 'suggested'`,
+  ).run(now, id);
+}
+
+export function attachSpaceToTodo(id: string, spaceId: string): void {
+  const now = new Date().toISOString();
+  requireDb().prepare(
+    `UPDATE todos SET space_id = ?, updated_at = ? WHERE id = ?`,
+  ).run(spaceId, now, id);
+}
+
+// ---------------------------------------------------------------------------
+// Phase E.1: Curation Run CRUD (scaffolding for E.2)
+// ---------------------------------------------------------------------------
+
+const CURATION_RUN_COLUMNS = `
+  id, run_type, status, started_at, completed_at,
+  source_window_start, source_window_end, summary, todos_created, error
+`;
+
+export function createCurationRun(input: CreateCurationRunInput): CurationRun {
+  const conn = requireDb();
+  const now = new Date().toISOString();
+  const id = crypto.randomUUID();
+
+  conn.prepare(
+    `INSERT INTO curation_runs
+       (id, run_type, status, started_at, completed_at,
+        source_window_start, source_window_end, summary, todos_created, error)
+     VALUES (?, ?, 'pending', ?, NULL, ?, ?, NULL, 0, NULL)`,
+  ).run(
+    id,
+    input.run_type,
+    input.started_at ?? now,
+    input.source_window_start ?? null,
+    input.source_window_end ?? null,
+  );
+
+  return getCurationRun(id)!;
+}
+
+export function getCurationRun(id: string): CurationRun | null {
+  const row = requireDb()
+    .prepare(`SELECT ${CURATION_RUN_COLUMNS} FROM curation_runs WHERE id = ?`)
+    .get(id) as CurationRun | undefined;
+  return row ?? null;
+}
+
+export function updateCurationRun(id: string, patch: UpdateCurationRunPatch): CurationRun {
+  const fields: string[] = [];
+  const values: unknown[] = [];
+
+  if (patch.status !== undefined) { fields.push('status = ?'); values.push(patch.status); }
+  if (patch.completed_at !== undefined) { fields.push('completed_at = ?'); values.push(patch.completed_at); }
+  if (patch.summary !== undefined) { fields.push('summary = ?'); values.push(patch.summary); }
+  if (patch.todos_created !== undefined) { fields.push('todos_created = ?'); values.push(patch.todos_created); }
+  if (patch.error !== undefined) { fields.push('error = ?'); values.push(patch.error); }
+
+  if (fields.length === 0) return getCurationRun(id)!;
+
+  values.push(id);
+  requireDb().prepare(
+    `UPDATE curation_runs SET ${fields.join(', ')} WHERE id = ?`,
+  ).run(...values);
+
+  return getCurationRun(id)!;
+}
+
+export function listCurationRuns(opts?: { limit?: number }): CurationRun[] {
+  const limit = opts?.limit ?? 50;
+  return requireDb()
+    .prepare(
+      `SELECT ${CURATION_RUN_COLUMNS}
+       FROM curation_runs
+       ORDER BY started_at DESC
+       LIMIT ?`,
+    )
+    .all(limit) as CurationRun[];
+}
+

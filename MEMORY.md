@@ -222,3 +222,39 @@ Funnel app's notification triage being merged into whim. See `~/.copilot/session
 - **Why**: Continuous 5-min (workiq/slack) and 30-sec (macOS) poll loops consumed tokens even when the user was not actively using the app.
 - **What changed**: Removed `POLL_INTERVAL_MS` constants and `loop()`/`void loop()` calls from all three workers. Added `poll-now` handler and `pollNow()` method to macOS (workiq and slack already had them). Wired macOS into the SourceController `pollNow` dispatch in `main.ts`.
 - **Rejected**: Reducing poll frequency (still burns tokens silently). Pausing polls when app is backgrounded (complex, still not zero).
+
+## 2026-06-19 -- Phase E.1 (to-do data model + manual CRUD + basic view)
+
+**Decision**: To-dos become the primary object in Harbor. Notifications become the "evidence pool" that feeds into to-dos. This PR (E.1) proves the data shape and UX with manual entry only, before curation automation lands in E.2.
+
+**Data model**:
+- `todos` table added to sidecar `notifications.db` with 20 columns (id, title, description, status, source, curation_run_id, evidence_uids, goal_id, category_id, priority, due_at, snoozed_until, space_id, kind, linked_meeting_id, triage_state, created_at, updated_at, completed_at) plus 5 indexes.
+- `curation_runs` table added (scaffolding for E.2). Schema only, nothing creates runs yet.
+- Categories = projects, Goals = outcomes (locked from B.1). Both are FK references in the todos table.
+
+**Architecture**:
+- All CRUD helpers added to `notif-db.ts` (same file, same DB connection): createTodo, getTodo, listTodos, updateTodo, markTodoDone, dismissTodo, snoozeTodo, unsnoozeIfDue, acceptSuggestedTodo, attachSpaceToTodo, plus curation run CRUD.
+- 10 IPC commands added (`todo:list`, `todo:create`, `todo:get`, `todo:update`, `todo:done`, `todo:dismiss`, `todo:snooze`, `todo:accept-suggested`, `todo:promote-to-space`, `curation:list-runs`).
+- Push event `todos:changed` fires after any mutation; renderer re-fetches.
+- `promote-to-space` reuses existing `createSpace` + `materializeSpaceCanvas` plumbing.
+- Shared types in `src/shared/todo-types.ts`. Re-exports `SnoozePreset` from notification-types.
+
+**UI changes**:
+- To-Dos tab added as first/default tab in top nav (was Feed/Spaces).
+- Feed stays as second tab, label unchanged (rename to "Evidence" deferred to E.2).
+- New `#todo-view` with inline-add form, category-grouped list, priority/category/goal/due chips, action buttons (Done, Dismiss, Snooze dropdown, Promote to Space), inline title editing.
+- Suggested todos get blue left border accent + "Accept" button.
+- Snoozed todos hidden by default, visible in expandable section.
+
+**Tests**: 43 new tests (26 DB, 13 store, 4 promote-to-space). Suite total: 1664.
+
+**Deferred to E.2+**:
+- Curation runs (morning/evening/manual scheduling, SDK calls).
+- Feed rename to "Evidence".
+- Notifications-to-todo migration.
+- Agent delegation from to-dos.
+- On-demand context-gathering.
+- Promote-from-notification-to-todo.
+- Dedupe heuristic.
+
+**Rejected**: Separate `todo-db.ts` file (single connection in `notif-db.ts` is simpler and avoids dual-connection issues).
