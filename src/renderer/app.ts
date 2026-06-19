@@ -4237,7 +4237,7 @@ if (curationRunBtn) {
     }
 
     try {
-      const result = await api.runMorningCurationNow();
+      const result = await whimAPI.runMorningCurationNow();
       if ('error' in result) {
         if (curationStatus) curationStatus.textContent = `Error: ${result.error}`;
       } else {
@@ -4263,7 +4263,7 @@ if (curationSummaryDismissBtn) {
 }
 
 // Listen for curation run complete push events
-api.onCurationRunComplete((payload) => {
+whimAPI.onCurationRunComplete((payload) => {
   latestCurationSummary = payload.summary;
   renderCurationSummaryBanner();
 });
@@ -6186,10 +6186,10 @@ function classifierProgressTick(progress: { pending: number; failed: number }): 
 }
 
 async function refreshClassifierStatus(): Promise<void> {
-  const api = window.whimAPI;
-  if (!api || typeof api.classifierPendingCount !== 'function') return;
+  const whimAPI = window.whimAPI;
+  if (!whimAPI || typeof whimAPI.classifierPendingCount !== 'function') return;
   try {
-    const res = await api.classifierPendingCount();
+    const res = await whimAPI.classifierPendingCount();
     if (res && 'pending' in res) {
       renderClassifierStatus({ pending: res.pending, failed: res.failed });
     }
@@ -6200,11 +6200,11 @@ async function refreshClassifierStatus(): Promise<void> {
 
 if (classifierReclassifyAllBtn) {
   classifierReclassifyAllBtn.addEventListener('click', async () => {
-    const api = window.whimAPI;
-    if (!api || typeof api.reclassifyAllNotifications !== 'function') return;
+    const whimAPI = window.whimAPI;
+    if (!whimAPI || typeof whimAPI.reclassifyAllNotifications !== 'function') return;
     classifierReclassifyAllBtn.disabled = true;
     try {
-      await api.reclassifyAllNotifications();
+      await whimAPI.reclassifyAllNotifications();
       await refreshClassifierStatus();
     } catch (err) {
       console.warn('[classifier] reclassify all failed:', err);
@@ -6216,11 +6216,11 @@ if (classifierReclassifyAllBtn) {
 
 if (classifierRetryFailedBtn) {
   classifierRetryFailedBtn.addEventListener('click', async () => {
-    const api = window.whimAPI;
-    if (!api || typeof api.retryFailedClassifications !== 'function') return;
+    const whimAPI = window.whimAPI;
+    if (!whimAPI || typeof whimAPI.retryFailedClassifications !== 'function') return;
     classifierRetryFailedBtn.disabled = true;
     try {
-      await api.retryFailedClassifications();
+      await whimAPI.retryFailedClassifications();
       await refreshClassifierStatus();
     } catch (err) {
       console.warn('[classifier] retry failed:', err);
@@ -6453,11 +6453,11 @@ function initGoalsTab(): void {
         await goalsStore.unarchive(archiveId);
       } else {
         // Phase B.2: warn before stripping a goal from active rows.
-        const api = window.whimAPI;
+        const whimAPI = window.whimAPI;
         let count = 0;
-        if (api && typeof api.goalActiveLinkCount === 'function') {
+        if (whimAPI && typeof whimAPI.goalActiveLinkCount === 'function') {
           try {
-            const res = await api.goalActiveLinkCount(archiveId);
+            const res = await whimAPI.goalActiveLinkCount(archiveId);
             count = res?.count ?? 0;
           } catch (err) {
             console.warn('[goals] active link count failed:', err);
@@ -6569,11 +6569,11 @@ function initCategoriesTab(): void {
         await categoriesStore.unarchive(archiveId);
       } else {
         // Phase B.2: warn before stripping a category from active rows.
-        const api = window.whimAPI;
+        const whimAPI = window.whimAPI;
         let count = 0;
-        if (api && typeof api.categoryActiveLinkCount === 'function') {
+        if (whimAPI && typeof whimAPI.categoryActiveLinkCount === 'function') {
           try {
-            const res = await api.categoryActiveLinkCount(archiveId);
+            const res = await whimAPI.categoryActiveLinkCount(archiveId);
             count = res?.count ?? 0;
           } catch (err) {
             console.warn('[categories] active link count failed:', err);
@@ -6761,14 +6761,14 @@ function sourceRelativeTime(isoStr: string | null): string {
 }
 
 async function loadSourceStatuses(): Promise<void> {
-  const api = (window as any).whimAPI;
-  if (!api || typeof api.listSources !== 'function') return;
+  const whimAPI = (window as any).whimAPI;
+  if (!whimAPI || typeof whimAPI.listSources !== 'function') return;
 
   const list = document.getElementById('source-settings-list');
   if (!list) return;
 
   try {
-    const sources = await api.listSources();
+    const sources = await whimAPI.listSources();
     if (!Array.isArray(sources) || sources.length === 0) {
       list.innerHTML = '<div class="source-settings-empty">No sources configured.</div>';
       return;
@@ -6812,14 +6812,14 @@ function initSourcesTab(): void {
   const list = document.getElementById('source-settings-list');
   if (!list) return;
 
-  const api = (window as any).whimAPI;
-  if (!api) return;
+  const whimAPI = (window as any).whimAPI;
+  if (!whimAPI) return;
 
   list.addEventListener('change', async (event) => {
     const target = event.target as HTMLInputElement;
     const source = target.dataset.sourceToggle;
     if (!source) return;
-    await api.setSourceEnabled({ source, enabled: target.checked });
+    await whimAPI.setSourceEnabled({ source, enabled: target.checked });
     await loadSourceStatuses();
   });
 
@@ -6828,7 +6828,7 @@ function initSourcesTab(): void {
 
     const pollSource = target.closest<HTMLElement>('[data-source-poll]')?.dataset.sourcePoll;
     if (pollSource) {
-      await api.pollSourceNow(pollSource);
+      await whimAPI.pollSourceNow(pollSource);
       // Refresh after a short delay to pick up new poll time
       setTimeout(() => { void loadSourceStatuses(); }, 2000);
       return;
@@ -6837,7 +6837,7 @@ function initSourcesTab(): void {
     const rebackfillSource = target.closest<HTMLElement>('[data-source-rebackfill]')?.dataset.sourceRebackfill;
     if (rebackfillSource) {
       if (!confirm(`Reset the cursor for ${SOURCE_LABELS[rebackfillSource] ?? rebackfillSource} and re-backfill? This will re-ingest the last 7 days.`)) return;
-      await api.forceRebackfill(rebackfillSource);
+      await whimAPI.forceRebackfill(rebackfillSource);
       await loadSourceStatuses();
     }
   });
@@ -6850,15 +6850,15 @@ initSourcesTab();
 
 // Push-event refresh wiring.
 (() => {
-  const api = (window as any).whimAPI;
-  if (api && typeof api.onGoalsChanged === 'function') {
-    api.onGoalsChanged(() => { void goalsStore.refresh(); });
+  const whimAPI = (window as any).whimAPI;
+  if (whimAPI && typeof whimAPI.onGoalsChanged === 'function') {
+    whimAPI.onGoalsChanged(() => { void goalsStore.refresh(); });
   }
-  if (api && typeof api.onCategoriesChanged === 'function') {
-    api.onCategoriesChanged(() => { void categoriesStore.refresh(); });
+  if (whimAPI && typeof whimAPI.onCategoriesChanged === 'function') {
+    whimAPI.onCategoriesChanged(() => { void categoriesStore.refresh(); });
   }
-  if (api && typeof api.onSourceStatusChanged === 'function') {
-    api.onSourceStatusChanged(() => { void loadSourceStatuses(); });
+  if (whimAPI && typeof whimAPI.onSourceStatusChanged === 'function') {
+    whimAPI.onSourceStatusChanged(() => { void loadSourceStatuses(); });
   }
 })();
 
